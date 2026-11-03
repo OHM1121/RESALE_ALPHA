@@ -21,3 +21,5 @@ Galaxy S25 Ultra용 중고거래 ALPHA 분석 + 수요확정 앱.
 ## 중요
 세 플랫폼의 비공개 API 우회, 로그인 자동화, 자동 대량 크롤링은 하지 않습니다.
 실제 계좌 송금/환불은 금융 API가 연결되기 전까지 실행하지 않습니다.
+
+Validation build marker: V0.3
