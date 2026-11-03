@@ -1,0 +1,18 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.resalealpha.mobile'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.resalealpha.mobile'
+        minSdk 29
+        targetSdk 35
+        versionCode 3
+        versionName '0.3'
+    }
+
+    buildTypes {
+        debug { minifyEnabled false }
+    }
+}
