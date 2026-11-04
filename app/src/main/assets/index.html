@@ -14,7 +14,7 @@ main{padding:12px}.screen{display:none}.screen.on{display:block}.card{background
 </head>
 <body>
 <div class="app">
-<header><div class="brand">RESALE <span>ALPHA</span> <span class="sub">V0.4 · AUTO HUNT + DEMAND LOCK</span></div></header>
+<header><div class="brand">RESALE <span>ALPHA</span> <span class="sub">V0.4.1 SAFE · AUTO HUNT</span></div></header>
 <main>
 <section id="home" class="screen on">
   <div class="card hero"><h1>재고를 먼저 사지 말고<br>수요를 먼저 잠근다.</h1><div class="mut">저평가 매물 발견 → 수요 2건 확인 → 구매자 확정 → 네 승인/입금확인 → 매입 → 전달.</div></div>
@@ -52,12 +52,7 @@ main{padding:12px}.screen{display:none}.screen.on{display:block}.card{background
     <div id="huntStatus" class="notice" style="margin-top:9px">중지됨</div>
   </div>
 
-  <div class="card">
-    <div class="sectionTitle">백그라운드 새매물 감지</div>
-    <div class="mut">당근·중고나라·번개장터 앱이 보내는 새매물/키워드 알림을 RESALE ALPHA가 읽어, 마지막 스캔에서 계산한 최대매입가 이하이면 즉시 저평가 후보 알림을 다시 띄웁니다.</div>
-    <div class="buttons"><button class="btn blue" onclick="openNotificationAccess()">알림 접근 권한 설정</button><button class="btn" onclick="refreshNotificationState()">권한 상태 확인</button></div>
-    <div id="notifState" class="notice" style="margin-top:9px">상태 확인 필요</div>
-  </div>
+  
 
   <div class="card">
     <div class="sectionTitle">공유받기</div>
@@ -565,8 +560,7 @@ function renderDeals(){
       lockHtml+'</div>';
   }).join('');
 }
-initHunts();refreshNotificationState();processCapturedNotifications();render();
-setInterval(processCapturedNotifications,30000);
+initHunts();render();
 </script>
 </body>
 </html>
