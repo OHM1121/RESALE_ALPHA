@@ -46,6 +46,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RESALE_ALPHA_MOBILE_V0_3_APK
+          name: RESALE_ALPHA_MOBILE_V0_4_APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
