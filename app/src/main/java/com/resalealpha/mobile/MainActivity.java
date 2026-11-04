@@ -363,8 +363,8 @@ public class MainActivity extends Activity {
     }
 
     private boolean notificationAccessEnabled() {
-        Set<String> packs = NotificationManager.getEnabledListenerPackages(this);
-        return packs.contains(getPackageName());
+        String enabled = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+        return enabled != null && enabled.contains(getPackageName());
     }
 
     public class Bridge {
