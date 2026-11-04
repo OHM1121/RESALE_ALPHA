@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080b10">
-<title>RESALE ALPHA V0.3</title>
+<title>RESALE ALPHA V0.4</title>
 <style>
 :root{--bg:#080b10;--p:#111821;--p2:#16202b;--line:#263445;--txt:#f6f8fb;--mut:#8f9bae;--g:#39d98a;--r:#ff6b6b;--o:#ffb547;--b:#6ea8fe}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif}.app{max-width:760px;margin:auto;padding-bottom:86px}header{position:sticky;top:0;z-index:8;background:#080b10ec;backdrop-filter:blur(14px);border-bottom:1px solid #ffffff10;padding:16px}.brand{font-weight:900;letter-spacing:.2px}.brand span{color:var(--g)}.sub{font-size:11px;color:var(--mut)}
@@ -14,7 +14,7 @@ main{padding:12px}.screen{display:none}.screen.on{display:block}.card{background
 </head>
 <body>
 <div class="app">
-<header><div class="brand">RESALE <span>ALPHA</span> <span class="sub">V0.3 · DEMAND LOCK</span></div></header>
+<header><div class="brand">RESALE <span>ALPHA</span> <span class="sub">V0.4 · AUTO HUNT + DEMAND LOCK</span></div></header>
 <main>
 <section id="home" class="screen on">
   <div class="card hero"><h1>재고를 먼저 사지 말고<br>수요를 먼저 잠근다.</h1><div class="mut">저평가 매물 발견 → 수요 2건 확인 → 구매자 확정 → 네 승인/입금확인 → 매입 → 전달.</div></div>
@@ -29,11 +29,36 @@ main{padding:12px}.screen{display:none}.screen.on{display:block}.card{background
 
 <section id="radar" class="screen">
   <div class="card">
-    <div class="sectionTitle">3 MARKET RADAR</div>
+    <div class="sectionTitle">3 MARKET DIRECT SCAN</div>
+    <div class="mut">검색창만 열어주는 기능이 아닙니다. 세 사이트의 실제 검색결과를 읽고 앱 안에서 최저가·중앙값·저평가율을 계산합니다.</div>
     <div class="field"><label>검색어</label><input id="q" placeholder="예: 갤럭시 S25 울트라 512GB"></div>
-    <div class="market"><button onclick="openMarket('d')">당근</button><button onclick="openMarket('j')">중고나라</button><button onclick="openMarket('b')">번개장터</button></div>
-    <button class="btn primary wide" style="margin-top:8px" onclick="openAllMarkets()">3개 마켓 모두 조회</button>
+    <button class="btn primary wide" style="margin-top:10px" onclick="scanAllNow()">앱 안에서 3마켓 자동 조회</button>
+    <div class="market"><button onclick="openMarket('d')">당근 원문</button><button onclick="openMarket('j')">중고나라 원문</button><button onclick="openMarket('b')">번개장터 원문</button></div>
+    <div id="scanStatus" class="notice" style="margin-top:9px">대기중 · 검색어를 입력하고 자동 조회를 누르세요.</div>
   </div>
+
+  <div id="scanSummary"></div>
+  <div id="scanResults"></div>
+
+  <div class="card">
+    <div class="sectionTitle">AUTO HUNT · 내가 검색하지 않은 저평가 매물</div>
+    <div class="mut">아래 품목을 순환해서 3마켓을 비교합니다. 앱이 열려 있을 때 직접 스캔하고, 앱을 닫은 뒤에는 각 마켓 앱의 새매물/키워드 알림을 가격기준과 비교합니다.</div>
+    <div class="field"><label>자동 탐지 품목 · 한 줄에 하나</label><textarea id="huntQueries" style="min-height:150px"></textarea></div>
+    <div class="grid">
+      <div class="field"><label>저평가 기준</label><select id="huntDiscount"><option value="15">시세 -15%</option><option value="20" selected>시세 -20%</option><option value="25">시세 -25%</option><option value="30">시세 -30%</option></select></div>
+      <div class="field"><label>반복 주기</label><select id="huntInterval"><option value="5">5분</option><option value="15" selected>15분</option><option value="30">30분</option></select></div>
+    </div>
+    <div class="buttons"><button id="huntStartBtn" class="btn primary" onclick="startAutoHunt()">AUTO HUNT 시작</button><button class="btn" onclick="stopAutoHunt()">중지</button></div>
+    <div id="huntStatus" class="notice" style="margin-top:9px">중지됨</div>
+  </div>
+
+  <div class="card">
+    <div class="sectionTitle">백그라운드 새매물 감지</div>
+    <div class="mut">당근·중고나라·번개장터 앱이 보내는 새매물/키워드 알림을 RESALE ALPHA가 읽어, 마지막 스캔에서 계산한 최대매입가 이하이면 즉시 저평가 후보 알림을 다시 띄웁니다.</div>
+    <div class="buttons"><button class="btn blue" onclick="openNotificationAccess()">알림 접근 권한 설정</button><button class="btn" onclick="refreshNotificationState()">권한 상태 확인</button></div>
+    <div id="notifState" class="notice" style="margin-top:9px">상태 확인 필요</div>
+  </div>
+
   <div class="card">
     <div class="sectionTitle">공유받기</div>
     <div class="mut">마켓에서 공유 → RESALE ALPHA. 매물인지, '삽니다' 수요글인지 선택해서 등록.</div>
@@ -133,6 +158,177 @@ function openAllMarkets(){
   var a=['d','j','b'].map(function(s){return marketUrl(s)});
   if(window.ResaleAlphaAndroid) ResaleAlphaAndroid.openAll(JSON.stringify(a));
   else a.forEach(function(u,i){setTimeout(function(){window.open(u,'_blank')},i*250)});
+}
+
+var SCAN_HISTORY=JSON.parse(localStorage.getItem('ra_scan_history')||'{}');
+var RADAR_RULES=JSON.parse(localStorage.getItem('ra_radar_rules')||'{}');
+var AUTO_ACTIVE=false,AUTO_QUEUE=[],AUTO_INDEX=0,AUTO_TIMER=null,SCAN_MODE='manual';
+var DEFAULT_HUNTS=[
+ '갤럭시 S25 울트라 512GB',
+ '아이폰 16 프로 256GB',
+ '아이폰 15 프로 256GB',
+ '아이패드 프로 M4 11 256GB',
+ '갤럭시탭 S10 울트라 512GB',
+ '닌텐도 스위치 OLED',
+ '플레이스테이션5 슬림',
+ '소니 A7 IV',
+ 'RTX 4070 Ti SUPER',
+ 'DJI 오즈모 포켓3'
+];
+
+function scanAllNow(){
+  var q=el('q').value.trim();
+  if(!q)return alert('검색어를 입력하세요.');
+  if(!window.ResaleAlphaAndroid)return alert('자동 3마켓 조회는 Android 앱에서 작동합니다.');
+  SCAN_MODE='manual';
+  el('scanStatus').innerHTML='3마켓 스캔 요청중 · <b>'+esc(q)+'</b>';
+  ResaleAlphaAndroid.scanMarkets(q);
+}
+window.onNativeScanStart=function(q){
+  el('scanStatus').innerHTML='<b>'+esc(q)+'</b> · 조회 시작';
+}
+window.onNativeScanMarket=function(q,site,count){
+  el('scanStatus').innerHTML='<b>'+esc(q)+'</b> · '+esc(site)+' '+count+'건 읽음';
+}
+function medianNumber(a){
+  a=a.filter(function(x){return Number.isFinite(x)&&x>0}).sort(function(x,y){return x-y});
+  if(!a.length)return 0;
+  if(a.length>=8)a=a.slice(1,-1);
+  var m=Math.floor(a.length/2);
+  return a.length%2?a[m]:(a[m-1]+a[m])/2;
+}
+function marketMedian(rows,source){
+  return medianNumber(rows.filter(function(x){return x.source===source}).map(function(x){return x.price}));
+}
+function dedupeScan(rows){
+  var seen={},out=[];
+  rows.forEach(function(x){
+    if(!x||!x.url||!x.price)return;
+    var k=x.url+'|'+x.price;
+    if(seen[k])return;seen[k]=1;out.push(x);
+  });
+  return out.sort(function(a,b){return a.price-b.price});
+}
+function saveRadarRule(q,median){
+  if(!median)return;
+  var disc=Number(el('huntDiscount').value||20);
+  RADAR_RULES[q]={query:q,median:Math.round(median),maxBuy:Math.round(median*(1-disc/100)),discount:disc,updatedAt:Date.now()};
+  localStorage.setItem('ra_radar_rules',JSON.stringify(RADAR_RULES));
+  try{if(window.ResaleAlphaAndroid)ResaleAlphaAndroid.saveRadarRules(JSON.stringify(Object.keys(RADAR_RULES).map(function(k){return RADAR_RULES[k]})))}catch(e){}
+}
+function autoAddScanCandidate(q,item,median,discount,rows){
+  if(!item||!item.url||C.some(function(x){return x.url===item.url})||D.some(function(x){return x.url===item.url}))return false;
+  var sample=rows.length,sourceCount=new Set(rows.map(function(x){return x.source})).size;
+  var score=Math.min(99,Math.round(46+discount*1.35+Math.min(18,sample)+sourceCount*3));
+  var candidate={id:'c'+Date.now()+Math.floor(Math.random()*999),name:q+' · '+item.title.slice(0,70),url:item.url,buy:item.price,market:median,cost:0,score:score,net:median-item.price,margin:item.price?(median-item.price)/item.price*100:0,conf:Math.min(98,40+sample*2+sourceCount*8),maxBuy:RADAR_RULES[q]?RADAR_RULES[q].maxBuy:Math.round(median*.8),status:'active',checkedAt:Date.now(),createdAt:Date.now(),source:item.source,auto:true};
+  C.unshift(candidate);
+  D.unshift({id:'d'+Date.now()+Math.floor(Math.random()*999),candidateId:candidate.id,name:candidate.name,url:candidate.url,buy:candidate.buy,market:candidate.market,score:candidate.score,status:'active',checkedAt:Date.now(),demands:[],lockedBuyerId:'',approved:false,paymentConfirmed:false,purchased:false,delivered:false,completed:false,refundPending:false,method:'',createdAt:Date.now(),source:item.source,auto:true});
+  save(); return true;
+}
+function renderScan(q,rows){
+  rows=dedupeScan(rows);
+  var prices=rows.map(function(x){return x.price}),med=Math.round(medianNumber(prices)/1000)*1000;
+  var cheapest=rows[0],sources=new Set(rows.map(function(x){return x.source})).size;
+  if(!rows.length){
+    el('scanSummary').innerHTML='<div class="card"><b>검색결과를 앱 안으로 가져오지 못했습니다.</b><div class="mut">사이트가 로그인/지역확인/봇차단을 요구했을 수 있습니다. 아래 원문 버튼은 그대로 사용할 수 있습니다.</div></div>';
+    el('scanResults').innerHTML='';
+    return {rows:rows,median:0,discount:0};
+  }
+  var disc=med&&cheapest?Math.max(0,(med-cheapest.price)/med*100):0;
+  var threshold=Number(el('huntDiscount').value||20);
+  saveRadarRule(q,med);
+  SCAN_HISTORY[q]={at:Date.now(),median:med,cheapest:cheapest,count:rows.length,sources:sources};
+  localStorage.setItem('ra_scan_history',JSON.stringify(SCAN_HISTORY));
+
+  var autoAdded=false;
+  if(rows.length>=5&&sources>=1&&disc>=threshold&&cheapest.price>=med*.35){
+    autoAdded=autoAddScanCandidate(q,cheapest,med,disc,rows);
+  }
+
+  el('scanSummary').innerHTML='<div class="card">'+
+    '<div class="row"><div><div class="title">'+esc(q)+'</div><div class="mut">'+rows.length+'건 · '+sources+'개 마켓 · 중앙값 '+won(med)+'</div></div><span class="tag '+(disc>=threshold?'g':'o')+'">'+disc.toFixed(1)+'% 저가</span></div>'+
+    '<div style="margin-top:10px" class="notice"><b>최저가 '+won(cheapest.price)+'</b> · '+esc(cheapest.source)+'<br>'+esc(cheapest.title)+
+    (autoAdded?'<br><span class="pos"><b>저평가 기준 충족 → 매수후보 자동등록</b></span>':disc>=threshold?'<br><span class="pos">저평가 기준 충족 · 이미 등록되었거나 중복 후보</span>':'<br><span class="mut">최저가지만 자동 매수후보 기준은 미달</span>')+
+    '</div><button class="btn primary wide" style="margin-top:9px" onclick="external('+JSON.stringify(cheapest.url)+')">최저가 원매물 열기</button></div>';
+
+  el('scanResults').innerHTML=rows.slice(0,20).map(function(x,i){
+    var d=med?((med-x.price)/med*100):0;
+    return '<div class="card"><div class="row"><div><div class="title">'+(i===0?'🏆 ':'')+esc(x.title)+'</div><div class="mut">'+esc(x.source)+' · 중앙값 대비 '+(d>=0?'-':'+' )+Math.abs(d).toFixed(1)+'%</div></div><b>'+won(x.price)+'</b></div><button class="btn wide" style="margin-top:8px" onclick="external('+JSON.stringify(x.url)+')">원매물</button></div>';
+  }).join('');
+  return {rows:rows,median:med,discount:disc};
+}
+window.onNativeScanComplete=function(q,payload){
+  var rows=[];try{rows=JSON.parse(payload||'[]')}catch(e){}
+  var stat=renderScan(q,rows);
+  el('scanStatus').innerHTML='<b>'+esc(q)+'</b> · 완료 · '+stat.rows.length+'건 비교';
+  if(SCAN_MODE==='auto'&&AUTO_ACTIVE){
+    AUTO_INDEX++;
+    el('huntStatus').innerHTML='AUTO HUNT 진행중 · '+AUTO_INDEX+'/'+AUTO_QUEUE.length+' · 마지막 '+esc(q);
+    if(AUTO_INDEX<AUTO_QUEUE.length){
+      setTimeout(function(){if(AUTO_ACTIVE)ResaleAlphaAndroid.scanMarkets(AUTO_QUEUE[AUTO_INDEX])},1800);
+    }else{
+      var min=Number(el('huntInterval').value||15);
+      el('huntStatus').innerHTML='1회전 완료 · '+AUTO_QUEUE.length+'개 품목 · 다음 스캔 '+min+'분 후';
+      AUTO_TIMER=setTimeout(runAutoCycle,min*60000);
+    }
+  }
+}
+function initHunts(){
+  var saved=localStorage.getItem('ra_hunt_queries');
+  el('huntQueries').value=saved||DEFAULT_HUNTS.join('\n');
+  var d=localStorage.getItem('ra_hunt_discount');if(d)el('huntDiscount').value=d;
+  var i=localStorage.getItem('ra_hunt_interval');if(i)el('huntInterval').value=i;
+}
+function startAutoHunt(){
+  if(!window.ResaleAlphaAndroid)return alert('AUTO HUNT는 Android 앱에서 작동합니다.');
+  AUTO_QUEUE=el('huntQueries').value.split(/\n+/).map(function(x){return x.trim()}).filter(Boolean).slice(0,20);
+  if(!AUTO_QUEUE.length)return alert('자동 탐지 품목을 한 개 이상 입력하세요.');
+  localStorage.setItem('ra_hunt_queries',el('huntQueries').value);
+  localStorage.setItem('ra_hunt_discount',el('huntDiscount').value);
+  localStorage.setItem('ra_hunt_interval',el('huntInterval').value);
+  AUTO_ACTIVE=true;clearTimeout(AUTO_TIMER);runAutoCycle();
+}
+function runAutoCycle(){
+  if(!AUTO_ACTIVE)return;
+  AUTO_INDEX=0;SCAN_MODE='auto';
+  el('huntStatus').innerHTML='AUTO HUNT 시작 · '+AUTO_QUEUE.length+'개 품목';
+  if(window.ResaleAlphaAndroid&&!ResaleAlphaAndroid.isScanBusy())ResaleAlphaAndroid.scanMarkets(AUTO_QUEUE[0]);
+  else AUTO_TIMER=setTimeout(runAutoCycle,5000);
+}
+function stopAutoHunt(){
+  AUTO_ACTIVE=false;clearTimeout(AUTO_TIMER);el('huntStatus').textContent='중지됨';
+}
+function openNotificationAccess(){
+  if(window.ResaleAlphaAndroid)ResaleAlphaAndroid.openNotificationAccess();
+  else alert('Android 앱에서 사용할 수 있습니다.');
+}
+function refreshNotificationState(){
+  var ok=false;try{ok=window.ResaleAlphaAndroid&&ResaleAlphaAndroid.notificationAccessEnabled()}catch(e){}
+  el('notifState').innerHTML=ok?'<span class="pos"><b>알림 접근 허용됨</b></span> · 앱을 닫아도 마켓 새매물 알림 가격을 검사합니다.':'<span class="neg"><b>알림 접근 미허용</b></span> · 버튼을 눌러 RESALE ALPHA를 허용하세요.';
+}
+function processCapturedNotifications(){
+  if(!window.ResaleAlphaAndroid)return;
+  var arr=[];try{arr=JSON.parse(ResaleAlphaAndroid.getCapturedNotifications()||'[]')}catch(e){}
+  if(!arr.length)return;
+  arr.forEach(function(n){
+    var text=((n.title||'')+' '+(n.body||'')).toLowerCase(),price=Number(n.price)||0;
+    Object.keys(RADAR_RULES).some(function(k){
+      var r=RADAR_RULES[k],tok=r.query.toLowerCase().split(/\s+/).filter(function(x){return x.length>1}),hits=tok.filter(function(x){return text.includes(x)}).length;
+      if(price>0&&hits>=Math.max(1,Math.ceil(tok.length*.5))&&price<=r.maxBuy){
+        var fake={title:(n.title||n.body||r.query).slice(0,120),price:price,url:'',source:n.source||'마켓알림'};
+        var key='notif|'+n.source+'|'+n.at+'|'+price;
+        if(!C.some(function(x){return x.notifyKey===key})){
+          var score=Math.min(99,Math.round(70+((r.median-price)/r.median*100)));
+          var c={id:'cn'+n.at,name:r.query+' · '+fake.title,url:'',buy:price,market:r.median,cost:0,score:score,net:r.median-price,margin:price?(r.median-price)/price*100:0,conf:70,maxBuy:r.maxBuy,status:'notification',checkedAt:n.at,createdAt:n.at,source:n.source,auto:true,notifyKey:key};
+          C.unshift(c);
+          D.unshift({id:'dn'+n.at,candidateId:c.id,name:c.name,url:'',buy:c.buy,market:c.market,score:c.score,status:'notification',checkedAt:n.at,demands:[],lockedBuyerId:'',approved:false,paymentConfirmed:false,purchased:false,delivered:false,completed:false,refundPending:false,method:'',createdAt:n.at,source:n.source,auto:true});
+        }
+        return true;
+      }
+      return false;
+    });
+  });
+  save();
 }
 function sourceOf(t){
   if(/daangn\.com/i.test(t))return '당근';
@@ -369,7 +565,8 @@ function renderDeals(){
       lockHtml+'</div>';
   }).join('');
 }
-render();
+initHunts();refreshNotificationState();processCapturedNotifications();render();
+setInterval(processCapturedNotifications,30000);
 </script>
 </body>
 </html>
