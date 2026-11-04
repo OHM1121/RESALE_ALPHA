@@ -229,7 +229,7 @@ public class MainActivity extends Activity {
 
         scanWebView.evaluateJavascript(script, raw -> {
             try {
-                Object decoded = new JSONTokener(raw == null ? ""[]"" : raw).nextValue();
+                Object decoded = new JSONTokener(raw == null ? "\"[]\"" : raw).nextValue();
                 String json = decoded instanceof String ? (String) decoded : "[]";
                 JSONArray arr = new JSONArray(json);
                 for (int i=0;i<arr.length();i++) {
