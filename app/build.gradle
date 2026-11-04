@@ -8,8 +8,8 @@ android {
         applicationId 'com.resalealpha.mobile'
         minSdk 29
         targetSdk 35
-        versionCode 4
-        versionName '0.4'
+        versionCode 41
+        versionName '0.4.1'
     }
 
     buildTypes {
