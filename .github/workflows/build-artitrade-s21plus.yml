@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+
+concurrency:
+  group: artitrade-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apk:
     runs-on: ubuntu-latest
