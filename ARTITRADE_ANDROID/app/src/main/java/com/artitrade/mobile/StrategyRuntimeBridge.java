@@ -24,6 +24,7 @@ final class StrategyRuntimeBridge {
     private static final int PARTS=22;
     private static final int LIVE_BRIDGE_PARTS=9; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
     private static final String CORE_SHA256="e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0";
+    private static final String LIVE_BRIDGE_SHA256="e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e";
     private final Context context;
     private final RuntimeCrashStore crashes;
     private PyObject module;
@@ -119,13 +120,17 @@ final class StrategyRuntimeBridge {
     private void applyLiveBridgeOverlay(File dir) throws Exception{
         File target=new File(dir,"android_live_bridge.py");
         byte[] buf=new byte[8192];
-        try(FileOutputStream out=new FileOutputStream(target,false)){
-            for(int i=0;i<LIVE_BRIDGE_PARTS;i++){
-                String name=String.format(java.util.Locale.ROOT,"live_bridge_v071/part_%02d.txt",i);
-                try(InputStream in=context.getAssets().open(name)){
-                    int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);
-                }
+        ByteArrayOutputStream encoded=new ByteArrayOutputStream(70000);
+        for(int i=0;i<LIVE_BRIDGE_PARTS;i++){
+            String name=String.format(java.util.Locale.ROOT,"live_bridge_v071/part_%02d.txt",i);
+            try(InputStream in=context.getAssets().open(name)){
+                int n;while((n=in.read(buf))!=-1)encoded.write(buf,0,n);
             }
+        }
+        byte[] decoded=Base64.decode(encoded.toByteArray(),Base64.DEFAULT);
+        if(!LIVE_BRIDGE_SHA256.equals(sha256(decoded)))throw new SecurityException("v0.7.1 live bridge digest mismatch");
+        try(FileOutputStream out=new FileOutputStream(target,false)){
+            out.write(decoded);
             out.flush();
         }
         if(!target.isFile()||target.length()<40000)throw new IllegalStateException("v0.7.1 live bridge overlay unavailable");
