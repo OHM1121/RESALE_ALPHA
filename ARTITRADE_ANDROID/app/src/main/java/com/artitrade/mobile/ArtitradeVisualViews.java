@@ -46,17 +46,17 @@ final class HorizontalStrategyBarsView extends View {
     private static String won(double v){NumberFormat f=NumberFormat.getNumberInstance(Locale.KOREA);f.setMaximumFractionDigits(0);return f.format(v)+"원";}
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);if(items.isEmpty())return;
-        float left=88,right=getWidth()-70,top=12,row=Math.max(30,(getHeight()-20f)/items.size()),mid=(left+right)/2;
+        float left=sp(82),right=getWidth()-sp(78),top=sp(8),row=Math.max(sp(34),(getHeight()-sp(16))/items.size()),mid=(left+right)/2;
         double max=1;for(Item i:items)if(!Double.isNaN(i.value))max=Math.max(max,Math.abs(i.value));
         p.setStrokeWidth(1);p.setColor(Color.rgb(46,66,91));c.drawLine(mid,5,mid,getHeight()-5,p);
         for(int n=0;n<items.size();n++){
             Item it=items.get(n);float y=top+n*row+row*.5f;
-            p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));p.setColor(Color.rgb(200,218,238));p.setFakeBoldText(true);c.drawText(it.label,left-10,y+4,p);p.setFakeBoldText(false);
+            p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));p.setColor(Color.rgb(200,218,238));p.setFakeBoldText(true);c.drawText(it.label,left-sp(8),y+sp(4),p);p.setFakeBoldText(false);
             if(Double.isNaN(it.value))continue;
             float span=(float)(Math.abs(it.value)/max*((right-left)*.47));
             p.setColor(it.value>=0?Color.rgb(62,224,181):Color.rgb(255,119,133));
-            RectF bar=it.value>=0?new RectF(mid,y-8,mid+span,y+8):new RectF(mid-span,y-8,mid,y+8);c.drawRoundRect(bar,7,7,p);
-            p.setTextAlign(it.value>=0?Paint.Align.LEFT:Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(225,236,248));float tx=it.value>=0?Math.min(right-2,mid+span+7):Math.max(left+2,mid-span-7);c.drawText(won(it.value),tx,y+4,p);
+            RectF bar=it.value>=0?new RectF(mid,y-sp(7),mid+span,y+sp(7)):new RectF(mid-span,y-sp(7),mid,y+sp(7));c.drawRoundRect(bar,7,7,p);
+            p.setTextAlign(it.value>=0?Paint.Align.LEFT:Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(225,236,248));float tx=it.value>=0?Math.min(right-sp(2),mid+span+sp(7)):Math.max(left+sp(2),mid-span-sp(7));c.drawText(won(it.value),tx,y+sp(4),p);
         }
     }
 }
@@ -70,10 +70,10 @@ final class PnlSparklineView extends View {
     void setValues(double[] v,String label){values=v==null?new double[0]:v;this.label=label==null?"":label;invalidate();}
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);
-        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(14));p.setColor(Color.rgb(137,163,194));c.drawText(label,8,15,p);
-        if(values.length<2){p.setColor(Color.rgb(100,126,156));p.setTextSize(sp(14));c.drawText("체결 데이터 축적 중",8,getHeight()/2f,p);return;}
+        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(14));p.setColor(Color.rgb(151,160,181));c.drawText(label,sp(6),sp(16),p);
+        if(values.length<2){p.setColor(Color.rgb(116,126,148));p.setTextSize(sp(14));c.drawText("체결 데이터 축적 중",sp(6),getHeight()/2f,p);return;}
         double min=values[0],max=values[0];for(double v:values){min=Math.min(min,v);max=Math.max(max,v);}if(max==min){max+=1;min-=1;}
-        float l=8,r=getWidth()-8,t=26,b=getHeight()-12;
+        float l=sp(6),r=getWidth()-sp(6),t=sp(30),b=getHeight()-sp(10);
         if(min<=0&&max>=0){float zy=(float)(b-(0-min)/(max-min)*(b-t));p.setColor(Color.rgb(45,64,88));p.setStrokeWidth(1);c.drawLine(l,zy,r,zy,p);}
         Path path=new Path();for(int i=0;i<values.length;i++){float x=l+(r-l)*i/(values.length-1f);float y=(float)(b-(values[i]-min)/(max-min)*(b-t));if(i==0)path.moveTo(x,y);else path.lineTo(x,y);}
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setColor(values[values.length-1]>=0?Color.rgb(62,224,181):Color.rgb(255,119,133));c.drawPath(path,p);p.setStyle(Paint.Style.FILL);
@@ -88,8 +88,8 @@ final class MetricProgressView extends View {
     void setMetric(String label,double value){this.label=label;this.value=value;invalidate();}
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);float w=getWidth(),h=getHeight();p.setTextSize(sp(13));p.setTextAlign(Paint.Align.LEFT);p.setColor(Color.rgb(154,164,185));c.drawText(label,0,sp(13),p);
-        p.setColor(Color.rgb(35,54,77));RectF bg=new RectF(0,h-12,w,h-4);c.drawRoundRect(bg,5,5,p);
-        if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;p.setColor(value>=60?Color.rgb(62,224,181):value>=40?Color.rgb(255,201,94):Color.rgb(255,119,133));RectF fg=new RectF(0,h-12,w*f,h-4);c.drawRoundRect(fg,5,5,p);}
+        float by=h-sp(11),bh=sp(6);p.setColor(Color.rgb(43,48,63));RectF bg=new RectF(0,by,w,by+bh);c.drawRoundRect(bg,bh,bh,p);
+        if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;p.setColor(value>=60?Color.rgb(79,219,170):value>=40?Color.rgb(255,194,91):Color.rgb(255,119,142));RectF fg=new RectF(0,by,w*f,by+bh);c.drawRoundRect(fg,bh,bh,p);}
         p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(232,235,244));c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.1f%%",value),w,sp(13),p);
     }
 }
