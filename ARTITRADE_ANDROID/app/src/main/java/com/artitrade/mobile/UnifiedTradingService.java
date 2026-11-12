@@ -114,7 +114,15 @@ public final class UnifiedTradingService extends Service {
         }catch(Throwable e){crashes.add("operation_apply_pending",e);}
     }
     private void safeRestartStrategy(){
-        try{strategy.restart();}catch(Throwable e){crashes.add("strategy_restart",e);}
+        try{
+            strategy.stop();
+            JSONObject migration=new LegacyLedgerMigration(this,crashes).importIfReady();
+            getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
+                .putString("result",migration.toString()).putLong("at",System.currentTimeMillis()).apply();
+            JSONObject started=strategy.start();
+            if(!started.optBoolean("ok",true))crashes.add("strategy_restart_reply",new IllegalStateException(started.toString()));
+            applyPendingOperation();
+        }catch(Throwable e){crashes.add("strategy_restart",e);}
     }
 
     private void monitorLoop(){
