@@ -198,9 +198,14 @@ public final class UnifiedVisualActivity extends Activity {
 
     private LinearLayout bottomNavItem(String key,String icon,String label){
         boolean active=key.equals(page);
+        int accent="stock".equals(market)?Color.rgb(77,124,254):Color.rgb(0,196,164);
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);
-        TextView i=text(icon,18);i.setGravity(Gravity.CENTER);i.setTextColor(active?Color.rgb(164,151,255):Color.rgb(111,121,143));box.addView(i,new LinearLayout.LayoutParams(-1,dp(25)));
-        TextView l=text(label,11);l.setGravity(Gravity.CENTER);l.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);l.setTextColor(active?Color.rgb(227,224,255):Color.rgb(111,121,143));box.addView(l,new LinearLayout.LayoutParams(-1,dp(18)));
+        box.setPadding(dp(4),dp(3),dp(4),dp(3));
+        if(active)box.setBackground(bg(Color.argb(46,Color.red(accent),Color.green(accent),Color.blue(accent)),accent,13));
+        TextView i=text(icon,19);i.setGravity(Gravity.CENTER);i.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
+        i.setTextColor(active?accent:Color.rgb(106,115,137));box.addView(i,new LinearLayout.LayoutParams(-1,dp(25)));
+        TextView l=text(label,11);l.setGravity(Gravity.CENTER);l.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
+        l.setTextColor(active?Color.WHITE:Color.rgb(118,127,148));box.addView(l,new LinearLayout.LayoutParams(-1,dp(18)));
         box.setOnClickListener(v->{page=key;showShell();});return box;
     }
 
@@ -270,10 +275,10 @@ public final class UnifiedVisualActivity extends Activity {
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         LinearLayout bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.HORIZONTAL);bottom.setGravity(Gravity.CENTER);bottom.setPadding(dp(6),dp(3),dp(6),dp(3));bottom.setBackgroundColor(Color.rgb(13,15,22));
         bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("positions","◆","보유"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("pending","◌","대기"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("executions","↔","체결"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("research","◎","연구"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("positions","◆","보유종목"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("pending","◌","매수대기"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("executions","↔","체결이력"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("research","◎","연구자료"),new LinearLayout.LayoutParams(0,dp(48),1));
         shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(54)));
 
         updateClock();
