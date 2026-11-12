@@ -33,6 +33,7 @@ public final class UnifiedTradingService extends Service {
     private String clientId;
     private StrategyRuntimeBridge strategy;
     private RuntimeCrashStore crashes;
+    private long lastHubPublish=0L;
 
     @Override public void onCreate(){
         super.onCreate();
@@ -57,7 +58,9 @@ public final class UnifiedTradingService extends Service {
             if(intent!=null&&SET_LIVE.equals(intent.getAction())){
                 String market=intent.getStringExtra("market");
                 boolean enabled=intent.getBooleanExtra("enabled",false);
-                strategy.setLive(market,enabled);
+                final String requestedMarket=market;
+                final boolean requestedEnabled=enabled;
+                new Thread(()->applyLiveMode(requestedMarket,requestedEnabled),"artitrade-v070-live-arm").start();
             }
             if(intent!=null&&RESTART_FEEDS.equals(intent.getAction())){
                 new Thread(()->safeRestartStrategy(),"artitrade-v070-restart").start();
@@ -102,6 +105,8 @@ public final class UnifiedTradingService extends Service {
             }
             try{
                 JSONObject p=strategy.snapshot();
+                getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).edit()
+                    .putString("snapshot",p.toString()).apply();
                 JSONObject st=p.optJSONObject("stock"),co=p.optJSONObject("coin");
                 boolean sc=st!=null&&st.optBoolean("connected");
                 boolean cc=co!=null&&co.optBoolean("connected");
@@ -111,10 +116,62 @@ public final class UnifiedTradingService extends Service {
                 String orders=(enabled!=null&&enabled.optBoolean("stock")?"S":"-")+(enabled!=null&&enabled.optBoolean("coin")?"C":"-");
                 NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
                 if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
+                long now=System.currentTimeMillis();
+                if(now-lastHubPublish>=4500){
+                    publishPhoneLedgers(hub,strategy.hubRecords());
+                    lastHubPublish=now;
+                }
+                if(strategy.liveEnabled("stock")&&stockEpoch<=0)strategy.setLive("stock",false);
+                if(strategy.liveEnabled("coin")&&coinEpoch<=0)strategy.setLive("coin",false);
             }catch(Throwable e){crashes.add("strategy_monitor",e);}
             try{Thread.sleep(2500);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
         }
         try{releaseQuietly(hub,"stock",stockEpoch);releaseQuietly(hub,"coin",coinEpoch);}catch(Throwable ignored){}
+    }
+
+    private void applyLiveMode(String market,boolean enabled){
+        if(!("stock".equals(market)||"coin".equals(market)))return;
+        LocalHubClient hub=new LocalHubClient(this);
+        try{
+            if(!enabled){
+                strategy.setLive(market,false);
+                return;
+            }
+            BrokerSecretStore secrets=new BrokerSecretStore(this);
+            if("stock".equals(market)&&!secrets.hasKiwoom())throw new IllegalStateException("KIWOOM_KEYS_MISSING");
+            if("coin".equals(market)&&!secrets.hasUpbit())throw new IllegalStateException("UPBIT_KEYS_MISSING");
+            JSONObject preferred=hub.control(market,"phone");
+            if(!preferred.optBoolean("ok"))throw new IllegalStateException("PHONE_EXECUTOR_NOT_SELECTED");
+            JSONObject claim=hub.claim(market,clientId);
+            if(!claim.optBoolean("ok")&&!claim.optBoolean("granted"))throw new IllegalStateException("PHONE_LEASE_DENIED:"+claim.optString("error"));
+            long epoch=claim.optLong("epoch",0);
+            if("stock".equals(market))stockEpoch=epoch;else coinEpoch=epoch;
+            strategy.setLive(market,true);
+        }catch(Throwable e){
+            strategy.setLive(market,false);
+            crashes.add("live_arm_"+market,e);
+        }
+    }
+
+    private void publishPhoneLedgers(LocalHubClient hub,JSONObject all){
+        if(all==null||all.length()==0)return;
+        try{
+            for(String market:new String[]{"stock","coin"}){
+                JSONObject m=all.optJSONObject(market);if(m==null)continue;
+                String[] strategies="stock".equals(market)?new String[]{"at","cw"}:new String[]{"general","ma"};
+                for(String strategyName:strategies){
+                    JSONObject s=m.optJSONObject(strategyName);if(s==null)continue;
+                    for(String bucket:new String[]{"ledger","research","errors"}){
+                        JSONObject data=s.optJSONObject(bucket);if(data==null)continue;
+                        try{
+                            JSONObject result=hub.putRecord(market,strategyName,bucket,data);
+                            if(!result.optBoolean("ok"))crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,
+                                new IllegalStateException(result.optString("error","HUB_WRITE_FAILED")));
+                        }catch(Throwable e){crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,e);}
+                    }
+                }
+            }
+        }catch(Throwable e){crashes.add("hub_publish",e);}
     }
 
     private long maintain(LocalHubClient hub,String market,JSONObject status,long epoch){
