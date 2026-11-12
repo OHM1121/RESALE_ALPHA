@@ -19,6 +19,31 @@
 @media(max-width:700px){.ident{min-width:0}.wordmark{font-size:11px}.market{padding:5px 6px;font-size:9px}.top{padding:0 9px;gap:7px}.right{gap:5px}.read-only{font-size:9px}.sync{font-size:9px;padding:6px}.rail{width:48px;flex-basis:48px;padding:7px 3px}.nav{width:40px}.view{padding:10px}.summary{padding:10px}.big{font-size:29px}.metric{font-size:19px}.kpi{padding:9px}.label{font-size:10px}.strategy{gap:3px}.strat-title{font-size:13px}.donut{display:none}}
 @media(max-width:530px){.grid-top{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.strategy-grid{grid-template-columns:1fr}.top .market{display:none}.read-only{display:none}}
 .expanded-only{display:none}.dex-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.dex-grid .card{min-height:170px}.dex-title{font-size:12px;color:#9db5d1;font-weight:850;padding:13px 16px 9px}.list-plain{padding:0 7px 12px}.list-plain .list-row{padding:10px 12px}.list-plain .empty{padding:30px 12px}@media(min-height:610px) and (min-width:990px){.expanded-only{display:block}}
+
+.strategy-switch{display:flex;align-items:center;gap:7px;padding:7px 15px;border-bottom:1px solid #1b2b42;background:#0c1727;min-height:45px;overflow-x:auto;scrollbar-width:none}
+.strategy-switch::-webkit-scrollbar{display:none}
+.strategy-tab{flex:1 0 auto;max-width:180px;min-width:70px;border:1px solid #2b405c;color:#8da5c4;background:#132238;border-radius:11px;min-height:31px;padding:5px 11px;font-size:11px;font-weight:800;letter-spacing:.2px}
+.strategy-tab[aria-selected=true]{background:#39d8b1;color:#071c24;border-color:#39d8b1}
+.strategy-chip{font-size:10px;color:#9ab2d1;font-weight:800}
+.pane-title{letter-spacing:-.3px}
+.mini-export{border:1px solid #35506d;color:#d0e7fd;background:#1b324c;padding:7px 12px;border-radius:9px;font-size:11px;font-weight:800;white-space:nowrap}
+.row-meta{font-size:10px;color:#91a8c4;margin-top:5px;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.row-why{font-size:11px;color:#bad0e2;margin-top:4px;line-height:1.35}
+.list-row{cursor:pointer}
+.list-row .right-col{min-width:65px;text-align:right;flex:none}
+.list-row .name{font-size:12px}
+.list-row .hint{font-size:10px}
+.detail-overlay[hidden]{display:none!important}
+.detail-overlay{position:fixed;inset:0;background:#020711bf;z-index:200;display:grid;place-items:center;padding:14px}
+.detail-sheet{width:min(94vw,550px);max-height:85dvh;overflow-y:auto;background:#132238;border:1px solid #37516f;border-radius:18px;padding:14px 16px;box-shadow:0 16px 50px #000b}
+.detail-sheet-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:17px;font-weight:850;margin-bottom:10px}
+.detail-entry{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #2b4059;font-size:12px;line-height:1.4}
+.detail-entry:last-child{border-bottom:0}
+.detail-key{color:#8aa4c1;min-width:74px;flex:none}
+.detail-val{color:#eff7ff;text-align:right;word-break:break-word}
+@media(max-height:540px){.strategy-switch{padding:3px 11px;min-height:36px}.strategy-tab{min-height:28px;font-size:10px;padding:3px 7px}.top{height:42px;min-height:42px}.rail{gap:2px}.nav{min-height:34px}.nav small{font-size:8px}}
+@media(max-width:700px){.strategy-switch{gap:4px;padding:4px 8px}.strategy-tab{min-width:52px;font-size:10px;max-width:110px}.nav .ico{height:16px;width:16px}}
+
 </style>
 </head>
 <body>
@@ -43,6 +68,9 @@
   <button class="nav" data-page="research" aria-label="연구">
    <svg class="ico" viewBox="0 0 24 24"><path d="M7 4h10M8 4v6l-4 8a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-4-8V4"/><path d="M6 16h12"/></svg><small>연구</small>
   </button>
+  <button class="nav" data-page="errors" aria-label="오류 기록">
+   <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg><small>오류</small>
+  </button>
   <button class="nav end" data-page="more" aria-label="더보기">
    <svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><small>더보기</small>
   </button>
@@ -57,9 +85,10 @@
     <button class="btn-icon" data-act="refresh" aria-label="새로고침">↻</button>
    </div>
   </header>
+  <div class="strategy-switch" id="strategySwitch" role="tablist" aria-label="매매 전략"></div>
   <main class="view" id="view">
    <section class="detail active" id="page-home">
-    <div class="section-head"><span class="kicker">OVERVIEW</span><div class="mode">실행 기기 <span id="deviceMode">—</span></div></div>
+    <div class="section-head"><span class="kicker" id="strategyCaption">OVERVIEW</span><div class="mode">실행 기기 <span id="deviceMode">—</span></div></div>
     <div class="grid-top">
      <article class="card summary">
       <div class="label">누적손익</div>
@@ -90,9 +119,10 @@
    </section>
    <section class="detail" id="page-positions"><div class="pane-header"><div class="pane-title">보유 종목</div><span class="pill" id="positionCount">—</span></div><div class="list" id="positionsList"></div></section>
    <section class="detail" id="page-pending"><div class="pane-header"><div class="pane-title">매수 대기</div><span class="pill" id="pendingCount">—</span></div><div class="list" id="pendingList"></div></section>
-   <section class="detail" id="page-executions"><div class="pane-header"><div class="pane-title">체결 이력</div><span class="pill">조회</span></div><div class="list" id="executionsList"></div></section>
+   <section class="detail" id="page-executions"><div class="pane-header"><div class="pane-title">체결 이력</div><span class="pill">순수익</span></div><div class="list" id="executionsList"></div></section>
    <section class="detail" id="page-strategy"><div class="pane-header"><div class="pane-title">운용 전략</div><span class="pill" id="strategyMode">—</span></div><div id="strategyControls" class="tabset"></div><div class="block-title">성과</div><div class="strategy-grid" id="strategyDetail"></div><div class="block-title">운용 데이터</div><div id="strategyRaw" class="list"></div></section>
-   <section class="detail" id="page-research"><div class="pane-header"><div class="pane-title">리서치</div><span class="pill">기록</span></div><div id="researchList" class="list"></div></section>
+   <section class="detail" id="page-research"><div class="pane-header"><div class="pane-title">연구 이력</div><button class="mini-export" data-act="export:research">내보내기 ↓</button></div><div id="researchList" class="list"></div></section>
+   <section class="detail" id="page-errors"><div class="pane-header"><div class="pane-title">오류 이력</div><button class="mini-export" data-act="export:errors">내보내기 ↓</button></div><div id="errorsList" class="list"></div></section>
    <section class="detail" id="page-more">
     <div class="pane-header"><div class="pane-title">도구</div><span class="pill">LOCAL HUB</span></div>
     <div class="action-list">
@@ -110,172 +140,340 @@
   </main>
  </div>
 </div>
+<div id="detailOverlay" class="detail-overlay" role="dialog" aria-modal="true" aria-label="체결 상세" hidden><div class="detail-sheet"><div class="detail-sheet-header"><span id="detailTitle">상세</span><button id="detailClose" class="btn-icon" aria-label="닫기">×</button></div><div id="detailBody"></div></div></div>
 <script>
 (function(){
 'use strict';
-var state={market:'stock',status:null,records:{},selectedStrategy:'at',page:'home'};
+var S={market:'stock',status:null,records:{},strategy:'at',page:'home'};
+var seq={stock:[{key:'at',label:'기준봉'},{key:'ma',label:'MA'},{key:'close',label:'종가베팅'},{key:'gmo',label:'수급매매'}],coin:[{key:'general',label:'기준봉'},{key:'ma',label:'MA'}]};
+var coinNames={BTC:'비트코인',ETH:'이더리움',XRP:'리플',SOL:'솔라나',DOGE:'도지코인',ADA:'에이다',AVAX:'아발란체',DOT:'폴카닷',LINK:'체인링크',TRX:'트론',BCH:'비트코인캐시',ETC:'이더리움클래식',SUI:'수이',XLM:'스텔라루멘',HBAR:'헤데라',SHIB:'시바이누',APT:'앱토스',NEAR:'니어프로토콜',ATOM:'코스모스',FIL:'파일코인',LTC:'라이트코인'};
 var $=function(id){return document.getElementById(id);};
-var marketNames={stock:['AT','종가'],coin:['B','MA']};
-var bucketRecords={};
-function validData(record){return record && record.ok===true && record.exists===true && record.data && typeof record.data==='object' ? record.data : {};}
-function n(v,suffix){
- if(v===null||v===undefined||v==='')return '—';
- var x=Number(v);if(!Number.isFinite(x))return '—';
- var dec=Math.abs(x)>=100?0:Math.abs(x)>=1?1:2;
- return x.toLocaleString('ko-KR',{maximumFractionDigits:dec})+(suffix||'');
+function pick(o,fields){if(!o || typeof o!=='object')return null;for(var i=0;i<fields.length;i++){var v=o[fields[i]];if(v!==undefined&&v!==null&&v!=='')return v;}return null;}
+function num(v,suffix){if(v===null||v===undefined||v==='')return '—';var n=Number(v);if(!Number.isFinite(n))return '—';return n.toLocaleString('ko-KR',{maximumFractionDigits:Math.abs(n)>=100?0:Math.abs(n)>=1?1:2})+(suffix||'');}
+function sign(el,value){if(!el)return;el.classList.remove('positive','negative');var n=Number(value);if(value===null||value===undefined||value===''||!Number.isFinite(n))return;if(n>0)el.classList.add('positive');if(n<0)el.classList.add('negative');}
+function txt(id,value){if($(id))$(id).textContent=value;}
+function elt(tag,cl,content){var e=document.createElement(tag);if(cl)e.className=cl;if(content!==undefined)e.textContent=String(content);return e;}
+function record(k){var r=S.records[k];return r&&r.ok===true&&r.exists===true&&r.data&&typeof r.data==='object'?r.data:{};}
+function recordName(bucket){
+ if(S.market==='coin')return (S.strategy==='ma'?'ma':'general')+bucket;
+ return (S.strategy==='close'?'cw':'at')+bucket;
 }
-function shade(el,v){if(!el)return;el.classList.remove('positive','negative');if(v===null||v===undefined||v==='')return;var x=Number(v);if(Number.isFinite(x)){if(x>0)el.classList.add('positive');if(x<0)el.classList.add('negative');}}
-function value(o,keys){for(var i=0;i<keys.length;i++){if(o && Object.prototype.hasOwnProperty.call(o,keys[i]) && o[keys[i]]!==null && o[keys[i]]!=='')return o[keys[i]];}return null;}
-function text(id,content){var e=$(id);if(e)e.textContent=content;}
-function el(tag,cl,t){var e=document.createElement(tag);if(cl)e.className=cl;if(t!==undefined)e.textContent=t;return e;}
-function list(container,rows,kind){
- container.textContent='';
- if(!Array.isArray(rows)||rows.length===0){
-  var empty=el('div','empty');empty.appendChild(el('span','empty-icon','◌'));empty.appendChild(el('span','', '표시할 데이터 없음'));container.appendChild(empty);return;
+function tagOf(row){return String(pick(row,['tf','strategy','engine','strategy_name'])||'').toLowerCase();}
+function belongs(row){
+ if(S.market==='coin'||S.strategy==='close')return true;
+ var tag=tagOf(row),ma=/(^ma$|^ma[0-9._-]|[_ -]ma|ma[_ -]|이평|moving.average)/i.test(tag);
+ var gmo=/(gmo|수급)/i.test(tag);
+ var close=/(close|종가|cw)/i.test(tag);
+ if(S.strategy==='ma')return ma;
+ if(S.strategy==='gmo')return gmo;
+ return !ma&&!gmo&&!close;
+}
+function arr(v){return Array.isArray(v)?v:[];}
+function filteredRows(raw){return arr(raw).filter(belongs);}
+function ledger(){
+ var source=record(recordName('Ledger'));
+ if(!Object.keys(source).length)return {};
+ // Original stock MA engine uses a different SQLite database. It is carried
+ // as a read-only nested snapshot within stock/at, since the installed hub
+ // currently allows only stock/at, stock/cw and stock/shared record keys.
+ if(S.market==='stock'&&S.strategy==='ma'&&source.ma_subledger&&typeof source.ma_subledger==='object'){
+  return Object.assign({},source.ma_subledger);
  }
- rows.slice(0,80).forEach(function(row){
-  if(!row || typeof row!=='object')return;
-  var name=value(row,kind==='positions'?['name','symbol','ticker','market']:kind==='pending'?['name','symbol','ticker','market']:['name','symbol','ticker','action','type']);
-  var hint=value(row,kind==='executions'?['side','filled_at','time','at']:kind==='research'?['decision','at','tf']:['stage','status','tf','time']);
-  var amt=null;
-  if(kind==='positions')amt=value(row,['net_pnl','paper_pnl','pnl','profit_rate','pnl_pct']);
-  else if(kind==='pending'||kind==='research')amt=value(row,['score','price','target_price']);
-  else if(kind==='executions'){
-   // BUY has no realized profit. A SELL must not silently show its price as profit.
-   var isSell=String(value(row,['side'])||'').toUpperCase()==='SELL';
-   amt=isSell?value(row,['net_profit','net_realized','pnl','net_pnl']):null;
-  }
-  var outer=el('div','list-row');var left=el('div');left.appendChild(el('div','name',name===null?'—':String(name).slice(0,45)));left.appendChild(el('div','hint',hint===null?'':String(hint).slice(0,72)));outer.appendChild(left);
-  var right=el('div','num',amt===null?'—':n(amt,kind==='positions'&&String(value(row,['profit_rate','pnl_pct']))===String(amt)?'%':''));shade(right,amt);
-  if(kind==='executions' && String(value(row,['side'])||'').toUpperCase()==='SELL')right.setAttribute('aria-label','순수익');
-  outer.appendChild(right);container.appendChild(outer);
+ var copy=Object.assign({},source);
+ if(S.market==='stock'&&S.strategy!=='close'){
+  ['positions','pending','executions','holdings','fills','transactions'].forEach(function(k){if(Array.isArray(source[k]))copy[k]=filteredRows(source[k]);});
+  copy.positions_count=Array.isArray(source.positions)?copy.positions.length:null;
+  copy.pending_count=Array.isArray(source.pending)?copy.pending.length:null;
+  // A combined AT account may contain different strategies.
+  // Never use aggregate account profit as a single sub-strategy's performance.
+  ['total_pnl','net_pnl','profit','total_profit','realized_pnl','realized_profit',
+    'unrealized_pnl','unrealized_profit','holding_pnl','pnl_pct','profit_rate','return_pct','total_return_pct',
+    'win_rate','win_rate_pct','winning_pct','equity_curve','profit_series','balance_history'].forEach(function(k){delete copy[k];});
+  var accounts=arr(source.accounts).filter(belongs),realized=0,known=false;
+  accounts.forEach(function(a){var v=pick(a,['realized_pnl','realized']);if(v!==null&&Number.isFinite(Number(v))){realized+=Number(v);known=true;}});
+  if(known)copy.realized_pnl=realized;
+ }
+ return copy;
+}
+function bucketData(bucket){
+ var src=record(recordName(bucket));
+ if(S.market==='stock'&&S.strategy!=='close'&&Array.isArray(src.items))return Object.assign({},src,{items:src.items.filter(belongs)});
+ return src;
+}
+function strategyTitle(){
+ var item=seq[S.market].find(function(x){return x.key===S.strategy;});
+ return item?item.label:'기준봉';
+}
+function formatKST(value,dayOnly){
+ if(value===null||value===undefined||value==='')return '미기록';
+ var raw=String(value).trim(),d=null;
+ if(/^\d{10,13}$/.test(raw)){
+  if(raw.length===10)d=new Date(Number(raw)*1000);
+  else if(raw.length===13)d=new Date(Number(raw));
+ }
+ var compact=raw.match(/^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})?(Z|[+-]\d{2}:?\d{2})?$/);
+ if(compact){
+  var iso=compact[1]+'-'+compact[2]+'-'+compact[3]+'T'+compact[4]+':'+compact[5]+':'+(compact[6]||'00');
+  if(compact[7]){var zone=compact[7];if(/^[+-]\d{4}$/.test(zone))zone=zone.slice(0,3)+':'+zone.slice(3);d=new Date(iso+zone);}
+  else raw=iso;
+ }
+ if(!d && /^\d{4}-\d{2}-\d{2}T/.test(raw) && /(Z|[+-]\d{2}:?\d{2})$/i.test(raw))d=new Date(raw);
+ if(d && !isNaN(d.getTime())){
+  try {
+   var fmt=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:dayOnly?undefined:'2-digit',minute:dayOnly?undefined:'2-digit',hour12:false,hourCycle:'h23'});
+   var parts=fmt.formatToParts(d),get=function(t){var p=parts.find(function(x){return x.type===t;});return p?p.value:'00';};
+   return get('year')+'-'+get('month')+'-'+get('day')+(dayOnly?'':' '+get('hour')+':'+get('minute'));
+  }catch(e){return '시각 확인 필요';}
+ }
+ if(/^\d{4}-\d{2}-\d{2}/.test(raw))return dayOnly?raw.slice(0,10):raw.slice(0,16).replace('T',' ');
+ if(/^\d{8}$/.test(raw))return raw.slice(0,4)+'-'+raw.slice(4,6)+'-'+raw.slice(6);
+ return '시각 확인 필요';
+}
+function previousDate(v){
+ var day=formatKST(v,true);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return '미기록';
+ var d=new Date(day+'T12:00:00+09:00');if(isNaN(d.getTime()))return '미기록';
+ d.setUTCDate(d.getUTCDate()-1);return formatKST(d,true);
+}
+function referenceLabel(){return S.strategy==='close'?'매수 시각':S.strategy==='gmo'?'사건 발생일':'기준봉 시각';}
+function referenceTime(row){
+ var v=null;
+ if(S.strategy==='close'){
+  v=pick(row,['buy_at','entry_at','entry_ts','buy_ts','first_buy_at']);
+  if(v===null&&String(pick(row,['side'])||'').toUpperCase()==='BUY')v=pick(row,['at','ts','filled_at']);
+ }else if(S.strategy==='gmo'){
+  v=pick(row,['event_date','gmo_event_date','event_day']);
+  if(v!==null)return formatKST(v,true);
+  v=pick(row,['buy_at','entry_at','entry_ts','buy_ts']);
+  if(v===null&&String(pick(row,['side'])||'').toUpperCase()==='BUY')v=pick(row,['at','ts']);
+  return v===null?'미기록':previousDate(v);
+ }else{
+  v=pick(row,['ref_ts','reference_ts','reference_at','selected_ref_at','bar_at','base_candle_time']);
+ }
+ return formatKST(v,false);
+}
+function nameOf(row){
+ var name=String(pick(row,['name','korean_name','symbol','ticker','code','market'])||'').trim();
+ if(S.market!=='coin')return name||'종목 미기록';
+ if(/[가-힣]/.test(name))return name;
+ var sym=String(pick(row,['symbol','market','code','ticker'])||name).replace(/^KRW-/i,'').replace(/^BTC-/i,'').replace(/^USDT-/i,'').toUpperCase();
+ return coinNames[sym]||'한글명 미등록 ('+sym.slice(0,14)+')';
+}
+function reasonKorean(row,action){
+ var raw=String(pick(row,['reason','exit_reason','sell_reason','buy_reason','decision','cause'])||'').trim();
+ if(!raw)return '근거 미기록';
+ if(/[가-힣]/.test(raw))return raw.replace(/[\r\n\t ]+/g,' ').slice(0,95);
+ var r=raw.toUpperCase(),parts=[];
+ if(/RECOVER|REBOUND/.test(r))parts.push('회복매도');
+ if(/FIRST|1ST|_1\b|PARTIAL/.test(r))parts.push('1차 기준');
+ if(/HOLD|DURATION/.test(r)&&/EXPIRE|END|TIME|LIMIT/.test(r))parts.push('홀딩기간 만료');
+ if(/TRAIL/.test(r))parts.push('추적매도');
+ if(/STOP|CUT|LOSS/.test(r))parts.push('손절 기준 도달');
+ if(/TAKE|TARGET|PROFIT/.test(r))parts.push('목표수익 도달');
+ if(/TIMEOUT|EXPIRED|EXPIRY/.test(r)&&!parts.some(function(x){return x.indexOf('만료')>=0;}))parts.push('유효시간 만료');
+ if(/MANUAL|USER/.test(r))parts.push('사용자 지정');
+ if(/BREAK|LOW|MID/.test(r)&&action==='SELL')parts.push('가격 기준 이탈');
+ if(/SIGNAL|ENTRY|BUY/.test(r)&&action==='BUY')parts.push('매수조건 충족');
+ return parts.length?parts.join(' '):'근거 코드 확인 필요';
+}
+function valueLine(container,key,value){
+ var line=elt('div','detail-entry'),k=elt('div','detail-key',key),v=elt('div','detail-val',value);
+ line.appendChild(k);line.appendChild(v);container.appendChild(line);
+}
+function openDetail(row,kind){
+ var p=$('detailOverlay'),out=$('detailBody');
+ if(!p||!out)return;
+ out.textContent='';txt('detailTitle',nameOf(row));
+ valueLine(out,'전략',strategyTitle());
+ valueLine(out,referenceLabel(),referenceTime(row));
+ if(kind==='executions'){
+  var side=String(pick(row,['side'])||'').toUpperCase();
+  valueLine(out,'체결',side==='BUY'?'매수':side==='SELL'?'매도':'체결');
+  valueLine(out,'체결 시각',formatKST(pick(row,['at','ts','filled_at']),false));
+  valueLine(out,'수량',num(pick(row,['qty','filled_qty'])));
+  valueLine(out,'체결 가격',num(pick(row,['price','fill_price'])));
+  if(side==='SELL')valueLine(out,'순수익',num(pick(row,['net_profit','net_realized','net_pnl','pnl'])));
+  valueLine(out,side==='BUY'?'매수근거':'매도근거',reasonKorean(row,side));
+ } else if(kind==='positions'){
+  valueLine(out,'보유 수량',num(pick(row,['qty','quantity'])));
+  valueLine(out,'매수가',num(pick(row,['entry_price','avg_buy_price'])));
+  valueLine(out,'현재가',num(pick(row,['mark','last_price'])));
+  valueLine(out,'평가손익',num(pick(row,['net_pnl','pnl','paper_pnl'])));
+ } else if(kind==='research'){
+  valueLine(out,'기록 시각',formatKST(pick(row,['at','ts']),false));
+  valueLine(out,'점수',num(pick(row,['score'])));
+  valueLine(out,'연구근거',reasonKorean(row,'BUY'));
+ } else if(kind==='errors'){
+  valueLine(out,'발생 시각',formatKST(pick(row,['at','ts','last_seen']),false));
+  valueLine(out,'발생 횟수',num(pick(row,['count','occurrences'])));
+  valueLine(out,'오류 분류',errorCategory(row));
+ }
+ p.hidden=false;
+}
+function errorCategory(row){
+ var r=String(pick(row,['severity','error_type','code','signature','category'])||'');
+ if(/timeout|time.out/i.test(r))return '요청 시간 초과';
+ if(/auth|token|unauthor/i.test(r))return '인증 오류';
+ if(/connect|network|http|socket|dns/i.test(r))return '통신 오류';
+ if(/data|sqlite|database/i.test(r))return '장부 데이터 오류';
+ if(/order|trade|fill/i.test(r))return '주문 처리 오류';
+ return '오류 기록';
+}
+function empty(container,word){container.textContent='';var x=elt('div','empty');x.appendChild(elt('span','empty-icon','◌'));x.appendChild(elt('span','',word||'표시할 데이터 없음'));container.appendChild(x);}
+function renderList(id,items,kind){
+ var c=$(id);if(!c)return;
+ if(!Array.isArray(items)||items.length===0){empty(c,'기록 없음');return;}
+ c.textContent='';
+ items.slice(0,100).forEach(function(r){
+  if(!r||typeof r!=='object')return;
+  var side=String(pick(r,['side'])||'').toUpperCase();
+  var main=kind==='errors'?errorCategory(r):nameOf(r);
+  var sub=kind==='executions'?(side==='BUY'?'매수':side==='SELL'?'매도':'체결'):kind==='errors'?'발생기록':'';
+  var ref=kind==='errors'?'발생 시각':referenceLabel();
+  var time=kind==='errors'?formatKST(pick(r,['at','ts','last_seen']),false):referenceTime(r);
+  var val=null,suffix='';
+  if(kind==='positions'){val=pick(r,['net_pnl','pnl','paper_pnl']);if(val===null){val=pick(r,['profit_rate','pnl_pct']);suffix='%';}}
+  if(kind==='executions'&&side==='SELL')val=pick(r,['net_profit','net_realized','net_pnl','pnl']);
+  if(kind==='pending'||kind==='research')val=pick(r,['score','price','target_price']);
+  if(kind==='errors')val=pick(r,['count','occurrences']);
+  var row=elt('div','list-row'),left=elt('div'),right=elt('div','right-col');
+  left.style.minWidth='0';left.style.flex='1';
+  left.appendChild(elt('div','name',main));
+  if(sub)left.appendChild(elt('div','hint',sub));
+  left.appendChild(elt('div','row-meta',ref+' '+time));
+  if(kind==='executions')left.appendChild(elt('div','row-why',(side==='BUY'?'매수근거: ':'매도근거: ')+reasonKorean(r,side)));
+  if(kind==='research')left.appendChild(elt('div','row-why',reasonKorean(r,'BUY')));
+  right.appendChild(elt('div','num',num(val,suffix)));sign(right.firstChild,val);
+  row.appendChild(left);row.appendChild(right);
+  row.addEventListener('click',function(){openDetail(r,kind);});
+  c.appendChild(row);
  });
 }
 function drawGraph(series){
- var box=$('graph');box.textContent='';
- if(!Array.isArray(series)||series.length<2){box.appendChild(el('div','missing','집계 전'));return;}
- var points=series.map(function(x){return typeof x==='number'?x:(x&&typeof x==='object'?Number(value(x,['value','equity','balance','pnl'])):NaN);}).filter(Number.isFinite).slice(-150);
- if(points.length<2){box.appendChild(el('div','missing','집계 전'));return;}
- var min=Math.min.apply(null,points),max=Math.max.apply(null,points),range=Math.max(.00001,max-min);
- var coords=points.map(function(v,i){return [10+580*i/(points.length-1),94-82*(v-min)/range];});
- var ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 600 105');svg.setAttribute('preserveAspectRatio','none');
- [25,60,95].forEach(function(y){var line=document.createElementNS(ns,'line');line.setAttribute('x1','0');line.setAttribute('y1',y);line.setAttribute('x2','600');line.setAttribute('y2',y);svg.appendChild(line);});
- var d=coords.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ');
- var area=document.createElementNS(ns,'path');area.setAttribute('class','area');area.setAttribute('d',d+' L590 105 L10 105 Z');svg.appendChild(area);
- var line2=document.createElementNS(ns,'path');line2.setAttribute('class','line');line2.setAttribute('d',d);svg.appendChild(line2);
- var dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',coords[coords.length-1][0]);dot.setAttribute('cy',coords[coords.length-1][1]);dot.setAttribute('r','4');svg.appendChild(dot);
+ var box=$('graph');if(!box)return;box.textContent='';
+ if(!Array.isArray(series)||series.length<2){box.appendChild(elt('div','missing','수익 곡선 미기록'));return;}
+ var vals=series.map(function(r){return Number(typeof r==='number'?r:pick(r,['equity','balance','value','pnl']));}).filter(Number.isFinite).slice(-140);
+ if(vals.length<2){box.appendChild(elt('div','missing','수익 곡선 미기록'));return;}
+ var low=Math.min.apply(null,vals),high=Math.max.apply(null,vals),span=Math.max(.00001,high-low);
+ var coords=vals.map(function(x,i){return [10+580*i/(vals.length-1),95-80*(x-low)/span];});
+ var ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+ svg.setAttribute('viewBox','0 0 600 105');svg.setAttribute('preserveAspectRatio','none');
+ [25,60,95].forEach(function(y){var l=document.createElementNS(ns,'line');l.setAttribute('x1',0);l.setAttribute('x2',600);l.setAttribute('y1',y);l.setAttribute('y2',y);svg.appendChild(l);});
+ var path=coords.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ');
+ var area=document.createElementNS(ns,'path');area.setAttribute('class','area');area.setAttribute('d',path+'L590 105 L10 105Z');svg.appendChild(area);
+ var line=document.createElementNS(ns,'path');line.setAttribute('class','line');line.setAttribute('d',path);svg.appendChild(line);
  box.appendChild(svg);
 }
-function currentLedger(){var rec=state.records.sharedLedger;return validData(rec);}
-function statusOf(){return state.status && state.status.ok ? state.status : null;}
-function currentMode(){
- var s=statusOf();var o=s?s[state.market]:null;
- if(!o || !o.ok)return '—';
- if(o.lease_active && o.active_device==='pc')return 'PC 실행';
- if(o.lease_active && o.active_device==='phone')return '폰 실행';
- if(o.desired==='off')return '정지';
+function navStrategies(){
+ var cont=$('strategySwitch');cont.textContent='';
+ seq[S.market].forEach(function(x){
+  var b=elt('button','strategy-tab',x.label);b.setAttribute('role','tab');b.setAttribute('aria-selected',x.key===S.strategy?'true':'false');
+  b.addEventListener('click',function(){setStrategy(x.key);});cont.appendChild(b);
+ });
+}
+function setStrategy(key){
+ if(!seq[S.market].some(function(x){return x.key===key;}))return;
+ S.strategy=key;navStrategies();render();
+ var el=$('view');if(el)el.scrollTop=0;
+}
+function displayMode(){
+ var state=S.status&&S.status.ok?S.status[S.market]:null;
+ if(!state||!state.ok)return '—';
+ if(state.lease_active&&state.active_device==='phone')return '폰 실행';
+ if(state.lease_active&&state.active_device==='pc')return 'PC 실행';
+ if(state.desired==='off')return '정지';
  return '대기';
 }
-function strategyKey(label){return state.market==='stock'?(label==='AT'?'at':'cw'):(label==='B'?'general':'ma');}
-function buildStrategies(targetId){
- var target=$(targetId);target.textContent='';
- marketNames[state.market].forEach(function(label){
-  var key=strategyKey(label);var d=validData(state.records[key+'Ledger']);
-  var profit=value(d,['total_pnl','pnl','realized_pnl','profit']);
-  var count=value(d,['positions_count','open_count']);
-  var card=el('article','card strategy');var left=el('div');left.appendChild(el('div','strat-title',label));left.appendChild(el('div','strat-note', count===null?'연동 대기':n(count)+' 보유'));card.appendChild(left);
-  var right=el('div','value',n(profit));shade(right,profit);card.appendChild(right);target.appendChild(card);
- });
+function renderAccounts(root){
+ var c=$(root);if(!c)return;c.textContent='';
+ var data=ledger(),title=strategyTitle(),balance=pick(data,['realized_pnl','realized_profit','total_pnl']);
+ var card=elt('article','card strategy'),left=elt('div'),right=elt('div','value',num(balance));
+ left.appendChild(elt('div','strat-title',title));left.appendChild(elt('div','strat-note',data.schema?'서버 장부':'장부 미연동'));
+ card.appendChild(left);card.appendChild(right);sign(right,balance);c.appendChild(card);
 }
 function redraw(){
- var s=statusOf(),o=s?s[state.market]:null;
- var connected=!!s;var pill=$('syncPill');pill.className='sync '+(connected?'online':'offline');
- text('syncName',connected?'서버 연결':'서버 연결 안 됨');
- text('deviceMode',currentMode());text('detailSync',connected?'정상':'미연결');text('detailDevice',currentMode());text('strategyMode',currentMode());
- var ledger=currentLedger(),pnl=value(ledger,['total_pnl','net_pnl','profit','total_profit']);
- // Prefer the authoritative account total; never infer gains from fill prices.
- var accountRealized=value(ledger,['realized_pnl','realized_profit']);
- var accountHolding=value(ledger,['unrealized_pnl','unrealized_profit','holding_pnl']);
- var rawPositionRows=value(ledger,['positions','holdings']);
- var rawPositionCount=value(ledger,['positions_count','holdings_count']);
- var confirmedFlat=rawPositionCount!==null && Number(rawPositionCount)===0 &&
-     Array.isArray(rawPositionRows) && rawPositionRows.length===0;
- if(confirmedFlat && accountHolding===null)accountHolding=0;
- if(pnl===null && accountRealized!==null && accountHolding!==null)
-     pnl=Number(accountRealized)+Number(accountHolding);
- var pnlRate=value(ledger,['total_return_pct','pnl_pct','profit_rate','return_pct']);
- text('pnl',n(pnl));shade($('pnl'),pnl);text('pnlPct',n(pnlRate,'%'));shade($('pnlPct'),pnlRate);
- var realized=accountRealized;var unreal=accountHolding;
- text('realized',n(realized));text('unrealized',n(unreal));shade($('realized'),realized);shade($('unrealized'),unreal);
- var win=value(ledger,['win_rate','win_rate_pct','winning_pct']);text('winRate',n(win,'%'));
- var positions=value(ledger,['positions','holdings']);var pending=value(ledger,['pending','pending_orders','candidates']);
- var pcount=value(ledger,['positions_count','holdings_count']);var dcount=value(ledger,['pending_count']);
- if(pcount===null && Array.isArray(positions))pcount=positions.length;
- if(dcount===null && Array.isArray(pending))dcount=pending.length;
- text('positionPending',n(pcount)+' / '+n(dcount));text('positionCount',n(pcount));text('pendingCount',n(dcount));
- var fraction=value(ledger,['invested_pct','utilization_pct']);$('accountBar').style.width=fraction!==null?Math.max(0,Math.min(100,Number(fraction)))+'%':'0%';text('accountShare',n(fraction,'%'));
- drawGraph(value(ledger,['equity_curve','profit_series','balance_history']));
- list($('positionsList'),positions,'positions');list($('pendingList'),pending,'pending');list($('executionsList'),value(ledger,['executions','fills','transactions']),'executions');
- var homePositions=$('homePositions'),homeExecutions=$('homeExecutions');
- if(homePositions)list(homePositions,Array.isArray(positions)?positions.slice(0,5):null,'positions');
- var recent=value(ledger,['executions','fills','transactions']);
- if(homeExecutions)list(homeExecutions,Array.isArray(recent)?recent.slice(0,5):null,'executions');
- buildStrategies('strategyGrid');buildStrategies('strategyDetail');
- var researchRows=[];
- var sharedItems=value(validData(state.records.sharedResearch),['items','results','research']);
- if(Array.isArray(sharedItems))researchRows=researchRows.concat(sharedItems);
- var firstResearch=state.market==='stock'?'atResearch':'generalResearch';
- var secondResearch=state.market==='stock'?'cwResearch':'maResearch';
- [firstResearch,secondResearch].forEach(function(key){
-  var items=value(validData(state.records[key]),['items','results','research']);
-  if(Array.isArray(items))researchRows=researchRows.concat(items);
- });
- list($('researchList'),researchRows,'research');
- var control=$('strategyControls');control.textContent='';
- marketNames[state.market].forEach(function(label){
-  var key=strategyKey(label);var tab=el('button','tab'+(state.selectedStrategy===key?' active':''),label);tab.addEventListener('click',function(){state.selectedStrategy=key;drawStrategyRaw();redraw();});control.appendChild(tab);
- });
- drawStrategyRaw();
-}
-function drawStrategyRaw(){
- var target=$('strategyRaw');target.textContent='';
- var d=validData(state.records[state.selectedStrategy+'Ledger']);
- if(!Object.keys(d).length){target.appendChild(el('div','empty','동기화된 운용 데이터 없음'));return;}
- var keys=Object.keys(d).filter(function(k){return !Array.isArray(d[k]) && d[k]!==null && typeof d[k]!=='object';}).slice(0,12);
- keys.forEach(function(k){var row=el('div','list-row');row.appendChild(el('span','name',k));row.appendChild(el('span','num',String(d[k]).slice(0,70)));target.appendChild(row);});
- if(!keys.length)target.appendChild(el('div','empty','수치 데이터 없음'));
+ var mode=displayMode();txt('deviceMode',mode);txt('detailDevice',mode);txt('strategyMode',mode);
+ var online=!!(S.status&&S.status.ok),pill=$('syncPill');if(pill)pill.className='sync '+(online?'online':'offline');
+ txt('syncName',online?'서버 연결':'서버 미연결');
+ txt('detailSync',online?'정상':'미연결');
+ txt('strategyCaption',strategyTitle()+' / OVERVIEW');
+ var l=ledger(),positions=pick(l,['positions','holdings']),pending=pick(l,['pending','pending_orders','candidates']),executions=pick(l,['executions','fills','transactions']);
+ var total=pick(l,['total_pnl','net_pnl','profit','total_profit']);
+ var realized=pick(l,['realized_pnl','realized_profit']),unreal=pick(l,['unrealized_pnl','unrealized_profit','holding_pnl']);
+ if(l.positions_count===0&&Array.isArray(positions)&&positions.length===0&&unreal===null)unreal=0;
+ if(total===null&&realized!==null&&unreal!==null)total=Number(realized)+Number(unreal);
+ txt('pnl',num(total));sign($('pnl'),total);
+ var rate=pick(l,['total_return_pct','pnl_pct','profit_rate','return_pct']);txt('pnlPct',num(rate,'%'));sign($('pnlPct'),rate);
+ txt('realized',num(realized));sign($('realized'),realized);txt('unrealized',num(unreal));sign($('unrealized'),unreal);
+ txt('winRate',num(pick(l,['win_rate','win_rate_pct','winning_pct']),'%'));
+ var pcount=pick(l,['positions_count','holdings_count']),wcount=pick(l,['pending_count']);
+ if(pcount===null&&Array.isArray(positions))pcount=positions.length;
+ if(wcount===null&&Array.isArray(pending))wcount=pending.length;
+ txt('positionPending',num(pcount)+' / '+num(wcount));txt('positionCount',num(pcount));txt('pendingCount',num(wcount));
+ var share=pick(l,['invested_pct','utilization_pct']);
+ txt('accountShare',num(share,'%'));var bar=$('accountBar');if(bar)bar.style.width=share!==null?Math.max(0,Math.min(100,Number(share)))+'%':'0%';
+ drawGraph(pick(l,['equity_curve','profit_series','balance_history']));
+ renderList('positionsList',positions,'positions');renderList('pendingList',pending,'pending');renderList('executionsList',executions,'executions');
+ renderList('homePositions',Array.isArray(positions)?positions.slice(0,5):null,'positions');
+ renderList('homeExecutions',Array.isArray(executions)?executions.slice(0,5):null,'executions');
+ var r=bucketData('Research'),e=bucketData('Errors');
+ renderList('researchList',r.items,'research');renderList('errorsList',e.items,'errors');
+ renderAccounts('strategyGrid');renderAccounts('strategyDetail');
+ var controls=$('strategyControls');if(controls){controls.textContent='';seq[S.market].forEach(function(x){
+  var b=elt('button','tab'+(x.key===S.strategy?' active':''),x.label);b.addEventListener('click',function(){setStrategy(x.key);});controls.appendChild(b);
+ });}
+ var raw=$('strategyRaw');if(raw){raw.textContent='';if(!Object.keys(l).length)empty(raw,'운용 장부 미연동');else {
+  [['출처',l.origin==='pc'?'PC 이관':'폰 원장'],['기록 유형',l.source_mode==='paper'?'모의':'서버 장부'],['보유',num(pcount)],['대기',num(wcount)]].forEach(function(p){
+   var item=elt('div','list-row');item.appendChild(elt('span','name',p[0]));item.appendChild(elt('span','num',p[1]));raw.appendChild(item);
+  });
+ }}
 }
 function go(page){
- if(!document.getElementById('page-'+page))return;
- state.page=page;Array.from(document.querySelectorAll('.detail')).forEach(function(e){e.classList.toggle('active',e.id==='page-'+page);});
- Array.from(document.querySelectorAll('.nav')).forEach(function(e){e.classList.toggle('active',e.dataset.page===page);});
+ if(!document.getElementById('page-'+page))return;S.page=page;
+ document.querySelectorAll('.detail').forEach(function(e){e.classList.toggle('active',e.id==='page-'+page);});
+ document.querySelectorAll('.nav').forEach(function(e){e.classList.toggle('active',e.dataset.page===page);});
  $('view').scrollTop=0;redraw();
 }
-function action(id){
- if(!window.Artitrade || typeof window.Artitrade.action!=='function')return;
+function handleAction(id){
+ if(id==='refresh'){refresh();return;}
+ if(!window.Artitrade||typeof window.Artitrade.action!=='function')return;
+ if(id==='export:errors'||id==='export:research')id=id+':'+S.strategy;
  window.Artitrade.action(id);
 }
+function refresh(){txt('syncName','조회 중');if(window.Artitrade&&typeof window.Artitrade.refresh==='function')window.Artitrade.refresh();}
 document.querySelectorAll('[data-page]').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.page);});});
-document.querySelectorAll('[data-act]').forEach(function(b){b.addEventListener('click',function(){if(b.dataset.act==='refresh'){refresh();return;}action(b.dataset.act);});});
-function refresh(){text('syncName','확인 중');if(window.Artitrade && typeof window.Artitrade.refresh==='function')window.Artitrade.refresh();}
+document.querySelectorAll('[data-act]').forEach(function(b){b.addEventListener('click',function(){handleAction(b.dataset.act);});});
+$('detailClose').addEventListener('click',function(){$('detailOverlay').hidden=true;});
+$('detailOverlay').addEventListener('click',function(e){if(e.target===$('detailOverlay'))$('detailOverlay').hidden=true;});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')$('detailOverlay').hidden=true;});
+var touchStart=null;
+$('view').addEventListener('touchstart',function(e){if(e.touches.length!==1||!$('detailOverlay').hidden)return;var t=e.touches[0];touchStart={x:t.clientX,y:t.clientY};},{passive:true});
+$('view').addEventListener('touchend',function(e){
+ if(!touchStart||e.changedTouches.length!==1){touchStart=null;return;}
+ var t=e.changedTouches[0],dx=t.clientX-touchStart.x,dy=t.clientY-touchStart.y;touchStart=null;
+ if(Math.abs(dx)<58||Math.abs(dx)<Math.abs(dy)*1.5)return;
+ var items=seq[S.market],index=items.findIndex(function(x){return x.key===S.strategy;});
+ // Left swipe advances to MA; right swipe returns to the previous account.
+ var next=index+(dx<0?1:-1);
+ if(next>=0&&next<items.length)setStrategy(items[next].key);
+},{passive:true});
 window.__ARTI_UPDATE=function(raw){
  try{
-  var incoming=JSON.parse(raw);state.market=incoming.market==='coin'?'coin':'stock';
-  state.status=incoming.status&&incoming.status.ok?incoming.status:null;
-  state.records=incoming.records||{};
-  state.selectedStrategy=strategyKey(marketNames[state.market][0]);
-  text('marketSub',state.market==='stock'?'STOCK / AT + 종가':'COIN / B + MA');
-  text('marketChip',state.market==='stock'?'KOSPI · KOSDAQ':'DIGITAL ASSETS');
-  redraw();
- }catch(error){text('syncName','조회 오류');}
+  var packet=JSON.parse(raw),market=packet.market==='coin'?'coin':'stock';
+  if(market!==S.market){S.market=market;S.strategy=market==='stock'?'at':'general';}
+  S.status=packet.status&&packet.status.ok?packet.status:null;S.records=packet.records||{};
+  txt('marketSub',S.market==='stock'?'STOCK / 기준봉 · MA · 종가 · 수급':'COIN / 기준봉 · MA');
+  txt('marketChip',S.market==='stock'?'국내 주식':'가상자산');
+  navStrategies();redraw();
+ }catch(error){txt('syncName','조회 오류');}
 };
-if(window.Artitrade && typeof window.Artitrade.market==='function'){
- var market=window.Artitrade.market();state.market=market==='coin'?'coin':'stock';
- text('marketSub',state.market==='stock'?'STOCK / AT + 종가':'COIN / B + MA');
- text('marketChip',state.market==='stock'?'KOSPI · KOSDAQ':'DIGITAL ASSETS');
- state.selectedStrategy=strategyKey(marketNames[state.market][0]);
+if(window.Artitrade&&typeof window.Artitrade.market==='function'){
+ S.market=window.Artitrade.market()==='coin'?'coin':'stock';
+ S.strategy=S.market==='stock'?'at':'general';
+ txt('marketSub',S.market==='stock'?'STOCK / 기준봉 · MA · 종가 · 수급':'COIN / 기준봉 · MA');
+ txt('marketChip',S.market==='stock'?'국내 주식':'가상자산');
 }
-redraw();refresh();
+navStrategies();go('home');refresh();
 })();
 </script>
 </body></html>
