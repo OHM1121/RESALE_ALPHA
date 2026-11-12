@@ -49,7 +49,7 @@ def validated_url(raw: str) -> str:
         addr = ipaddress.ip_address(parsed.hostname)
     except ValueError as exc:
         raise ValueError("숫자형 Tailscale IP(100.64.0.0/10)를 입력하십시오.") from exc
-    if not (addr.is_loopback or addr in ipaddress.ip_network("100.64.0.0/10")):
+    if not (str(addr) == "127.0.0.1" or addr in ipaddress.ip_network("100.64.0.0/10")):
         raise ValueError("공개/Wi-Fi IP가 아닌 Tailscale IP만 허용됩니다.")
     if parsed.port != 8765 or parsed.path or parsed.query or parsed.fragment:
         raise ValueError("주소는 http://<Tailscale-IP>:8765 까지만 입력하십시오.")
@@ -458,6 +458,7 @@ def migrate(base: str, token: str, progress=lambda msg: None) -> tuple[dict, dic
     token = (token or "").strip()
     if len(token) != 64:
         raise ValueError("MSERVER 연결 토큰은 64자리여야 합니다.")
+    base = verified_connection(base, token, progress)
     archive, manifest = build_archive(progress)
     try:
         progress(summary_text(manifest))
@@ -628,15 +629,15 @@ def run_gui():
 
 def cli():
     ap = argparse.ArgumentParser(description="ARTITRADE PC ledger -> S21+ MSERVER migration")
-    ap.add_argument("--url", default=os.getenv("ARTITRADE_HUB_URL", ""))
+    ap.add_argument("--url", default=os.getenv("ARTITRADE_HUB_URL", "자동 검색"))
     ap.add_argument("--token", default=os.getenv("ARTITRADE_HUB_TOKEN", ""))
     ap.add_argument("--no-gui", action="store_true")
     args = ap.parse_args()
     if not args.no_gui:
         run_gui()
         return 0
-    if not args.url or not args.token:
-        ap.error("--url and --token (or env vars) are required with --no-gui")
+    if not args.token:
+        ap.error("--token (or ARTITRADE_HUB_TOKEN) is required with --no-gui")
     manifest, result = migrate(args.url, args.token, print)
     print(json.dumps({"manifest": manifest, "mserver": result}, ensure_ascii=False, indent=2))
     return 0
