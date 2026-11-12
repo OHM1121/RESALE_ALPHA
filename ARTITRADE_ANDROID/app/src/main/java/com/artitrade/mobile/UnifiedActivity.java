@@ -311,6 +311,23 @@ public final class UnifiedActivity extends Activity {
                 refreshAll(false);
             });
         }
+        @JavascriptInterface public String operationConfig(String market,String strategy){
+            try{
+                String key=market+"_"+strategy;
+                String raw=getSharedPreferences("unified_operation",MODE_PRIVATE).getString(key,"{}");
+                return new JSONObject(raw).toString();
+            }catch(Exception e){return "{}";}
+        }
+        @JavascriptInterface public void saveOperation(String market,String strategy,String seedRaw,String maxRaw){
+            if(!("stock".equals(market)||"coin".equals(market)))return;
+            try{
+                long seed=Long.parseLong(seedRaw),max=Long.parseLong(maxRaw);
+                if(seed<0||max<0||max>200)return;
+                JSONObject value=new JSONObject().put("seed",seed).put("max_hold",max).put("saved_at",System.currentTimeMillis());
+                getSharedPreferences("unified_operation",MODE_PRIVATE).edit()
+                    .putString(market+"_"+strategy,value.toString()).apply();
+            }catch(Exception ignored){}
+        }
     }
 
     @Override protected void onResume(){
