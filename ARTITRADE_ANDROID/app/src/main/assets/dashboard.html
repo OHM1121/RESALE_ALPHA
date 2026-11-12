@@ -77,7 +77,7 @@
  </aside>
  <div class="shell">
   <header class="top">
-   <div class="ident"><div><div class="wordmark">ARTITRADE</div><div class="sublabel" id="marketSub">STOCK / AT + CW</div></div></div>
+   <div class="ident"><div><div class="wordmark">ARTITRADE</div><div class="sublabel" id="marketSub">STOCK / 기준봉 · MA · 종가 · 수급</div></div></div>
    <div class="market" id="marketChip">KOSPI · KOSDAQ</div>
    <div class="right">
     <span class="read-only">조회 전용</span>
@@ -242,11 +242,11 @@ function referenceTime(row){
   v=pick(row,['buy_at','entry_at','entry_ts','buy_ts','first_buy_at']);
   if(v===null&&String(pick(row,['side'])||'').toUpperCase()==='BUY')v=pick(row,['at','ts','filled_at']);
  }else if(S.strategy==='gmo'){
+  // A weekend/holiday can separate the event and buy date by many days.
+  // Only the recorded original GMO candidate event date is authoritative.
+  // Never subtract one calendar day and invent an event date.
   v=pick(row,['event_date','gmo_event_date','event_day']);
-  if(v!==null)return formatKST(v,true);
-  v=pick(row,['buy_at','entry_at','entry_ts','buy_ts']);
-  if(v===null&&String(pick(row,['side'])||'').toUpperCase()==='BUY')v=pick(row,['at','ts']);
-  return v===null?'미기록':previousDate(v);
+  return v===null?'미기록':formatKST(v,true);
  }else{
   v=pick(row,['ref_ts','reference_ts','reference_at','selected_ref_at','bar_at','base_candle_time']);
  }
