@@ -217,11 +217,12 @@ def _close_full(self):
     positions=_core._db_rows(db,"SELECT * FROM positions WHERE status='OPEN' ORDER BY id DESC LIMIT 300")
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     executions=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 3000")
+    day=_core.datetime.now(_core.timezone(_core.timedelta(hours=9))).date().isoformat()
     pending=_core._db_rows(db, """SELECT s.id AS signal_id,s.ts AS ref_ts,s.ts AS at,s.strategy,s.code,s.name,
         s.decision,s.rank_no,s.trading_value_krw,s.price,s.feature_json AS reason
-        FROM signals s WHERE s.decision='BUY'
+        FROM signals s WHERE s.decision='BUY' AND substr(s.ts,1,10)=?
           AND (s.entry_result IS NULL OR s.entry_result NOT LIKE 'BOUGHT %')
-        ORDER BY s.id DESC LIMIT 500""")
+        ORDER BY s.id DESC LIMIT 500""",(day,))
     for e in executions:
         e['at']=e.get('ts');e['net_profit']=e.get('net_realized');e['strategy']='CLOSE'
     realized=sum(float(x.get('realized') or 0) for x in wallets)
@@ -288,7 +289,7 @@ def _stock_at_v19_full(self, base):
         executions=[dict(r) for r in c.execute("""SELECT e.* FROM executions e WHERE
               EXISTS(SELECT 1 FROM v19_members m WHERE m.position_id=e.position_id) OR
               EXISTS(SELECT 1 FROM v19_legacy_members l WHERE l.position_id=e.position_id)
-              ORDER BY e.id DESC LIMIT 2000""").fetchall()]
+              ORDER BY e.id DESC LIMIT 10000""").fetchall()]
         for e in executions:
             e['at']=e.get('ts');e['strategy']=e.get('tf') or 'AT'
             net=_sell_net_stock(e,posmap.get(int(e.get('position_id') or 0),{}))
@@ -337,37 +338,48 @@ def _stock_ma_full(self):
         return {}
     snap=self.stock_runner.ma.snapshot() or {}
     perf=snap.get('performance_by_frame') or {}
+    db=Path(self.root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
+    all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
+    full_exec=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 10000")
+    for x in full_exec:
+        x['at']=x.get('ts');x['strategy']='MA'
     realized=sum(float((perf.get(tf) or {}).get('realized_won') or 0) for tf in _FRAMES)
     holding=sum(float((perf.get(tf) or {}).get('holding_won') or 0) for tf in _FRAMES)
     accounts=[]
     wallets=snap.get('wallets') or {}
     for tf in _FRAMES:
         w=wallets.get(tf) or {}
+        tgt=_target_summary([p for p in all_positions if str(p.get('tf') or '')==tf],'stock_ma')
+        perf.setdefault(tf,{})
+        perf[tf].update({'actual_target_rate_pct':tgt['rate_pct'],'actual_target_evaluated':tgt['evaluated'],
+                         'actual_target_hit':tgt['hit'],'actual_target_miss':tgt['miss'],'actual_target_pending':tgt['pending']})
         accounts.append({'tf':tf,'strategy':'ma','cash':w.get('cash',0),'seed':w.get('seed',2_000_000),
                          'realized_pnl':(perf.get(tf) or {}).get('realized_won',0),
                          'unrealized_pnl':(perf.get(tf) or {}).get('holding_won',0),
                          'max_positions':w.get('max_positions',4)})
     out=dict(snap)
-    out.update({'schema':'phone-v077','origin':'phone','accounts':accounts,
+    out['executions']=full_exec
+    out['performance_by_frame']=perf
+    out.update({'schema':'phone-v078','origin':'phone','accounts':accounts,
                 'realized_pnl':round(realized),'unrealized_pnl':round(holding),
                 'total_pnl':round(realized+holding),'actual_target':_target_summary(all_positions,'stock_ma'),
                 'positions_count':len(snap.get('positions') or []),
                 'pending_count':len(snap.get('pending') or [])})
-    sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']
+    sells=[x for x in full_exec if str(x.get('side') or '').upper()=='SELL']
     out['win_rate']=(sum(1 for x in sells if float(x.get('net_profit') or 0)>0)*100.0/len(sells)) if sells else None
     return out
 
-
 def _coin_full(ledger):
     snap=ledger.snapshot() or {}
-    positions=[];pending=[];executions=[];accounts=[];performance={}
-    all_positions=[]
+    positions=[];accounts=[];performance={}
     with ledger.lock,ledger.connect() as c:
-        all_positions=[dict(x) for x in c.execute("SELECT * FROM positions WHERE status<>'RESET_B_V1' ORDER BY id DESC LIMIT 8000").fetchall()]
+        all_positions=[dict(x) for x in c.execute("SELECT * FROM positions WHERE status<>'RESET_B_V1' ORDER BY id DESC LIMIT 10000").fetchall()]
+        pending=[dict(x) for x in c.execute("SELECT * FROM orders WHERE status='PENDING' ORDER BY score DESC,created_at DESC LIMIT 3000").fetchall()]
+        executions=[dict(x) for x in c.execute("SELECT * FROM executions ORDER BY id DESC LIMIT 10000").fetchall()]
         for tf in _FRAMES:
             frame=snap.get(tf) or {}
-            pos=frame.get('positions') or [];orders=frame.get('orders') or [];exe=frame.get('executions') or []
-            positions.extend(pos);pending.extend(orders);executions.extend(exe)
+            pos=frame.get('positions') or []
+            positions.extend(pos)
             bought=int(c.execute("SELECT COUNT(*) FROM positions WHERE tf=? AND status IN ('OPEN','CLOSED')",(tf,)).fetchone()[0])
             open_count=int(c.execute("SELECT COUNT(*) FROM positions WHERE tf=? AND status='OPEN' AND qty!='0'",(tf,)).fetchone()[0])
             closed=int(c.execute("SELECT COUNT(*) FROM positions WHERE tf=? AND status='CLOSED'",(tf,)).fetchone()[0])
@@ -382,19 +394,22 @@ def _coin_full(ledger):
             accounts.append({'tf':tf,'cash':frame.get('cash',0),'seed':frame.get('seed',2_000_000),
                 'realized_pnl':round(realized),'unrealized_pnl':round(holding),
                 'max_positions':frame.get('max_positions',4)})
-    realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
-    holding=sum(float(x.get('unrealized_pnl') or 0) for x in accounts)
+    for x in positions:
+        x['ref_ts']=x.get('ref_at');x['entry_price']=x.get('entry');x['last_price']=x.get('mark')
+    for x in pending:
+        x['ref_ts']=x.get('ref_at');x['strategy']=x.get('tf')
     for e in executions:
         e['net_profit']=e.get('net_pnl');e['strategy']=e.get('tf')
+    realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
+    holding=sum(float(x.get('unrealized_pnl') or 0) for x in accounts)
     sells=[x for x in executions if str(x.get('side') or '').upper()=='SELL']
-    return {'schema':'phone-v077','origin':'phone','accounts':accounts,'positions':positions,
+    return {'schema':'phone-v078','origin':'phone','accounts':accounts,'positions':positions,
             'pending':pending,'executions':executions,'performance_by_frame':performance,
             'actual_target':_target_summary(all_positions,'coin'),
             'realized_pnl':round(realized),'unrealized_pnl':round(holding),
             'total_pnl':round(realized+holding),
             'win_rate':(sum(1 for x in sells if float(x.get('net_pnl') or 0)>0)*100.0/len(sells) if sells else None),
             'positions_count':len(positions),'pending_count':len(pending)}
-
 
 def _research_history(self, out):
     try:
@@ -433,7 +448,7 @@ def _hub_records_v078(self):
             sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']
             wins=sum(1 for x in sells if float(x.get('net_profit') or 0)>0)
             ledger={
-                'schema':'phone-v077','origin':'phone',
+                'schema':'phone-v078','origin':'phone',
                 'accounts':[{'tf':'gmo','strategy':'gmo','seed':wallet.get('seed',2_000_000),
                              'cash':wallet.get('cash',0),'realized_pnl':wallet.get('realized',0),
                              'unrealized_pnl':wallet.get('holding',0)}],
