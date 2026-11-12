@@ -182,22 +182,23 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void showShell(){
         root.removeAllViews();
+        drawerOverlay=null;
         LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(7,16,28));
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
 
-        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(12),dp(7),dp(12),dp(7));
-        TextView brand=text("ARTITRADE",17);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.08f);top.addView(brand);
-        TextView mode=text("  UNIFIED · STOCK + COIN",9);mode.setTextColor(Color.rgb(123,147,178));top.addView(mode);
-        top.addView(space(),new LinearLayout.LayoutParams(0,1,1));
+        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(12),dp(6),dp(10),dp(6));
+        LinearLayout brandBox=new LinearLayout(this);brandBox.setOrientation(LinearLayout.VERTICAL);brandBox.setGravity(Gravity.CENTER_VERTICAL);
+        TextView brand=text("ARTITRADE",18);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.08f);brandBox.addView(brand);
+        statusText=text("데이터 확인 중",9);statusText.setTextColor(Color.rgb(153,177,205));brandBox.addView(statusText);
+        top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(42),1));
 
         Button stock=button("주식","stock".equals(market),()->{market="stock";strategy="at";page="home";showShell();});
         Button coin=button("코인","coin".equals(market),()->{market="coin";strategy="general";page="home";showShell();});
-        top.addView(stock,new LinearLayout.LayoutParams(dp(72),dp(34)));
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(72),dp(34));cp.setMargins(dp(6),0,0,0);top.addView(coin,cp);
-        statusText=text("데이터 확인 중",10);statusText.setTextColor(Color.rgb(181,202,225));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,dp(34));sp.setMargins(dp(10),0,0,0);top.addView(statusText,sp);
-        clockText=text("",10);clockText.setTextColor(Color.rgb(139,164,194));LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-2,dp(34));tp.setMargins(dp(8),0,0,0);top.addView(clockText,tp);
-        Button ref=button("↻",false,()->refresh(false));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(dp(42),dp(34));rp.setMargins(dp(8),0,0,0);top.addView(ref,rp);
-        shell.addView(top,new LinearLayout.LayoutParams(-1,dp(50)));
+        top.addView(stock,new LinearLayout.LayoutParams(dp(64),dp(34)));
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(64),dp(34));cp.setMargins(dp(5),0,0,0);top.addView(coin,cp);
+        clockText=text("",9);clockText.setTextColor(Color.rgb(139,164,194));clockText.setGravity(Gravity.CENTER);LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(dp(92),dp(34));tp.setMargins(dp(7),0,0,0);top.addView(clockText,tp);
+        Button menu=button("☰",false,this::openSettingsDrawer);LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(44),dp(34));mp.setMargins(dp(4),0,0,0);top.addView(menu,mp);
+        shell.addView(top,new LinearLayout.LayoutParams(-1,dp(54)));
 
         HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);
         strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setPadding(dp(10),dp(5),dp(10),dp(5));
@@ -206,17 +207,19 @@ public final class UnifiedVisualActivity extends Activity {
 
         HorizontalScrollView nh=new HorizontalScrollView(this);nh.setHorizontalScrollBarEnabled(false);
         LinearLayout nav=new LinearLayout(this);nav.setOrientation(LinearLayout.HORIZONTAL);nav.setPadding(dp(10),dp(4),dp(10),dp(4));
-        String[][] navs={{"home","홈"},{"positions","보유"},{"pending","대기"},{"executions","체결"},{"operation","운용"},{"research","연구"},{"errors","오류"},{"more","더보기"}};
+        String[][] navs={{"home","대시보드"},{"positions","보유"},{"pending","대기"},{"executions","체결"},{"research","연구"},{"operation","운용"},{"errors","오류"}};
         for(String[] n:navs){
             Button b=button(n[1],n[0].equals(page),()->{page=n[0];showShell();});
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(78),dp(34));lp.setMargins(0,0,dp(5),0);nav.addView(b,lp);
+            int width="home".equals(n[0])?dp(92):dp(76);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(width,dp(34));lp.setMargins(0,0,dp(5),0);nav.addView(b,lp);
         }
         nh.addView(nav,new HorizontalScrollView.LayoutParams(-2,-1));shell.addView(nh,new LinearLayout.LayoutParams(-1,dp(42)));
 
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(7,16,28));
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(12),dp(10),dp(12),dp(18));
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(12),dp(10),dp(12),dp(20));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
+            if("operation".equals(page)||"errors".equals(page))return false;
             if(e.getAction()==MotionEvent.ACTION_DOWN)swipeX=e.getX();
             else if(e.getAction()==MotionEvent.ACTION_UP&&!Float.isNaN(swipeX)){
                 float dx=e.getX()-swipeX;swipeX=Float.NaN;
@@ -228,6 +231,62 @@ public final class UnifiedVisualActivity extends Activity {
         updateClock();
         render();
     }
+
+    private void openSettingsDrawer(){
+        if(drawerOverlay!=null)return;
+        FrameLayout overlay=new FrameLayout(this);overlay.setBackgroundColor(Color.argb(125,0,0,0));
+        View dim=new View(this);dim.setBackgroundColor(Color.TRANSPARENT);dim.setOnClickListener(v->closeSettingsDrawer());
+        overlay.addView(dim,new FrameLayout.LayoutParams(-1,-1));
+
+        int width=Math.min(dp(380),(int)(getResources().getDisplayMetrics().widthPixels*.88f));
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(10,22,38));
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(18),dp(18),dp(18),dp(22));scroll.addView(panel,new ScrollView.LayoutParams(-1,-2));
+        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title=text("설정",21);title.setTypeface(null,Typeface.BOLD);head.addView(title,new LinearLayout.LayoutParams(0,dp(42),1));
+        head.addView(button("닫기",false,this::closeSettingsDrawer),new LinearLayout.LayoutParams(dp(70),dp(36)));panel.addView(head);
+
+        TextView apiTitle=text("API 연결 상태",11);apiTitle.setTypeface(null,Typeface.BOLD);apiTitle.setTextColor(Color.rgb(145,170,200));apiTitle.setPadding(0,dp(16),0,dp(7));panel.addView(apiTitle);
+        LinearLayout api=card();api.addView(text(brokerStatusText("kiwoom"),11));TextView up=text(brokerStatusText("upbit"),11);up.setPadding(0,dp(7),0,0);api.addView(up);
+        LinearLayout ar=new LinearLayout(this);ar.setOrientation(LinearLayout.HORIZONTAL);ar.setPadding(0,dp(10),0,0);
+        ar.addView(button("API 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(40),1));
+        LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(40),1);prp.setMargins(dp(7),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
+
+        TextView srvTitle=text("폰 서버 · 백그라운드",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
+        LinearLayout tools=card();tools.addView(button("폰 서버 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
+        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(40));rp.setMargins(0,dp(7),0,0);tools.addView(button("실시간 엔진 재연결",false,this::restartFeeds),rp);panel.addView(tools);
+
+        FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(width,-1,Gravity.END);overlay.addView(scroll,pp);
+        drawerOverlay=overlay;root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
+        TranslateAnimation anim=new TranslateAnimation(width,0,0,0);anim.setDuration(220);scroll.startAnimation(anim);
+    }
+
+    private void closeSettingsDrawer(){
+        if(drawerOverlay==null)return;
+        View old=drawerOverlay;drawerOverlay=null;
+        TranslateAnimation anim=new TranslateAnimation(0,dp(380),0,0);anim.setDuration(180);
+        anim.setAnimationListener(new android.view.animation.Animation.AnimationListener(){
+            public void onAnimationStart(android.view.animation.Animation a){}
+            public void onAnimationRepeat(android.view.animation.Animation a){}
+            public void onAnimationEnd(android.view.animation.Animation a){try{root.removeView(old);}catch(Exception ignored){}}
+        });
+        old.startAnimation(anim);
+    }
+
+    private String brokerStatusText(String which){
+        JSONObject c=copyCache();JSONObject storage=c.optJSONObject("broker_storage");JSONObject probe=c.optJSONObject("broker_probe");
+        boolean saved=storage!=null&&storage.optBoolean("kiwoom".equals(which)?"kiwoom_saved":"upbit_saved",false);
+        String masked=storage==null?"":storage.optString("kiwoom".equals(which)?"kiwoom_key_masked":"upbit_access_masked","");
+        JSONObject p=probe==null?null:probe.optJSONObject(which);
+        String name="kiwoom".equals(which)?"키움":"업비트";
+        if(!saved)return name+" · 키 미저장";
+        if(p==null)return name+" · "+masked+" · 저장됨 · 인증검사 필요";
+        if(p.optBoolean("ok",false))return name+" · "+masked+" · 인증 정상";
+        String msg=p.optString("message","인증 실패");
+        if("upbit".equals(which)&&p.optBoolean("ip_hint",false))msg+=" · 허용 IP 확인";
+        return name+" · "+masked+" · "+msg;
+    }
+
 
     private View space(){View v=new View(this);v.setBackgroundColor(Color.TRANSPARENT);return v;}
 
