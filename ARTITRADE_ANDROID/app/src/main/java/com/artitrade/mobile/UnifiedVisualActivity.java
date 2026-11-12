@@ -964,7 +964,7 @@ public final class UnifiedVisualActivity extends Activity {
             form.addView(v,new LinearLayout.LayoutParams(-1,dp(48)));
         }
         new AlertDialog.Builder(this).setTitle("S21+ 직접 API 설정")
-            .setMessage("빈 칸은 기존 값을 유지합니다. 저장 후 키움 OAuth와 업비트 인증 REST를 즉시 검사합니다. 업비트는 발급 키의 허용 IP에 현재 S21+ 외부 IP가 포함되어야 합니다.")
+            .setMessage("빈 칸은 기존 값을 유지합니다. 저장 후 키움 OAuth와 업비트 인증 REST를 즉시 검사합니다. 두 API 모두 발급 키에 현재 S21+가 사용하는 공인 IP가 허용되어 있어야 합니다.")
             .setView(form).setNegativeButton("취소",null)
             .setNeutralButton("전체 삭제",(d,w)->{
                 store.saveKiwoom("","");store.saveUpbit("","");
