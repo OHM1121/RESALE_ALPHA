@@ -61,7 +61,7 @@ final class LocalHubClient {
     }
     JSONObject request(String path) throws Exception {
         HttpURLConnection c=(HttpURLConnection)new URL(BASE+path).openConnection();
-        c.setConnectTimeout(1800);c.setReadTimeout(2200);
+        c.setConnectTimeout(3500);c.setReadTimeout(12000);
         c.setRequestMethod("GET");
         c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Authorization","Bearer "+savedPairingToken());
@@ -72,7 +72,7 @@ final class LocalHubClient {
     private JSONObject send(String method,String path,JSONObject payload)throws Exception{
         byte[] body=payload.toString().getBytes(StandardCharsets.UTF_8);
         HttpURLConnection c=(HttpURLConnection)new URL(BASE+path).openConnection();
-        c.setConnectTimeout(1800);c.setReadTimeout(2600);
+        c.setConnectTimeout(3500);c.setReadTimeout(20000);
         c.setRequestMethod(method);
         c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Authorization","Bearer "+savedPairingToken());
@@ -122,13 +122,15 @@ final class LocalHubClient {
     }
     JSONObject putRecord(String market,String strategy,String bucket,JSONObject data)throws Exception{
         JSONObject current=recordMeta(market,strategy,bucket);
-        int revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
+        if(!current.optBoolean("ok",false))return current;
+        int revision=current.optBoolean("exists")?current.optInt("revision",0):0;
         JSONObject payload=new JSONObject().put("market",market).put("strategy",strategy)
             .put("bucket",bucket).put("expected_revision",revision).put("data",data);
         JSONObject reply=put("/v1/record",payload);
         if(reply.optInt("http_status",200)==409 || "revision_conflict".equals(reply.optString("error"))){
             current=recordMeta(market,strategy,bucket);
-            revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
+            if(!current.optBoolean("ok",false))return current;
+            revision=current.optBoolean("exists")?current.optInt("revision",0):0;
             payload.put("expected_revision",revision);
             reply=put("/v1/record",payload);
         }
