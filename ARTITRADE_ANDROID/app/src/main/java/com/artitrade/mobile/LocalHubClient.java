@@ -11,7 +11,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
-/** Local client for ARTITRADE apps accessing the separate Phone Hub application. */
+/** Local client for ARTITRADE apps accessing the separate MSERVER (mobile server) application. */
 final class LocalHubClient {
     private static final String BASE="http://127.0.0.1:8765";
     private final Context context;
@@ -21,7 +21,7 @@ final class LocalHubClient {
         if(raw==null || !raw.matches("[0-9a-fA-F]{64}")) throw new IllegalArgumentException("Invalid pairing token");
         if(!context.getSharedPreferences("hub_pairing",Context.MODE_PRIVATE).edit()
                 .putString("token",crypt.seal(raw.toLowerCase(java.util.Locale.ROOT))).commit())
-            throw new IllegalStateException("Cannot save phone server pairing");
+            throw new IllegalStateException("Cannot save MSERVER pairing");
     }
     String savedPairingToken(){
         String sealed=context.getSharedPreferences("hub_pairing",Context.MODE_PRIVATE).getString("token",null);
@@ -52,7 +52,7 @@ final class LocalHubClient {
         ByteArrayOutputStream buffer=new ByteArrayOutputStream();
         byte[] chunk=new byte[4096];int n;
         while((n=in.read(chunk))!=-1){
-            if(buffer.size()+n>524288)throw new IllegalStateException("Response too large");
+            if(buffer.size()+n>36*1024*1024)throw new IllegalStateException("MSERVER response too large");
             buffer.write(chunk,0,n);
         }
         JSONObject reply=new JSONObject(new String(buffer.toByteArray(),StandardCharsets.UTF_8));
