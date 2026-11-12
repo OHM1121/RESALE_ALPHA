@@ -282,8 +282,15 @@ public final class UnifiedVisualActivity extends Activity {
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(10,22,38));
         LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(18),dp(18),dp(18),dp(22));scroll.addView(panel,new ScrollView.LayoutParams(-1,-2));
         LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title=text("설정",21);title.setTypeface(null,Typeface.BOLD);head.addView(title,new LinearLayout.LayoutParams(0,dp(42),1));
-        head.addView(button("닫기",false,this::closeSettingsDrawer),new LinearLayout.LayoutParams(dp(70),dp(36)));panel.addView(head);
+        TextView title=text(("stock".equals(market)?"주식":"코인")+" 설정",21);title.setTypeface(null,Typeface.BOLD);head.addView(title,new LinearLayout.LayoutParams(0,dp(42),1));
+        head.addView(iconAction("×",this::closeSettingsDrawer),new LinearLayout.LayoutParams(dp(38),dp(38)));panel.addView(head);
+
+        TextView manageTitle=text("관리",10);manageTitle.setTypeface(null,Typeface.BOLD);manageTitle.setTextColor(Color.rgb(121,130,151));manageTitle.setPadding(0,dp(16),0,dp(7));panel.addView(manageTitle);
+        LinearLayout manage=card();
+        TextView opRow=text("운용 설정   ·   전 전략 시드 / 최대보유",12);opRow.setTypeface(null,Typeface.BOLD);opRow.setPadding(dp(4),dp(7),dp(4),dp(7));opRow.setOnClickListener(v->{page="operation";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(opRow,new LinearLayout.LayoutParams(-1,dp(44)));
+        manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
+        TextView erRow=text("오류 이력   ·   "+("stock".equals(market)?"주식 전체":"코인 전체"),12);erRow.setTypeface(null,Typeface.BOLD);erRow.setPadding(dp(4),dp(7),dp(4),dp(7));erRow.setOnClickListener(v->{page="errors";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(erRow,new LinearLayout.LayoutParams(-1,dp(44)));
+        panel.addView(manage);
 
         TextView apiTitle=text("API 연결 상태",11);apiTitle.setTypeface(null,Typeface.BOLD);apiTitle.setTextColor(Color.rgb(145,170,200));apiTitle.setPadding(0,dp(16),0,dp(7));panel.addView(apiTitle);
         LinearLayout api=card();api.addView(text(brokerStatusText("kiwoom"),11));TextView up=text(brokerStatusText("upbit"),11);up.setPadding(0,dp(7),0,0);api.addView(up);
@@ -291,8 +298,14 @@ public final class UnifiedVisualActivity extends Activity {
         ar.addView(button("API 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(40),1));
         LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(40),1);prp.setMargins(dp(7),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
 
-        TextView srvTitle=text("폰 서버 · 백그라운드",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
-        LinearLayout tools=card();tools.addView(button("폰 서버 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
+        TextView srvTitle=text("폰 원장 · PC 동기화",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
+        LinearLayout tools=card();
+        JSONObject hubPub=copyCache().optJSONObject("hub_publish");
+        int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);
+        String hubMsg=failed==0&&okPub>0?"폰 원장 → Phone Hub 동기화 정상":failed>0?"Phone Hub 동기화 실패 · PC 원장 조회에 반영되지 않음":"Phone Hub 동기화 준비 중";
+        TextView hubState=text(hubMsg,10);hubState.setTextColor(failed>0?Color.rgb(255,119,133):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));hubState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(hubState);
+        if(failed>0){TextView he=text(hubPub.optString("last_error",""),9);he.setTextColor(Color.rgb(180,151,158));he.setPadding(dp(2),0,dp(2),dp(8));tools.addView(he);}
+        tools.addView(button("폰 서버 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(40));rp.setMargins(0,dp(7),0,0);tools.addView(button("실시간 엔진 재연결",false,this::restartFeeds),rp);panel.addView(tools);
 
