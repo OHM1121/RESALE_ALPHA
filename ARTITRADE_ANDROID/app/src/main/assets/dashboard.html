@@ -19,6 +19,31 @@
 @media(max-width:700px){.ident{min-width:0}.wordmark{font-size:11px}.market{padding:5px 6px;font-size:9px}.top{padding:0 9px;gap:7px}.right{gap:5px}.read-only{font-size:9px}.sync{font-size:9px;padding:6px}.rail{width:48px;flex-basis:48px;padding:7px 3px}.nav{width:40px}.view{padding:10px}.summary{padding:10px}.big{font-size:29px}.metric{font-size:19px}.kpi{padding:9px}.label{font-size:10px}.strategy{gap:3px}.strat-title{font-size:13px}.donut{display:none}}
 @media(max-width:530px){.grid-top{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.strategy-grid{grid-template-columns:1fr}.top .market{display:none}.read-only{display:none}}
 .expanded-only{display:none}.dex-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.dex-grid .card{min-height:170px}.dex-title{font-size:12px;color:#9db5d1;font-weight:850;padding:13px 16px 9px}.list-plain{padding:0 7px 12px}.list-plain .list-row{padding:10px 12px}.list-plain .empty{padding:30px 12px}@media(min-height:610px) and (min-width:990px){.expanded-only{display:block}}
+
+.strategy-switch{display:flex;align-items:center;gap:7px;padding:7px 15px;border-bottom:1px solid #1b2b42;background:#0c1727;min-height:45px;overflow-x:auto;scrollbar-width:none}
+.strategy-switch::-webkit-scrollbar{display:none}
+.strategy-tab{flex:1 0 auto;max-width:180px;min-width:70px;border:1px solid #2b405c;color:#8da5c4;background:#132238;border-radius:11px;min-height:31px;padding:5px 11px;font-size:11px;font-weight:800;letter-spacing:.2px}
+.strategy-tab[aria-selected=true]{background:#39d8b1;color:#071c24;border-color:#39d8b1}
+.strategy-chip{font-size:10px;color:#9ab2d1;font-weight:800}
+.pane-title{letter-spacing:-.3px}
+.mini-export{border:1px solid #35506d;color:#d0e7fd;background:#1b324c;padding:7px 12px;border-radius:9px;font-size:11px;font-weight:800;white-space:nowrap}
+.row-meta{font-size:10px;color:#91a8c4;margin-top:5px;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.row-why{font-size:11px;color:#bad0e2;margin-top:4px;line-height:1.35}
+.list-row{cursor:pointer}
+.list-row .right-col{min-width:65px;text-align:right;flex:none}
+.list-row .name{font-size:12px}
+.list-row .hint{font-size:10px}
+.detail-overlay[hidden]{display:none!important}
+.detail-overlay{position:fixed;inset:0;background:#020711bf;z-index:200;display:grid;place-items:center;padding:14px}
+.detail-sheet{width:min(94vw,550px);max-height:85dvh;overflow-y:auto;background:#132238;border:1px solid #37516f;border-radius:18px;padding:14px 16px;box-shadow:0 16px 50px #000b}
+.detail-sheet-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:17px;font-weight:850;margin-bottom:10px}
+.detail-entry{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #2b4059;font-size:12px;line-height:1.4}
+.detail-entry:last-child{border-bottom:0}
+.detail-key{color:#8aa4c1;min-width:74px;flex:none}
+.detail-val{color:#eff7ff;text-align:right;word-break:break-word}
+@media(max-height:540px){.strategy-switch{padding:3px 11px;min-height:36px}.strategy-tab{min-height:28px;font-size:10px;padding:3px 7px}.top{height:42px;min-height:42px}.rail{gap:2px}.nav{min-height:34px}.nav small{font-size:8px}}
+@media(max-width:700px){.strategy-switch{gap:4px;padding:4px 8px}.strategy-tab{min-width:52px;font-size:10px;max-width:110px}.nav .ico{height:16px;width:16px}}
+
 </style>
 </head>
 <body>
@@ -43,6 +68,9 @@
   <button class="nav" data-page="research" aria-label="연구">
    <svg class="ico" viewBox="0 0 24 24"><path d="M7 4h10M8 4v6l-4 8a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-4-8V4"/><path d="M6 16h12"/></svg><small>연구</small>
   </button>
+  <button class="nav" data-page="errors" aria-label="오류 기록">
+   <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg><small>오류</small>
+  </button>
   <button class="nav end" data-page="more" aria-label="더보기">
    <svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><small>더보기</small>
   </button>
@@ -57,9 +85,10 @@
     <button class="btn-icon" data-act="refresh" aria-label="새로고침">↻</button>
    </div>
   </header>
+  <div class="strategy-switch" id="strategySwitch" role="tablist" aria-label="매매 전략"></div>
   <main class="view" id="view">
    <section class="detail active" id="page-home">
-    <div class="section-head"><span class="kicker">OVERVIEW</span><div class="mode">실행 기기 <span id="deviceMode">—</span></div></div>
+    <div class="section-head"><span class="kicker" id="strategyCaption">OVERVIEW</span><div class="mode">실행 기기 <span id="deviceMode">—</span></div></div>
     <div class="grid-top">
      <article class="card summary">
       <div class="label">누적손익</div>
@@ -90,9 +119,10 @@
    </section>
    <section class="detail" id="page-positions"><div class="pane-header"><div class="pane-title">보유 종목</div><span class="pill" id="positionCount">—</span></div><div class="list" id="positionsList"></div></section>
    <section class="detail" id="page-pending"><div class="pane-header"><div class="pane-title">매수 대기</div><span class="pill" id="pendingCount">—</span></div><div class="list" id="pendingList"></div></section>
-   <section class="detail" id="page-executions"><div class="pane-header"><div class="pane-title">체결 이력</div><span class="pill">조회</span></div><div class="list" id="executionsList"></div></section>
+   <section class="detail" id="page-executions"><div class="pane-header"><div class="pane-title">체결 이력</div><span class="pill">순수익</span></div><div class="list" id="executionsList"></div></section>
    <section class="detail" id="page-strategy"><div class="pane-header"><div class="pane-title">운용 전략</div><span class="pill" id="strategyMode">—</span></div><div id="strategyControls" class="tabset"></div><div class="block-title">성과</div><div class="strategy-grid" id="strategyDetail"></div><div class="block-title">운용 데이터</div><div id="strategyRaw" class="list"></div></section>
-   <section class="detail" id="page-research"><div class="pane-header"><div class="pane-title">리서치</div><span class="pill">기록</span></div><div id="researchList" class="list"></div></section>
+   <section class="detail" id="page-research"><div class="pane-header"><div class="pane-title">연구 이력</div><button class="mini-export" data-act="export:research">내보내기 ↓</button></div><div id="researchList" class="list"></div></section>
+   <section class="detail" id="page-errors"><div class="pane-header"><div class="pane-title">오류 이력</div><button class="mini-export" data-act="export:errors">내보내기 ↓</button></div><div id="errorsList" class="list"></div></section>
    <section class="detail" id="page-more">
     <div class="pane-header"><div class="pane-title">도구</div><span class="pill">LOCAL HUB</span></div>
     <div class="action-list">
@@ -110,6 +140,7 @@
   </main>
  </div>
 </div>
+<div id="detailOverlay" class="detail-overlay" role="dialog" aria-modal="true" aria-label="체결 상세" hidden><div class="detail-sheet"><div class="detail-sheet-header"><span id="detailTitle">상세</span><button id="detailClose" class="btn-icon" aria-label="닫기">×</button></div><div id="detailBody"></div></div></div>
 <script>
 (function(){
 'use strict';
