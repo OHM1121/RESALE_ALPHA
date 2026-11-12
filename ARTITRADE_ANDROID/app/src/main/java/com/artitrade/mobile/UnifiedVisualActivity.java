@@ -179,7 +179,7 @@ public final class UnifiedVisualActivity extends Activity {
     private LinearLayout card(){
         LinearLayout c=new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(13),dp(10),dp(13),dp(10));
+        c.setPadding(dp(10),dp(9),dp(10),dp(9));
         c.setBackground(bg(Color.rgb(18,21,31),Color.rgb(42,48,66),16));
         return c;
     }
@@ -274,7 +274,7 @@ public final class UnifiedVisualActivity extends Activity {
         buildStrategyBar();
 
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(9,11,17));
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(14),dp(9),dp(14),dp(24));
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(6),dp(8),dp(6),dp(18));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
             if("operation".equals(page)||"errors".equals(page))return false;
@@ -943,6 +943,7 @@ public final class UnifiedVisualActivity extends Activity {
         else if("research".equals(page))renderResearch();
         else if("scores".equals(page))renderScores();
         else if("errors".equals(page))renderErrors();
+        else if("policyHistory".equals(page))renderPolicyHistory();
         else renderMore();
     }
 
@@ -1028,16 +1029,122 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(82),1);if(row.getChildCount()>0)p.setMargins(dp(8),0,0,0);row.addView(c,p);
     }
 
+    private double usefulNumber(JSONObject r,String... fields){
+        return num(r,fields);
+    }
+    private String scenarioSummary(JSONObject r){
+        String state=r.optString("exit_scenario",r.optString("next_exit_scenario",r.optString("sell_scenario",""))).trim();
+        if(!state.isEmpty()&&!state.equalsIgnoreCase("null"))return "가까운 매도 조건 · "+state;
+        double now=usefulNumber(r,"last_price","current_price","market_price","price");
+        double first=usefulNumber(r,"first_target","target","target_price","first_exit_price");
+        double entry=usefulNumber(r,"entry_price","buy_price","avg_buy_price");
+        if(finite(now)&&finite(first)&&first>0){
+            if(now>=first)return "가까운 매도 조건 · 1차 목표가 도달 (체결 확인 필요)";
+            return "가까운 매도 조건 · 1차 목표까지 "+pct((first/Math.max(now,.000001)-1)*100.0);
+        }
+        if(finite(now)&&finite(entry)&&entry>0)
+            return "현재 손익률 "+pct((now/entry-1.0)*100.0)+" · 매도 조건 판정자료 부족";
+        return "매도 조건 판정 대기 · 실시간 가격/목표가 확인 필요";
+    }
+    private String cellValue(JSONObject r,String kind,String key){
+        if("positions".equals(kind)){
+            switch(key){
+                case "a":return "보유 "+number(usefulNumber(r,"qty","quantity","holding_qty"));
+                case "b":return "매수가 "+formatMaybeMoney(r,"entry_price","avg_buy_price","buy_price");
+                case "c":return "현재가 "+formatMaybeMoney(r,"last_price","current_price","market_price");
+                default:return "1차 목표 "+formatMaybeMoney(r,"first_target","target","target_price");
+            }
+        }
+        if("pending".equals(kind)){
+            switch(key){
+                case "a":return "점수 "+formatMaybeNumber(r,"score","signal_score");
+                case "b":return "매수가 "+formatMaybeMoney(r,"limit_price","entry_price","price");
+                case "c":return "목표가 "+formatMaybeMoney(r,"first_target","target","target_price");
+                default:return "대기 상태 "+r.optString("status",r.optString("state","확인 중"));
+            }
+        }
+        switch(key){
+            case "a":return "구분 "+r.optString("side",r.optString("type","미기록"));
+            case "b":return "체결가 "+formatMaybeMoney(r,"price","fill_price");
+            case "c":return "체결량 "+formatMaybeNumber(r,"qty","quantity","fill_qty");
+            default:return "순손익 "+formatMaybeMoney(r,"net_profit","net_realized","net_pnl","profit");
+        }
+    }
+    private String formatMaybeNumber(JSONObject r,String... fields){
+        double value=usefulNumber(r,fields);
+        return finite(value)?number(value):"미기록";
+    }
+    private String formatMaybeMoney(JSONObject r,String... fields){
+        double value=usefulNumber(r,fields);
+        return finite(value)?money(value):"미기록";
+    }
+    private void addGridCell(LinearLayout parent,String value){
+        TextView t=text(value,12);t.setTextColor(Color.rgb(202,215,234));
+        t.setPadding(dp(2),dp(5),dp(2),dp(5));t.setMaxLines(2);
+        parent.addView(t,new LinearLayout.LayoutParams(0,-2,1));
+    }
     private void renderList(String title,JSONArray a,String kind){
-        TextView h=text(title+"  ·  "+a.length()+"건",22);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
-        if(a.length()==0){empty("기록 없음");return;}
-        for(int i=0;i<Math.min(500,a.length());i++){JSONObject r=a.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
-            TextView n=text(nameOf(r),18);n.setTypeface(null,Typeface.BOLD);c.addView(n);
-            String when=timeOf(r);TextView tm=text(refLabel()+" "+when,12);tm.setTextColor(Color.rgb(135,158,187));tm.setPadding(0,dp(2),0,0);c.addView(tm);
-            TextView why=text("근거: "+reasonOf(r),13);why.setTextColor(Color.rgb(191,209,228));why.setPadding(0,dp(4),0,0);c.addView(why);
-            double v=Double.NaN;if("positions".equals(kind))v=num(r,"net_pnl","unrealized_pnl","pnl","paper_pnl");else if("executions".equals(kind))v=num(r,"net_profit","net_realized","net_pnl","pnl","profit");else v=num(r,"score","target_price","price");
-            if(finite(v)){TextView val=text(("pending".equals(kind)?"점수/가격 ":"손익 ")+number(v),16);paintProfit(val,"pending".equals(kind)?0:v);val.setPadding(0,dp(4),0,0);c.addView(val);}
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,dp(7));content.addView(c,p);
+        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView h=text(title+" · "+a.length()+"건",20);h.setTypeface(null,Typeface.BOLD);
+        header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
+        if("positions".equals(kind)){
+            Button history=button("정책이력",false,()->{page="policyHistory";render();});history.setTextSize(11);
+            header.addView(history,new LinearLayout.LayoutParams(dp(92),dp(39)));
+        }
+        content.addView(header,new LinearLayout.LayoutParams(-1,dp(45)));
+        if(a.length()==0){empty("기록 없음 · 실제 계좌 원장 기준");return;}
+        for(int i=0;i<Math.min(500,a.length());i++){
+            JSONObject r=a.optJSONObject(i);if(r==null)continue;
+            LinearLayout c=card();
+            LinearLayout topRow=new LinearLayout(this);topRow.setOrientation(LinearLayout.HORIZONTAL);topRow.setGravity(Gravity.CENTER_VERTICAL);
+            TextView n=text(nameOf(r),17);n.setTypeface(null,Typeface.BOLD);n.setMaxLines(1);
+            topRow.addView(n,new LinearLayout.LayoutParams(0,dp(29),1));
+            double profit=usefulNumber(r,"net_pnl","unrealized_pnl","paper_pnl","net_profit","net_realized","pnl");
+            if(!"pending".equals(kind)&&finite(profit)){
+                TextView p=text(money(profit),14);p.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+                paintProfit(p,profit);topRow.addView(p,new LinearLayout.LayoutParams(-2,dp(29)));
+            }
+            c.addView(topRow);
+            TextView when=text(refLabel()+" "+timeOf(r),11);
+            when.setTextColor(Color.rgb(139,163,192));c.addView(when);
+            LinearLayout firstRow=new LinearLayout(this);firstRow.setOrientation(LinearLayout.HORIZONTAL);
+            addGridCell(firstRow,cellValue(r,kind,"a"));addGridCell(firstRow,cellValue(r,kind,"b"));c.addView(firstRow);
+            LinearLayout secondRow=new LinearLayout(this);secondRow.setOrientation(LinearLayout.HORIZONTAL);
+            addGridCell(secondRow,cellValue(r,kind,"c"));addGridCell(secondRow,cellValue(r,kind,"d"));c.addView(secondRow);
+            if("positions".equals(kind)){
+                TextView scenario=text(scenarioSummary(r),12);scenario.setTextColor(Color.rgb(93,218,183));
+                scenario.setPadding(dp(2),dp(5),0,dp(4));c.addView(scenario);
+                LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
+                Button sell=button("강제매도",false,()->showManualSellInfo(r));sell.setTextSize(12);
+                actions.addView(sell,new LinearLayout.LayoutParams(0,dp(39),1));
+                Button policy=button("정책이력",false,()->{page="policyHistory";render();});policy.setTextSize(12);
+                LinearLayout.LayoutParams pl=new LinearLayout.LayoutParams(0,dp(39),1);pl.setMargins(dp(6),0,0,0);actions.addView(policy,pl);c.addView(actions);
+            }
+            TextView why=text("근거 · "+reasonOf(r),11);why.setTextColor(Color.rgb(151,176,202));why.setMaxLines(3);
+            why.setPadding(dp(2),dp(5),dp(2),0);c.addView(why);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(5));content.addView(c,lp);
+        }
+    }
+    private void showManualSellInfo(JSONObject position){
+        String identity=nameOf(position);
+        new AlertDialog.Builder(this).setTitle(identity+" · 강제매도")
+            .setMessage("이 버전에서는 강제매도 버튼이 실제 주문을 발행하지 않습니다. 현재 EXE의 가상 수동매도와 Android 실거래 주문 상태머신이 동일한 결과를 보장하는지 확인되지 않았습니다.\n\n오주문 방지를 위해 강제매도를 차단합니다. 실거래 중에는 증권사/거래소 앱에서 직접 매도하십시오.")
+            .setPositiveButton("확인",null).show();
+    }
+    private void renderPolicyHistory(){
+        TextView h=text(strategyName(market,strategy)+" · 정책이력",21);h.setTypeface(null,Typeface.BOLD);content.addView(h);
+        TextView guide=text("실제 체결·매도 근거로 확인 가능한 정책 판단 기록임. 정책 버전 적용시각은 내부 기록에서 관리함.",12);
+        guide.setTextColor(Color.rgb(145,166,191));guide.setPadding(0,dp(5),0,dp(12));content.addView(guide);
+        JSONArray executions=stats(market,strategy).executions;
+        if(executions.length()==0){empty("기록된 체결·매도 정책 판단 없음");return;}
+        for(int i=0;i<Math.min(120,executions.length());i++){
+            JSONObject r=executions.optJSONObject(i);if(r==null)continue;
+            LinearLayout c=card();
+            TextView name=text(nameOf(r)+" · "+r.optString("side",r.optString("type","체결")),15);
+            name.setTypeface(null,Typeface.BOLD);c.addView(name);
+            TextView time=text(formatKst(r.opt("at"))+" · "+reasonOf(r),12);
+            time.setTextColor(Color.rgb(171,194,219));c.addView(time);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
     }
 
@@ -1134,7 +1241,7 @@ public final class UnifiedVisualActivity extends Activity {
             LinearLayout c=card();
             LinearLayout titleRow=new LinearLayout(this);titleRow.setOrientation(LinearLayout.HORIZONTAL);
             TextView bt=text(b.optString("band","점수대"),15);bt.setTypeface(null,Typeface.BOLD);titleRow.addView(bt,new LinearLayout.LayoutParams(0,dp(28),1));
-            TextView bc=text("후보 "+b.optInt("signals",0)+" · 실제매수 "+b.optInt("bought",0)+" · 미매수 "+b.optInt("not_bought",0),11);bc.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);bc.setTextColor(Color.rgb(131,146,170));titleRow.addView(bc,new LinearLayout.LayoutParams(dp(250),dp(28)));c.addView(titleRow);
+            TextView bc=text("후보 "+b.optInt("signals",0)+" · 실제 "+b.optInt("bought",0)+" · 미매수 "+b.optInt("not_bought",0),10);bc.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);bc.setTextColor(Color.rgb(131,146,170));titleRow.addView(bc,new LinearLayout.LayoutParams(0,dp(28),2));c.addView(titleRow);
             LinearLayout bars=new LinearLayout(this);bars.setOrientation(LinearLayout.HORIZONTAL);
             MetricProgressView av=new MetricProgressView(this);av.setMetric("실제 매수",num(b,"actual_rate_pct"));bars.addView(av,new LinearLayout.LayoutParams(0,dp(43),1));
             MetricProgressView vv=new MetricProgressView(this);vv.setMetric("가상진입",num(b,"virtual_rate_pct"));LinearLayout.LayoutParams vlp=new LinearLayout.LayoutParams(0,dp(43),1);vlp.setMargins(dp(12),0,0,0);bars.addView(vv,vlp);c.addView(bars);
