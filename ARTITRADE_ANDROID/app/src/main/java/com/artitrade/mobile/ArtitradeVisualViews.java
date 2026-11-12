@@ -154,9 +154,9 @@ final class TimeframePerformanceGridView extends View {
             y+=sp(31);String total=compactWon(x.total);p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);fitText(total,cw-sp(28),23);p.setColor(pnlColor(x.total));c.drawText(total,x0,y,p);p.setFakeBoldText(false);
 
             y+=sp(25);p.setTextSize(sp(12));p.setTextAlign(Paint.Align.LEFT);p.setColor(Color.rgb(142,152,173));c.drawText("실현",x0,y,p);
-            p.setTextAlign(Paint.Align.RIGHT);p.setColor(pnlColor(x.realized));c.drawText(wonSmall(x.realized),x1,y,p);
+            p.setTextAlign(Paint.Align.RIGHT);p.setColor(pnlColor(x.realized));c.drawText(compactWon(x.realized),x1,y,p);
             y+=sp(21);p.setTextAlign(Paint.Align.LEFT);p.setColor(Color.rgb(142,152,173));c.drawText("평가",x0,y,p);
-            p.setTextAlign(Paint.Align.RIGHT);p.setColor(pnlColor(x.unrealized));c.drawText(wonSmall(x.unrealized),x1,y,p);
+            p.setTextAlign(Paint.Align.RIGHT);p.setColor(pnlColor(x.unrealized));c.drawText(compactWon(x.unrealized),x1,y,p);
 
             y+=sp(25);metricBar(c,"승률",x.win,x0,y,x1);
             y+=sp(31);metricBar(c,"목표도달",x.target,x0,y,x1);
