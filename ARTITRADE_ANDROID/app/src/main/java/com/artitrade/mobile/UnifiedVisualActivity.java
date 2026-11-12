@@ -712,22 +712,86 @@ public final class UnifiedVisualActivity extends Activity {
         for(int i=0;i<Math.min(120,all.length());i++){JSONObject r=all.optJSONObject(i);if(r==null)continue;LinearLayout c=card();TextView n=text(r.optString("stage",r.optString("error_type",r.optString("code","오류 기록"))),12);n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(255,145,155));c.addView(n);TextView d=text(r.optString("message",r.optString("detail","상세 미기록")),10);d.setPadding(0,dp(4),0,0);c.addView(d);TextView t=text(formatKst(r.opt("at")),9);t.setTextColor(Color.rgb(130,153,182));c.addView(t);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(7));content.addView(c,lp);}
     }
 
+    private JSONObject operationSettings(){
+        try{
+            JSONObject rt=copyCache().optJSONObject("strategy_runtime");
+            JSONObject op=rt==null?null:rt.optJSONObject("operation");
+            JSONObject settings=op==null?null:op.optJSONObject("settings");
+            if(settings!=null&&settings.length()>0)return settings;
+        }catch(Exception ignored){}
+        try{
+            String raw=getSharedPreferences("unified_operation_v074",MODE_PRIVATE).getString("settings","");
+            if(!raw.isEmpty())return new JSONObject(raw);
+        }catch(Exception ignored){}
+        JSONObject root=new JSONObject();
+        try{
+            JSONObject st=new JSONObject(),co=new JSONObject();
+            for(String[] x:strategyList("stock"))st.put(x[0],new JSONObject().put("seed",2000000).put("max_positions",4));
+            for(String[] x:strategyList("coin"))co.put(x[0],new JSONObject().put("seed",2000000).put("max_positions",4));
+            root.put("stock",st).put("coin",co);
+        }catch(Exception ignored){}
+        return root;
+    }
+
+    private LinearLayout operationCard(String m,String stg,String label,JSONObject settings){
+        JSONObject ms=settings.optJSONObject(m);JSONObject cfg=ms==null?null:ms.optJSONObject(stg);
+        long seed=cfg==null?2000000:cfg.optLong("seed",2000000);long maxp=cfg==null?4:cfg.optLong("max_positions",4);
+        LinearLayout c=card();TextView n=text(label,14);n.setTypeface(null,Typeface.BOLD);c.addView(n);
+        TextView scope=text(("at".equals(stg)||"ma".equals(stg)||"coin".equals(m))?"5분 · 30분 · 1시간 · 일봉 계좌에 동일 적용":"전략 통합 계좌",9);scope.setTextColor(Color.rgb(134,158,188));scope.setPadding(0,dp(2),0,dp(6));c.addView(scope);
+        LinearLayout fields=new LinearLayout(this);fields.setOrientation(LinearLayout.HORIZONTAL);
+        EditText seedEdit=new EditText(this);seedEdit.setText(String.valueOf(seed));seedEdit.setTextColor(Color.WHITE);seedEdit.setTextSize(12);seedEdit.setHint("운용시드");seedEdit.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);seedEdit.setSingleLine(true);seedEdit.setBackground(bg(Color.rgb(10,22,38),Color.rgb(47,70,96),9));seedEdit.setPadding(dp(9),0,dp(9),0);
+        EditText maxEdit=new EditText(this);maxEdit.setText(String.valueOf(maxp));maxEdit.setTextColor(Color.WHITE);maxEdit.setTextSize(12);maxEdit.setHint("최대보유");maxEdit.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);maxEdit.setSingleLine(true);maxEdit.setBackground(bg(Color.rgb(10,22,38),Color.rgb(47,70,96),9));maxEdit.setPadding(dp(9),0,dp(9),0);
+        fields.addView(seedEdit,new LinearLayout.LayoutParams(0,dp(42),2));LinearLayout.LayoutParams mx=new LinearLayout.LayoutParams(0,dp(42),1);mx.setMargins(dp(7),0,0,0);fields.addView(maxEdit,mx);c.addView(fields);
+        TextView base=text("기본 2,000,000원 · 최대 4종목",9);base.setTextColor(Color.rgb(108,135,166));base.setPadding(0,dp(5),0,0);c.addView(base);
+        operationFields.put(m+"."+stg,new EditText[]{seedEdit,maxEdit});
+        return c;
+    }
+
+    private void saveOperationAll(){
+        JSONObject all=operationSettings();
+        try{
+            JSONObject marketObj=all.optJSONObject(market);if(marketObj==null){marketObj=new JSONObject();all.put(market,marketObj);}
+            for(String[] x:strategyList(market)){
+                EditText[] fields=operationFields.get(market+"."+x[0]);if(fields==null)continue;
+                long seed=Long.parseLong(fields[0].getText().toString().replace(",","").trim());
+                long max=Long.parseLong(fields[1].getText().toString().trim());
+                if(seed<10000||seed>2000000000L||max<1||max>100)throw new IllegalArgumentException("허용범위: 시드 1만원~20억원, 최대보유 1~100");
+                marketObj.put(x[0],new JSONObject().put("seed",seed).put("max_positions",max));
+            }
+            getSharedPreferences("unified_operation_v074",MODE_PRIVATE).edit().putString("settings",all.toString()).apply();
+            Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.APPLY_OPERATION);i.putExtra("settings",all.toString());
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+            main.postDelayed(()->refresh(false),1200);
+        }catch(Exception e){
+            new AlertDialog.Builder(this).setTitle("운용 설정 확인").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
+        }
+    }
+
     private void renderOperation(){
-        TextView h=text(strategyName(market,strategy)+" 운용 설정",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
-        LinearLayout c=card();EditText seed=new EditText(this),max=new EditText(this);seed.setTextColor(Color.WHITE);max.setTextColor(Color.WHITE);seed.setHintTextColor(Color.rgb(110,135,165));max.setHintTextColor(Color.rgb(110,135,165));seed.setHint("운용 시드 KRW");max.setHint("최대보유 종목");
-        seed.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);max.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        try{JSONObject local=new JSONObject(getSharedPreferences("unified_operation",MODE_PRIVATE).getString(market+"_"+strategy,"{}"));if(local.has("seed"))seed.setText(String.valueOf(local.optLong("seed")));if(local.has("max_hold"))max.setText(String.valueOf(local.optLong("max_hold")));}catch(Exception ignored){}
-        c.addView(seed,new LinearLayout.LayoutParams(-1,dp(48)));c.addView(max,new LinearLayout.LayoutParams(-1,dp(48)));
-        Button save=button("설정 저장",true,()->{try{long a=Long.parseLong(seed.getText().toString());long b=Long.parseLong(max.getText().toString());if(a>=0&&b>=0&&b<=200)getSharedPreferences("unified_operation",MODE_PRIVATE).edit().putString(market+"_"+strategy,new JSONObject().put("seed",a).put("max_hold",b).put("saved_at",System.currentTimeMillis()).toString()).apply();}catch(Exception ignored){}});
-        LinearLayout.LayoutParams sv=new LinearLayout.LayoutParams(-1,dp(40));sv.setMargins(0,dp(8),0,0);c.addView(save,sv);content.addView(c);
+        operationFields.clear();
+        TextView h=text(("stock".equals(market)?"주식":"코인")+" 통합 운용",18);h.setTypeface(null,Typeface.BOLD);content.addView(h);
+        TextView dsc=text("전략별 시드와 최대 보유종목을 한 화면에서 관리 · 기본값 2,000,000원 / 4종목",10);dsc.setTextColor(Color.rgb(134,159,189));dsc.setPadding(0,dp(3),0,dp(9));content.addView(dsc);
+        JSONObject settings=operationSettings();
+        LinearLayout grid=new LinearLayout(this);grid.setOrientation(LinearLayout.HORIZONTAL);
+        for(String[] x:strategyList(market)){
+            LinearLayout c=operationCard(market,x[0],x[1],settings);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(132),1);if(grid.getChildCount()>0)lp.setMargins(dp(7),0,0,0);grid.addView(c,lp);
+        }
+        content.addView(grid,new LinearLayout.LayoutParams(-1,dp(132)));
+        Button save=button("전체 전략 운용설정 저장",true,this::saveOperationAll);LinearLayout.LayoutParams sv=new LinearLayout.LayoutParams(-1,dp(42));sv.setMargins(0,dp(8),0,0);content.addView(save,sv);
+
+        try{
+            JSONObject r=new JSONObject(getSharedPreferences("artitrade_operation_result",MODE_PRIVATE).getString("result","{}"));
+            if(r.length()>0){TextView st=text(r.optBoolean("ok",false)?"엔진 적용 완료":"일부 엔진 적용 실패 · 오류 탭 확인",9);st.setTextColor(r.optBoolean("ok",false)?Color.rgb(62,224,181):Color.rgb(255,119,133));st.setPadding(0,dp(4),0,0);content.addView(st);}
+        }catch(Exception ignored){}
 
         JSONObject live=copyCache().optJSONObject("live_orders");boolean armed=live!=null&&live.optBoolean(market,false);
-        LinearLayout d=card();TextView t=text("S21+ 메인 자동매매",13);t.setTypeface(null,Typeface.BOLD);d.addView(t);
-        LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(8),0,0);dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(40),1));LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(40),1);offp.setMargins(dp(7),0,0,0);dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);d.addView(dr);
-        TextView lt=text("실거래 자동주문",13);lt.setTypeface(null,Typeface.BOLD);lt.setPadding(0,dp(12),0,0);d.addView(lt);
-        LinearLayout lr=new LinearLayout(this);lr.setOrientation(LinearLayout.HORIZONTAL);lr.setPadding(0,dp(8),0,0);lr.addView(button("실거래 ON",armed,()->setLive(true)),new LinearLayout.LayoutParams(0,dp(40),1));LinearLayout.LayoutParams of=new LinearLayout.LayoutParams(0,dp(40),1);of.setMargins(dp(7),0,0,0);lr.addView(button("실거래 OFF",!armed,()->setLive(false)),of);d.addView(lr);
-        TextView hint=text(armed?"실거래 ON · 최신 EXE 전략 신호를 실제 주문으로 연결":"실거래 OFF · 시세/전략은 계속 실행되고 실제 주문만 차단",10);hint.setTextColor(Color.rgb(141,165,194));hint.setPadding(0,dp(8),0,0);d.addView(hint);
-        LinearLayout.LayoutParams dpv=new LinearLayout.LayoutParams(-1,-2);dpv.setMargins(0,dp(8),0,0);content.addView(d,dpv);
+        LinearLayout ctrl=card();TextView t=text("S21+ 메인 실행권한",13);t.setTypeface(null,Typeface.BOLD);ctrl.addView(t);
+        LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(8),0,0);dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(40),1));LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(40),1);offp.setMargins(dp(7),0,0,0);dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);ctrl.addView(dr);
+        TextView lt=text("실거래 자동주문",13);lt.setTypeface(null,Typeface.BOLD);lt.setPadding(0,dp(12),0,0);ctrl.addView(lt);
+        LinearLayout lr=new LinearLayout(this);lr.setOrientation(LinearLayout.HORIZONTAL);lr.setPadding(0,dp(8),0,0);lr.addView(button("실거래 ON",armed,()->setLive(true)),new LinearLayout.LayoutParams(0,dp(40),1));LinearLayout.LayoutParams of=new LinearLayout.LayoutParams(0,dp(40),1);of.setMargins(dp(7),0,0,0);lr.addView(button("실거래 OFF",!armed,()->setLive(false)),of);ctrl.addView(lr);
+        TextView hint=text(armed?"실거래 ON · 최신 EXE 전략 신호가 실제 주문으로 연결됨":"실거래 OFF · 시세/전략은 계속 실행, 실제 주문만 차단",10);hint.setTextColor(Color.rgb(141,165,194));hint.setPadding(0,dp(8),0,0);ctrl.addView(hint);
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(10),0,0);content.addView(ctrl,cp);
     }
 
     private void renderMore(){
