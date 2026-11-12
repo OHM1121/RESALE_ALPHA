@@ -163,3 +163,71 @@ final class TimeframePerformanceGridView extends View {
         }
     }
 }
+
+
+final class TimeframeAccountFlowView extends View {
+    private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private String label="";private double total=Double.NaN,realized=Double.NaN,unrealized=Double.NaN,win=Double.NaN,target=Double.NaN;
+    private int pending=0,bought=0,holding=0,sold=0;
+    TimeframeAccountFlowView(Context c){super(c);}
+    void setData(String label,double total,double realized,double unrealized,double win,double target,
+                 int pending,int bought,int holding,int sold){
+        this.label=label;this.total=total;this.realized=realized;this.unrealized=unrealized;this.win=win;this.target=target;
+        this.pending=Math.max(0,pending);this.bought=Math.max(0,bought);this.holding=Math.max(0,holding);this.sold=Math.max(0,sold);invalidate();
+    }
+    private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
+    private float dp(float v){return v*getResources().getDisplayMetrics().density;}
+    private int pnlColor(double v){return v>0?Color.rgb(75,222,171):v<0?Color.rgb(255,111,139):Color.rgb(236,239,247);}
+    private String compact(double v){
+        if(Double.isNaN(v))return "—";
+        double a=Math.abs(v);String sign=v>0?"+":v<0?"−":"";
+        if(a>=100000000)return sign+String.format(Locale.KOREA,"%.1f억",a/100000000d);
+        if(a>=10000)return sign+String.format(Locale.KOREA,"%.1f만",a/10000d);
+        NumberFormat f=NumberFormat.getNumberInstance(Locale.KOREA);f.setMaximumFractionDigits(0);return sign+f.format(a)+"원";
+    }
+    private void fit(String value,float maxWidth,float maxSp,float minSp){
+        float size=sp(maxSp);p.setTextSize(size);
+        while(size>sp(minSp)&&p.measureText(value)>maxWidth){size-=sp(.8f);p.setTextSize(size);}
+    }
+    private void progress(Canvas c,String name,double value,float left,float top,float width,int accent){
+        p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(12));p.setColor(Color.rgb(147,157,178));c.drawText(name,left,top,p);
+        p.setTextAlign(Paint.Align.RIGHT);p.setColor(Color.rgb(225,229,239));c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.0f%%",value),left+width,top,p);
+        float y=top+sp(7),h=dp(6);p.setColor(Color.rgb(43,48,63));c.drawRoundRect(new RectF(left,y,left+width,y+h),h,h,p);
+        if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;p.setColor(accent);c.drawRoundRect(new RectF(left,y,left+width*f,y+h),h,h,p);}
+    }
+    private void step(Canvas c,float left,float top,float width,float height,String name,int count,int accent){
+        p.setColor(Color.rgb(22,25,36));c.drawRoundRect(new RectF(left,top,left+width,top+height),dp(12),dp(12),p);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(Color.argb(180,Color.red(accent),Color.green(accent),Color.blue(accent)));
+        c.drawRoundRect(new RectF(left,top,left+width,top+height),dp(12),dp(12),p);p.setStyle(Paint.Style.FILL);
+        p.setTextAlign(Paint.Align.CENTER);p.setTextSize(sp(11));p.setColor(Color.rgb(151,160,181));c.drawText(name,left+width/2,top+sp(16),p);
+        p.setFakeBoldText(true);p.setTextSize(sp(23));p.setColor(accent);c.drawText(String.valueOf(count),left+width/2,top+height-sp(10),p);p.setFakeBoldText(false);
+    }
+    @Override protected void onDraw(Canvas c){
+        super.onDraw(c);float w=getWidth(),h=getHeight(),pad=dp(14);
+        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(18,21,31));c.drawRoundRect(new RectF(0,0,w,h),dp(18),dp(18),p);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(Color.rgb(43,48,66));c.drawRoundRect(new RectF(0,0,w,h),dp(18),dp(18),p);p.setStyle(Paint.Style.FILL);
+
+        p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);p.setTextSize(sp(20));p.setColor(Color.rgb(215,210,255));c.drawText(label,pad,sp(28),p);p.setFakeBoldText(false);
+        String pnl=compact(total);fit(pnl,w*0.52f,29,19);p.setFakeBoldText(true);p.setColor(pnlColor(total));c.drawText(pnl,pad,sp(61),p);p.setFakeBoldText(false);
+
+        p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(12));p.setColor(Color.rgb(143,153,174));
+        c.drawText("실현 "+compact(realized),w-pad,sp(29),p);
+        c.drawText("평가 "+compact(unrealized),w-pad,sp(50),p);
+
+        float gaugeTop=sp(80),gaugeGap=dp(18),gaugeW=(w-pad*2-gaugeGap)/2;
+        progress(c,"승률",win,pad,gaugeTop,gaugeW,Color.rgb(75,129,255));
+        progress(c,"목표도달",target,pad+gaugeW+gaugeGap,gaugeTop,gaugeW,Color.rgb(0,202,167));
+
+        float stepTop=sp(111),gap=dp(8),stepW=(w-pad*2-gap*3)/4f,stepH=Math.max(dp(66),h-stepTop-dp(12));
+        int[] accents={Color.rgb(255,183,77),Color.rgb(75,129,255),Color.rgb(154,119,255),Color.rgb(0,202,167)};
+        String[] names={"매수대기","매수완료","보유중","매도완료"};
+        int[] counts={pending,bought,holding,sold};
+        for(int i=0;i<4;i++){
+            float x=pad+i*(stepW+gap);step(c,x,stepTop,stepW,stepH,names[i],counts[i],accents[i]);
+            if(i<3){
+                float ax=x+stepW+gap/2,ay=stepTop+stepH/2;p.setColor(Color.rgb(89,98,118));p.setStrokeWidth(dp(2));
+                c.drawLine(ax-dp(3),ay,ax+dp(3),ay,p);Path q=new Path();q.moveTo(ax+dp(3),ay);q.lineTo(ax,ay-dp(3));q.lineTo(ax,ay+dp(3));q.close();c.drawPath(q,p);
+            }
+        }
+    }
+}
