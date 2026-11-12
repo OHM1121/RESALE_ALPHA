@@ -394,6 +394,11 @@ public final class UnifiedVisualActivity extends Activity {
     private JSONObject research(String m,String s){
         if("coin".equals(m))return record("ma".equals(s)?"coinMaResearch":"coinGeneralResearch");
         if("close".equals(s))return record("stockCwResearch");
+        if("ma".equals(s)){
+            JSONObject ma=ledger("stock","ma");JSONArray items=ma.optJSONArray("research");
+            try{return new JSONObject().put("items",items==null?new JSONArray():items);}
+            catch(Exception e){return new JSONObject();}
+        }
         return record("stockAtResearch");
     }
 
