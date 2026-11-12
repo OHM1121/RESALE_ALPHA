@@ -225,6 +225,27 @@ final class HubServer {
         }catch(Exception e){Log.w(TAG,"Request aborted (no credentials logged)");}
     }
     private JSONObject route(String method,String path,Map<String,String> q,JSONObject b){
+        if("POST".equals(method)&&"/v1/migration/begin".equals(path)){
+            return store.migrationBegin(b.optString("session"),b.optInt("total_chunks",-1),
+                b.optLong("total_bytes",-1),b.optString("archive_sha256"),b.optJSONObject("source"));
+        }
+        if("POST".equals(method)&&"/v1/migration/chunk".equals(path)){
+            return store.migrationPutChunk(b.optString("session"),b.optInt("index",-1),
+                b.optString("data_b64"),b.optString("sha256"));
+        }
+        if("POST".equals(method)&&"/v1/migration/commit".equals(path)){
+            return store.migrationCommit(b.optString("session"));
+        }
+        if("GET".equals(method)&&"/v1/migration/status".equals(path)){
+            return store.migrationStatus();
+        }
+        if("GET".equals(method)&&"/v1/migration/chunk".equals(path)){
+            int index=-1;try{index=Integer.parseInt(val(q,"index"));}catch(Exception ignored){}
+            return store.migrationReadChunk(val(q,"session"),index);
+        }
+        if("POST".equals(method)&&"/v1/migration/ack".equals(path)){
+            return store.migrationAcknowledge(b.optString("session"),b.optString("archive_sha256"));
+        }
         if("GET".equals(method)&&"/v1/status".equals(path)){
             return json("ok",true,"api",1,"owner","phone","stock",store.owner("stock"),"coin",store.owner("coin"),"vpn_endpoint",vpnBoundIp);
         }
