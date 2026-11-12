@@ -58,20 +58,28 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Fast-path design:
  * 1) preload every phone-hub snapshot for stock + coin in parallel,
  * 2) keep a single in-memory JSON cache,
- * 3) switch market/strategy/pages entirely inside WebView without network waits,
- * 4) refresh the cache in the background and push one atomic packet to the UI.
+ * 3) render the unified console with Android native Views (no WebView dependency),
+ * 4) refresh the cache in the background and repaint only the visible native page.
  *
- * The activity is a UI shell only. Broker sessions and strategy execution live in
- * UnifiedTradingService / the EXE-derived Python runtime so a WebView fault never
- * changes strategy state or order semantics.
+ * Broker sessions and strategy execution live in UnifiedTradingService / the
+ * EXE-derived Python runtime. UI faults never change strategy state or order semantics.
  */
 public final class UnifiedActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newFixedThreadPool(8);
     private final Object cacheLock = new Object();
     private FrameLayout root;
-    private WebView web;
+    private WebView web; // retained only for legacy recovery code; native dashboard does not use it.
     private View dashboardCover;
+    private LinearLayout nativeStrategyBar;
+    private LinearLayout nativeNavBar;
+    private LinearLayout nativeContent;
+    private TextView nativeHeaderStatus;
+    private TextView nativeClock;
+    private String nativeMarket="stock";
+    private String nativeStrategy="at";
+    private String nativePage="home";
+    private float nativeTouchX=Float.NaN;
     private JSONObject cache = new JSONObject();
     private volatile boolean dashboardReady = false;
     private volatile boolean refreshRunning = false;
