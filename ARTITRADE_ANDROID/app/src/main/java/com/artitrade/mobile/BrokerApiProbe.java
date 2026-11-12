@@ -51,8 +51,9 @@ final class BrokerApiProbe {
             JSONObject r=response(c);c.disconnect();
             boolean ok=r.optInt("http_status",0)==200&&r.optInt("return_code",-1)==0&&!r.optString("token","").isEmpty();
             String msg=ok?"접근토큰 발급 정상":r.optString("return_msg",r.optString("message",r.optString("raw","키움 인증 실패")));
+            boolean ip=msg.toLowerCase(java.util.Locale.ROOT).contains("ip")||r.optInt("http_status",0)==403;
             return out.put("ok",ok).put("stage","oauth").put("http_status",r.optInt("http_status",0))
-                    .put("expires_dt",r.optString("expires_dt","")).put("message",msg);
+                    .put("expires_dt",r.optString("expires_dt","")).put("ip_hint",ip).put("message",msg);
         }catch(Throwable e){
             try{return out.put("ok",false).put("stage","network").put("message",e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));}
             catch(Exception ignored){return new JSONObject();}
