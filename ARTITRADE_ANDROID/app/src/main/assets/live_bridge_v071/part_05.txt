@@ -1,0 +1,84 @@
+                raw=at_close_store.AtCloseStore._android_live_orig_connect(obj);return LiveConnectionProxy(raw,rt,'stock_close')
+            at_close_store.AtCloseStore.connect=close_connect
+    def _patch_stock_account_feed(self):
+        if not self.stock_runner:return
+        rt=self
+        # Kiwoom permits one token session; register account 00 on the SAME socket
+        # that already carries 0B/0D instead of opening a second WebSocket.
+        orig_reg=self.stock_runner._register_subscriptions
+        async def reg_with_account(ws,*a,**kw):
+            await orig_reg(ws,*a,**kw)
+            await ws.send(json.dumps({'trnm':'REG','grp_no':'4','refresh':'1',
+                'data':[{'item':[''],'type':['00']}]},ensure_ascii=False))
+            rt.feed_tracker.stock_subscribed()
+        self.stock_runner._register_subscriptions=reg_with_account
+        orig_book=self.stock_runner.engine.book.on_message
+        def book_with_account(message,*a,**kw):
+            try:rt.feed_tracker.on_kiwoom(message)
+            except Exception as e:rt._err('kiwoom_00_parse',e)
+            return orig_book(message,*a,**kw)
+        self.stock_runner.engine.book.on_message=book_with_account
+
+    def _upbit_private_loop(self):
+        if not self.upbit.ready():return
+        try:from websockets.sync.client import connect
+        except Exception as e:self.feed_tracker.coin_connected_set(False,'IMPORT:'+type(e).__name__);self._err('upbit_private_import',e);return
+        backoff=2
+        while not self._private_stop.is_set():
+            try:
+                token=self.upbit._jwt();headers={'Authorization':'Bearer '+token}
+                kwargs=dict(open_timeout=10,ping_interval=20,ping_timeout=15,max_size=2**20,close_timeout=5)
+                try:wsctx=connect('wss://api.upbit.com/websocket/v1/private',additional_headers=headers,**kwargs)
+                except TypeError:wsctx=connect('wss://api.upbit.com/websocket/v1/private',extra_headers=headers,**kwargs)
+                with wsctx as ws:
+                    sub=[{'ticket':'ARTITRADE_PRIVATE_'+uuid.uuid4().hex},{'type':'myOrder'},{'type':'myAsset'},{'format':'DEFAULT'}]
+                    ws.send(json.dumps(sub,separators=(',',':')));self.feed_tracker.coin_connected_set(True);backoff=2
+                    while not self._private_stop.is_set():
+                        try:raw=ws.recv(timeout=2)
+                        except TimeoutError:continue
+                        if raw is None:raise RuntimeError('PRIVATE_WS_EOF')
+                        item=json.loads(raw.decode('utf-8') if isinstance(raw,bytes) else raw)
+                        if isinstance(item,dict) and item.get('error'):raise RuntimeError('UPBIT_PRIVATE:'+str(item.get('error'))[:180])
+                        self.feed_tracker.on_upbit(item)
+            except Exception as e:
+                if self._private_stop.is_set():break
+                self.feed_tracker.coin_connected_set(False,type(e).__name__+':'+str(e)[:160]);self._err('upbit_private_ws',e)
+                self._private_stop.wait(backoff);backoff=min(30,backoff*2)
+        self.feed_tracker.coin_connected_set(False,'STOPPED')
+
+    def _start_private_feeds(self):
+        self._private_stop.clear()
+        if self.upbit.ready() and (self._upbit_private_thread is None or not self._upbit_private_thread.is_alive()):
+            self._upbit_private_thread=threading.Thread(target=self._upbit_private_loop,name='artitrade-upbit-private',daemon=True);self._upbit_private_thread.start()
+
+    def _patch_gmo(self):
+        if not self.stock_runner:return
+        eng=self.stock_runner.gmo.engine;rt=self
+        original_cancel=eng.acknowledge_cancel
+        def live_match(q):
+            for o in list(eng.orders.values()):
+                if o.state!='NEW':continue
+                if not rt.live_enabled('stock'):continue
+                key='GMO-'+_safe_key(o.id+':'+o.time+':'+o.side+':'+o.code)
+                try:
+                    eng.mark_submitted(o.id,q.at)
+                    fill=rt.kiwoom.fok(key,o.side,o.code,o.requested-o.filled,o.limit,o.purpose,'KRX','stock_gmo','gmo',o.id)
+                    eng.fill(o.id,int(fill['qty']),float(fill['price']),q.at)
+                    rt.on_live_fill('stock',o.side,o.code,fill['qty'],o.limit,fill,o.purpose,'gmo',key)
+                except LiveOrderNoFill:
+                    try:eng._cancel(o,'BROKER_FOK_NO_FILL',q.at);original_cancel(o.id,q.at)
+                    except Exception:pass
+                except Exception as e:
+                    rt._err('gmo_live_order',e);eng._log(o.code,'LIVE_ORDER_HALTED',type(e).__name__+':'+str(e)[:160],q.at)
+                    rt.halt_market('stock','GMO_ORDER_UNCERTAIN',e)
+                    raise
+        eng.paper_match=live_match
+        eng.paper_match_krx_print_proxy=lambda *a,**k: None
+        # The runtime's unconditional paper cancel acknowledgement now represents
+        # an already-cancelled FOK order, so original state transition is safe.
+    def start(self):
+        if self.started:return
+        try:
+            import d_live,d_storage,d_upbit
+            from coin_ma_engine import MACoinLedger
+            from at_close_store import AtCloseStore
