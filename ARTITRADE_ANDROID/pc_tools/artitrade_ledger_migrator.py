@@ -25,8 +25,10 @@ import zipfile
 from pathlib import Path
 
 SCHEMA = "ARTITRADE_PC_LEDGER_MIGRATION_V1"
-UPLOAD_CHUNK = 300_000
-MAX_ARCHIVE = 250 * 1024 * 1024
+UPLOAD_CHUNK = 1_000_000
+# Limit is shared with MSERVER and the phone importer. All I/O stays chunked.
+MAX_ARCHIVE = 4 * 1024 * 1024 * 1024
+MAX_UPLOAD_CHUNKS = 5000
 
 
 def sha256_file(path: Path) -> str:
@@ -358,53 +360,64 @@ def build_archive(progress=lambda msg: None) -> tuple[Path, dict]:
         raise FileNotFoundError("필수 원장을 찾지 못함: " + ", ".join(missing_required))
 
     work = Path(tempfile.mkdtemp(prefix="artitrade_pc_ledger_"))
-    stage = work / "stage"
-    stage.mkdir(parents=True, exist_ok=True)
-    manifest = {
-        "schema": SCHEMA,
-        "created_at_epoch_ms": int(time.time() * 1000),
-        "stock_root": str(stock_root()),
-        "coin_root": str(coin_root()),
-        "files": {},
-    }
-
-    for arc, (source, is_db) in sources.items():
-        if not source.is_file():
-            progress("선택 원장 없음: " + str(source))
-            continue
-        target = stage / arc
-        target.parent.mkdir(parents=True, exist_ok=True)
-        progress("스냅샷: " + arc)
-        if is_db:
-            sqlite_snapshot(source, target)
-            counts = sqlite_counts(target)
-        else:
-            target.write_bytes(source.read_bytes())
-            counts = gmo_state_counts(target)
-        manifest["files"][arc] = {
-            "source": str(source),
-            "size": target.stat().st_size,
-            "sha256": sha256_file(target),
-            "counts": counts,
+    try:
+        stage = work / "stage"
+        stage.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "schema": SCHEMA,
+            "created_at_epoch_ms": int(time.time() * 1000),
+            "stock_root": str(stock_root()),
+            "coin_root": str(coin_root()),
+            "files": {},
         }
-
-    (stage / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    archive = work / "ARTITRADE_PC_LEDGER_MIGRATION.zip"
-    progress("승계 ZIP 생성 중")
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
-        for p in sorted(stage.rglob("*")):
-            if p.is_file():
-                z.write(p, p.relative_to(stage).as_posix())
-    if archive.stat().st_size > MAX_ARCHIVE:
-        raise ValueError(f"승계 ZIP이 {MAX_ARCHIVE // (1024*1024)}MB 제한을 초과함")
-    manifest["archive_size"] = archive.stat().st_size
-    manifest["archive_sha256"] = sha256_file(archive)
-    return archive, manifest
+    
+        for arc, (source, is_db) in sources.items():
+            if not source.is_file():
+                progress("선택 원장 없음: " + str(source))
+                continue
+            target = stage / arc
+            target.parent.mkdir(parents=True, exist_ok=True)
+            progress("스냅샷: " + arc)
+            if is_db:
+                sqlite_snapshot(source, target)
+                counts = sqlite_counts(target)
+            else:
+                target.write_bytes(source.read_bytes())
+                counts = gmo_state_counts(target)
+            manifest["files"][arc] = {
+                "source": str(source),
+                "size": target.stat().st_size,
+                "sha256": sha256_file(target),
+                "counts": counts,
+            }
+    
+        (stage / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        archive = work / "ARTITRADE_PC_LEDGER_MIGRATION.zip"
+        progress("승계 ZIP 생성 중")
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+            for p in sorted(stage.rglob("*")):
+                if p.is_file():
+                    z.write(p, p.relative_to(stage).as_posix())
+        archive_size = archive.stat().st_size
+        if archive_size > MAX_ARCHIVE:
+            raise ValueError("승계 ZIP이 4GB 안전 한도를 초과함. 대용량 파일 분할이 추가로 필요합니다.")
+        progress(f"승계 ZIP 생성 완료 · {archive_size / (1024*1024):,.1f}MB")
+        manifest["archive_size"] = archive.stat().st_size
+        manifest["archive_sha256"] = sha256_file(archive)
+        return archive, manifest
+    except BaseException:
+        # Never leave >250MB copies behind after an archive/build error.
+        shutil.rmtree(work, ignore_errors=True)
+        raise
 
 
 def upload_archive(base: str, token: str, archive: Path, manifest: dict, progress=lambda msg: None) -> dict:
     raw_size = archive.stat().st_size
+    if raw_size <= 0 or raw_size > MAX_ARCHIVE:
+        raise ValueError("승계 ZIP 크기가 안전한 범위를 벗어났습니다.")
     total_chunks = (raw_size + UPLOAD_CHUNK - 1) // UPLOAD_CHUNK
+    if total_chunks > MAX_UPLOAD_CHUNKS:
+        raise ValueError("서버가 처리할 수 있는 전송 조각 수를 초과했습니다.")
     session = "pcledger_" + uuid.uuid4().hex
     begin = request(base, token, "POST", "/v1/migration/begin", {
         "session": session,
@@ -416,6 +429,8 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
             "stock_root": manifest.get("stock_root", ""),
             "coin_root": manifest.get("coin_root", ""),
             "file_count": len(manifest.get("files", {})),
+            "chunk_bytes": UPLOAD_CHUNK,
+            "uncompressed_bytes": sum(x.get("size", 0) for x in manifest.get("files", {}).values()),
         },
     })
     if not begin.get("ok"):
@@ -424,17 +439,31 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
     with archive.open("rb") as f:
         for index in range(total_chunks):
             data = f.read(UPLOAD_CHUNK)
-            result = request(base, token, "POST", "/v1/migration/chunk", {
-                "session": session,
-                "index": index,
+            payload = {
+                "session": session, "index": index,
                 "data_b64": base64.b64encode(data).decode("ascii"),
                 "sha256": sha256_bytes(data),
-            }, timeout=30)
-            if not result.get("ok"):
-                raise RuntimeError(f"MSERVER chunk {index} 실패: " + json.dumps(result, ensure_ascii=False))
-            progress(f"MSERVER 전송 {index+1}/{total_chunks}")
+            }
+            # The server accepts an identical chunk again if the ACK was lost.
+            for attempt in range(4):
+                try:
+                    result = request(base, token, "POST", "/v1/migration/chunk", payload, timeout=45)
+                    if result.get("ok"):
+                        break
+                    if result.get("error") not in ("server_storage_failed",):
+                        raise RuntimeError("MSERVER 전송 거절: " + json.dumps(result, ensure_ascii=False))
+                    if attempt == 3:
+                        raise RuntimeError("MSERVER 저장 오류: " + json.dumps(result, ensure_ascii=False))
+                except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                    if attempt == 3:
+                        raise ConnectionError(f"MSERVER {index+1}/{total_chunks} 전송 실패: {exc}") from exc
+                progress(f"전송 재시도: {index+1}/{total_chunks} · {attempt+2}회")
+                time.sleep(min(2.0, 0.4*(attempt+1)))
+            if index == 0 or (index+1) % 10 == 0 or index + 1 == total_chunks:
+                progress(f"MSERVER 전송 {index+1}/{total_chunks}")
 
-    commit = request(base, token, "POST", "/v1/migration/commit", {"session": session}, timeout=30)
+    progress("승계 ZIP 최종 무결성 검사 중")
+    commit = request(base, token, "POST", "/v1/migration/commit", {"session": session}, timeout=180)
     if not commit.get("ok"):
         raise RuntimeError("MSERVER commit 실패: " + json.dumps(commit, ensure_ascii=False))
     commit["session"] = session
