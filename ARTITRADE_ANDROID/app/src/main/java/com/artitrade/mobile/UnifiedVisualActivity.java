@@ -470,18 +470,28 @@ public final class UnifiedVisualActivity extends Activity {
         if("ma".equals(s)){
             JSONObject x=base.optJSONObject("ma_subledger");return x==null?new JSONObject():x;
         }
+        if("gmo".equals(s)){
+            JSONObject x=base.optJSONObject("gmo");return x==null?new JSONObject():x;
+        }
         return base;
     }
 
     private JSONObject research(String m,String s){
         if("coin".equals(m))return record("ma".equals(s)?"coinMaResearch":"coinGeneralResearch");
         if("close".equals(s))return record("stockCwResearch");
+        JSONObject at=record("stockAtResearch");
         if("ma".equals(s)){
+            JSONObject nested=at.optJSONObject("ma");
+            if(nested!=null)return nested;
             JSONObject ma=ledger("stock","ma");JSONArray items=ma.optJSONArray("research");
             try{return new JSONObject().put("items",items==null?new JSONArray():items);}
             catch(Exception e){return new JSONObject();}
         }
-        return record("stockAtResearch");
+        if("gmo".equals(s)){
+            JSONObject nested=at.optJSONObject("gmo");
+            return nested==null?new JSONObject():nested;
+        }
+        return at;
     }
 
     private JSONObject errors(String m,String s){
