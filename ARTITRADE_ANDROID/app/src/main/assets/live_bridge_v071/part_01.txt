@@ -1,0 +1,82 @@
+        self.stock_connected=False;self.coin_connected=False;self.stock_last=0.0;self.coin_last=0.0
+        self.stock_error='';self.coin_error=''
+    def stock_subscribed(self):
+        with self.cv:self.stock_connected=True;self.stock_error='';self.stock_last=time.time();self.cv.notify_all()
+    def stock_disconnected(self,detail=''):
+        with self.cv:self.stock_connected=False;self.stock_error=str(detail)[:240];self.cv.notify_all()
+    def on_kiwoom(self,message):
+        if not isinstance(message,dict) or str(message.get('trnm'))!='REAL':return
+        changed=False
+        with self.cv:
+            for row in message.get('data') or []:
+                if not isinstance(row,dict) or str(row.get('type'))!='00':continue
+                v=row.get('values') or {};oid=str(v.get('9203') or '').lstrip('0')
+                if not oid:continue
+                rec={'order_id':oid,'code':str(v.get('9001') or '').replace('A',''),'status':str(v.get('913') or ''),
+                     'side':'BUY' if str(v.get('907') or '')=='2' else 'SELL' if str(v.get('907') or '')=='1' else '',
+                     'order_qty':int(_num(v.get('900'))),'unfilled_qty':int(_num(v.get('902'))),
+                     'fill_qty':int(_num(v.get('911'))),'fill_price':float(_num(v.get('910'))),
+                     'unit_fill_qty':int(_num(v.get('915'))),'unit_fill_price':float(_num(v.get('914'))),
+                     'at':_now()}
+                self.stock_orders[oid]=rec;self.stock_last=time.time();self.stock_connected=True;self.stock_error='';changed=True
+            if changed:self.cv.notify_all()
+    def wait_stock(self,order_id,qty,timeout=1.6):
+        oid=str(order_id or '').lstrip('0');deadline=time.monotonic()+max(0,float(timeout))
+        with self.cv:
+            while time.monotonic()<deadline:
+                r=self.stock_orders.get(oid)
+                if r and (int(r.get('fill_qty') or 0)>=int(qty) or str(r.get('status')) in ('취소','거부')):return dict(r)
+                self.cv.wait(min(.2,max(0,deadline-time.monotonic())))
+            r=self.stock_orders.get(oid);return dict(r) if r else None
+    def coin_connected_set(self,value,detail=''):
+        with self.cv:
+            self.coin_connected=bool(value);self.coin_error='' if value else str(detail)[:240]
+            if value:self.coin_last=time.time()
+            self.cv.notify_all()
+    def on_upbit(self,item):
+        if not isinstance(item,dict):return
+        typ=str(item.get('type') or '')
+        with self.cv:
+            if typ=='myOrder':
+                oid=str(item.get('uuid') or '');ident=str(item.get('identifier') or '')
+                if oid:self.coin_orders[oid]=dict(item)
+                if ident:self.coin_ids[ident]=dict(item)
+                self.coin_last=time.time();self.coin_connected=True;self.coin_error='';self.cv.notify_all()
+            elif typ=='myAsset':
+                self.assets=list(item.get('assets') or []);self.coin_last=time.time();self.coin_connected=True;self.coin_error='';self.cv.notify_all()
+    def wait_coin(self,order_id,identifier,qty,timeout=1.6):
+        deadline=time.monotonic()+max(0,float(timeout));want=Decimal(str(qty))
+        with self.cv:
+            while time.monotonic()<deadline:
+                r=self.coin_orders.get(str(order_id or '')) or self.coin_ids.get(str(identifier or ''))
+                if r:
+                    try:ex=Decimal(str(r.get('executed_volume') or '0'))
+                    except Exception:ex=Decimal(0)
+                    if ex>=want or str(r.get('state') or '') in ('done','cancel'):return dict(r)
+                self.cv.wait(min(.2,max(0,deadline-time.monotonic())))
+            r=self.coin_orders.get(str(order_id or '')) or self.coin_ids.get(str(identifier or ''));return dict(r) if r else None
+    def snapshot(self):
+        with self.cv:
+            return {'stock_00':{'connected':self.stock_connected,'last_frame_ms':int(self.stock_last*1000) if self.stock_last else 0,'error':self.stock_error},
+                    'upbit_private':{'connected':self.coin_connected,'last_frame_ms':int(self.coin_last*1000) if self.coin_last else 0,'error':self.coin_error,'asset_count':len(self.assets)}}
+
+class UpbitBroker:
+    REST='https://api.upbit.com'
+    def __init__(self,access,secret,journal,tracker=None):
+        self.access=access or '';self.secret=secret or '';self.journal=journal;self.tracker=tracker
+        import requests
+        self.s=requests.Session()
+    def ready(self):return bool(self.access and self.secret)
+    @staticmethod
+    def _b64(raw):
+        import base64
+        return base64.urlsafe_b64encode(raw).decode().rstrip('=')
+    def _jwt(self,params=None):
+        head=self._b64(b'{"alg":"HS256","typ":"JWT"}')
+        payload={'access_key':self.access,'nonce':str(uuid.uuid4())}
+        if params:
+            q=urlencode([(k,str(v)) for k,v in params.items()])
+            payload['query_hash']=hashlib.sha512(q.encode()).hexdigest();payload['query_hash_alg']='SHA512'
+        body=self._b64(json.dumps(payload,separators=(',',':')).encode())
+        sig=hmac.new(self.secret.encode(),(head+'.'+body).encode(),hashlib.sha256).digest()
+        return head+'.'+body+'.'+self._b64(sig)
