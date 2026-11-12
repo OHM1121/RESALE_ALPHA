@@ -221,8 +221,9 @@ final class LegacyLedgerMigration {
                 return blocked;
             }
             int chunks=status.optInt("read_chunks",0);long total=status.optLong("total_bytes",-1);
-            if(chunks<1||total<1||total>MAX_MIGRATION_ZIP||
-               chunks!=(total+240000L-1)/240000L)
+            int readBytes=status.optInt("read_chunk_bytes",240000);
+            if(chunks<1||total<1||total>MAX_MIGRATION_ZIP||readBytes<1||readBytes>1_000_000||
+               chunks!=(total+readBytes-1)/readBytes)
                 throw new SecurityException("Invalid migration chunk manifest");
             long initialFree=freeStorageBytes(context.getCacheDir());
             if(initialFree<total+MIN_FREE_SPACE)
