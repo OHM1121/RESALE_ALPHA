@@ -1,0 +1,57 @@
+        ledger['broker_orders']=self.journal.recent(120,market,strategy)
+        ledger['broker_fills']=[x for x in self.fills if x.get('market')==market and x.get('strategy')==strategy][:120]
+        return ledger
+    def hub_records(self):
+        result={'stock':{'shared':{},'at':{},'cw':{}},'coin':{'shared':{},'general':{},'ma':{}}}
+        at=self._attach_broker_orders(self._stock_at_ledger(),'stock','at');ma=self._attach_broker_orders(self._ma_ledger(),'stock','ma');gmo,gmo_research,gmo_errors=self._gmo_bundle();self._attach_broker_orders(gmo,'stock','gmo')
+        # AT record is the physical shared stock ledger. MA is nested and GMO is tagged,
+        # matching the Android strategy tabs without duplicating broker state.
+        at['ma_subledger']=ma
+        at.setdefault('positions',[]).extend(gmo.get('positions') or [])
+        at.setdefault('pending',[]).extend(gmo.get('pending') or [])
+        at.setdefault('executions',[]).extend(gmo.get('executions') or [])
+        at.setdefault('accounts',[]).extend(gmo.get('accounts') or [])
+        result['stock']['at']={'ledger':at,'research':{'items':(at.pop('_research_items',[]) + (gmo_research.get('items') or []))},'errors':{'items':at.pop('_errors',[])+gmo_errors}}
+        close_led,close_res,close_err=self._close_bundle();self._attach_broker_orders(close_led,'stock','close');result['stock']['cw']={'ledger':close_led,'research':close_res,'errors':{'items':close_err}}
+        coin_led,coin_res,coin_err=self._coin_bundle(self.coin_ledger,'general');self._attach_broker_orders(coin_led,'coin','general');result['coin']['general']={'ledger':coin_led,'research':coin_res,'errors':{'items':coin_err}}
+        ma_led,ma_res,ma_err=self._coin_bundle(self.coin_ma_ledger,'ma');self._attach_broker_orders(ma_led,'coin','ma');result['coin']['ma']={'ledger':ma_led,'research':ma_res,'errors':{'items':ma_err}}
+        feeds=self.feed_tracker.snapshot()
+        result['stock']['shared']={'ledger':{'broker_orders':self.journal.recent(200,'stock'),'broker_fills':[x for x in self.fills if x.get('market')=='stock'][:200],'private_feed':feeds.get('stock_00',{}),'halted':self._halted.get('stock')},'research':{'items':[]},'errors':{'items':[]}}
+        result['coin']['shared']={'ledger':{'broker_orders':self.journal.recent(200,'coin'),'broker_fills':[x for x in self.fills if x.get('market')=='coin'][:200],'private_feed':feeds.get('upbit_private',{}),'halted':self._halted.get('coin')},'research':{'items':[]},'errors':{'items':[]}}
+        return json.dumps(result,ensure_ascii=False,default=str)
+    def snapshot(self):
+        stock_status=str(getattr(self.stock_runner,'status','중지')) if self.stock_runner else '중지'
+        coin_status=str(getattr(self.coin_runner,'status','중지')) if self.coin_runner else '중지'
+        coin_connected=bool(getattr(self.coin_runner,'connected',False)) if self.coin_runner else False
+        feeds=self.feed_tracker.snapshot()
+        return json.dumps({'ok':True,'started':self.started,'live_enabled':dict(self._live),'halted':dict(self._halted),'private_feeds':feeds,
+          'stock':{'status':stock_status+' · 00 '+('연결' if feeds['stock_00']['connected'] else '대기'),'connected':'연결' in stock_status or '실시간' in stock_status},
+          'coin':{'status':coin_status+' · private '+('연결' if feeds['upbit_private']['connected'] else '대기'),'connected':coin_connected},'live_orders':self.journal.recent(40),'fills':self.fills[:50],'errors':self.errors[:30]},ensure_ascii=False)
+
+def start(root,kiwoom_key='',kiwoom_secret='',upbit_access='',upbit_secret='',live_stock=False,live_coin=False):
+    global _RUNTIME
+    with _LOCK:
+        if _RUNTIME is not None:
+            try:_RUNTIME.stop()
+            except Exception:pass
+        _RUNTIME=Runtime(root,kiwoom_key,kiwoom_secret,upbit_access,upbit_secret,bool(live_stock),bool(live_coin))
+        _RUNTIME.start();return _RUNTIME.snapshot()
+
+def stop():
+    global _RUNTIME
+    with _LOCK:
+        if _RUNTIME:_RUNTIME.stop()
+        return True
+
+def snapshot():
+    with _LOCK:
+        return _RUNTIME.snapshot() if _RUNTIME else json.dumps({'ok':True,'started':False},ensure_ascii=False)
+
+def hub_records():
+    with _LOCK:
+        return _RUNTIME.hub_records() if _RUNTIME else json.dumps({},ensure_ascii=False)
+
+def set_live(market,enabled):
+    with _LOCK:
+        if _RUNTIME:_RUNTIME.set_live(str(market),bool(enabled));return _RUNTIME.snapshot()
+        return snapshot()
