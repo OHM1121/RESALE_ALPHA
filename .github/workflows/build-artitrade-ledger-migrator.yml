@@ -2,6 +2,10 @@ name: Build ARTITRADE PC Ledger Migrator
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
+    paths:
+      - 'ARTITRADE_ANDROID/BUILD_LEDGER_MIGRATOR_FIX3.txt'
 
 concurrency:
   group: artitrade-ledger-migrator-${{ github.ref }}
@@ -19,7 +23,7 @@ jobs:
         shell: pwsh
         run: |
           python -m py_compile ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
-          python -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_connection.py' -v
+          python -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_*.py' -v
           Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "ARTITRADE_PC_LEDGER_MIGRATION_V1"
           Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "src.backup"
           Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "MSERVER 전송"
@@ -29,11 +33,11 @@ jobs:
       - name: Build one-file Windows migrator
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_LEDGER_MIGRATOR_V2_FIX2_20261113 ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
-          if (!(Test-Path "dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX2_20261113.exe")) { throw "EXE not created" }
-          Get-FileHash "dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX2_20261113.exe" -Algorithm SHA256 | Format-List
+          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_LEDGER_MIGRATOR_V2_FIX3_20261113 ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
+          if (!(Test-Path "dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX3_20261113.exe")) { throw "EXE not created" }
+          Get-FileHash "dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX3_20261113.exe" -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_LEDGER_MIGRATOR_V2_FIX2_20261113
-          path: dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX2_20261113.exe
+          name: ARTITRADE_LEDGER_MIGRATOR_V2_FIX3_20261113
+          path: dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX3_20261113.exe
           if-no-files-found: error
