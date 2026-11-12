@@ -7,6 +7,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Insets;
+import android.os.Build;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.net.Uri;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -45,14 +49,39 @@ public final class MainActivity extends Activity {
     private String trustedHost;
     private String homeUrl;
     private final AtomicBoolean dashboardLoading=new AtomicBoolean(false);
+    private final Handler dashboardHandler=new Handler(Looper.getMainLooper());
+    private final Runnable periodicDashboardRefresh=new Runnable(){
+        @Override public void run(){
+            if (!"hub".equals(BuildConfig.MARKET) && dashboardVisible) loadDashboardRecords();
+            dashboardHandler.postDelayed(this,20000);
+        }
+    };
+    private boolean dashboardVisible=false;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.rgb(10,17,30));
         getWindow().setNavigationBarColor(Color.rgb(10,17,30));
+        // API 35+ lays apps out behind the status/navigation bars by default.
+        // Use the OS-provided insets, not a hard-coded status bar height.
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(11,18,32));
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+            WindowInsetsController controller=getWindow().getInsetsController();
+            if(controller!=null)controller.setSystemBarsAppearance(0,
+                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            root.setOnApplyWindowInsetsListener((v,insets)->{
+                Insets safe=insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                v.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+                return insets;
+            });
+        }
         setContentView(root);
+        if (Build.VERSION.SDK_INT >= 30) root.requestApplyInsets();
         if ("hub".equals(BuildConfig.MARKET)) showHub();
         else showModernDashboard();
     }
@@ -78,6 +107,7 @@ public final class MainActivity extends Activity {
      *  No trading buttons or order execution are exposed by this client.
      */
     private void showModernDashboard() {
+        dashboardVisible=true;
         if (web != null) { web.destroy(); web = null; }
         root.removeAllViews();
         WebView dashboard = new WebView(this);
@@ -130,6 +160,7 @@ public final class MainActivity extends Activity {
                 if("pair".equals(id)) configurePhoneHub();
                 else if("status".equals(id)) readPhoneHubStatus();
                 else if("records".equals(id)) selectHubRecord();
+                else if("control".equals(id)) selectHubExecutionMode();
                 else if("cloud".equals(id)) configure();
                 else if("logs".equals(id)) showStoredErrors();
                 else if("refresh".equals(id)) loadDashboardRecords();
@@ -153,7 +184,9 @@ public final class MainActivity extends Activity {
                         {"shared","ledger","sharedLedger"},
                         {"shared","research","sharedResearch"},
                         {market.equals("stock")?"at":"general","ledger",market.equals("stock")?"atLedger":"generalLedger"},
-                        {market.equals("stock")?"cw":"ma","ledger",market.equals("stock")?"cwLedger":"maLedger"}
+                        {market.equals("stock")?"cw":"ma","ledger",market.equals("stock")?"cwLedger":"maLedger"},
+                        {market.equals("stock")?"at":"general","research",market.equals("stock")?"atResearch":"generalResearch"},
+                        {market.equals("stock")?"cw":"ma","research",market.equals("stock")?"cwResearch":"maResearch"}
                     }){
                     try{records.put(key[2],client.record(market,key[0],key[1]));}
                     catch(Exception ignored){records.put(key[2],new JSONObject().put("ok",false));}
@@ -182,6 +215,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showWelcome() {
+        dashboardVisible=false;
         if (web != null) { web.destroy(); web = null; }
         root.removeAllViews();
         LinearLayout panel = new LinearLayout(this);
@@ -237,6 +271,7 @@ public final class MainActivity extends Activity {
         else configure();
     }
     private void openCloud(String url) {
+        dashboardVisible=false;
         try { trustedHost = new URI(url).getHost().toLowerCase(Locale.ROOT); }
         catch (Exception ex) { showWelcome(); return; }
         homeUrl=url;
@@ -419,6 +454,40 @@ public final class MainActivity extends Activity {
                 "폰 서버 앱이 실행 중이고 페어링 토큰이 맞는지 확인하십시오."));}
         },"hub-client-status").start();
     }
+    private void selectHubExecutionMode() {
+        if ("hub".equals(BuildConfig.MARKET)) return;
+        final String market=BuildConfig.MARKET;
+        final String[] values={"pc","phone","off"};
+        final String[] choices={"PC 선택 (실거래 미연동)","휴대폰 선택 (실거래 미연동)","전체 정지"};
+        new AlertDialog.Builder(this)
+            .setTitle("매매 실행 기기")
+            .setItems(choices,(dialog,index)->{
+                final String selection=values[index];
+                String message="off".equals(selection)?
+                    "서버의 실행 기기 선택을 정지 상태로 변경합니다.":
+                    "실행 기기 선택만 서버에 저장합니다. 현재 PC EXE 및 휴대폰 앱에는 실제 주문 권한 연동이 완료되지 않아 자동매매는 시작되지 않습니다.";
+                new AlertDialog.Builder(this)
+                    .setTitle(choices[index])
+                    .setMessage(message)
+                    .setNegativeButton("취소",null)
+                    .setPositiveButton("확인",(d,w)->{
+                        new Thread(()->{
+                            try {
+                                JSONObject reply=new LocalHubClient(this).control(market,selection);
+                                runOnUiThread(()->{
+                                    showHubResult("실행 기기 선택",reply.optBoolean("ok")?
+                                        "선택 상태가 저장되었습니다. 실제 주문 실행 기능은 아직 미연결입니다.":
+                                        "서버에서 변경을 거부했습니다.");
+                                    loadDashboardRecords();
+                                });
+                            }catch(Exception e){
+                                runOnUiThread(()->showHubResult("변경 실패","폰 서버 연결 상태와 인증 토큰을 확인하십시오."));
+                            }
+                        },"hub-device-control").start();
+                    }).show();
+            }).show();
+    }
+
     private void selectHubRecord() {
         String market=BuildConfig.MARKET;
         final String[] strategies="stock".equals(market)?new String[]{"at","cw","shared"}:
@@ -450,6 +519,17 @@ public final class MainActivity extends Activity {
         if("hub".equals(BuildConfig.MARKET)){super.onBackPressed();return;}
         if (web!=null && web.canGoBack()) web.goBack();
         else showModernDashboard();
+    }
+    @Override protected void onResume(){
+        super.onResume();
+        if(!"hub".equals(BuildConfig.MARKET)){
+            dashboardHandler.removeCallbacks(periodicDashboardRefresh);
+            dashboardHandler.postDelayed(periodicDashboardRefresh,20000);
+        }
+    }
+    @Override protected void onPause(){
+        dashboardHandler.removeCallbacks(periodicDashboardRefresh);
+        super.onPause();
     }
     @Override public void onDestroy() {
         if(web!=null){web.destroy(); web=null;}
