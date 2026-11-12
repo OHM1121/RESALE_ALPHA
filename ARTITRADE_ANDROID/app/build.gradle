@@ -25,7 +25,7 @@ android {
         }
         hub {
             dimension 'market'
-            versionName '0.2.0-PHONE-SERVER'
+            versionName '0.2.1-PHONE-SERVER-PERSISTENT-SIGNING'
             applicationId 'com.artitrade.hub.s21dex'
             buildConfigField 'String', 'MARKET', '"hub"'
             resValue 'string', 'app_name', 'ARTITRADE 폰 서버'
