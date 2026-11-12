@@ -62,14 +62,16 @@ jobs:
           print('live bridge sha256',got)
           assert got==want,(got,want)
           PY
-      - name: Validate v0.7.4 runtime and operation adapters
+      - name: Validate v0.7.5 runtime, ledger and operation adapters
         shell: bash
         run: |
-          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_runtime_v074.py
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "DEFAULT_SEED=2_000_000" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "DEFAULT_MAX=4" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
-          grep -F "GMOService" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v074.py
+          grep -F "GMOService" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
+          grep -F '"alg":"HS512"' ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
+          grep -F "_hub_records_v075" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
       - name: Validate dashboard JavaScript
         shell: bash
         run: |
@@ -103,6 +105,13 @@ jobs:
           grep -F '"주식 전체 오류이력"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java || grep -F '+" 전체 오류이력"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'TimeframePerformanceGridView' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'bottomNavItem("home","⌂","대시보드")' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'using_hub_fallback' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'HmacSHA512' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/BrokerApiProbe.java
+          grep -F 'HmacSHA512' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UpbitRealtimeClient.java
+          grep -F 'LEGACY_HUB_RECORD_PRESERVED' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+          ! grep -F '전체 전략 계좌 성과 비교' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
       - name: Create version-labeled APK files
         shell: bash
         run: |
