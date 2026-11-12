@@ -60,6 +60,7 @@ public final class UnifiedVisualActivity extends Activity {
     private JSONObject cache=new JSONObject();
     private volatile boolean refreshRunning=false;
     private volatile boolean runtimeStartIssued=false;
+    private volatile boolean brokerProbeIssued=false;
     private String market="stock";
     private String strategy="at";
     private String page="home";
@@ -114,6 +115,7 @@ public final class UnifiedVisualActivity extends Activity {
                     showShell();
                     refresh(true);
                     startRuntimeLater();
+                    main.postDelayed(this::autoProbeBroker,900);
                 }catch(Throwable e){
                     new RuntimeCrashStore(this).add("native_shell",e);
                     showFatal(e);
@@ -969,6 +971,20 @@ public final class UnifiedVisualActivity extends Activity {
                 if(!c.isEmpty())store.saveUpbit(c,e);
                 runBrokerProbe(true);
             }).show();
+    }
+
+    private void autoProbeBroker(){
+        if(brokerProbeIssued)return;
+        BrokerSecretStore store=new BrokerSecretStore(this);
+        if(!store.hasKiwoom()&&!store.hasUpbit())return;
+        long last=getSharedPreferences("broker_probe_v1",MODE_PRIVATE).getLong("checked_at",0L);
+        if(System.currentTimeMillis()-last<6L*60L*60L*1000L)return;
+        brokerProbeIssued=true;
+        io.execute(()->{
+            JSONObject result=BrokerApiProbe.all(store);
+            getSharedPreferences("broker_probe_v1",MODE_PRIVATE).edit().putString("result",result.toString()).putLong("checked_at",System.currentTimeMillis()).apply();
+            main.post(()->refresh(false));
+        });
     }
 
     private void runBrokerProbe(boolean restartAfter){
