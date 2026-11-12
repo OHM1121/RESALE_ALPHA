@@ -2,6 +2,7 @@ package com.artitrade.mobile;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import org.json.JSONObject;
 
 /** Encrypted broker API credentials for the unified S21+ main engine. */
 final class BrokerSecretStore {
@@ -29,4 +30,21 @@ final class BrokerSecretStore {
     String upbitSecret(){return get("upbit_secret");}
     boolean hasKiwoom(){return !kiwoomKey().isEmpty()&&!kiwoomSecret().isEmpty();}
     boolean hasUpbit(){return !upbitAccess().isEmpty()&&!upbitSecret().isEmpty();}
+    private static String masked(String v){
+        if(v==null||v.isEmpty())return "";
+        int n=v.length();return (n<=4?"****":"••••"+v.substring(n-4));
+    }
+    JSONObject status(){
+        JSONObject o=new JSONObject();
+        try{
+            String kk=kiwoomKey(),ks=kiwoomSecret(),ua=upbitAccess(),us=upbitSecret();
+            o.put("kiwoom_saved",!kk.isEmpty()&&!ks.isEmpty());
+            o.put("upbit_saved",!ua.isEmpty()&&!us.isEmpty());
+            o.put("kiwoom_key_masked",masked(kk));
+            o.put("upbit_access_masked",masked(ua));
+            o.put("kiwoom_key_len",kk.length());
+            o.put("upbit_access_len",ua.length());
+        }catch(Exception ignored){}
+        return o;
+    }
 }
