@@ -79,10 +79,10 @@ jobs:
           print('live bridge sha256',got)
           assert got==want,(got,want)
           PY
-      - name: Validate v0.7.7 runtime, migration, ledger and per-account operation adapters
+      - name: Validate v0.7.8 EXE parity, migration, actual dashboard and incremental sync
         shell: bash
         run: |
-          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_runtime_v077.py
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "DEFAULT_SEED=2_000_000" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "DEFAULT_MAX=4" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
@@ -92,11 +92,16 @@ jobs:
           grep -F "ledger.save_allocation(payload)" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "'close':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX}" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "'gmo':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX}" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
-          grep -F "GMOService" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v077.py
-          grep -F '"alg":"HS512"' ARTITRADE_ANDROID/app/src/main/python/android_runtime_v077.py
-          grep -F "_hub_records_v077" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v077.py
-          grep -F "_stock_at_v19_full" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v077.py
-          grep -F "_coin_full" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v077.py
+          grep -F "GMOService" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F '"alg":"HS512"' ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "_hub_records_v078" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "_stock_at_v19_full" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "_coin_full" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "_target_summary" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "_close_full" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "actual_summary" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "virtual_summary" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          grep -F "stock/PROJECTGMO_V1.0" ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
           python3 -m py_compile ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
           grep -F "ARTITRADE_PC_LEDGER_MIGRATION_V1" ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
       - name: Validate dashboard JavaScript
@@ -133,6 +138,19 @@ jobs:
           grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'TimeframeAccountFlowView' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'STOCK CLOSE PNL FIX2' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'COIN FIX38 SR1 POLICY' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '실제 목표도달율' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '실제 매수 목표도달율' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '가상진입 목표도달율' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '엔진 점수 비교' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '① 폰 기준원장 → MSERVER 게시' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '② 기존 PC EXE 원장 → S21+ 승계' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          ! grep -F '연구 진행' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'recordMeta' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LocalHubClient.java
+          grep -F '/v1/record/meta' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HubServer.java
+          grep -F 'getRecordMeta' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SyncStore.java
+          grep -F 'artitrade_mserver_record_hash_v078' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
           grep -F 'bottomNavItem("home","⌂","대시보드")' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'using_hub_fallback' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'HmacSHA512' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/BrokerApiProbe.java
@@ -160,7 +178,7 @@ jobs:
         run: |
           APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$APKSIGNER" verify --print-certs "$APK" | tee ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/SIGNING_CERT_V077.txt
+          "$APKSIGNER" verify --print-certs "$APK" | tee ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/SIGNING_CERT_V078.txt
       - name: Create version-labeled APK files
         shell: bash
         run: |
