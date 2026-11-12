@@ -36,6 +36,7 @@ public final class UnifiedTradingService extends Service {
     private StrategyRuntimeBridge strategy;
     private RuntimeCrashStore crashes;
     private long lastHubPublish=0L;
+    private volatile boolean lastMserverAuthOk=false;
 
     @Override public void onCreate(){
         super.onCreate();
@@ -122,11 +123,23 @@ public final class UnifiedTradingService extends Service {
         while(running.get()){
             try{
                 JSONObject hs=hub.status();
-                stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
-                coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
+                lastMserverAuthOk=hs.optBoolean("ok",false);
+                getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE).edit()
+                    .putLong("at",System.currentTimeMillis())
+                    .putBoolean("ok",lastMserverAuthOk)
+                    .putString("error",hs.optString("error",""))
+                    .putInt("http_status",hs.optInt("http_status",200)).apply();
+                if(lastMserverAuthOk){
+                    stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
+                    coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
+                }
             }catch(Throwable e){
-                // Phone Hub failure must never stop market data or order state machine.
-                crashes.add("hub_monitor",e);
+                lastMserverAuthOk=false;
+                getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE).edit()
+                    .putLong("at",System.currentTimeMillis()).putBoolean("ok",false)
+                    .putString("error","UNREACHABLE:"+e.getClass().getSimpleName()+":"+String.valueOf(e.getMessage()))
+                    .putInt("http_status",0).apply();
+                crashes.add("mserver_monitor",e);
             }
             try{
                 JSONObject p=strategy.snapshot();
@@ -209,42 +222,62 @@ public final class UnifiedTradingService extends Service {
 
     private void publishPhoneLedgers(LocalHubClient hub,JSONObject all){
         if(all==null||all.length()==0)return;
-        int ok=0,failed=0,preserved=0;String lastError="";
+        int ok=0,failed=0,preserved=0,lastHttp=200;
+        String lastError="",lastMarket="",lastStrategy="",lastBucket="";
         try{
-            for(String market:new String[]{"stock","coin"}){
-                JSONObject m=all.optJSONObject(market);if(m==null)continue;
-                String[] strategies="stock".equals(market)?new String[]{"shared","at","cw"}:new String[]{"shared","general","ma"};
-                for(String strategyName:strategies){
-                    JSONObject s=m.optJSONObject(strategyName);if(s==null)continue;
-                    for(String bucket:new String[]{"ledger","research","errors"}){
-                        JSONObject data=s.optJSONObject(bucket);if(data==null)continue;
-                        try{
-                            if(!meaningfulRecord(data)){
-                                JSONObject remote=hub.record(market,strategyName,bucket);
-                                JSONObject old=remote.optJSONObject("data");
-                                if(meaningfulRecord(old)){
-                                    preserved++;
-                                    lastError="LEGACY_HUB_RECORD_PRESERVED:"+market+"/"+strategyName+"/"+bucket;
-                                    continue;
+            JSONObject auth=hub.status();
+            if(!auth.optBoolean("ok",false)){
+                failed=1;
+                lastHttp=auth.optInt("http_status",200);
+                lastError=auth.optString("error","MSERVER_AUTH_FAILED");
+                if(lastError.isEmpty())lastError="MSERVER_AUTH_FAILED";
+            }else{
+                for(String market:new String[]{"stock","coin"}){
+                    JSONObject m=all.optJSONObject(market);if(m==null)continue;
+                    String[] strategies="stock".equals(market)?new String[]{"shared","at","cw"}:new String[]{"shared","general","ma"};
+                    for(String strategyName:strategies){
+                        JSONObject st=m.optJSONObject(strategyName);if(st==null)continue;
+                        for(String bucket:new String[]{"ledger","research","errors"}){
+                            JSONObject data=st.optJSONObject(bucket);if(data==null)continue;
+                            try{
+                                if(!meaningfulRecord(data)){
+                                    JSONObject remote=hub.record(market,strategyName,bucket);
+                                    JSONObject old=remote.optJSONObject("data");
+                                    if(meaningfulRecord(old)){
+                                        preserved++;
+                                        continue;
+                                    }
                                 }
+                                JSONObject result=hub.putRecord(market,strategyName,bucket,data);
+                                if(result.optBoolean("ok"))ok++;
+                                else{
+                                    failed++;
+                                    lastMarket=market;lastStrategy=strategyName;lastBucket=bucket;
+                                    lastHttp=result.optInt("http_status",200);
+                                    String code=result.optString("error","MSERVER_WRITE_FAILED");
+                                    if("data_too_large".equals(code)){
+                                        lastError=code+": "+result.optLong("bytes",0)+"/"+result.optLong("max_bytes",0)+" bytes";
+                                    }else lastError=code+(lastHttp!=200?" HTTP "+lastHttp:"");
+                                    crashes.add("mserver_publish_"+market+"_"+strategyName+"_"+bucket,new IllegalStateException(lastError));
+                                }
+                            }catch(Throwable e){
+                                failed++;lastMarket=market;lastStrategy=strategyName;lastBucket=bucket;lastHttp=0;
+                                lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+                                crashes.add("mserver_publish_"+market+"_"+strategyName+"_"+bucket,e);
                             }
-                            JSONObject result=hub.putRecord(market,strategyName,bucket,data);
-                            if(result.optBoolean("ok"))ok++;
-                            else{
-                                failed++;lastError=result.optString("error","HUB_WRITE_FAILED");
-                                crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,new IllegalStateException(lastError));
-                            }
-                        }catch(Throwable e){
-                            failed++;lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
-                            crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,e);
                         }
                     }
                 }
             }
-        }catch(Throwable e){failed++;lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());crashes.add("hub_publish",e);}
+        }catch(Throwable e){
+            failed++;lastHttp=0;lastError="MSERVER_UNREACHABLE:"+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+            crashes.add("mserver_publish",e);
+        }
         getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE).edit()
             .putLong("at",System.currentTimeMillis()).putInt("ok",ok).putInt("failed",failed).putInt("preserved",preserved)
-            .putBoolean("legacy_preserved",preserved>0).putString("last_error",lastError).apply();
+            .putBoolean("legacy_preserved",preserved>0).putString("last_error",lastError)
+            .putString("last_market",lastMarket).putString("last_strategy",lastStrategy).putString("last_bucket",lastBucket)
+            .putInt("last_http_status",lastHttp).apply();
     }
 
     private long maintain(LocalHubClient hub,String market,JSONObject status,long epoch){
