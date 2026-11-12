@@ -114,7 +114,7 @@ jobs:
           node --check /tmp/artitrade_mobile_dashboard.js
           node --check /tmp/artitrade_unified_dashboard.js
 
-      - name: Build stock, coin, unified and phone hub APKs
+      - name: Build stock, coin, unified and MSERVER APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleUnifiedDebug :app:assembleHubDebug --stacktrace
       - name: Validate unified native launcher
@@ -160,7 +160,7 @@ jobs:
         run: |
           APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$APKSIGNER" verify --print-certs "$APK" | tee ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/SIGNING_CERT_V076.txt
+          "$APKSIGNER" verify --print-certs "$APK" | tee ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/SIGNING_CERT_V077.txt
       - name: Create version-labeled APK files
         shell: bash
         run: |
@@ -174,7 +174,7 @@ jobs:
               ("stock", "ARTITRADE_STOCK"),
               ("coin", "ARTITRADE_COIN"),
               ("unified", "ARTITRADE_UNIFIED"),
-              ("hub", "ARTITRADE_PHONE_SERVER"),
+              ("hub", "ARTITRADE_MSERVER"),
           ):
               directory = root / flavor / "debug"
               meta = json.loads((directory / "output-metadata.json").read_text(encoding="utf-8"))
