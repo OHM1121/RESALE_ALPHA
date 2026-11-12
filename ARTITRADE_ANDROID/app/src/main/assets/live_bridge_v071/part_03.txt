@@ -63,7 +63,7 @@ class LiveConnectionProxy:
         s=' '.join(str(sql).split())
         m=re.search(r'INSERT(?:\s+OR\s+IGNORE|\s+OR\s+REPLACE)?\s+INTO\s+executions\s*\((.*?)\)',s,re.I)
         if not m:return
-        cols=[x.strip().strip('"[]').lower() for x in m.group(1).split(',')]
+        cols=[x.strip().strip('"`[]').lower() for x in m.group(1).split(',')]
         if not isinstance(params,(list,tuple)):return
         # Map positional placeholders to their actual columns even when VALUES
         # contains SQL literals (coin executions use tax=0 as a literal).
