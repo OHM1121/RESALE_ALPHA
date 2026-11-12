@@ -481,6 +481,88 @@ public final class UnifiedVisualActivity extends Activity {
         return st;
     }
 
+    private JSONArray filterTf(JSONArray src,String tf){
+        JSONArray out=new JSONArray();
+        if(src==null)return out;
+        for(int i=0;i<src.length();i++){
+            JSONObject r=src.optJSONObject(i);if(r==null)continue;
+            String x=r.optString("tf",r.optString("frame",""));
+            if(tf.equals(x))out.put(r);
+        }
+        return out;
+    }
+
+    private Stats statsTf(String m,String stg,String tf){
+        Stats all=stats(m,stg),st=new Stats();
+        st.positions=filterTf(all.positions,tf);st.pending=filterTf(all.pending,tf);st.executions=filterTf(all.executions,tf);st.research=filterTf(all.research,tf);
+        JSONObject l=ledger(m,stg);
+        if("stock".equals(m)&&"ma".equals(stg)){
+            JSONObject pf=l.optJSONObject("performance_by_frame");JSONObject p=pf==null?null:pf.optJSONObject(tf);
+            if(p!=null){
+                st.realized=num(p,"realized_won","realized_pnl","realized");
+                st.unrealized=num(p,"holding_won","unrealized_pnl","holding");
+            }
+        }
+        if(!finite(st.realized)||!finite(st.unrealized)){
+            JSONArray ac=array(l,"accounts");
+            for(int i=0;i<ac.length();i++){
+                JSONObject a=ac.optJSONObject(i);if(a==null||!tf.equals(a.optString("tf","")))continue;
+                double rr=num(a,"realized_pnl","realized","net_realized");
+                double uu=num(a,"unrealized_pnl","holding","holding_pnl");
+                if(finite(rr))st.realized=rr;if(finite(uu))st.unrealized=uu;
+            }
+        }
+        if(!finite(st.realized))st.realized=sum(st.executions,true);
+        if(!finite(st.unrealized))st.unrealized=sum(st.positions,false);
+        if(finite(st.realized)&&finite(st.unrealized))st.total=st.realized+st.unrealized;
+
+        int known=0,wins=0,sell=0;
+        for(int i=0;i<st.executions.length();i++){
+            JSONObject r=st.executions.optJSONObject(i);if(r==null)continue;
+            String side=r.optString("side",r.optString("type","")).toUpperCase(Locale.ROOT);
+            if(side.contains("SELL")||side.contains("매도")){
+                sell++;double v=num(r,"net_profit","net_realized","net_pnl","pnl","profit");
+                if(finite(v)){known++;if(v>0)wins++;}
+            }
+        }
+        st.closed=sell;if(known>0)st.win=wins*100.0/known;
+        st.candidates=st.research.length();
+        for(int i=0;i<st.research.length();i++){
+            JSONObject r=st.research.optJSONObject(i);if(r==null)continue;
+            if(bool(r,"bought","purchased","buy_completed","filled"))st.bought++;
+            Boolean hit=target(r);if(hit!=null){st.confirmed++;if(hit)st.hits++;}
+        }
+        if(st.confirmed>0)st.target=st.hits*100.0/st.confirmed;
+        return st;
+    }
+
+    private double[] trendValues(JSONArray executions){
+        java.util.ArrayList<Double> pts=new java.util.ArrayList<>();double cum=0;
+        if(executions==null)return new double[0];
+        for(int i=executions.length()-1;i>=0;i--){
+            JSONObject r=executions.optJSONObject(i);if(r==null)continue;
+            String side=r.optString("side",r.optString("type","")).toUpperCase(Locale.ROOT);
+            if(!(side.contains("SELL")||side.contains("매도")))continue;
+            double v=num(r,"net_profit","net_realized","net_pnl","pnl","profit");if(!finite(v))continue;
+            cum+=v;pts.add(cum);if(pts.size()>=60)break;
+        }
+        double[] out=new double[pts.size()];for(int i=0;i<pts.size();i++)out[i]=pts.get(i);return out;
+    }
+
+    private String tfLabel(String tf){
+        if("5m".equals(tf))return "5분";
+        if("30m".equals(tf))return "30분";
+        if("60m".equals(tf))return "1시간";
+        if("day".equals(tf))return "일봉";
+        return tf;
+    }
+
+    private String[][] strategyList(String m){
+        return "stock".equals(m)
+            ?new String[][]{{"at","기준봉"},{"ma","MA"},{"close","종가베팅"},{"gmo","수급매매"}}
+            :new String[][]{{"general","기준봉"},{"ma","MA"}};
+    }
+
     private double sum(JSONArray a,boolean sellsOnly){
         double t=0;boolean known=false;
         for(int i=0;i<a.length();i++){JSONObject r=a.optJSONObject(i);if(r==null)continue;
