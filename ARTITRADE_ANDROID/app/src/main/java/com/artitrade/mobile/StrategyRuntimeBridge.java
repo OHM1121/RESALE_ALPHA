@@ -30,6 +30,7 @@ final class StrategyRuntimeBridge {
     private final Context context;
     private final RuntimeCrashStore crashes;
     private PyObject module;
+    private PyObject operationModule;
     private boolean started=false;
 
     StrategyRuntimeBridge(Context c){
@@ -48,7 +49,8 @@ final class StrategyRuntimeBridge {
             Python py=Python.getInstance();
             PyObject sys=py.getModule("sys");
             sys.get("path").callAttr("insert",0,source.getAbsolutePath());
-            module=py.getModule("android_live_bridge");
+            module=py.getModule("android_runtime_v074");
+            operationModule=py.getModule("android_operation_bridge");
             File root=new File(context.getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
             if(!root.exists()&&!root.mkdirs())throw new IllegalStateException("strategy runtime directory unavailable");
             BrokerSecretStore s=new BrokerSecretStore(context);
@@ -56,6 +58,10 @@ final class StrategyRuntimeBridge {
                 s.kiwoomKey(),s.kiwoomSecret(),s.upbitAccess(),s.upbitSecret(),
                 liveEnabled("stock"),liveEnabled("coin"));
             started=true;
+            try{
+                JSONObject applied=parse(operationModule.callAttr("apply_saved"));
+                if(!applied.optBoolean("ok",true))crashes.add("operation_apply_saved",new IllegalStateException(applied.toString()));
+            }catch(Throwable op){crashes.add("operation_apply_saved",op);}
             return parse(result);
         }catch(Throwable e){
             crashes.add("python_strategy_start",e);started=false;
@@ -173,6 +179,17 @@ final class StrategyRuntimeBridge {
         try{return parse(module.callAttr("hub_records"));}
         catch(Throwable e){crashes.add("python_hub_records",e);return new JSONObject();}
     }
+    synchronized JSONObject operationSnapshot(){
+        if(operationModule==null)return new JSONObject();
+        try{return parse(operationModule.callAttr("snapshot"));}
+        catch(Throwable e){crashes.add("operation_snapshot",e);return error("OPERATION_SNAPSHOT",e);}
+    }
+    synchronized JSONObject applyOperation(JSONObject settings){
+        if(operationModule==null)return error("OPERATION_RUNTIME_NOT_READY",null);
+        try{return parse(operationModule.callAttr("apply",settings==null?"{}":settings.toString()));}
+        catch(Throwable e){crashes.add("operation_apply",e);return error("OPERATION_APPLY",e);}
+    }
+
     synchronized JSONObject setLive(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))return new JSONObject();
         prefs().edit().putBoolean("live_"+market,enabled).commit();
