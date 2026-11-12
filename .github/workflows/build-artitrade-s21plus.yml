@@ -34,13 +34,50 @@ jobs:
           if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Validate dashboard JavaScript
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('ARTITRADE_ANDROID/app/src/main/assets/dashboard.html').read_text(encoding='utf-8')
+          matches = re.findall(r'<script[^>]*>(.*?)</script>', html, flags=re.S|re.I)
+          assert len(matches) == 1, 'Dashboard must contain one inline JavaScript module'
+          Path('/tmp/artitrade_mobile_dashboard.js').write_text(matches[0], encoding='utf-8')
+          PY
+          node --check /tmp/artitrade_mobile_dashboard.js
+
       - name: Build stock, coin and phone hub APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleHubDebug --stacktrace
+      - name: Install Korean preview fonts
+        run: |
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq fonts-noto-cjk >/dev/null
+      - name: Render compact and DeX UI previews
+        shell: bash
+        run: |
+          mkdir -p ui-previews
+          BROWSER="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$BROWSER" ]; then
+            echo "Chrome is not installed on the runner; skipping preview."
+          else
+            PAGE="file://$(pwd)/ARTITRADE_ANDROID/app/src/main/assets/dashboard.html"
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=990,450 --screenshot=ui-previews/artitrade_s21_landscape.png "$PAGE" || true
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1400,900 --screenshot=ui-previews/artitrade_dex.png "$PAGE" || true
+          fi
+      - name: Upload UI previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_Number_First_UI_Previews
+          path: ui-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_S21PLUS_Stock_Coin_PhoneHub_TEST_APKs
+          name: ARTITRADE_S21PLUS_NUMBER_FIRST_UI_TEST_APKs
           if-no-files-found: error
           retention-days: 14
           path: |

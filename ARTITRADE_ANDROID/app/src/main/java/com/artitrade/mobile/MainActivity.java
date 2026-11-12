@@ -21,6 +21,14 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
+import android.webkit.JavascriptInterface;
+import android.os.Handler;
+import android.os.Looper;
+import org.json.JSONObject;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import java.net.URI;
 import java.util.Locale;
@@ -36,6 +44,7 @@ public final class MainActivity extends Activity {
     private WebView web;
     private String trustedHost;
     private String homeUrl;
+    private final AtomicBoolean dashboardLoading=new AtomicBoolean(false);
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -45,7 +54,7 @@ public final class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(11,18,32));
         setContentView(root);
         if ("hub".equals(BuildConfig.MARKET)) showHub();
-        else showWelcome();
+        else showModernDashboard();
     }
 
     private int dp(float value) { return (int)(value * getResources().getDisplayMetrics().density + 0.5f); }
@@ -63,6 +72,115 @@ public final class MainActivity extends Activity {
         button.setOnClickListener(v -> onClick.run());
         return button;
     }
+
+    /** Number-first landscape UI. All finance figures come exclusively from the
+     *  authenticated local phone hub; missing records render as dashes.
+     *  No trading buttons or order execution are exposed by this client.
+     */
+    private void showModernDashboard() {
+        if (web != null) { web.destroy(); web = null; }
+        root.removeAllViews();
+        WebView dashboard = new WebView(this);
+        web = dashboard;
+        WebSettings settings = dashboard.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(false);
+        settings.setAllowContentAccess(false);
+        settings.setAllowFileAccess(false);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        WebView.setWebContentsDebuggingEnabled(false);
+        dashboard.setBackgroundColor(Color.rgb(8,15,26));
+        dashboard.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return true;
+            }
+        });
+        dashboard.addJavascriptInterface(new MobileBridge(), "Artitrade");
+        root.addView(dashboard,new FrameLayout.LayoutParams(-1,-1));
+        try(InputStream input=getAssets().open("dashboard.html")) {
+            ByteArrayOutputStream buffer=new ByteArrayOutputStream();
+            byte[] chunk=new byte[8192];
+            int count;
+            while((count=input.read(chunk))!=-1)buffer.write(chunk,0,count);
+            String html=new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+            dashboard.loadDataWithBaseURL("https://appassets.androidplatform.net/",
+                html,"text/html","UTF-8",null);
+        }catch(Exception ex) {
+            root.removeAllViews();
+            LinearLayout fallback=new LinearLayout(this);
+            fallback.setOrientation(LinearLayout.VERTICAL);
+            fallback.addView(label("ARTITRADE 대시보드 로드 실패",17));
+            fallback.addView(button("기본 연결 화면",this::showWelcome));
+            root.addView(fallback);
+        }
+    }
+
+    private final class MobileBridge {
+        @JavascriptInterface public String market() {
+            return "stock".equals(BuildConfig.MARKET)?"stock":"coin";
+        }
+        @JavascriptInterface public void refresh() {
+            runOnUiThread(()->loadDashboardRecords());
+        }
+        @JavascriptInterface public void action(String id) {
+            runOnUiThread(()->{
+                if("pair".equals(id)) configurePhoneHub();
+                else if("status".equals(id)) readPhoneHubStatus();
+                else if("records".equals(id)) selectHubRecord();
+                else if("cloud".equals(id)) configure();
+                else if("logs".equals(id)) showStoredErrors();
+                else if("refresh".equals(id)) loadDashboardRecords();
+            });
+        }
+    }
+
+    private void loadDashboardRecords() {
+        final WebView receiver=web;
+        if(receiver==null || !dashboardLoading.compareAndSet(false,true))return;
+        new Thread(()->{
+            JSONObject result=new JSONObject();
+            JSONObject records=new JSONObject();
+            try{
+                String market="stock".equals(BuildConfig.MARKET)?"stock":"coin";
+                result.put("market",market);
+                LocalHubClient client=new LocalHubClient(this);
+                try{result.put("status",client.status());}
+                catch(Exception ignored){result.put("status",new JSONObject().put("ok",false));}
+                for(String[] key:new String[][]{
+                        {"shared","ledger","sharedLedger"},
+                        {"shared","research","sharedResearch"},
+                        {market.equals("stock")?"at":"general","ledger",market.equals("stock")?"atLedger":"generalLedger"},
+                        {market.equals("stock")?"cw":"ma","ledger",market.equals("stock")?"cwLedger":"maLedger"}
+                    }){
+                    try{records.put(key[2],client.record(market,key[0],key[1]));}
+                    catch(Exception ignored){records.put(key[2],new JSONObject().put("ok",false));}
+                }
+                result.put("records",records);
+            }catch(Exception ignored){}
+            String json=JSONObject.quote(result.toString());
+            runOnUiThread(()->{
+                try{
+                    if(web==receiver)receiver.evaluateJavascript("window.__ARTI_UPDATE("+json+");",null);
+                }finally{dashboardLoading.set(false);}
+            });
+        },"artitrade-ui-snapshot").start();
+    }
+
+    private void showStoredErrors() {
+        new Thread(()->{
+            String market="stock".equals(BuildConfig.MARKET)?"stock":"coin";
+            try{
+                JSONObject record=new LocalHubClient(this).record(market,"shared","errors");
+                runOnUiThread(()->showHubResult("오류 기록",record.toString()));
+            }catch(Exception ignored){
+                runOnUiThread(()->showHubResult("오류 기록","연결할 수 없음"));
+            }
+        },"artitrade-ui-errors").start();
+    }
+
     private void showWelcome() {
         if (web != null) { web.destroy(); web = null; }
         root.removeAllViews();
@@ -331,7 +449,7 @@ public final class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if("hub".equals(BuildConfig.MARKET)){super.onBackPressed();return;}
         if (web!=null && web.canGoBack()) web.goBack();
-        else showWelcome();
+        else showModernDashboard();
     }
     @Override public void onDestroy() {
         if(web!=null){web.destroy(); web=null;}
