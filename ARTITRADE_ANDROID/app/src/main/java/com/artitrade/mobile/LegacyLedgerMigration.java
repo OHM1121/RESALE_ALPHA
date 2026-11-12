@@ -30,8 +30,8 @@ final class LegacyLedgerMigration {
         "stock/ARTITRADE_D.sqlite3",
         "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
         "stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3",
-        "stock/gmo/PROJECTGMO_V1.0_research.sqlite3",
-        "stock/gmo/PROJECTGMO_V1.0_account_state.json",
+        "stock/PROJECTGMO_V1.0_research.sqlite3",
+        "stock/PROJECTGMO_V1.0_account_state.json",
         "coin/base/upbit_paper.sqlite3",
         "coin/ma/upbit_paper.sqlite3"
     ));
@@ -42,7 +42,18 @@ final class LegacyLedgerMigration {
         this.context=c.getApplicationContext();this.crashes=crashes;
     }
     private SharedPreferences prefs(){return context.getSharedPreferences(PREF,Context.MODE_PRIVATE);}
+    private SharedPreferences progressPrefs(){return context.getSharedPreferences("artitrade_pc_ledger_import_progress_v078",Context.MODE_PRIVATE);}
     private File runtimeRoot(){return new File(context.getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");}
+    private void progress(String stage,String detail,long done,long total,boolean complete,String error){
+        int percent=total>0?(int)Math.max(0,Math.min(100,(done*100L)/total)):(complete?100:0);
+        progressPrefs().edit()
+            .putString("stage",stage==null?"":stage)
+            .putString("detail",detail==null?"":detail)
+            .putLong("done",done).putLong("total",total).putInt("percent",percent)
+            .putLong("updated_at",System.currentTimeMillis())
+            .putBoolean("complete",complete).putString("error",error==null?"":error)
+            .apply();
+    }
     private static JSONObject obj(Object... pairs){
         JSONObject o=new JSONObject();try{for(int i=0;i<pairs.length;i+=2)o.put((String)pairs[i],pairs[i+1]);}catch(Exception ignored){}return o;
     }
@@ -75,24 +86,16 @@ final class LegacyLedgerMigration {
         }catch(Exception ignored){return 0;}
         finally{if(q!=null)q.close();if(c!=null)c.close();}
     }
-    private boolean phoneHasTrades(){
-        File r=runtimeRoot();long total=0;
-        total+=count(new File(r,"stock/ARTITRADE_D.sqlite3"),"executions");
-        total+=count(new File(r,"stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"),"executions");
-        total+=count(new File(r,"stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3"),"executions");
-        total+=count(new File(r,"coin/base/upbit_paper.sqlite3"),"executions");
-        total+=count(new File(r,"coin/ma/upbit_paper.sqlite3"),"executions");
-        File gmo=new File(r,"stock/gmo/PROJECTGMO_V1.0_account_state.json");
-        if(gmo.isFile()){
-            try(FileInputStream in=new FileInputStream(gmo)){
-                ByteArrayOutputStream out=new ByteArrayOutputStream((int)Math.min(gmo.length(),4_000_000));
-                byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1&&out.size()<4_000_000)out.write(b,0,n);
-                JSONObject x=new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8));
-                JSONObject pos=x.optJSONObject("positions");JSONArray fills=x.optJSONArray("fills");
-                if((pos!=null&&pos.length()>0)||(fills!=null&&fills.length()>0))total++;
-            }catch(Exception ignored){}
-        }
-        return total>0;
+    private boolean phoneHasRealBrokerFills(){
+        File journal=new File(runtimeRoot(),"broker/live_order_journal.sqlite3");
+        if(!journal.isFile())return false;
+        SQLiteDatabase c=null;Cursor q=null;
+        try{
+            c=SQLiteDatabase.openDatabase(journal.getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
+            q=c.rawQuery("SELECT COUNT(*) FROM live_orders WHERE status='FILLED'",null);
+            return q.moveToFirst()&&q.getLong(0)>0;
+        }catch(Exception ignored){return false;}
+        finally{if(q!=null)q.close();if(c!=null)c.close();}
     }
     private JSONObject extract(File archive,File staging)throws Exception{
         deleteTree(staging);if(!staging.mkdirs()&&!staging.isDirectory())throw new IOException("staging unavailable");
@@ -137,22 +140,30 @@ final class LegacyLedgerMigration {
 
     JSONObject importIfReady(){
         try{
+            progress("CHECK","MSERVER 승계자료 확인",0,1,false,"");
             LocalHubClient hub=new LocalHubClient(context);
             JSONObject status=hub.migrationStatus();
-            if(!status.optBoolean("ok")||!status.optBoolean("ready")||!status.optBoolean("archive_exists",false))
+            if(!status.optBoolean("ok")||!status.optBoolean("ready")||!status.optBoolean("archive_exists",false)){
+                progress("WAITING","PC EXE 원장 승계자료 대기",0,1,false,"");
                 return obj("ok",true,"status","NO_PC_ARCHIVE");
+            }
             String session=status.optString("session"),sha=status.optString("archive_sha256");
             if(sha.equalsIgnoreCase(prefs().getString("imported_sha256",""))){
                 try{hub.migrationAck(session,sha);}catch(Exception ignored){}
+                progress("COMPLETE","기존 PC EXE 원장 승계 완료",1,1,true,"");
                 return obj("ok",true,"status","ALREADY_IMPORTED","sha256",sha);
             }
-            if(phoneHasTrades()){
-                JSONObject blocked=obj("ok",false,"status","PHONE_HAS_TRADES","message","Phone ledger already contains executions; automatic PC overwrite blocked","sha256",sha);
-                prefs().edit().putString("last_status",blocked.toString()).commit();return blocked;
+            if(phoneHasRealBrokerFills()){
+                JSONObject blocked=obj("ok",false,"status","PHONE_HAS_REAL_FILLS",
+                    "message","Actual broker FILLED orders exist; automatic historical replacement blocked for reconciliation","sha256",sha);
+                prefs().edit().putString("last_status",blocked.toString()).commit();
+                progress("BLOCKED","실제 브로커 체결 존재 · 자동 원장 교체 차단",0,1,false,"PHONE_HAS_REAL_FILLS");
+                return blocked;
             }
             int chunks=status.optInt("read_chunks",0);long total=status.optLong("total_bytes",-1);
             if(chunks<1||total<1||total>250L*1024L*1024L)throw new SecurityException("invalid migration size");
             File archive=new File(context.getCacheDir(),"pc_ledger_import_"+session+".zip");
+            progress("DOWNLOAD","MSERVER에서 PC EXE 원장 수신",0,chunks,false,"");
             try(FileOutputStream out=new FileOutputStream(archive,false)){
                 long wrote=0;
                 for(int i=0;i<chunks;i++){
@@ -161,23 +172,30 @@ final class LegacyLedgerMigration {
                     byte[] data=Base64.decode(part.optString("data_b64"),Base64.DEFAULT);
                     if(!sha256(data).equalsIgnoreCase(part.optString("sha256")))throw new SecurityException("migration chunk hash mismatch");
                     out.write(data);wrote+=data.length;
+                    progress("DOWNLOAD","PC EXE 원장 수신 "+(i+1)+"/"+chunks,i+1,chunks,false,"");
                 }
                 out.flush();out.getFD().sync();
                 if(wrote!=total)throw new IOException("migration byte count mismatch");
             }
+            progress("VERIFY","PC EXE 원장 무결성 검사",0,1,false,"");
             if(!sha256(archive).equalsIgnoreCase(sha))throw new SecurityException("migration archive hash mismatch");
+            progress("EXTRACT","PC EXE 원장 압축 해제",0,1,false,"");
             File staging=new File(context.getCacheDir(),"pc_ledger_stage_"+session);
             JSONObject manifest=extract(archive,staging);
+            progress("INSTALL","기존 PC EXE 원장을 폰 전략 DB로 승계",0,1,false,"");
             install(staging,sha);
             deleteTree(staging);archive.delete();
             JSONObject ack=hub.migrationAck(session,sha);
             JSONObject result=obj("ok",true,"status","IMPORTED","sha256",sha,"manifest",manifest,"ack",ack);
             prefs().edit().putString("last_status",result.toString()).commit();
+            progress("COMPLETE","기존 PC EXE 원장 승계 완료",1,1,true,"");
             return result;
         }catch(Throwable e){
             crashes.add("pc_ledger_migration",e);
             JSONObject result=obj("ok",false,"status","IMPORT_FAILED","type",e.getClass().getSimpleName(),"message",String.valueOf(e.getMessage()));
-            prefs().edit().putString("last_status",result.toString()).commit();return result;
+            prefs().edit().putString("last_status",result.toString()).commit();
+            progress("FAILED","PC EXE 원장 승계 실패",0,1,false,e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));
+            return result;
         }
     }
     JSONObject status(){
