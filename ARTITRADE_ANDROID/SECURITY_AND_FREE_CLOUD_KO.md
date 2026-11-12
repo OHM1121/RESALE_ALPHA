@@ -48,3 +48,11 @@ Cloudflare 무료: https://developers.cloudflare.com/workers/platform/limits/
 7. 실제 자동매매 사용 전 무료 플랜 가용성, 서버 재시작, 로그 영속성, 외부 고정 IP 요구 여부를 확인합니다.
 
 > 2026-11-12 기준 확인. 서비스 요금/제한은 언제든 변경될 수 있으므로 실제 가입 UI에서 다시 확인할 것.
+
+## 무료 요금제와 API IP 허용목록 주의
+
+Northflank Sandbox Free는 별도 유료 고정 출발지 IP(Egress IP/Gateway)를 제공하지 않는 것으로 공식 요금표에 표시됩니다. 관리형 클라우드의 기본 아웃바운드 IP는 공유되고 예측 불가할 수 있습니다. 증권사/거래소가 API 키당 고정 IP 등록을 요구하면 Sandbox Free만으로는 연동이 불가능할 수 있습니다. 유료 Egress Gateway는 공식 요금표상 $15/월입니다.
+
+Northflank 요금표에는 "No card needed"라고 쓰여 있으나, 별도 청구 문서에는 자원 생성 시 결제수단이 필요하다고 되어 있습니다. 실제 가입 화면에서 확인해야 하며, 무료 요금제가 실매매의 SLA를 제공하지 않습니다. 2026-11-12 기준.
+
+참고: https://northflank.com/pricing / https://northflank.com/docs/v1/application/network/configure-egress-ips / https://northflank.com/docs/v1/application/billing/pricing-on-northflank
