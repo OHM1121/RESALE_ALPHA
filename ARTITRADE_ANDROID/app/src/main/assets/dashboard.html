@@ -136,8 +136,8 @@ function list(container,rows,kind){
  rows.slice(0,80).forEach(function(row){
   if(!row || typeof row!=='object')return;
   var name=value(row,kind==='positions'?['symbol','ticker','name','market']:kind==='pending'?['symbol','ticker','name','market']:['symbol','ticker','name','action','type']);
-  var hint=value(row,kind==='executions'?['filled_at','time','at','side']:['stage','status','tf','time']);
-  var amt=value(row,kind==='positions'?['profit_rate','pnl_pct','pnl','paper_pnl']:kind==='pending'?['score','price','target_price']:['price','fill_price','qty','pnl']);
+  var hint=value(row,kind==='executions'?['filled_at','time','at','side']:kind==='research'?['decision','at','tf']:['stage','status','tf','time']);
+  var amt=value(row,kind==='positions'?['profit_rate','pnl_pct','pnl','paper_pnl']:kind==='pending'||kind==='research'?['score','price','target_price']:['price','fill_price','qty','pnl']);
   var outer=el('div','list-row');var left=el('div');left.appendChild(el('div','name',name===null?'—':String(name).slice(0,45)));left.appendChild(el('div','hint',hint===null?'':String(hint).slice(0,72)));outer.appendChild(left);
   var right=el('div','num',amt===null?'—':n(amt,kind==='positions'&&String(value(row,['profit_rate','pnl_pct']))===String(amt)?'%':''));shade(right,amt);outer.appendChild(right);container.appendChild(outer);
  });
@@ -202,10 +202,15 @@ function redraw(){
  var recent=value(ledger,['executions','fills','transactions']);
  if(homeExecutions)list(homeExecutions,Array.isArray(recent)?recent.slice(0,5):null,'executions');
  buildStrategies('strategyGrid');buildStrategies('strategyDetail');
- var rd=validData(state.records.sharedResearch);
- var rr=value(rd,['items','results','research']);
- var researchRows=Array.isArray(rr)?rr:null;
- if(!researchRows && rd && Object.keys(rd).length){researchRows=[{name:'동기화 연구 데이터',status:'저장됨',score:Object.keys(rd).length}];}
+ var researchRows=[];
+ var sharedItems=value(validData(state.records.sharedResearch),['items','results','research']);
+ if(Array.isArray(sharedItems))researchRows=researchRows.concat(sharedItems);
+ var firstResearch=state.market==='stock'?'atResearch':'generalResearch';
+ var secondResearch=state.market==='stock'?'cwResearch':'maResearch';
+ [firstResearch,secondResearch].forEach(function(key){
+  var items=value(validData(state.records[key]),['items','results','research']);
+  if(Array.isArray(items))researchRows=researchRows.concat(items);
+ });
  list($('researchList'),researchRows,'research');
  var control=$('strategyControls');control.textContent='';
  marketNames[state.market].forEach(function(label){
