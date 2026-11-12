@@ -121,18 +121,19 @@ final class LocalHubClient {
         return request("/v1/record/meta?market="+encode(market)+"&strategy="+encode(strategy)+"&bucket="+encode(bucket));
     }
     JSONObject putRecord(String market,String strategy,String bucket,JSONObject data)throws Exception{
-        JSONObject current=recordMeta(market,strategy,bucket);
-        if(!current.optBoolean("ok",false))return current;
-        int revision=current.optBoolean("exists")?current.optInt("revision",0):0;
-        JSONObject payload=new JSONObject().put("market",market).put("strategy",strategy)
-            .put("bucket",bucket).put("expected_revision",revision).put("data",data);
-        JSONObject reply=put("/v1/record",payload);
-        if(reply.optInt("http_status",200)==409 || "revision_conflict".equals(reply.optString("error"))){
-            current=recordMeta(market,strategy,bucket);
+        JSONObject reply=new JSONObject().put("ok",false).put("error","revision_conflict");
+        for(int attempt=0;attempt<4;attempt++){
+            JSONObject current=recordMeta(market,strategy,bucket);
             if(!current.optBoolean("ok",false))return current;
-            revision=current.optBoolean("exists")?current.optInt("revision",0):0;
-            payload.put("expected_revision",revision);
+            int revision=current.optBoolean("exists")?current.optInt("revision",0):0;
+            JSONObject payload=new JSONObject().put("market",market).put("strategy",strategy)
+                .put("bucket",bucket).put("expected_revision",revision).put("data",data);
             reply=put("/v1/record",payload);
+            if(reply.optBoolean("ok",false))return reply;
+            if(!"revision_conflict".equals(reply.optString("error","")))return reply;
+            // The record was updated between GET meta and PUT. Never assume
+            // success or bypass revision checks; refetch the authoritative revision.
+            if(attempt<3)Thread.sleep(100L*(attempt+1));
         }
         return reply;
     }
