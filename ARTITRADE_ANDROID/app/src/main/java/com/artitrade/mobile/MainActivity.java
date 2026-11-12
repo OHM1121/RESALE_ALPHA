@@ -49,6 +49,14 @@ public final class MainActivity extends Activity {
     private String trustedHost;
     private String homeUrl;
     private final AtomicBoolean dashboardLoading=new AtomicBoolean(false);
+    private final Handler dashboardHandler=new Handler(Looper.getMainLooper());
+    private final Runnable periodicDashboardRefresh=new Runnable(){
+        @Override public void run(){
+            if (!"hub".equals(BuildConfig.MARKET) && dashboardVisible) loadDashboardRecords();
+            dashboardHandler.postDelayed(this,20000);
+        }
+    };
+    private boolean dashboardVisible=false;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -99,6 +107,7 @@ public final class MainActivity extends Activity {
      *  No trading buttons or order execution are exposed by this client.
      */
     private void showModernDashboard() {
+        dashboardVisible=true;
         if (web != null) { web.destroy(); web = null; }
         root.removeAllViews();
         WebView dashboard = new WebView(this);
@@ -204,6 +213,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showWelcome() {
+        dashboardVisible=false;
         if (web != null) { web.destroy(); web = null; }
         root.removeAllViews();
         LinearLayout panel = new LinearLayout(this);
@@ -259,6 +269,7 @@ public final class MainActivity extends Activity {
         else configure();
     }
     private void openCloud(String url) {
+        dashboardVisible=false;
         try { trustedHost = new URI(url).getHost().toLowerCase(Locale.ROOT); }
         catch (Exception ex) { showWelcome(); return; }
         homeUrl=url;
@@ -506,6 +517,17 @@ public final class MainActivity extends Activity {
         if("hub".equals(BuildConfig.MARKET)){super.onBackPressed();return;}
         if (web!=null && web.canGoBack()) web.goBack();
         else showModernDashboard();
+    }
+    @Override protected void onResume(){
+        super.onResume();
+        if(!"hub".equals(BuildConfig.MARKET)){
+            dashboardHandler.removeCallbacks(periodicDashboardRefresh);
+            dashboardHandler.postDelayed(periodicDashboardRefresh,20000);
+        }
+    }
+    @Override protected void onPause(){
+        dashboardHandler.removeCallbacks(periodicDashboardRefresh);
+        super.onPause();
     }
     @Override public void onDestroy() {
         if(web!=null){web.destroy(); web=null;}
