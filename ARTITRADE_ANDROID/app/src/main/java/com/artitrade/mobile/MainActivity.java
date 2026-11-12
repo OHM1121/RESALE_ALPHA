@@ -370,8 +370,12 @@ public final class MainActivity extends Activity {
         }));
         actions.addView(button("새로고침",this::showHub));
         panel.addView(actions);
-        panel.addView(label("같은 휴대폰 앱에서 접속: http://127.0.0.1:8765",13));
-        boolean vpn=getSharedPreferences("hub_ui",MODE_PRIVATE).getBoolean("tailscale_enabled",false);
+        panel.addView(label("127.0.0.1은 휴대폰 내부 전용 · Windows PC 접속 주소가 아닙니다.",12));
+        boolean vpn=getSharedPreferences("hub_ui",MODE_PRIVATE).getBoolean("tailscale_enabled",true);
+        String publicVpnIp=HubService.vpnAddress();
+        panel.addView(label(!vpn?"PC 연결: Tailscale 접속 설정을 켜십시오":
+            publicVpnIp.isEmpty()?"PC 연결: Tailscale 주소 감지 대기 · 연결 후 새로고침":
+            "PC 연결 주소: http://"+publicVpnIp+":8765",15));
         panel.addView(label("Tailscale 전용 접속: "+(vpn?"사용 설정":"사용 안 함")+" (공유기 포트 개방 금지)",12));
         panel.addView(button(vpn?"Tailscale 접속 끄기":"Tailscale 접속 켜기",()->{
             boolean next=!getSharedPreferences("hub_ui",MODE_PRIVATE).getBoolean("tailscale_enabled",false);
