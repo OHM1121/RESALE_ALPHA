@@ -1,0 +1,87 @@
+                matched=[x for x in rows if str(x.get('ord_no') or '').lstrip('0')==str(ord_no).lstrip('0')]
+                total=sum((int(_num(x.get('cntr_qty'))) for x in matched))
+                if total>=int(qty):
+                    amount=sum((int(_num(x.get('cntr_qty')))*int(_num(x.get('cntr_uv'))) for x in matched))
+                    return total,(amount/total if total else 0)
+            except Exception:pass
+            time.sleep(.12)
+        return 0,0
+    def fok(self,event_key,side,code,qty,limit_price,reason='',venue='KRX',source='',strategy='',strategy_event_key=''):
+        if not self.ready():raise LiveOrderError('KIWOOM_KEYS_MISSING')
+        qty=int(qty);price=max(1,int(round(float(limit_price))))
+        row=self.journal.prepare(event_key,'stock',side,code,qty,price,reason,source,strategy,strategy_event_key)
+        if row['status']=='FILLED':return {'qty':int(float(row['fill_qty'])),'price':float(row['fill_price']),'order_id':row['broker_order_id']}
+        if row['status'] in ('PREPARED',):
+            body={'dmst_stex_tp':venue,'stk_cd':str(code).replace('A',''),'ord_qty':str(qty),'ord_uv':str(price),'trde_tp':'20','cond_uv':''}
+            try:
+                r,d=self._post('kt10000' if side=='BUY' else 'kt10001','/api/dostk/ordr',body,3)
+                if r.status_code>=400 or str(d.get('return_code',0))!='0':raise LiveOrderError('KIWOOM_ORDER_REJECTED:'+str(d.get('return_msg') or d)[:240])
+                oid=str(d.get('ord_no') or '')
+                if not oid:raise LiveOrderAmbiguous('KIWOOM_NO_ORDER_NUMBER')
+                self.journal.set(event_key,'SENT',oid,detail='FOK_ACCEPTED')
+            except LiveOrderError:raise
+            except Exception as e:
+                self.journal.set(event_key,'AMBIGUOUS',detail=type(e).__name__);raise LiveOrderAmbiguous('KIWOOM_SEND_AMBIGUOUS')
+        elif row['status'] in ('SENT',):oid=row['broker_order_id']
+        else:raise LiveOrderAmbiguous('KIWOOM_JOURNAL_'+row['status'])
+        got=0;avg=0
+        if self.tracker is not None:
+            wsrow=self.tracker.wait_stock(oid,qty,1.4)
+            if wsrow is not None:
+                got=int(wsrow.get('fill_qty') or 0);avg=float(wsrow.get('fill_price') or 0)
+        if got!=qty:
+            got,avg=self._find_fill(oid,str(code).replace('A',''),side,qty)
+        if got!=qty:
+            # FOK must be all-or-none. Any nonzero mismatch is a hard reconciliation fault.
+            self.journal.set(event_key,'NO_FILL' if got==0 else 'PARTIAL',oid,str(got),str(avg),detail='FOK_NOT_FULL')
+            raise LiveOrderNoFill('KIWOOM_FOK_NOT_FULL')
+        fill_price=avg or float(price)
+        self.journal.set(event_key,'FILLED',oid,str(got),str(fill_price),'KIWOOM_FOK_FULL')
+        return {'qty':got,'price':fill_price,'order_id':oid}
+
+class LiveConnectionProxy:
+    def __init__(self,raw,runtime,source=''):
+        self._raw=raw;self._rt=runtime;self._source=source
+    def __getattr__(self,n):return getattr(self._raw,n)
+    def __enter__(self):self._raw.__enter__();return self
+    def __exit__(self,*a):return self._raw.__exit__(*a)
+    def execute(self,sql,params=()):
+        ctx=self._before(sql,params)
+        try:return self._raw.execute(sql,params)
+        except Exception as e:
+            if ctx and ctx.get('filled'):self._rt.halt_market(ctx['market'],'LEDGER_AFTER_BROKER_FILL',e)
+            raise
+    def executemany(self,sql,seq):
+        rows=list(seq);contexts=[]
+        for p in rows:contexts.append(self._before(sql,p))
+        try:return self._raw.executemany(sql,rows)
+        except Exception as e:
+            for ctx in contexts:
+                if ctx and ctx.get('filled'):self._rt.halt_market(ctx['market'],'LEDGER_BATCH_AFTER_BROKER_FILL',e)
+            raise
+    def _before(self,sql,params):
+        s=' '.join(str(sql).split())
+        m=re.search(r'INSERT(?:\s+OR\s+IGNORE|\s+OR\s+REPLACE)?\s+INTO\s+executions\s*\((.*?)\)',s,re.I)
+        if not m:return
+        cols=[x.strip().strip('"[]').lower() for x in m.group(1).split(',')]
+        if not isinstance(params,(list,tuple)):return
+        # Map positional placeholders to their actual columns even when VALUES
+        # contains SQL literals (coin executions use tax=0 as a literal).
+        vm=re.search(r'\bVALUES\s*\((.*?)\)',s,re.I)
+        if not vm:return
+        vals=[x.strip() for x in vm.group(1).split(',')];d={};pi=0
+        for col,val in zip(cols,vals):
+            if val=='?':
+                if pi>=len(params):return
+                d[col]=params[pi];pi+=1
+            elif re.fullmatch(r'[-+]?\d+(?:\.\d+)?',val):
+                try:d[col]=float(val) if '.' in val else int(val)
+                except Exception:pass
+            elif len(val)>=2 and val[0]==val[-1] and val[0] in ("'",'"'):
+                d[col]=val[1:-1]
+        side=str(d.get('side') or '').upper();qty=d.get('qty');price=d.get('price')
+        if side not in ('BUY','SELL') or qty is None or price is None:return
+        symbol=str(d.get('market') or d.get('code') or '')
+        market='coin' if symbol.startswith('KRW-') else 'stock'
+        if not self._rt.live_enabled(market):return
+        reason=str(d.get('reason') or '')
