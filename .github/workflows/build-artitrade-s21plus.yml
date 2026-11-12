@@ -25,6 +25,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify Python 3.11 for Chaquopy
+        run: |
+          python3.11 --version
+          command -v python3.11
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
