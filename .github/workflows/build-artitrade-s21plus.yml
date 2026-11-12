@@ -50,6 +50,10 @@ jobs:
       - name: Build stock, coin and phone hub APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleHubDebug --stacktrace
+      - name: Install Korean preview fonts
+        run: |
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq fonts-noto-cjk >/dev/null
       - name: Render compact and DeX UI previews
         shell: bash
         run: |
