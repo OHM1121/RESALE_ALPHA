@@ -29,6 +29,12 @@ import android.webkit.JavascriptInterface;
 import android.os.Handler;
 import android.os.Looper;
 import org.json.JSONObject;
+import org.json.JSONArray;
+import android.provider.DocumentsContract;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.TimeZone;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -57,6 +63,8 @@ public final class MainActivity extends Activity {
         }
     };
     private boolean dashboardVisible=false;
+    private static final int REQUEST_EXPORT_RECORD=4912;
+    private byte[] pendingRecordExport=null;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -164,6 +172,7 @@ public final class MainActivity extends Activity {
                 else if("cloud".equals(id)) configure();
                 else if("logs".equals(id)) showStoredErrors();
                 else if("refresh".equals(id)) loadDashboardRecords();
+                else if(id!=null && id.startsWith("export:")) exportHubRecord(id);
             });
         }
     }
@@ -186,7 +195,9 @@ public final class MainActivity extends Activity {
                         {market.equals("stock")?"at":"general","ledger",market.equals("stock")?"atLedger":"generalLedger"},
                         {market.equals("stock")?"cw":"ma","ledger",market.equals("stock")?"cwLedger":"maLedger"},
                         {market.equals("stock")?"at":"general","research",market.equals("stock")?"atResearch":"generalResearch"},
-                        {market.equals("stock")?"cw":"ma","research",market.equals("stock")?"cwResearch":"maResearch"}
+                        {market.equals("stock")?"cw":"ma","research",market.equals("stock")?"cwResearch":"maResearch"},
+                        {market.equals("stock")?"at":"general","errors",market.equals("stock")?"atErrors":"generalErrors"},
+                        {market.equals("stock")?"cw":"ma","errors",market.equals("stock")?"cwErrors":"maErrors"}
                     }){
                     try{records.put(key[2],client.record(market,key[0],key[1]));}
                     catch(Exception ignored){records.put(key[2],new JSONObject().put("ok",false));}
@@ -454,6 +465,92 @@ public final class MainActivity extends Activity {
                 "폰 서버 앱이 실행 중이고 페어링 토큰이 맞는지 확인하십시오."));}
         },"hub-client-status").start();
     }
+    /** Download a bounded JSON snapshot through the Android system file picker.
+     *  Stock's MA/GMO are filtered views of the existing AT hub strategy.
+     *  This does not export credentials or perform any trading operation.
+     */
+    private void exportHubRecord(String command) {
+        String[] tokens=command.split(":",-1);
+        if(tokens.length!=3) return;
+        final String bucket=tokens[1];
+        final String pane=tokens[2];
+        final String market="stock".equals(BuildConfig.MARKET)?"stock":"coin";
+        if(!("research".equals(bucket)||"errors".equals(bucket))) return;
+        if("stock".equals(market)) {
+            if(!("at".equals(pane)||"ma".equals(pane)||"close".equals(pane)||"gmo".equals(pane))) return;
+        }else {
+            if(!("general".equals(pane)||"ma".equals(pane))) return;
+        }
+        final String remote="stock".equals(market)
+                ?("close".equals(pane)?"cw":"at"):pane;
+        new Thread(()->{
+            try {
+                JSONObject record=new LocalHubClient(this).record(market,remote,bucket);
+                if(!record.optBoolean("ok") || !record.optBoolean("exists")) {
+                    runOnUiThread(()->showHubResult("내보낼 기록 없음","서버에 해당 기록이 없습니다."));
+                    return;
+                }
+                JSONObject source=record.optJSONObject("data");
+                if(source==null) return;
+                JSONObject copy=new JSONObject(source.toString());
+                JSONArray items=source.optJSONArray("items");
+                if(items!=null && "stock".equals(market)&&!"close".equals(pane)){
+                    JSONArray selected=new JSONArray();
+                    for(int i=0;i<items.length();i++){
+                        JSONObject item=items.optJSONObject(i);
+                        if(item==null)continue;
+                        String tag=item.optString("tf",item.optString("strategy","")).toLowerCase(java.util.Locale.ROOT);
+                        boolean ma=tag.contains("ma")||tag.contains("이평");
+                        boolean gmo=tag.contains("gmo")||tag.contains("수급");
+                        if(("ma".equals(pane)&&ma)||("gmo".equals(pane)&&gmo)
+                                ||("at".equals(pane)&&!ma&&!gmo))selected.put(item);
+                    }
+                    copy.put("items",selected);
+                    copy.put("count",selected.length());
+                }
+                JSONObject output=new JSONObject();
+                output.put("market",market);
+                output.put("strategy",pane);
+                output.put("bucket",bucket);
+                output.put("revision",record.optInt("revision",0));
+                output.put("data",copy);
+                final byte[] bytes=output.toString(2).getBytes(StandardCharsets.UTF_8);
+                SimpleDateFormat fmt=new SimpleDateFormat("yyyyMMdd_HHmm",java.util.Locale.KOREA);
+                fmt.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
+                String filename="ARTITRADE_"+market+"_"+pane+"_"+bucket+"_"+fmt.format(new Date())+".json";
+                runOnUiThread(()->{
+                    pendingRecordExport=bytes;
+                    Intent request=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    request.addCategory(Intent.CATEGORY_OPENABLE);
+                    request.setType("application/json");
+                    request.putExtra(Intent.EXTRA_TITLE,filename);
+                    try{startActivityForResult(request,REQUEST_EXPORT_RECORD);}
+                    catch(Exception ex){pendingRecordExport=null;showHubResult("내보내기 오류","저장할 파일 위치를 선택할 수 없습니다.");}
+                });
+            }catch(Exception ex){
+                runOnUiThread(()->showHubResult("내보내기 오류","폰 서버 연결 및 기록을 확인하십시오."));
+            }
+        },"artitrade-export").start();
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode!=REQUEST_EXPORT_RECORD)return;
+        final byte[] contents=pendingRecordExport;
+        pendingRecordExport=null;
+        if(resultCode!=RESULT_OK||contents==null||data==null||data.getData()==null)return;
+        final Uri target=data.getData();
+        new Thread(()->{
+            try(OutputStream out=getContentResolver().openOutputStream(target,"w")){
+                if(out==null)throw new IllegalStateException("Storage provider refused write");
+                out.write(contents);
+                out.flush();
+                runOnUiThread(()->showHubResult("내보내기 완료","선택한 위치에 기록을 저장했습니다."));
+            }catch(Exception ex) {
+                runOnUiThread(()->showHubResult("내보내기 실패","기기 저장소 권한 또는 남은 용량을 확인하십시오."));
+            }
+        },"artitrade-write-export").start();
+    }
+
     private void selectHubExecutionMode() {
         if ("hub".equals(BuildConfig.MARKET)) return;
         final String market=BuildConfig.MARKET;
