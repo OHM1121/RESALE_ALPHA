@@ -40,16 +40,18 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
-          html = Path('ARTITRADE_ANDROID/app/src/main/assets/dashboard.html').read_text(encoding='utf-8')
-          matches = re.findall(r'<script[^>]*>(.*?)</script>', html, flags=re.S|re.I)
-          assert len(matches) == 1, 'Dashboard must contain one inline JavaScript module'
-          Path('/tmp/artitrade_mobile_dashboard.js').write_text(matches[0], encoding='utf-8')
+          for src, out in [('dashboard.html','/tmp/artitrade_mobile_dashboard.js'),('unified_dashboard.html','/tmp/artitrade_unified_dashboard.js')]:
+              html = Path('ARTITRADE_ANDROID/app/src/main/assets/'+src).read_text(encoding='utf-8')
+              matches = re.findall(r'<script[^>]*>(.*?)</script>', html, flags=re.S|re.I)
+              assert len(matches) == 1, f'{src} must contain one inline JavaScript module'
+              Path(out).write_text(matches[0], encoding='utf-8')
           PY
           node --check /tmp/artitrade_mobile_dashboard.js
+          node --check /tmp/artitrade_unified_dashboard.js
 
-      - name: Build stock, coin and phone hub APKs
+      - name: Build stock, coin, unified and phone hub APKs
         working-directory: ARTITRADE_ANDROID
-        run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleHubDebug --stacktrace
+        run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleUnifiedDebug :app:assembleHubDebug --stacktrace
       - name: Create version-labeled APK files
         shell: bash
         run: |
@@ -62,6 +64,7 @@ jobs:
           for flavor, label in (
               ("stock", "ARTITRADE_STOCK"),
               ("coin", "ARTITRADE_COIN"),
+              ("unified", "ARTITRADE_UNIFIED"),
               ("hub", "ARTITRADE_PHONE_SERVER"),
           ):
               directory = root / flavor / "debug"
@@ -91,9 +94,9 @@ jobs:
           if [ -z "$BROWSER" ]; then
             echo "Chrome is not installed on the runner; skipping preview."
           else
-            PAGE="file://$(pwd)/ARTITRADE_ANDROID/app/src/main/assets/dashboard.html"
-            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=990,450 --screenshot=ui-previews/artitrade_s21_landscape.png "$PAGE" || true
-            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1400,900 --screenshot=ui-previews/artitrade_dex.png "$PAGE" || true
+            PAGE="file://$(pwd)/ARTITRADE_ANDROID/app/src/main/assets/unified_dashboard.html"
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=990,450 --screenshot=ui-previews/artitrade_unified_s21.png "$PAGE" || true
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1400,900 --screenshot=ui-previews/artitrade_unified_dex.png "$PAGE" || true
           fi
       - name: Upload UI previews
         if: always()
@@ -112,4 +115,5 @@ jobs:
           path: |
             ARTITRADE_ANDROID/app/build/outputs/apk/stock/debug/ARTITRADE_*.apk
             ARTITRADE_ANDROID/app/build/outputs/apk/coin/debug/ARTITRADE_*.apk
+            ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/ARTITRADE_*.apk
             ARTITRADE_ANDROID/app/build/outputs/apk/hub/debug/ARTITRADE_*.apk
