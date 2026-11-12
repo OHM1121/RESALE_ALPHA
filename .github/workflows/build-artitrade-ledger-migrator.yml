@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - artitrade-phone-main-v070-live-orders-20261112
+      - main
     paths:
       - 'ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py'
       - '.github/workflows/build-artitrade-ledger-migrator.yml'
