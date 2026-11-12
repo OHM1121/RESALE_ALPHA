@@ -61,10 +61,10 @@ final class BrokerApiProbe {
     }
     private static String b64(byte[] raw){return Base64.encodeToString(raw,Base64.URL_SAFE|Base64.NO_WRAP|Base64.NO_PADDING);}
     private static String jwt(String access,String secret)throws Exception{
-        String h=b64("{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
+        String h=b64("{\"alg\":\"HS512\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
         String p=b64(new JSONObject().put("access_key",access).put("nonce",UUID.randomUUID().toString()).toString().getBytes(StandardCharsets.UTF_8));
         String msg=h+"."+p;
-        Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
+        Mac mac=Mac.getInstance("HmacSHA512");mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA512"));
         return msg+"."+b64(mac.doFinal(msg.getBytes(StandardCharsets.US_ASCII)));
     }
     static JSONObject upbit(BrokerSecretStore store){
