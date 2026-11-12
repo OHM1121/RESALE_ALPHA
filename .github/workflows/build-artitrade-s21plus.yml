@@ -34,15 +34,16 @@ jobs:
           if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-      - name: Build stock and coin APKs
+      - name: Build stock, coin and phone hub APKs
         working-directory: ARTITRADE_ANDROID
-        run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug --stacktrace
+        run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleHubDebug --stacktrace
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_S21PLUS_Stock_Coin_Cloud_Client_APKs
+          name: ARTITRADE_S21PLUS_Stock_Coin_PhoneHub_TEST_APKs
           if-no-files-found: error
           retention-days: 14
           path: |
             ARTITRADE_ANDROID/app/build/outputs/apk/stock/debug/*.apk
             ARTITRADE_ANDROID/app/build/outputs/apk/coin/debug/*.apk
+            ARTITRADE_ANDROID/app/build/outputs/apk/hub/debug/*.apk
