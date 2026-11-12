@@ -24,6 +24,7 @@ final class SyncStore extends SQLiteOpenHelper {
     private final SecureBox box;
     private final Context context;
     private static final long MIGRATION_MAX_BYTES=250L*1024L*1024L;
+    private static final int RECORD_MAX_BYTES=32*1024*1024;
     private static final int MIGRATION_UPLOAD_CHUNK_MAX=350000;
     private static final int MIGRATION_READ_CHUNK=240000;
     private static final long LEASE_MS=30000;
@@ -70,8 +71,9 @@ final class SyncStore extends SQLiteOpenHelper {
         if(!validStrategy(market,strategy)||!validBucket(bucket)||expected<0 || data==null)
             return obj("ok",false,"error","invalid_record");
         String plain=data.toString();
-        if(plain.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>524288)
-            return obj("ok",false,"error","data_too_large");
+        int plainBytes=plain.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if(plainBytes>RECORD_MAX_BYTES)
+            return obj("ok",false,"error","data_too_large","bytes",plainBytes,"max_bytes",RECORD_MAX_BYTES);
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try{
