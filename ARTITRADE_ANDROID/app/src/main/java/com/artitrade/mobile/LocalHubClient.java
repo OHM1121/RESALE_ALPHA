@@ -54,11 +54,11 @@ final class LocalHubClient {
         c.setRequestProperty("Connection","keep-alive");
         try{return parse(c);}finally{c.disconnect();}
     }
-    private JSONObject post(String path,JSONObject payload)throws Exception{
+    private JSONObject send(String method,String path,JSONObject payload)throws Exception{
         byte[] body=payload.toString().getBytes(StandardCharsets.UTF_8);
         HttpURLConnection c=(HttpURLConnection)new URL(BASE+path).openConnection();
-        c.setConnectTimeout(1800);c.setReadTimeout(2200);
-        c.setRequestMethod("POST");
+        c.setConnectTimeout(1800);c.setReadTimeout(2600);
+        c.setRequestMethod(method);
         c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Authorization","Bearer "+savedPairingToken());
         c.setRequestProperty("Accept","application/json");
@@ -71,6 +71,8 @@ final class LocalHubClient {
             return parse(c);
         }finally{c.disconnect();}
     }
+    private JSONObject post(String path,JSONObject payload)throws Exception{return send("POST",path,payload);}
+    private JSONObject put(String path,JSONObject payload)throws Exception{return send("PUT",path,payload);}
     JSONObject control(String market,String desired) throws Exception {
         if(!("stock".equals(market)||"coin".equals(market)))throw new IllegalArgumentException("Unsupported market");
         if(!("pc".equals(desired)||"phone".equals(desired)||"off".equals(desired)))throw new IllegalArgumentException("Unsupported device");
@@ -91,5 +93,19 @@ final class LocalHubClient {
     JSONObject status() throws Exception {return request("/v1/status");}
     JSONObject record(String market,String strategy,String bucket)throws Exception {
         return request("/v1/record?market="+encode(market)+"&strategy="+encode(strategy)+"&bucket="+encode(bucket));
+    }
+    JSONObject putRecord(String market,String strategy,String bucket,JSONObject data)throws Exception{
+        JSONObject current=record(market,strategy,bucket);
+        int revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
+        JSONObject payload=new JSONObject().put("market",market).put("strategy",strategy)
+            .put("bucket",bucket).put("expected_revision",revision).put("data",data);
+        JSONObject reply=put("/v1/record",payload);
+        if(reply.optInt("http_status",200)==409 || "revision_conflict".equals(reply.optString("error"))){
+            current=record(market,strategy,bucket);
+            revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
+            payload.put("expected_revision",revision);
+            reply=put("/v1/record",payload);
+        }
+        return reply;
     }
 }

@@ -73,27 +73,34 @@ public final class UnifiedActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(Color.rgb(8,15,26));
-        getWindow().setNavigationBarColor(Color.rgb(8,15,26));
-        root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(8,15,26));
-        if (Build.VERSION.SDK_INT >= 30) {
-            getWindow().setDecorFitsSystemWindows(false);
-            WindowInsetsController c=getWindow().getInsetsController();
-            if(c!=null)c.setSystemBarsAppearance(0,
-                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS |
-                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
-            root.setOnApplyWindowInsetsListener((v,insets)->{
-                Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
-                v.setPadding(safe.left,safe.top,safe.right,safe.bottom);
-                return insets;
-            });
+        try {
+            getWindow().setStatusBarColor(Color.rgb(8,15,26));
+            getWindow().setNavigationBarColor(Color.rgb(8,15,26));
+            root = new FrameLayout(this);
+            root.setBackgroundColor(Color.rgb(8,15,26));
+            if (Build.VERSION.SDK_INT >= 30) {
+                getWindow().setDecorFitsSystemWindows(false);
+                WindowInsetsController controller=getWindow().getInsetsController();
+                if(controller!=null)controller.setSystemBarsAppearance(0,
+                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS |
+                    WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+                root.setOnApplyWindowInsetsListener((v,insets)->{
+                    Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+                    v.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+                    return insets;
+                });
+            }
+            setContentView(root);
+            if(Build.VERSION.SDK_INT>=30) root.requestApplyInsets();
+            showPreloader();
+            // SAFEBOOT: the UI/preload comes up first. Real-time services are
+            // started only after WebView is alive, so broker/network faults can
+            // never close the launcher activity at startup.
+            refreshAll(true);
+        } catch(Throwable fatal) {
+            new RuntimeCrashStore(this).add("activity_onCreate",fatal);
+            showStartupRecovery(fatal);
         }
-        setContentView(root);
-        if(Build.VERSION.SDK_INT>=30) root.requestApplyInsets();
-        showPreloader();
-        startRuntimeService();
-        refreshAll(true);
     }
 
     private int dp(float v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
@@ -207,6 +214,15 @@ public final class UnifiedActivity extends Activity {
                 packet.put("credentials",new JSONObject()
                     .put("kiwoom",brokerSecrets.hasKiwoom())
                     .put("upbit",brokerSecrets.hasUpbit()));
+                try{
+                    String runtimeRaw=getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).getString("snapshot","{}");
+                    packet.put("strategy_runtime",new JSONObject(runtimeRaw));
+                }catch(Exception ignored){packet.put("strategy_runtime",new JSONObject());}
+                android.content.SharedPreferences livePrefs=getSharedPreferences("unified_live_orders",MODE_PRIVATE);
+                packet.put("live_orders",new JSONObject()
+                    .put("stock",livePrefs.getBoolean("live_stock",false))
+                    .put("coin",livePrefs.getBoolean("live_coin",false)));
+                packet.put("runtime_diagnostics",new RuntimeCrashStore(this).read());
                 int n=done.incrementAndGet();
                 if(first)main.post(()->updatePreload(n,"서버 상태 확인"));
 
@@ -258,7 +274,13 @@ public final class UnifiedActivity extends Activity {
         web.setBackgroundColor(Color.rgb(8,15,26));
         web.addJavascriptInterface(new Bridge(),"Artitrade");
         web.setWebViewClient(new WebViewClient(){
-            @Override public void onPageFinished(WebView view,String url){pushCache();}
+            @Override public void onPageFinished(WebView view,String url){
+                pushCache();
+                main.postDelayed(()->{
+                    try{startRuntimeService();}
+                    catch(Throwable e){new RuntimeCrashStore(UnifiedActivity.this).add("delayed_runtime_start",e);}
+                },900);
+            }
         });
         root.addView(web,new FrameLayout.LayoutParams(-1,-1));
         try(InputStream in=getAssets().open("unified_dashboard.html")){
@@ -276,6 +298,34 @@ public final class UnifiedActivity extends Activity {
         synchronized(cacheLock){try{copy=new JSONObject(cache.toString());}catch(Exception e){copy=new JSONObject();}}
         String quoted=JSONObject.quote(copy.toString());
         web.evaluateJavascript("window.__ARTI_SNAPSHOT("+quoted+");",null);
+    }
+
+    private void showStartupRecovery(Throwable error){
+        if(root==null){
+            root=new FrameLayout(this);
+            root.setBackgroundColor(Color.rgb(8,15,26));
+            try{setContentView(root);}catch(Throwable ignored){}
+        }
+        root.removeAllViews();
+        LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(dp(30),dp(18),dp(30),dp(18));
+        panel.addView(text("ARTITRADE 안전 시작 모드",21));
+        TextView note=text("앱 시작 중 일부 구성요소가 실패했습니다. 앱은 종료하지 않고 진단 모드로 유지합니다.",13);
+        note.setTextColor(Color.rgb(181,202,225));note.setPadding(0,dp(10),0,dp(12));panel.addView(note);
+        TextView reason=text((error==null?"알 수 없는 오류":error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage())),11);
+        reason.setTextColor(Color.rgb(255,145,155));panel.addView(reason);
+        Button retry=button("대시보드 다시 열기",()->{
+            try{showPreloader();refreshAll(true);}
+            catch(Throwable e){new RuntimeCrashStore(this).add("safe_retry",e);}
+        });
+        panel.addView(retry);
+        root.addView(panel,new FrameLayout.LayoutParams(-1,-1));
+    }
+
+    private Button button(String value,Runnable action){
+        Button b=new Button(this);b.setText(value);b.setOnClickListener(v->action.run());return b;
     }
 
     private void showFatal(String msg){
@@ -351,6 +401,28 @@ public final class UnifiedActivity extends Activity {
                         }
                         restartDirectFeeds();refreshAll(false);
                     }).show();
+            });
+        }
+        @JavascriptInterface public void setLiveTrading(String market,boolean enabled){
+            if(!("stock".equals(market)||"coin".equals(market)))return;
+            main.post(()->{
+                Runnable apply=()->{
+                    try{
+                        Intent i=new Intent(UnifiedActivity.this,UnifiedTradingService.class);
+                        i.setAction(UnifiedTradingService.SET_LIVE);
+                        i.putExtra("market",market);
+                        i.putExtra("enabled",enabled);
+                        if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+                        main.postDelayed(()->refreshAll(false),900);
+                    }catch(Throwable e){new RuntimeCrashStore(UnifiedActivity.this).add("ui_live_toggle_"+market,e);}
+                };
+                if(!enabled){apply.run();return;}
+                String name="stock".equals(market)?"주식":"코인";
+                new AlertDialog.Builder(UnifiedActivity.this)
+                    .setTitle(name+" 실거래 자동주문 ON")
+                    .setMessage("최신 EXE 전략 신호가 실제 계좌 주문으로 전송됩니다. FOK 전량체결만 전략 원장에 반영되며, 부분체결·응답불명은 자동 정지합니다.")
+                    .setNegativeButton("취소",null)
+                    .setPositiveButton("실거래 ON",(d,w)->apply.run()).show();
             });
         }
         @JavascriptInterface public void setDesired(String market,String desired){

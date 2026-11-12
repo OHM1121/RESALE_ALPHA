@@ -1,5 +1,6 @@
 plugins {
     id 'com.android.application'
+    id 'com.chaquo.python'
 }
 
 android {
@@ -9,9 +10,10 @@ android {
         applicationId 'com.artitrade.mobile'
         minSdk 28
         targetSdk 35
-        versionCode 9
+        versionCode 10
         versionName '0.4.1-SWIPE-KST-EVENTDATE'
         manifestPlaceholders = [launcherActivity: ".MainActivity"]
+        ndk { abiFilters 'arm64-v8a' }
     }
     flavorDimensions 'market'
     productFlavors {
@@ -36,7 +38,7 @@ android {
         }
         unified {
             dimension 'market'
-            versionName '0.6.0-PHONE-MAIN-DIRECT-REALTIME'
+            versionName '0.7.0-PHONE-MAIN-LIVE-ORDERS-SAFEBOOT'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
@@ -56,4 +58,15 @@ android {
 
 dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.11"
+        pip {
+            install "requests==2.32.5"
+            install "websockets==15.0.1"
+            install "holidays"
+        }
+    }
 }
