@@ -28,6 +28,7 @@ public final class UnifiedTradingService extends Service {
     static final String RESTART_FEEDS="com.artitrade.mobile.RESTART_FEEDS";
     static final String SET_LIVE="com.artitrade.mobile.SET_LIVE";
     static final String APPLY_OPERATION="com.artitrade.mobile.APPLY_OPERATION";
+    static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
     private final AtomicBoolean running=new AtomicBoolean(false);
@@ -37,7 +38,7 @@ public final class UnifiedTradingService extends Service {
     private String clientId;
     private StrategyRuntimeBridge strategy;
     private RuntimeCrashStore crashes;
-    private long lastHubPublish=0L;
+    private volatile long lastHubPublish=0L;
     private volatile boolean lastMserverAuthOk=false;
 
     @Override public void onCreate(){
@@ -66,6 +67,10 @@ public final class UnifiedTradingService extends Service {
                 final String requestedMarket=market;
                 final boolean requestedEnabled=enabled;
                 new Thread(()->applyLiveMode(requestedMarket,requestedEnabled),"artitrade-v070-live-arm").start();
+            }
+            if(intent!=null&&RETRY_SYNC.equals(intent.getAction())){
+                lastHubPublish=0L; // next monitor pass republishes; never runs a second concurrent writer
+                mserverSyncProgress("RETRY","원장 다시 게시 요청",0,0,0,System.currentTimeMillis());
             }
             if(intent!=null&&RESTART_FEEDS.equals(intent.getAction())){
                 new Thread(()->safeRestartStrategy(),"artitrade-v074-restart").start();
@@ -252,7 +257,10 @@ public final class UnifiedTradingService extends Service {
     }
 
     private void publishPhoneLedgers(LocalHubClient hub,JSONObject all){
-        if(all==null||all.length()==0)return;
+        if(all==null||all.length()==0){
+            mserverSyncProgress("WAIT","전략 원장 생성 대기",0,0,0,System.currentTimeMillis());
+            return;
+        }
         int total=0;
         for(String market:new String[]{"stock","coin"}){
             JSONObject m=all.optJSONObject(market);if(m==null)continue;
@@ -261,6 +269,10 @@ public final class UnifiedTradingService extends Service {
                 JSONObject st=m.optJSONObject(strategyName);if(st==null)continue;
                 for(String bucket:new String[]{"ledger","research","errors"})if(st.optJSONObject(bucket)!=null)total++;
             }
+        }
+        if(total==0){
+            mserverSyncProgress("WAIT","전송할 전략 원장 생성 대기",0,0,0,System.currentTimeMillis());
+            return;
         }
         int ok=0,failed=0,preserved=0,skipped=0,done=0,lastHttp=200;
         String lastError="",lastMarket="",lastStrategy="",lastBucket="";
