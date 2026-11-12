@@ -1017,9 +1017,9 @@ public final class UnifiedVisualActivity extends Activity {
         if(st.research.length()==0){empty("연구이력 없음");return;}
         for(int i=0;i<Math.min(80,st.research.length());i++){
             JSONObject r=st.research.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
-            LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);
-            TextView n=text(nameOf(r),17);n.setTypeface(null,Typeface.BOLD);head.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
-            double sc=num(r,"score","original_score","signal_score");TextView score=text(finite(sc)?number(sc)+"점":"—",15);score.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);score.setTextColor(Color.rgb(255,201,94));head.addView(score,new LinearLayout.LayoutParams(dp(70),dp(28)));c.addView(head);
+            LinearLayout rowHead=new LinearLayout(this);rowHead.setOrientation(LinearLayout.HORIZONTAL);
+            TextView n=text(nameOf(r),17);n.setTypeface(null,Typeface.BOLD);rowHead.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
+            double sc=num(r,"score","original_score","signal_score");TextView score=text(finite(sc)?number(sc)+"점":"—",15);score.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);score.setTextColor(Color.rgb(255,201,94));rowHead.addView(score,new LinearLayout.LayoutParams(dp(70),dp(28)));c.addView(rowHead);
             Boolean hit=target(r);String verdict=hit==null?"판정 중":hit?"목표 도달":"미도달";TextView v=text(verdict+" · "+refLabel()+" "+timeOf(r),12);v.setTextColor(hit==null?Color.rgb(156,179,205):hit?Color.rgb(62,224,181):Color.rgb(255,145,155));c.addView(v);
             TextView why=text("근거: "+reasonOf(r),13);why.setTextColor(Color.rgb(176,197,220));why.setPadding(0,dp(3),0,0);c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
