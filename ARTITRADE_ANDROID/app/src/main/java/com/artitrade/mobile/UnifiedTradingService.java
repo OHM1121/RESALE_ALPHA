@@ -113,6 +113,12 @@ public final class UnifiedTradingService extends Service {
                 live.set("stock",sc,sc?200:0,System.currentTimeMillis(),st==null?"전략엔진 준비":st.optString("status"));
                 live.set("coin",cc,cc?35:0,System.currentTimeMillis(),co==null?"전략엔진 준비":co.optString("status"));
                 JSONObject enabled=p.optJSONObject("live_enabled");
+                // Python fail-closed order reconciliation can disarm a market internally.
+                // Mirror that state into Android prefs so UI/notification/next boot cannot re-arm it silently.
+                if(enabled!=null){
+                    if(strategy.liveEnabled("stock")&&!enabled.optBoolean("stock",false))strategy.setLive("stock",false);
+                    if(strategy.liveEnabled("coin")&&!enabled.optBoolean("coin",false))strategy.setLive("coin",false);
+                }
                 String orders=(enabled!=null&&enabled.optBoolean("stock")?"S":"-")+(enabled!=null&&enabled.optBoolean("coin")?"C":"-");
                 NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
                 if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
@@ -158,7 +164,7 @@ public final class UnifiedTradingService extends Service {
         try{
             for(String market:new String[]{"stock","coin"}){
                 JSONObject m=all.optJSONObject(market);if(m==null)continue;
-                String[] strategies="stock".equals(market)?new String[]{"at","cw"}:new String[]{"general","ma"};
+                String[] strategies="stock".equals(market)?new String[]{"shared","at","cw"}:new String[]{"shared","general","ma"};
                 for(String strategyName:strategies){
                     JSONObject s=m.optJSONObject(strategyName);if(s==null)continue;
                     for(String bucket:new String[]{"ledger","research","errors"}){
@@ -198,7 +204,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7")
+        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.1")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
