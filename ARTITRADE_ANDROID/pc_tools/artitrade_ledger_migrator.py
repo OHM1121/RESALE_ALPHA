@@ -9,6 +9,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -239,7 +240,7 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
             }, timeout=30)
             if not result.get("ok"):
                 raise RuntimeError(f"MSERVER chunk {index} 실패: " + json.dumps(result, ensure_ascii=False))
-            progress(f"폰 전송 {index+1}/{total_chunks}")
+            progress(f"MSERVER 전송 {index+1}/{total_chunks}")
 
     commit = request(base, token, "POST", "/v1/migration/commit", {"session": session}, timeout=30)
     if not commit.get("ok"):
@@ -285,7 +286,7 @@ def run_gui():
 
     root = tk.Tk()
     root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 V2")
-    root.geometry("760x620")
+    root.geometry("760x680")
     root.minsize(700, 540)
 
     frm = ttk.Frame(root, padding=18)
@@ -314,15 +315,35 @@ def run_gui():
     token_var = tk.StringVar(value=os.getenv("ARTITRADE_HUB_TOKEN", ""))
     ttk.Entry(row2, textvariable=token_var, show="●").pack(side="left", fill="x", expand=True)
 
+    progress_box = ttk.Frame(frm)
+    progress_box.pack(fill="x", pady=(12, 2))
+    progress_text = tk.StringVar(value="승계 준비 0%")
+    ttk.Label(progress_box, textvariable=progress_text).pack(anchor="w")
+    progress_value = tk.IntVar(value=0)
+    progress_bar = ttk.Progressbar(progress_box, orient="horizontal", mode="determinate", maximum=100, variable=progress_value)
+    progress_bar.pack(fill="x", pady=(4, 0))
+
     status = tk.Text(frm, height=12, wrap="word", font=("Consolas", 10))
     status.pack(fill="both", expand=True, pady=(12, 10))
     status.insert("end", "준비됨\n")
     status.configure(state="disabled")
 
     def log(msg):
+        text = str(msg)
         def put():
+            m = re.search(r"MSERVER 전송\s+(\d+)/(\d+)", text)
+            if m:
+                done,total = int(m.group(1)), max(1,int(m.group(2)))
+                pct = max(0,min(100,int(done*100/total)))
+                progress_value.set(pct); progress_text.set(f"MSERVER 전송 {pct}% · {done}/{total}")
+            elif text.startswith("스냅샷:"):
+                progress_value.set(max(progress_value.get(),5)); progress_text.set("최신 EXE 원장 스냅샷 생성 중")
+            elif "승계 ZIP 생성" in text:
+                progress_value.set(max(progress_value.get(),15)); progress_text.set("승계 ZIP 생성 중")
+            elif "전송 완료" in text:
+                progress_value.set(100); progress_text.set("MSERVER 전송 완료 · S21+ 자동승계 대기")
             status.configure(state="normal")
-            status.insert("end", str(msg) + "\n")
+            status.insert("end", text + "\n")
             status.see("end")
             status.configure(state="disabled")
         root.after(0, put)
