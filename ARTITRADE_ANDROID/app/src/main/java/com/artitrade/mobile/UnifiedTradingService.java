@@ -24,6 +24,7 @@ public final class UnifiedTradingService extends Service {
     static final String STOP="com.artitrade.mobile.UNIFIED_STOP";
     static final String RESTART_FEEDS="com.artitrade.mobile.RESTART_FEEDS";
     static final String SET_LIVE="com.artitrade.mobile.SET_LIVE";
+    static final String APPLY_OPERATION="com.artitrade.mobile.APPLY_OPERATION";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
     private final AtomicBoolean running=new AtomicBoolean(false);
@@ -63,7 +64,19 @@ public final class UnifiedTradingService extends Service {
                 new Thread(()->applyLiveMode(requestedMarket,requestedEnabled),"artitrade-v070-live-arm").start();
             }
             if(intent!=null&&RESTART_FEEDS.equals(intent.getAction())){
-                new Thread(()->safeRestartStrategy(),"artitrade-v070-restart").start();
+                new Thread(()->safeRestartStrategy(),"artitrade-v074-restart").start();
+            }
+            if(intent!=null&&APPLY_OPERATION.equals(intent.getAction())){
+                final String raw=intent.getStringExtra("settings");
+                new Thread(()->{
+                    try{
+                        JSONObject cfg=new JSONObject(raw==null?"{}":raw);
+                        JSONObject result=strategy.applyOperation(cfg);
+                        getSharedPreferences("artitrade_operation_result",MODE_PRIVATE).edit()
+                            .putString("result",result.toString()).putLong("at",System.currentTimeMillis()).apply();
+                        if(!result.optBoolean("ok",false))crashes.add("operation_apply_reply",new IllegalStateException(result.toString()));
+                    }catch(Throwable e){crashes.add("operation_apply_intent",e);}
+                },"artitrade-v074-operation").start();
             }
             if(running.compareAndSet(false,true)){
                 if(wakeLock!=null&&!wakeLock.isHeld())wakeLock.acquire();
@@ -105,6 +118,7 @@ public final class UnifiedTradingService extends Service {
             }
             try{
                 JSONObject p=strategy.snapshot();
+                try{p.put("operation",strategy.operationSnapshot());}catch(Throwable ignored){}
                 getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).edit()
                     .putString("snapshot",p.toString()).apply();
                 JSONObject st=p.optJSONObject("stock"),co=p.optJSONObject("coin");
@@ -204,7 +218,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.1")
+        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.4")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
