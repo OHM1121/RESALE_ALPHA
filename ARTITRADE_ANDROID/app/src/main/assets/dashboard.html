@@ -193,10 +193,16 @@ function redraw(){
  text('syncName',connected?'서버 연결':'서버 연결 안 됨');
  text('deviceMode',currentMode());text('detailSync',connected?'정상':'미연결');text('detailDevice',currentMode());text('strategyMode',currentMode());
  var ledger=currentLedger(),pnl=value(ledger,['total_pnl','net_pnl','profit','total_profit']);
- // Prefer authoritative account totals; never infer from last 100 fills.
+ // Prefer the authoritative account total; never infer gains from fill prices.
  var accountRealized=value(ledger,['realized_pnl','realized_profit']);
  var accountHolding=value(ledger,['unrealized_pnl','unrealized_profit','holding_pnl']);
- if(pnl===null && accountRealized!==null && accountHolding!==null)pnl=Number(accountRealized)+Number(accountHolding);
+ var rawPositionRows=value(ledger,['positions','holdings']);
+ var rawPositionCount=value(ledger,['positions_count','holdings_count']);
+ var confirmedFlat=rawPositionCount!==null && Number(rawPositionCount)===0 &&
+     Array.isArray(rawPositionRows) && rawPositionRows.length===0;
+ if(confirmedFlat && accountHolding===null)accountHolding=0;
+ if(pnl===null && accountRealized!==null && accountHolding!==null)
+     pnl=Number(accountRealized)+Number(accountHolding);
  var pnlRate=value(ledger,['total_return_pct','pnl_pct','profit_rate','return_pct']);
  text('pnl',n(pnl));shade($('pnl'),pnl);text('pnlPct',n(pnlRate,'%'));shade($('pnlPct'),pnlRate);
  var realized=accountRealized;var unreal=accountHolding;
