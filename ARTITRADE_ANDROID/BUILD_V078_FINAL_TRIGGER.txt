@@ -1,4 +1,4 @@
-ARTITRADE v0.7.8 final verification trigger
-Unified: actual-dashboard/history/sync
-MSERVER: v0.2.3 incremental sync
-Migrator: V2
+ARTITRADE unified v0.7.9 manual verification build marker
+Date: 2026-11-13 KST
+Changes: native full-width stock/coin trade cards; scenario summary; policy history; manual-sell safety; PC MSERVER transfer UI.
+One marker update triggers one Android build. PC migrator CI is workflow_dispatch only.
