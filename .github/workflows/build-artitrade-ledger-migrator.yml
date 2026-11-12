@@ -2,10 +2,6 @@ name: Build ARTITRADE PC Ledger Migrator
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
-    paths:
-      - 'ARTITRADE_ANDROID/BUILD_LEDGER_MIGRATOR_FIX2.txt'
 
 concurrency:
   group: artitrade-ledger-migrator-${{ github.ref }}
