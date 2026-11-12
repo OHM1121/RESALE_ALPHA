@@ -637,7 +637,8 @@ public final class UnifiedVisualActivity extends Activity {
         boolean frames=("coin".equals(market)||"at".equals(strategy)||"ma".equals(strategy));
         if(frames){
             TextView sec=text(strategyName(market,strategy)+" · 시간봉별 계좌성과",12);sec.setTypeface(null,Typeface.BOLD);sec.setTextColor(Color.rgb(157,181,208));sec.setPadding(0,dp(13),0,dp(6));content.addView(sec);
-            LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+            HorizontalScrollView tfScroll=new HorizontalScrollView(this);tfScroll.setHorizontalScrollBarEnabled(false);
+            LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(0,0,dp(4),0);
             for(String tf:new String[]{"5m","30m","60m","day"}){
                 Stats q=statsTf(market,strategy,tf);LinearLayout c=card();
                 TextView n=text(tfLabel(tf),13);n.setTypeface(null,Typeface.BOLD);c.addView(n);
@@ -645,9 +646,10 @@ public final class UnifiedVisualActivity extends Activity {
                 TextView detail=text("실현 "+money(q.realized)+"\n평가 "+money(q.unrealized)+"\n보유/대기 "+q.positions.length()+"/"+q.pending.length(),8);detail.setTextColor(Color.rgb(151,174,201));c.addView(detail);
                 MetricProgressView bar=new MetricProgressView(this);bar.setMetric("목표도달",q.target);LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(27));bp.setMargins(0,dp(4),0,0);c.addView(bar,bp);
                 TextView wr=text("승률 "+pct(q.win),8);wr.setTextColor(Color.rgb(170,190,214));c.addView(wr);
-                LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(148),1);if(row.getChildCount()>0)cp.setMargins(dp(6),0,0,0);row.addView(c,cp);
+                LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(142),dp(148));if(row.getChildCount()>0)cp.setMargins(dp(6),0,0,0);row.addView(c,cp);
             }
-            content.addView(row,new LinearLayout.LayoutParams(-1,dp(148)));
+            tfScroll.addView(row,new HorizontalScrollView.LayoutParams(-2,dp(148)));
+            content.addView(tfScroll,new LinearLayout.LayoutParams(-1,dp(148)));
         }
 
         TextView cmp=text("전체 전략 계좌 성과 비교",12);cmp.setTypeface(null,Typeface.BOLD);cmp.setTextColor(Color.rgb(157,181,208));cmp.setPadding(0,dp(13),0,dp(6));content.addView(cmp);
@@ -660,16 +662,18 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams tlp=new LinearLayout.LayoutParams(-1,dp(125));tlp.setMargins(0,dp(8),0,0);content.addView(trendCard,tlp);
 
         TextView acc=text("전략별 계좌성과",12);acc.setTypeface(null,Typeface.BOLD);acc.setTextColor(Color.rgb(157,181,208));acc.setPadding(0,dp(13),0,dp(6));content.addView(acc);
-        LinearLayout perf=new LinearLayout(this);perf.setOrientation(LinearLayout.HORIZONTAL);
+        HorizontalScrollView perfScroll=new HorizontalScrollView(this);perfScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout perf=new LinearLayout(this);perf.setOrientation(LinearLayout.HORIZONTAL);perf.setPadding(0,0,dp(4),0);
         for(String[] x:strategyList(market)){
             Stats q=stats(market,x[0]);LinearLayout c=card();c.setOnClickListener(v->{strategy=x[0];page="home";showShell();});
             TextView n=text(x[1],12);n.setTypeface(null,Typeface.BOLD);c.addView(n);
             TextView p=text(money(q.total),15);p.setTypeface(null,Typeface.BOLD);paintProfit(p,q.total);c.addView(p);
             TextView m=text("실현 "+money(q.realized)+"\n평가 "+money(q.unrealized)+"\n승률 "+pct(q.win)+"\n보유/대기 "+q.positions.length()+"/"+q.pending.length()+"\n목표 "+pct(q.target),8);m.setTextColor(Color.rgb(151,173,200));m.setPadding(0,dp(4),0,0);c.addView(m);
             MetricProgressView g=new MetricProgressView(this);g.setMetric("목표도달",q.target);LinearLayout.LayoutParams gp=new LinearLayout.LayoutParams(-1,dp(27));gp.setMargins(0,dp(2),0,0);c.addView(g,gp);
-            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(142),1);if(perf.getChildCount()>0)cp.setMargins(dp(6),0,0,0);perf.addView(c,cp);
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(148),dp(142));if(perf.getChildCount()>0)cp.setMargins(dp(6),0,0,0);perf.addView(c,cp);
         }
-        content.addView(perf,new LinearLayout.LayoutParams(-1,dp(142)));
+        perfScroll.addView(perf,new HorizontalScrollView.LayoutParams(-2,dp(142)));
+        content.addView(perfScroll,new LinearLayout.LayoutParams(-1,dp(142)));
     }
 
     private View feedCard(String m,String title){
@@ -714,7 +718,8 @@ public final class UnifiedVisualActivity extends Activity {
 
         TextView m=text("점수대별 목표 도달 지도",12);m.setTypeface(null,Typeface.BOLD);m.setTextColor(Color.rgb(157,181,208));m.setPadding(0,dp(13),0,dp(6));content.addView(m);
         int[][] bands="gmo".equals(strategy)?new int[][]{{40,60},{61,80},{81,100}}:new int[][]{{0,20},{21,40},{41,60},{61,80},{81,100}};
-        LinearLayout br=new LinearLayout(this);br.setOrientation(LinearLayout.HORIZONTAL);
+        HorizontalScrollView bandScroll=new HorizontalScrollView(this);bandScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout br=new LinearLayout(this);br.setOrientation(LinearLayout.HORIZONTAL);br.setPadding(0,0,dp(4),0);
         for(int[] band:bands){
             int judged=0,hits=0;
             for(int i=0;i<st.research.length();i++){
@@ -726,9 +731,10 @@ public final class UnifiedVisualActivity extends Activity {
             LinearLayout c=card();TextView t=text(band[0]+"~"+band[1]+"점",10);t.setTypeface(null,Typeface.BOLD);c.addView(t);
             MetricProgressView pv=new MetricProgressView(this);pv.setMetric("목표도달",rate);c.addView(pv,new LinearLayout.LayoutParams(-1,dp(34)));
             TextView f=text(judged+"건 판정 · "+hits+"건 도달",8);f.setTextColor(Color.rgb(124,149,179));c.addView(f);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(82),1);if(br.getChildCount()>0)lp.setMargins(dp(5),0,0,0);br.addView(c,lp);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(112),dp(82));if(br.getChildCount()>0)lp.setMargins(dp(5),0,0,0);br.addView(c,lp);
         }
-        content.addView(br,new LinearLayout.LayoutParams(-1,dp(82)));
+        bandScroll.addView(br,new HorizontalScrollView.LayoutParams(-2,dp(82)));
+        content.addView(bandScroll,new LinearLayout.LayoutParams(-1,dp(82)));
 
         TextView hist=text("최근 연구 기록",12);hist.setTypeface(null,Typeface.BOLD);hist.setTextColor(Color.rgb(157,181,208));hist.setPadding(0,dp(13),0,dp(6));content.addView(hist);
         if(st.research.length()==0){empty("연구이력 없음");return;}
