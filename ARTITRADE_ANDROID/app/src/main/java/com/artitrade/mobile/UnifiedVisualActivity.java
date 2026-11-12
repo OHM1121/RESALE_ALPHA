@@ -603,33 +603,63 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderHome(){
-        Stats st=stats(market,strategy);
-        TextView kicker=text(strategyName(market,strategy)+" / OVERVIEW",11);kicker.setTypeface(null,Typeface.BOLD);kicker.setTextColor(Color.rgb(145,169,200));content.addView(kicker);
+        Stats selected=stats(market,strategy);
+        TextView title=text("대시보드  ·  "+strategyName(market,strategy),18);title.setTypeface(null,Typeface.BOLD);content.addView(title);
+        TextView sub=text("전략 성과를 계좌·시간봉·연구결과 기준으로 시각화",10);sub.setTextColor(Color.rgb(130,155,185));sub.setPadding(0,dp(2),0,dp(8));content.addView(sub);
 
         LinearLayout feeds=new LinearLayout(this);feeds.setOrientation(LinearLayout.HORIZONTAL);
-        feeds.addView(feedCard("주식","키움 직접수신"),new LinearLayout.LayoutParams(0,dp(62),1));
-        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(62),1);fp.setMargins(dp(8),0,0,0);feeds.addView(feedCard("코인","업비트 직접수신"),fp);
-        LinearLayout.LayoutParams flp=new LinearLayout.LayoutParams(-1,dp(62));flp.setMargins(0,dp(8),0,0);content.addView(feeds,flp);
+        feeds.addView(feedCard("stock","키움 직접수신"),new LinearLayout.LayoutParams(0,dp(60),1));
+        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(60),1);fp.setMargins(dp(7),0,0,0);feeds.addView(feedCard("coin","업비트 직접수신"),fp);
+        content.addView(feeds,new LinearLayout.LayoutParams(-1,dp(60)));
 
-        LinearLayout hero=card();TextView lab=text("선택 전략 누적손익",10);lab.setTextColor(Color.rgb(135,157,185));hero.addView(lab);
-        TextView total=text(money(st.total),34);total.setTypeface(null,Typeface.BOLD);paintProfit(total,st.total);hero.addView(total);
-        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setPadding(0,dp(8),0,0);
-        addMini(row,"실현손익",money(st.realized));addMini(row,"평가손익",money(st.unrealized));addMini(row,"목표도달율",pct(st.target));
-        hero.addView(row);LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(-1,-2);hp.setMargins(0,dp(9),0,0);content.addView(hero,hp);
+        LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout pnl=card();TextView pl=text("선택 전략 누적손익",10);pl.setTextColor(Color.rgb(135,160,190));pnl.addView(pl);
+        TextView pv=text(money(selected.total),29);pv.setTypeface(null,Typeface.BOLD);paintProfit(pv,selected.total);pv.setPadding(0,dp(3),0,dp(5));pnl.addView(pv);
+        TextView ps=text("실현 "+money(selected.realized)+"\n평가 "+money(selected.unrealized)+"\n보유 "+selected.positions.length()+" · 대기 "+selected.pending.length(),10);ps.setTextColor(Color.rgb(180,201,224));pnl.addView(ps);
+        hero.addView(pnl,new LinearLayout.LayoutParams(0,dp(146),14));
 
-        LinearLayout kpis=new LinearLayout(this);kpis.setOrientation(LinearLayout.HORIZONTAL);
-        addKpi(kpis,"승률",pct(st.win));addKpi(kpis,"보유",String.valueOf(st.positions.length()));addKpi(kpis,"대기",String.valueOf(st.pending.length()));addKpi(kpis,"완료거래",String.valueOf(st.closed));
-        LinearLayout.LayoutParams kp=new LinearLayout.LayoutParams(-1,-2);kp.setMargins(0,dp(8),0,0);content.addView(kpis,kp);
+        LinearLayout winCard=card();DonutMetricView win=new DonutMetricView(this);win.setMetric("승률",selected.win,pct(selected.win));winCard.addView(win,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout.LayoutParams wp=new LinearLayout.LayoutParams(0,dp(146),9);wp.setMargins(dp(7),0,0,0);hero.addView(winCard,wp);
+        LinearLayout hitCard=card();DonutMetricView hit=new DonutMetricView(this);hit.setMetric("목표도달율",selected.target,pct(selected.target));hitCard.addView(hit,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(0,dp(146),9);hp.setMargins(dp(7),0,0,0);hero.addView(hitCard,hp);
+        LinearLayout.LayoutParams heroLp=new LinearLayout.LayoutParams(-1,dp(146));heroLp.setMargins(0,dp(8),0,0);content.addView(hero,heroLp);
 
-        TextView sec=text("전략별 계좌성과",11);sec.setTypeface(null,Typeface.BOLD);sec.setTextColor(Color.rgb(148,171,199));sec.setPadding(0,dp(13),0,dp(6));content.addView(sec);
-        LinearLayout perf=new LinearLayout(this);perf.setOrientation(LinearLayout.HORIZONTAL);
-        String[][] list="stock".equals(market)?new String[][]{{"at","기준봉"},{"ma","MA"},{"close","종가베팅"},{"gmo","수급매매"}}:new String[][]{{"general","기준봉"},{"ma","MA"}};
-        for(String[] x:list){Stats q=stats(market,x[0]);LinearLayout c=card();c.setOnClickListener(v->{strategy=x[0];showShell();});
-            TextView n=text(x[1],13);n.setTypeface(null,Typeface.BOLD);c.addView(n);TextView p=text(money(q.total),16);p.setTypeface(null,Typeface.BOLD);paintProfit(p,q.total);c.addView(p);
-            TextView m=text("실현 "+money(q.realized)+"  ·  평가 "+money(q.unrealized)+"\n승률 "+pct(q.win)+"  ·  보유/대기 "+q.positions.length()+"/"+q.pending.length()+"\n목표도달 "+pct(q.target),9);m.setTextColor(Color.rgb(151,173,200));m.setPadding(0,dp(6),0,0);c.addView(m);
-            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(118),1);if(perf.getChildCount()>0)cp.setMargins(dp(7),0,0,0);perf.addView(c,cp);
+        boolean frames=("coin".equals(market)||"at".equals(strategy)||"ma".equals(strategy));
+        if(frames){
+            TextView sec=text(strategyName(market,strategy)+" · 시간봉별 계좌성과",12);sec.setTypeface(null,Typeface.BOLD);sec.setTextColor(Color.rgb(157,181,208));sec.setPadding(0,dp(13),0,dp(6));content.addView(sec);
+            LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+            for(String tf:new String[]{"5m","30m","60m","day"}){
+                Stats q=statsTf(market,strategy,tf);LinearLayout c=card();
+                TextView n=text(tfLabel(tf),13);n.setTypeface(null,Typeface.BOLD);c.addView(n);
+                TextView tot=text(money(q.total),16);tot.setTypeface(null,Typeface.BOLD);paintProfit(tot,q.total);tot.setPadding(0,dp(2),0,dp(2));c.addView(tot);
+                TextView detail=text("실현 "+money(q.realized)+"\n평가 "+money(q.unrealized)+"\n보유/대기 "+q.positions.length()+"/"+q.pending.length(),8);detail.setTextColor(Color.rgb(151,174,201));c.addView(detail);
+                MetricProgressView bar=new MetricProgressView(this);bar.setMetric("목표도달",q.target);LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(27));bp.setMargins(0,dp(4),0,0);c.addView(bar,bp);
+                TextView wr=text("승률 "+pct(q.win),8);wr.setTextColor(Color.rgb(170,190,214));c.addView(wr);
+                LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(148),1);if(row.getChildCount()>0)cp.setMargins(dp(6),0,0,0);row.addView(c,cp);
+            }
+            content.addView(row,new LinearLayout.LayoutParams(-1,dp(148)));
         }
-        content.addView(perf,new LinearLayout.LayoutParams(-1,dp(118)));
+
+        TextView cmp=text("전체 전략 계좌 성과 비교",12);cmp.setTypeface(null,Typeface.BOLD);cmp.setTextColor(Color.rgb(157,181,208));cmp.setPadding(0,dp(13),0,dp(6));content.addView(cmp);
+        LinearLayout chartCard=card();HorizontalStrategyBarsView bars=new HorizontalStrategyBarsView(this);
+        java.util.ArrayList<HorizontalStrategyBarsView.Item> items=new java.util.ArrayList<>();
+        for(String[] x:strategyList(market)){Stats q=stats(market,x[0]);items.add(new HorizontalStrategyBarsView.Item(x[1],q.total));}
+        bars.setItems(items);chartCard.addView(bars,new LinearLayout.LayoutParams(-1,dp(145)));content.addView(chartCard,new LinearLayout.LayoutParams(-1,dp(165)));
+
+        LinearLayout trendCard=card();PnlSparklineView trend=new PnlSparklineView(this);trend.setValues(trendValues(selected.executions),strategyName(market,strategy)+" · 누적 실현손익 추세");trendCard.addView(trend,new LinearLayout.LayoutParams(-1,dp(105)));
+        LinearLayout.LayoutParams tlp=new LinearLayout.LayoutParams(-1,dp(125));tlp.setMargins(0,dp(8),0,0);content.addView(trendCard,tlp);
+
+        TextView acc=text("전략별 계좌성과",12);acc.setTypeface(null,Typeface.BOLD);acc.setTextColor(Color.rgb(157,181,208));acc.setPadding(0,dp(13),0,dp(6));content.addView(acc);
+        LinearLayout perf=new LinearLayout(this);perf.setOrientation(LinearLayout.HORIZONTAL);
+        for(String[] x:strategyList(market)){
+            Stats q=stats(market,x[0]);LinearLayout c=card();c.setOnClickListener(v->{strategy=x[0];page="home";showShell();});
+            TextView n=text(x[1],12);n.setTypeface(null,Typeface.BOLD);c.addView(n);
+            TextView p=text(money(q.total),15);p.setTypeface(null,Typeface.BOLD);paintProfit(p,q.total);c.addView(p);
+            TextView m=text("실현 "+money(q.realized)+"\n평가 "+money(q.unrealized)+"\n승률 "+pct(q.win)+"\n보유/대기 "+q.positions.length()+"/"+q.pending.length()+"\n목표 "+pct(q.target),8);m.setTextColor(Color.rgb(151,173,200));m.setPadding(0,dp(4),0,0);c.addView(m);
+            MetricProgressView g=new MetricProgressView(this);g.setMetric("목표도달",q.target);LinearLayout.LayoutParams gp=new LinearLayout.LayoutParams(-1,dp(27));gp.setMargins(0,dp(2),0,0);c.addView(g,gp);
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(142),1);if(perf.getChildCount()>0)cp.setMargins(dp(6),0,0,0);perf.addView(c,cp);
+        }
+        content.addView(perf,new LinearLayout.LayoutParams(-1,dp(142)));
     }
 
     private View feedCard(String m,String title){
