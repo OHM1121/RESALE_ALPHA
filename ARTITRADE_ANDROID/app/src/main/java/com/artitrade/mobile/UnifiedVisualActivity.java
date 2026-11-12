@@ -300,11 +300,13 @@ public final class UnifiedVisualActivity extends Activity {
         TextView erRow=text("오류 이력   ·   "+("stock".equals(market)?"주식 전체":"코인 전체"),12);erRow.setTypeface(null,Typeface.BOLD);erRow.setPadding(dp(4),dp(7),dp(4),dp(7));erRow.setOnClickListener(v->{page="errors";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(erRow,new LinearLayout.LayoutParams(-1,dp(44)));
         panel.addView(manage);
 
-        TextView apiTitle=text("API 연결 상태",11);apiTitle.setTypeface(null,Typeface.BOLD);apiTitle.setTextColor(Color.rgb(145,170,200));apiTitle.setPadding(0,dp(16),0,dp(7));panel.addView(apiTitle);
-        LinearLayout api=card();api.addView(text(brokerStatusText("kiwoom"),11));TextView up=text(brokerStatusText("upbit"),11);up.setPadding(0,dp(7),0,0);api.addView(up);
-        LinearLayout ar=new LinearLayout(this);ar.setOrientation(LinearLayout.HORIZONTAL);ar.setPadding(0,dp(10),0,0);
-        ar.addView(button("API 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(40),1));
-        LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(40),1);prp.setMargins(dp(7),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
+        String brokerKey="stock".equals(market)?"kiwoom":"upbit";
+        String brokerName="stock".equals(market)?"키움":"업비트";
+        TextView apiTitle=text(brokerName+" API 연결",13);apiTitle.setTypeface(null,Typeface.BOLD);apiTitle.setTextColor(Color.rgb(168,176,198));apiTitle.setPadding(0,dp(18),0,dp(8));panel.addView(apiTitle);
+        LinearLayout api=card();TextView brokerState=text(brokerStatusText(brokerKey),12);brokerState.setTextColor(Color.rgb(205,212,229));api.addView(brokerState);
+        LinearLayout ar=new LinearLayout(this);ar.setOrientation(LinearLayout.HORIZONTAL);ar.setPadding(0,dp(12),0,0);
+        ar.addView(button(brokerName+" 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(44),1));
+        LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(44),1);prp.setMargins(dp(8),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
 
         TextView srvTitle=text("폰 원장 · PC 동기화",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
         LinearLayout tools=card();
@@ -1105,34 +1107,37 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void apiSettings(){
         BrokerSecretStore store=new BrokerSecretStore(this);JSONObject saved=store.status();
-        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(12),dp(4),dp(12),dp(4));
-        EditText kk=new EditText(this),ks=new EditText(this),ua=new EditText(this),us=new EditText(this);
-        kk.setHint(saved.optBoolean("kiwoom_saved",false)?"키움 App Key · "+saved.optString("kiwoom_key_masked","저장됨"):"키움 App Key");
-        ks.setHint(saved.optBoolean("kiwoom_saved",false)?"키움 App Secret · 저장됨":"키움 App Secret");
-        ua.setHint(saved.optBoolean("upbit_saved",false)?"업비트 Access Key · "+saved.optString("upbit_access_masked","저장됨"):"업비트 Access Key");
-        us.setHint(saved.optBoolean("upbit_saved",false)?"업비트 Secret Key · 저장됨":"업비트 Secret Key");
-        for(EditText v:new EditText[]{kk,ks,ua,us}){
-            v.setSingleLine(true);v.setTextColor(Color.WHITE);v.setHintTextColor(Color.rgb(130,154,183));
-            v.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-            form.addView(v,new LinearLayout.LayoutParams(-1,dp(48)));
+        boolean stockMarket="stock".equals(market);
+        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(12),dp(6),dp(12),dp(6));
+        EditText first=new EditText(this),second=new EditText(this);
+        if(stockMarket){
+            first.setHint(saved.optBoolean("kiwoom_saved",false)?"App Key · "+saved.optString("kiwoom_key_masked","저장됨"):"키움 App Key");
+            second.setHint(saved.optBoolean("kiwoom_saved",false)?"App Secret · 저장됨":"키움 App Secret");
+        }else{
+            first.setHint(saved.optBoolean("upbit_saved",false)?"Access Key · "+saved.optString("upbit_access_masked","저장됨"):"업비트 Access Key");
+            second.setHint(saved.optBoolean("upbit_saved",false)?"Secret Key · 저장됨":"업비트 Secret Key");
         }
-        new AlertDialog.Builder(this).setTitle("S21+ 직접 API 설정")
-            .setMessage("빈 칸은 기존 값을 유지합니다. 저장 후 키움 OAuth와 업비트 인증 REST를 즉시 검사합니다. 두 API 모두 발급 키에 현재 S21+가 사용하는 공인 IP가 허용되어 있어야 합니다.")
+        for(EditText v:new EditText[]{first,second}){
+            v.setSingleLine(true);v.setTextSize(14);v.setTextColor(Color.WHITE);v.setHintTextColor(Color.rgb(130,140,163));
+            v.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            form.addView(v,new LinearLayout.LayoutParams(-1,dp(54)));
+        }
+        String name=stockMarket?"키움":"업비트";
+        new AlertDialog.Builder(this).setTitle(name+" 직접 API 설정")
+            .setMessage("빈 칸은 기존 값을 유지합니다. 저장 직후 실제 인증 요청으로 검증합니다.")
             .setView(form).setNegativeButton("취소",null)
-            .setNeutralButton("전체 삭제",(d,w)->{
-                store.saveKiwoom("","");store.saveUpbit("","");
+            .setNeutralButton(name+" 키 삭제",(d,w)->{
+                if(stockMarket)store.saveKiwoom("","");else store.saveUpbit("","");
                 getSharedPreferences("broker_probe_v1",MODE_PRIVATE).edit().clear().apply();restartFeeds();refresh(false);
             })
             .setPositiveButton("저장",(d,w)->{
-                String a=kk.getText().toString().trim(),b=ks.getText().toString().trim(),c=ua.getText().toString().trim(),e=us.getText().toString().trim();
-                if(a.isEmpty()!=b.isEmpty()){
-                    new AlertDialog.Builder(this).setTitle("키움 키 확인").setMessage("App Key와 App Secret을 둘 다 입력하거나 둘 다 비워 기존 값을 유지하십시오.").setPositiveButton("확인",null).show();return;
+                String x=first.getText().toString().trim(),y=second.getText().toString().trim();
+                if(x.isEmpty()!=y.isEmpty()){
+                    new AlertDialog.Builder(this).setTitle(name+" 키 확인").setMessage("두 키를 모두 입력하거나 둘 다 비워 기존 값을 유지하십시오.").setPositiveButton("확인",null).show();return;
                 }
-                if(c.isEmpty()!=e.isEmpty()){
-                    new AlertDialog.Builder(this).setTitle("업비트 키 확인").setMessage("Access Key와 Secret Key를 둘 다 입력하거나 둘 다 비워 기존 값을 유지하십시오.").setPositiveButton("확인",null).show();return;
+                if(!x.isEmpty()){
+                    if(stockMarket)store.saveKiwoom(x,y);else store.saveUpbit(x,y);
                 }
-                if(!a.isEmpty())store.saveKiwoom(a,b);
-                if(!c.isEmpty())store.saveUpbit(c,e);
                 runBrokerProbe(true);
             }).show();
     }
@@ -1152,18 +1157,24 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void runBrokerProbe(boolean restartAfter){
+        final String selected=market;
         io.execute(()->{
-            JSONObject result=BrokerApiProbe.all(new BrokerSecretStore(this));
+            BrokerSecretStore store=new BrokerSecretStore(this);
+            JSONObject prior;
+            try{prior=new JSONObject(getSharedPreferences("broker_probe_v1",MODE_PRIVATE).getString("result","{}"));}catch(Exception e){prior=new JSONObject();}
+            JSONObject one="stock".equals(selected)?BrokerApiProbe.kiwoom(store):BrokerApiProbe.upbit(store);
+            try{prior.put("stock".equals(selected)?"kiwoom":"upbit",one).put("checked_at",System.currentTimeMillis());}catch(Exception ignored){}
+            final JSONObject result=prior;
             getSharedPreferences("broker_probe_v1",MODE_PRIVATE).edit().putString("result",result.toString()).putLong("checked_at",System.currentTimeMillis()).apply();
             if(restartAfter)main.post(this::restartFeeds);
             main.post(()->{
                 refresh(false);
-                JSONObject k=result.optJSONObject("kiwoom"),u=result.optJSONObject("upbit");
-                String km=k==null?"검사 실패":k.optBoolean("ok",false)?"정상":k.optString("message","인증 실패");
-                String um=u==null?"검사 실패":u.optBoolean("ok",false)?"정상":u.optString("message","인증 실패");
-                if(k!=null&&k.optBoolean("ip_hint",false))km+="\n허용 IP에 현재 S21+ 외부 IP가 등록되어 있는지 확인 필요";
-                if(u!=null&&u.optBoolean("ip_hint",false))um+="\n허용 IP에 현재 S21+ 외부 IP가 등록되어 있는지 확인 필요";
-                new AlertDialog.Builder(this).setTitle("API 인증 검사 결과").setMessage("키움: "+km+"\n\n업비트: "+um).setPositiveButton("확인",null).show();
+                String broker="stock".equals(selected)?"키움":"업비트";
+                String msg=one.optBoolean("ok",false)?"인증 정상":one.optString("message","인증 실패");
+                if(one.optBoolean("ip_hint",false))msg+="\n허용 IP 불일치 응답";
+                String code=one.optString("error_name","");
+                if(!code.isEmpty())msg+="\n오류코드: "+code;
+                new AlertDialog.Builder(this).setTitle(broker+" API 인증 검사").setMessage(msg).setPositiveButton("확인",null).show();
                 if(drawerOverlay!=null){closeSettingsDrawer();main.postDelayed(this::openSettingsDrawer,220);}
             });
         });
