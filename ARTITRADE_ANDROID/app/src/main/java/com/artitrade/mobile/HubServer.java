@@ -16,7 +16,7 @@ import java.util.concurrent.*;
  *  PC traffic MUST use Tailscale or another encrypted VPN. Never port-forward.
  */
 final class HubServer {
-    private static final int PORT=8765, MAX_BODY=600000;
+    private static final int PORT=8765, MAX_BODY=36*1024*1024;
     private static final String TAG="ArtitradeHub";
     private final SecureBox secrets;
     private final SyncStore store;
@@ -196,7 +196,7 @@ final class HubServer {
             try{uri=new URI(target);}catch(Exception e){send(out,400,json("ok",false,"error","bad_uri"));return;}
             String path=uri.getPath();
             if("/health".equals(path) && method.equals("GET")){
-                send(out,200,json("ok",true,"name","ARTITRADE phone hub","api",1));return;
+                send(out,200,json("ok",true,"name","ARTITRADE MSERVER","api",1));return;
             }
             String auth=headers.getOrDefault("authorization","");
             if(!auth.startsWith("Bearer ") || !secrets.compareToken(auth.substring(7))){
