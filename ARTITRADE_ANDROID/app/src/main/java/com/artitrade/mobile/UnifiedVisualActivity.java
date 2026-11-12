@@ -703,13 +703,56 @@ public final class UnifiedVisualActivity extends Activity {
         }content.addView(br);
     }
 
+    private void appendErrorItems(JSONArray out,JSONObject bucket){
+        if(bucket==null)return;JSONArray items=bucket.optJSONArray("items");if(items==null)return;
+        for(int i=0;i<items.length();i++)if(items.optJSONObject(i)!=null)out.put(items.optJSONObject(i));
+    }
+
+    private boolean errorForMarket(JSONObject r,String m){
+        if(r==null)return false;String x=r.toString().toLowerCase(Locale.ROOT);
+        boolean stock=x.contains("stock")||x.contains("kiwoom")||x.contains("gmo")||x.contains("close")||x.contains("cw")||x.contains("0b")||x.contains("0d");
+        boolean coin=x.contains("coin")||x.contains("upbit")||x.contains("myorder")||x.contains("myasset");
+        if(!stock&&!coin)return true;
+        return "stock".equals(m)?stock:coin;
+    }
+
+    private JSONArray marketErrors(){
+        JSONArray raw=new JSONArray();
+        if("stock".equals(market)){
+            appendErrorItems(raw,record("stockSharedErrors"));
+            appendErrorItems(raw,record("stockAtErrors"));
+            appendErrorItems(raw,record("stockCwErrors"));
+        }else{
+            appendErrorItems(raw,record("coinSharedErrors"));
+            appendErrorItems(raw,record("coinGeneralErrors"));
+            appendErrorItems(raw,record("coinMaErrors"));
+        }
+        JSONObject c=copyCache();JSONArray run=c.optJSONArray("runtime_diagnostics");
+        if(run!=null)for(int i=0;i<run.length();i++){JSONObject r=run.optJSONObject(i);if(errorForMarket(r,market))raw.put(r);}
+        JSONObject py=c.optJSONObject("strategy_runtime");JSONArray pe=py==null?null:py.optJSONArray("errors");
+        if(pe!=null)for(int i=0;i<pe.length();i++){JSONObject r=pe.optJSONObject(i);if(errorForMarket(r,market))raw.put(r);}
+        java.util.HashSet<String> seen=new java.util.HashSet<>();JSONArray out=new JSONArray();
+        for(int i=0;i<raw.length();i++){JSONObject r=raw.optJSONObject(i);if(r==null)continue;String key=r.toString();if(seen.add(key))out.put(r);}
+        return out;
+    }
+
     private void renderErrors(){
-        TextView h=text("오류 기록",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
-        JSONArray all=new JSONArray();JSONObject e=errors(market,strategy);JSONArray items=e.optJSONArray("items");if(items!=null)for(int i=0;i<items.length();i++)all.put(items.opt(i));
-        JSONArray run=copyCache().optJSONArray("runtime_diagnostics");if(run!=null)for(int i=0;i<run.length();i++)all.put(run.opt(i));
-        JSONObject py=copyCache().optJSONObject("strategy_runtime");JSONArray pe=py==null?null:py.optJSONArray("errors");if(pe!=null)for(int i=0;i<pe.length();i++)all.put(pe.opt(i));
+        JSONArray all=marketErrors();
+        TextView h=text(("stock".equals(market)?"주식":"코인")+" 전체 오류이력",18);h.setTypeface(null,Typeface.BOLD);content.addView(h);
+        TextView note=text("선택 전략과 무관하게 해당 시장의 실시간·전략·주문·원장 오류를 통합 표시",10);note.setTextColor(Color.rgb(135,160,190));note.setPadding(0,dp(3),0,dp(9));content.addView(note);
+        LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
+        addKpi(summary,"전체",String.valueOf(all.length()));
+        int auth=0,feed=0,order=0;
+        for(int i=0;i<all.length();i++){JSONObject r=all.optJSONObject(i);String x=r==null?"":r.toString().toLowerCase(Locale.ROOT);if(x.contains("auth")||x.contains("token")||x.contains("key")||x.contains("oauth"))auth++;if(x.contains("websocket")||x.contains("feed")||x.contains("0b")||x.contains("0d"))feed++;if(x.contains("order")||x.contains("fill")||x.contains("체결")||x.contains("주문"))order++;}
+        addKpi(summary,"인증",String.valueOf(auth));addKpi(summary,"실시간",String.valueOf(feed));addKpi(summary,"주문/체결",String.valueOf(order));content.addView(summary);
         if(all.length()==0){empty("기록된 오류 없음");return;}
-        for(int i=0;i<Math.min(120,all.length());i++){JSONObject r=all.optJSONObject(i);if(r==null)continue;LinearLayout c=card();TextView n=text(r.optString("stage",r.optString("error_type",r.optString("code","오류 기록"))),12);n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(255,145,155));c.addView(n);TextView d=text(r.optString("message",r.optString("detail","상세 미기록")),10);d.setPadding(0,dp(4),0,0);c.addView(d);TextView t=text(formatKst(r.opt("at")),9);t.setTextColor(Color.rgb(130,153,182));c.addView(t);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(7));content.addView(c,lp);}
+        for(int i=0;i<Math.min(180,all.length());i++){
+            JSONObject r=all.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
+            TextView n=text(r.optString("stage",r.optString("error_type",r.optString("code","오류 기록"))),12);n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(255,145,155));c.addView(n);
+            TextView d=text(r.optString("message",r.optString("detail","상세 미기록")),10);d.setPadding(0,dp(4),0,0);c.addView(d);
+            TextView t=text(formatKst(r.opt("at")),9);t.setTextColor(Color.rgb(130,153,182));c.addView(t);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(7));content.addView(c,lp);
+        }
     }
 
     private JSONObject operationSettings(){
