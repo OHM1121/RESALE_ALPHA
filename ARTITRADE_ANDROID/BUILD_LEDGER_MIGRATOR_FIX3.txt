@@ -1,0 +1,1 @@
+One-time PC FIX3 build and 270MiB upload regression. 2026-11-13 KST. Shared 4GiB max, 1MB chunks, SHA256, cleanup on failure.
