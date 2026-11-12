@@ -434,7 +434,18 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
         },
     })
     if not begin.get("ok"):
-        raise RuntimeError("MSERVER begin 실패: " + json.dumps(begin, ensure_ascii=False))
+        code = begin.get("error", "unknown")
+        if code == "not_enough_phone_storage":
+            free = begin.get("available_bytes", 0) / (1024**3)
+            required = begin.get("required_bytes", 0) / (1024**3)
+            raise RuntimeError(f"S21+ 저장공간 부족: 필요 {required:.2f}GB / 잔여 {free:.2f}GB")
+        if code == "previous_migration_pending":
+            raise RuntimeError("이전 원장이 S21+에 전송 완료 상태로 남아 있습니다. "
+                               "휴대폰 ARTITRADE를 재실행해 승계한 후 다시 시도하십시오.")
+        if code == "invalid_migration_manifest":
+            raise RuntimeError("MSERVER 수신 버전이 오래되었거나 용량이 허용 한도를 초과했습니다. "
+                               "신규 MSERVER APK를 덮어쓰기 설치하십시오. 상세: " + json.dumps(begin, ensure_ascii=False))
+        raise RuntimeError("MSERVER 승계 준비 실패: " + json.dumps(begin, ensure_ascii=False))
 
     with archive.open("rb") as f:
         for index in range(total_chunks):
@@ -507,7 +518,7 @@ def run_gui():
     from tkinter import messagebox, ttk
 
     root = tk.Tk()
-    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 V2 FIX2 (자동 연결)")
+    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 FIX3 (대용량)")
     root.geometry("760x680")
     root.minsize(700, 540)
 
