@@ -50,6 +50,35 @@ jobs:
       - name: Build stock, coin and phone hub APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleHubDebug --stacktrace
+      - name: Create version-labeled APK files
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import datetime, json, re, shutil
+          from pathlib import Path
+
+          root = Path("ARTITRADE_ANDROID/app/build/outputs/apk")
+          today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
+          for flavor, label in (
+              ("stock", "ARTITRADE_STOCK"),
+              ("coin", "ARTITRADE_COIN"),
+              ("hub", "ARTITRADE_PHONE_SERVER"),
+          ):
+              directory = root / flavor / "debug"
+              meta = json.loads((directory / "output-metadata.json").read_text(encoding="utf-8"))
+              elements = meta.get("elements") or []
+              if len(elements) != 1:
+                  raise RuntimeError(f"Expected one APK for {flavor}, got {len(elements)}")
+              element = elements[0]
+              version = element.get("versionName")
+              if not version:
+                  raise RuntimeError(f"APK versionName missing for {flavor}")
+              safe_version = re.sub(r"[^A-Za-z0-9._-]", "_", str(version))
+              source = directory / element["outputFile"]
+              destination = directory / f"{label}_v{safe_version}_{today}.apk"
+              shutil.copy2(source, destination)
+              print(f"Created {destination} ({destination.stat().st_size} bytes)")
+          PY
       - name: Install Korean preview fonts
         run: |
           sudo apt-get update -qq >/dev/null
@@ -77,10 +106,10 @@ jobs:
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_S21PLUS_NUMBER_FIRST_UI_TEST_APKs
+          name: ARTITRADE_S21PLUS_VERSIONED_APKs
           if-no-files-found: error
           retention-days: 14
           path: |
-            ARTITRADE_ANDROID/app/build/outputs/apk/stock/debug/*.apk
-            ARTITRADE_ANDROID/app/build/outputs/apk/coin/debug/*.apk
-            ARTITRADE_ANDROID/app/build/outputs/apk/hub/debug/*.apk
+            ARTITRADE_ANDROID/app/build/outputs/apk/stock/debug/ARTITRADE_*.apk
+            ARTITRADE_ANDROID/app/build/outputs/apk/coin/debug/ARTITRADE_*.apk
+            ARTITRADE_ANDROID/app/build/outputs/apk/hub/debug/ARTITRADE_*.apk
