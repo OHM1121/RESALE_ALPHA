@@ -276,9 +276,12 @@ public final class UnifiedVisualActivity extends Activity {
     private String brokerStatusText(String which){
         JSONObject c=copyCache();JSONObject storage=c.optJSONObject("broker_storage");JSONObject probe=c.optJSONObject("broker_probe");
         boolean saved=storage!=null&&storage.optBoolean("kiwoom".equals(which)?"kiwoom_saved":"upbit_saved",false);
+        boolean encrypted=storage!=null&&storage.optBoolean("kiwoom".equals(which)?"kiwoom_encrypted_present":"upbit_encrypted_present",false);
+        boolean decrypt=storage==null||storage.optBoolean("kiwoom".equals(which)?"kiwoom_decrypt_ok":"upbit_decrypt_ok",true);
         String masked=storage==null?"":storage.optString("kiwoom".equals(which)?"kiwoom_key_masked":"upbit_access_masked","");
         JSONObject p=probe==null?null:probe.optJSONObject(which);
         String name="kiwoom".equals(which)?"키움":"업비트";
+        if(encrypted&&!decrypt)return name+" · 암호화값 존재 · Keystore 복호화 실패 · 키 재등록 필요";
         if(!saved)return name+" · 키 미저장";
         if(p==null)return name+" · "+masked+" · 저장됨 · 인증검사 필요";
         if(p.optBoolean("ok",false))return name+" · "+masked+" · 인증 정상";
