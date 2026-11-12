@@ -268,9 +268,9 @@ public final class UnifiedVisualActivity extends Activity {
         shell.addView(top,new LinearLayout.LayoutParams(-1,dp(56)));
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
 
-        HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);sh.setFillViewport(false);
+        HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);sh.setFillViewport(true);
         strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(13),dp(5),dp(13),dp(5));
-        sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-2,-1));shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(44)));
+        sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(44)));
         buildStrategyBar();
 
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(9,11,17));
@@ -347,6 +347,11 @@ public final class UnifiedVisualActivity extends Activity {
         TextView erRow=text("오류 이력   ·   "+("stock".equals(market)?"주식 전체":"코인 전체"),12);erRow.setTypeface(null,Typeface.BOLD);erRow.setPadding(dp(4),dp(7),dp(4),dp(7));erRow.setOnClickListener(v->{page="errors";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(erRow,new LinearLayout.LayoutParams(-1,dp(44)));
         manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         TextView scoreRow=text("엔진 점수 비교   ·   미선정 후보 포함",12);scoreRow.setTypeface(null,Typeface.BOLD);scoreRow.setPadding(dp(4),dp(7),dp(4),dp(7));scoreRow.setOnClickListener(v->{page="scores";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(scoreRow,new LinearLayout.LayoutParams(-1,dp(44)));
+        TextView policyRow=text("정책이력   ·   실제 체결과 매도 판단 근거",12);
+        policyRow.setPadding(dp(4),dp(7),dp(4),dp(7));
+        policyRow.setOnClickListener(v->{page="policyHistory";closeSettingsDrawer();main.postDelayed(this::showShell,190);});
+        manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
+        manage.addView(policyRow,new LinearLayout.LayoutParams(-1,dp(44)));
         panel.addView(manage);
 
         String brokerKey="stock".equals(market)?"kiwoom":"upbit";
@@ -468,8 +473,9 @@ public final class UnifiedVisualActivity extends Activity {
         for(String[] item:list){
             boolean active=item[0].equals(strategy);
             TextView tab=strategyTab(item[1],active,()->{strategy=item[0];page="home";showShell();});
-            int w="close".equals(item[0])||"gmo".equals(item[0])?dp(104):dp(82);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(w,dp(32));lp.setMargins(0,0,dp(5),0);strategyBar.addView(tab,lp);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1);
+            if(strategyBar.getChildCount()>0)lp.setMargins(dp(4),0,0,0);
+            strategyBar.addView(tab,lp);
         }
     }
 
@@ -1534,7 +1540,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void renderMore(){
         TextView h=text("도구",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
         LinearLayout c=card();c.addView(text("키움 · 업비트 API",13));Button api=button("직접 API 키 설정",true,this::apiSettings);LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(42));ap.setMargins(0,dp(8),0,0);c.addView(api,ap);content.addView(c);
-        LinearLayout p=card();p.addView(text("MSERVER(모바일 서버)",13));Button pair=button("연결 토큰 등록",true,this::pair);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(42));pp.setMargins(0,dp(8),0,0);p.addView(pair,pp);LinearLayout.LayoutParams pc=new LinearLayout.LayoutParams(-1,-2);pc.setMargins(0,dp(8),0,0);content.addView(p,pc);
+        LinearLayout p=card();p.addView(text("MSERVER(모바일 서버) · 토큰 등록 후 연결을 검사할 수 있음",13));Button pair=button("토큰 등록 · 연결 확인",true,this::pair);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(42));pp.setMargins(0,dp(8),0,0);p.addView(pair,pp);LinearLayout.LayoutParams pc=new LinearLayout.LayoutParams(-1,-2);pc.setMargins(0,dp(8),0,0);content.addView(p,pc);
         LinearLayout b=card();b.addView(text("백그라운드",13));Button bat=button("절전 예외 설정 열기",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}});LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(42));bp.setMargins(0,dp(8),0,0);b.addView(bat,bp);LinearLayout.LayoutParams bc=new LinearLayout.LayoutParams(-1,-2);bc.setMargins(0,dp(8),0,0);content.addView(b,bc);
     }
 
