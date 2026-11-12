@@ -13,6 +13,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -237,6 +239,18 @@ public final class UnifiedTradingService extends Service {
             .putBoolean("complete","COMPLETE".equals(stage)&&failed==0).apply();
     }
 
+    private String recordHash(JSONObject data){
+        try{
+            byte[] digest=MessageDigest.getInstance("SHA-256").digest(data.toString().getBytes(StandardCharsets.UTF_8));
+            StringBuilder out=new StringBuilder(64);
+            for(byte b:digest)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+            return out.toString();
+        }catch(Exception e){throw new IllegalStateException("RECORD_HASH_FAILED",e);}
+    }
+    private String recordKey(String market,String strategy,String bucket){
+        return market+"__"+strategy+"__"+bucket;
+    }
+
     private void publishPhoneLedgers(LocalHubClient hub,JSONObject all){
         if(all==null||all.length()==0)return;
         int total=0;
@@ -248,9 +262,10 @@ public final class UnifiedTradingService extends Service {
                 for(String bucket:new String[]{"ledger","research","errors"})if(st.optJSONObject(bucket)!=null)total++;
             }
         }
-        int ok=0,failed=0,preserved=0,done=0,lastHttp=200;
+        int ok=0,failed=0,preserved=0,skipped=0,done=0,lastHttp=200;
         String lastError="",lastMarket="",lastStrategy="",lastBucket="";
         long started=System.currentTimeMillis();
+        android.content.SharedPreferences hashes=getSharedPreferences("artitrade_mserver_record_hash_v078",MODE_PRIVATE);
         mserverSyncProgress("AUTH","MSERVER 인증",0,total,0,started);
         try{
             JSONObject auth=hub.status();
@@ -269,20 +284,41 @@ public final class UnifiedTradingService extends Service {
                         for(String bucket:new String[]{"ledger","research","errors"}){
                             JSONObject data=st.optJSONObject(bucket);if(data==null)continue;
                             String current=market+"/"+strategyName+"/"+bucket;
+                            String key=recordKey(market,strategyName,bucket);
+                            String hash=recordHash(data);
+                            String previous=hashes.getString(key+"_sha","");
+                            long lastVerified=hashes.getLong(key+"_verified",0L);
                             mserverSyncProgress("PUBLISH",current,done,total,failed,started);
                             try{
-                                if(!meaningfulRecord(data)){
-                                    JSONObject remote=hub.record(market,strategyName,bucket);
-                                    JSONObject old=remote.optJSONObject("data");
-                                    if(meaningfulRecord(old)){
-                                        preserved++;done++;
-                                        mserverSyncProgress("PUBLISH",current+" · 기존자료 보존",done,total,failed,started);
-                                        continue;
-                                    }
+                                boolean remoteExists=false;
+                                boolean unchanged=hash.equals(previous);
+                                // Avoid network round-trips on every 4.5 s monitor pass. Verify
+                                // unchanged records periodically so clearing MSERVER storage can self-heal.
+                                if(unchanged && System.currentTimeMillis()-lastVerified<60_000L){
+                                    skipped++;done++;
+                                    mserverSyncProgress("PUBLISH",current+" · 변경없음",done,total,failed,started);
+                                    continue;
+                                }
+                                JSONObject meta=hub.recordMeta(market,strategyName,bucket);
+                                remoteExists=meta.optBoolean("ok")&&meta.optBoolean("exists");
+                                if(unchanged&&remoteExists){
+                                    skipped++;done++;
+                                    hashes.edit().putLong(key+"_verified",System.currentTimeMillis()).apply();
+                                    mserverSyncProgress("PUBLISH",current+" · 변경없음",done,total,failed,started);
+                                    continue;
+                                }
+                                if(!meaningfulRecord(data)&&remoteExists){
+                                    preserved++;done++;
+                                    hashes.edit().putLong(key+"_verified",System.currentTimeMillis()).apply();
+                                    mserverSyncProgress("PUBLISH",current+" · 기존자료 보존",done,total,failed,started);
+                                    continue;
                                 }
                                 JSONObject result=hub.putRecord(market,strategyName,bucket,data);
-                                if(result.optBoolean("ok"))ok++;
-                                else{
+                                if(result.optBoolean("ok")){
+                                    ok++;
+                                    hashes.edit().putString(key+"_sha",hash)
+                                        .putLong(key+"_verified",System.currentTimeMillis()).apply();
+                                }else{
                                     failed++;lastMarket=market;lastStrategy=strategyName;lastBucket=bucket;
                                     lastHttp=result.optInt("http_status",200);
                                     String code=result.optString("error","MSERVER_WRITE_FAILED");
@@ -301,7 +337,10 @@ public final class UnifiedTradingService extends Service {
                         }
                     }
                 }
-                mserverSyncProgress(failed==0?"COMPLETE":"FAILED",failed==0?"MSERVER 원장 게시 완료":"일부 원장 게시 실패",done,total,failed,started);
+                String complete=failed==0
+                    ?(ok>0?"MSERVER 변경 원장 게시 완료":"MSERVER 변경없음 · 동기화 유지")
+                    :"일부 원장 게시 실패";
+                mserverSyncProgress(failed==0?"COMPLETE":"FAILED",complete,done,total,failed,started);
             }
         }catch(Throwable e){
             failed++;lastHttp=0;lastError="MSERVER_UNREACHABLE:"+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
@@ -309,7 +348,8 @@ public final class UnifiedTradingService extends Service {
             mserverSyncProgress("FAILED","MSERVER 연결 실패",done,total,failed,started);
         }
         getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE).edit()
-            .putLong("at",System.currentTimeMillis()).putInt("ok",ok).putInt("failed",failed).putInt("preserved",preserved)
+            .putLong("at",System.currentTimeMillis()).putInt("ok",ok).putInt("failed",failed)
+            .putInt("preserved",preserved).putInt("skipped",skipped)
             .putBoolean("legacy_preserved",preserved>0).putString("last_error",lastError)
             .putString("last_market",lastMarket).putString("last_strategy",lastStrategy).putString("last_bucket",lastBucket)
             .putInt("last_http_status",lastHttp).apply();
@@ -339,7 +379,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.7")
+        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.8")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
