@@ -285,7 +285,7 @@ def run_gui():
     from tkinter import messagebox, ttk
 
     root = tk.Tk()
-    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 V2")
+    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 V2 FIX1")
     root.geometry("760x680")
     root.minsize(700, 540)
 
@@ -302,7 +302,16 @@ def run_gui():
     found = [f"{arc}\n  {path}" for arc, (path, _) in sources.items() if path.is_file()]
     missing = [f"{arc}\n  없음: {path}" for arc, (path, _) in sources.items() if not path.is_file()]
     source_var.set("\n".join(found + missing))
-    ttk.Label(roots, textvariable=source_var, justify="left").pack(anchor="w")
+    # Keep the source list scrollable so it cannot hide the action buttons.
+    source_frame = ttk.Frame(roots)
+    source_frame.pack(fill="x")
+    source_list = tk.Text(source_frame, height=7, wrap="none", font=("Consolas", 9))
+    source_scroll = ttk.Scrollbar(source_frame, orient="vertical", command=source_list.yview)
+    source_list.configure(yscrollcommand=source_scroll.set)
+    source_list.pack(side="left", fill="x", expand=True)
+    source_scroll.pack(side="right", fill="y")
+    source_list.insert("1.0", source_var.get())
+    source_list.configure(state="disabled")
 
     conn = ttk.LabelFrame(frm, text="S21+ MSERVER", padding=10)
     conn.pack(fill="x", pady=(12, 0))
@@ -323,7 +332,15 @@ def run_gui():
     progress_bar = ttk.Progressbar(progress_box, orient="horizontal", mode="determinate", maximum=100, variable=progress_value)
     progress_bar.pack(fill="x", pady=(4, 0))
 
-    status = tk.Text(frm, height=12, wrap="word", font=("Consolas", 10))
+    # Buttons are deliberately ABOVE the growing log and remain visible in 540px windows.
+    actions = ttk.Frame(frm)
+    actions.pack(fill="x", pady=(9, 0))
+    test_btn = ttk.Button(actions, text="MSERVER 연결 확인", command=lambda: check_connection())
+    test_btn.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=6)
+    btn = ttk.Button(actions, text="기존 EXE 원장을 S21+로 승계 시작", command=lambda: start())
+    btn.pack(side="left", fill="x", expand=True, ipady=6)
+
+    status = tk.Text(frm, height=9, wrap="word", font=("Consolas", 10))
     status.pack(fill="both", expand=True, pady=(12, 10))
     status.insert("end", "준비됨\n")
     status.configure(state="disabled")
@@ -348,6 +365,26 @@ def run_gui():
             status.configure(state="disabled")
         root.after(0, put)
 
+    def check_connection():
+        test_btn.configure(state="disabled")
+        def check():
+            try:
+                base = validated_url(url_var.get())
+                token = token_var.get().strip()
+                if len(token) != 64:
+                    raise ValueError("연결 토큰은 64자리여야 합니다.")
+                answer = request(base, token, "GET", "/v1/status")
+                if not isinstance(answer, dict) or not answer.get("ok"):
+                    raise RuntimeError("MSERVER 인증 응답이 정상적이지 않습니다.")
+                log("MSERVER 연결 및 인증 확인 완료")
+                root.after(0, lambda: messagebox.showinfo("연결 확인", "MSERVER 연결과 인증이 정상입니다."))
+            except Exception as exc:
+                log("MSERVER 연결 확인 실패: " + type(exc).__name__)
+                root.after(0, lambda msg=str(exc): messagebox.showerror("연결 확인 실패", msg))
+            finally:
+                root.after(0, lambda: test_btn.configure(state="normal"))
+        threading.Thread(target=check, daemon=True).start()
+
     def start():
         btn.configure(state="disabled")
         def work():
@@ -367,8 +404,6 @@ def run_gui():
                 root.after(0, lambda: btn.configure(state="normal"))
         threading.Thread(target=work, daemon=True).start()
 
-    btn = ttk.Button(frm, text="기존 EXE 원장을 S21+로 승계", command=start)
-    btn.pack(fill="x", ipady=7)
     ttk.Label(frm, text="원본 EXE 원장은 읽기만 하며 수정하지 않습니다. MSERVER는 Tailscale 사설망에서만 전송을 허용합니다.").pack(anchor="w", pady=(8, 0))
     root.mainloop()
 
