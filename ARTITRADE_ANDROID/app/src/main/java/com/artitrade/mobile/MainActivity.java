@@ -296,7 +296,7 @@ public final class MainActivity extends Activity {
         new Thread(()->{
             try{
                 org.json.JSONObject status=new LocalHubClient(this).status();
-                runOnUiThread(()->showHubResult("폰 서버 상태",status.toString(2)));
+                runOnUiThread(()->showHubResult("폰 서버 상태",status.toString()));
             }catch(Exception e){runOnUiThread(()->showHubResult("폰 서버 연결 오류",
                 "폰 서버 앱이 실행 중이고 페어링 토큰이 맞는지 확인하십시오."));}
         },"hub-client-status").start();
@@ -314,7 +314,7 @@ public final class MainActivity extends Activity {
                         new Thread(()->{
                             try{
                                 org.json.JSONObject record=new LocalHubClient(this).record(market,strategy,buckets[j]);
-                                runOnUiThread(()->showHubResult(strategy+" / "+buckets[j],record.toString(2)));
+                                runOnUiThread(()->showHubResult(strategy+" / "+buckets[j],record.toString()));
                             }catch(Exception e){runOnUiThread(()->showHubResult("조회 실패",
                                 "서버 실행 상태와 연결 토큰을 확인하십시오."));}
                         },"hub-client-record").start();
