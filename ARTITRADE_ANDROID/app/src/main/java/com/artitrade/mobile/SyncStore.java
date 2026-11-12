@@ -90,12 +90,25 @@ final class SyncStore extends SQLiteOpenHelper {
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
         try{
-            int rev=0;
-            try(Cursor c=db.rawQuery("SELECT revision FROM records WHERE market=? AND strategy=? AND bucket=?",
+            int rev=0;String priorSealed=null;long priorUpdated=0L;
+            try(Cursor c=db.rawQuery("SELECT revision,sealed,updated FROM records WHERE market=? AND strategy=? AND bucket=?",
                     new String[]{market,strategy,bucket})){
-                if(c.moveToFirst())rev=c.getInt(0);
+                if(c.moveToFirst()){
+                    rev=c.getInt(0);priorSealed=c.getString(1);priorUpdated=c.getLong(2);
+                }
             }
-            if(rev!=expected)return obj("ok",false,"error","revision_conflict","current_revision",rev);
+            if(rev!=expected){
+                // An ACK may be lost even though the prior request committed.
+                // Exact duplicate payloads are safe: acknowledge without increasing
+                // the revision. Different data still requires optimistic locking.
+                if(priorSealed!=null){
+                    try{
+                        if(plain.equals(box.unseal(priorSealed)))
+                            return obj("ok",true,"revision",rev,"updated_at",priorUpdated,"unchanged",true);
+                    }catch(Exception ignored){}
+                }
+                return obj("ok",false,"error","revision_conflict","current_revision",rev);
+            }
             long now=System.currentTimeMillis();
             ContentValues cv=new ContentValues();
             cv.put("market",market);cv.put("strategy",strategy);cv.put("bucket",bucket);
