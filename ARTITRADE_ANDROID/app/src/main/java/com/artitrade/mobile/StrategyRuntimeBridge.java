@@ -22,7 +22,7 @@ import java.util.zip.ZipInputStream;
 /** Runs the exact latest uploaded EXE Python strategy state machines inside Android. */
 final class StrategyRuntimeBridge {
     private static final int PARTS=22;
-    private static final int LIVE_BRIDGE_PARTS=9;
+    private static final int LIVE_BRIDGE_PARTS=9; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
     private static final String CORE_SHA256="e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0";
     private final Context context;
     private final RuntimeCrashStore crashes;
