@@ -166,7 +166,7 @@ final class HubServer {
     }
     private void handle(Socket socket){
         try(Socket client=socket){
-            client.setSoTimeout(7000);
+            client.setSoTimeout(30000);
             InputStream in=new BufferedInputStream(client.getInputStream());
             OutputStream out=client.getOutputStream();
             String request=readLine(in);
@@ -216,9 +216,19 @@ final class HubServer {
             JSONObject body;
             try{body=length>0?new JSONObject(new String(readBody(in,length),StandardCharsets.UTF_8)):new JSONObject();}
             catch(Exception e){send(out,400,json("ok",false,"error","invalid_json"));return;}
-            JSONObject result=route(method,path,query(uri.getRawQuery()),body);
+            JSONObject result;
+            try{
+                result=route(method,path,query(uri.getRawQuery()),body);
+            }catch(Exception e){
+                // No abrupt close on a database/Keystore failure. The client must
+                // receive a usable error code and must never assume a write worked.
+                Log.e(TAG,"Authenticated MSERVER request failed: "+method+" "+path,e);
+                send(out,500,json("ok",false,"error","server_storage_failed","type",e.getClass().getSimpleName()));
+                return;
+            }
             String error=result.optString("error","");
             int status="revision_conflict".equals(error)?409:
+                     "data_too_large".equals(error)?413:
                     "previous_device_still_active".equals(error)||"manual_order_review_required".equals(error)?423:
                     error.isEmpty()?200:"device_is_read_only".equals(error)||"switch_requested_stop_orders".equals(error)||"lease_invalid_or_expired".equals(error)?409:400;
             send(out,status,result);
