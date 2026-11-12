@@ -151,9 +151,9 @@ public final class UnifiedVisualActivity extends Activity {
         b.setText(label);
         b.setTextSize(11);
         b.setTypeface(null,Typeface.BOLD);
-        b.setTextColor(active?Color.rgb(4,32,25):Color.rgb(203,220,239));
-        b.setBackground(bg(active?Color.rgb(62,224,181):Color.rgb(18,36,58),
-            active?Color.rgb(62,224,181):Color.rgb(43,67,97),10));
+        b.setTextColor(active?Color.WHITE:Color.rgb(203,210,228));
+        b.setBackground(bg(active?Color.rgb(105,91,232):Color.rgb(22,25,36),
+            active?Color.rgb(129,116,248):Color.rgb(48,52,69),11));
         b.setPadding(dp(10),0,dp(10),0);
         b.setMinHeight(0);b.setMinimumHeight(0);
         b.setOnClickListener(v->action.run());
@@ -164,8 +164,40 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout c=new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setPadding(dp(13),dp(10),dp(13),dp(10));
-        c.setBackground(bg(Color.rgb(16,29,49),Color.rgb(38,59,86),14));
+        c.setBackground(bg(Color.rgb(18,21,31),Color.rgb(42,48,66),16));
         return c;
+    }
+
+    private TextView segmentItem(String label,boolean active,Runnable action){
+        TextView t=text(label,11);t.setGravity(Gravity.CENTER);t.setTypeface(null,Typeface.BOLD);
+        t.setTextColor(active?Color.WHITE:Color.rgb(137,146,166));
+        t.setBackground(bg(active?Color.rgb(92,78,220):Color.TRANSPARENT,0,14));
+        t.setOnClickListener(v->action.run());return t;
+    }
+
+    private TextView strategyTab(String label,boolean active,Runnable action){
+        TextView t=text(label,12);t.setGravity(Gravity.CENTER);t.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
+        t.setTextColor(active?Color.rgb(194,185,255):Color.rgb(133,142,163));
+        if(active)t.setBackground(bg(Color.rgb(27,24,46),Color.rgb(92,78,220),12));
+        else t.setBackgroundColor(Color.TRANSPARENT);
+        t.setOnClickListener(v->action.run());return t;
+    }
+
+    private TextView iconAction(String glyph,Runnable action){
+        TextView t=text(glyph,20);t.setGravity(Gravity.CENTER);t.setTextColor(Color.rgb(211,217,232));
+        t.setBackground(bg(Color.rgb(21,24,34),Color.rgb(48,52,68),19));t.setOnClickListener(v->action.run());return t;
+    }
+
+    private LinearLayout bottomNavItem(String key,String icon,String label){
+        boolean active=key.equals(page);
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);
+        TextView i=text(icon,18);i.setGravity(Gravity.CENTER);i.setTextColor(active?Color.rgb(164,151,255):Color.rgb(111,121,143));box.addView(i,new LinearLayout.LayoutParams(-1,dp(25)));
+        TextView l=text(label,9);l.setGravity(Gravity.CENTER);l.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);l.setTextColor(active?Color.rgb(227,224,255):Color.rgb(111,121,143));box.addView(l,new LinearLayout.LayoutParams(-1,dp(18)));
+        box.setOnClickListener(v->{page=key;showShell();});return box;
+    }
+
+    private View divider(){
+        View v=new View(this);v.setBackgroundColor(Color.rgb(35,39,53));return v;
     }
 
     private void showBoot(){
