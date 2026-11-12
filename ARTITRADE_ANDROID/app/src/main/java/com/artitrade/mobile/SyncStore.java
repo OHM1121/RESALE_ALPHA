@@ -67,6 +67,17 @@ final class SyncStore extends SQLiteOpenHelper {
                     "data",new JSONObject(box.unseal(c.getString(1))),"updated_at",c.getLong(2));
         }catch(Exception e){throw new IllegalStateException("Cannot read encrypted record",e);}
     }
+    synchronized JSONObject getRecordMeta(String market,String strategy,String bucket){
+        if(!validStrategy(market,strategy)||!validBucket(bucket))
+            return obj("ok",false,"error","invalid_key");
+        try(Cursor c=getReadableDatabase().rawQuery(
+                "SELECT revision,updated FROM records WHERE market=? AND strategy=? AND bucket=?",
+                new String[]{market,strategy,bucket})){
+            if(!c.moveToFirst())return obj("ok",true,"exists",false,"revision",0,"updated_at",0);
+            return obj("ok",true,"exists",true,"revision",c.getInt(0),"updated_at",c.getLong(1));
+        }
+    }
+
     synchronized JSONObject putRecord(String market,String strategy,String bucket,int expected,JSONObject data){
         if(!validStrategy(market,strategy)||!validBucket(bucket)||expected<0 || data==null)
             return obj("ok",false,"error","invalid_record");
