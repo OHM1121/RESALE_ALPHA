@@ -117,14 +117,17 @@ final class LocalHubClient {
     JSONObject record(String market,String strategy,String bucket)throws Exception {
         return request("/v1/record?market="+encode(market)+"&strategy="+encode(strategy)+"&bucket="+encode(bucket));
     }
+    JSONObject recordMeta(String market,String strategy,String bucket)throws Exception {
+        return request("/v1/record/meta?market="+encode(market)+"&strategy="+encode(strategy)+"&bucket="+encode(bucket));
+    }
     JSONObject putRecord(String market,String strategy,String bucket,JSONObject data)throws Exception{
-        JSONObject current=record(market,strategy,bucket);
+        JSONObject current=recordMeta(market,strategy,bucket);
         int revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
         JSONObject payload=new JSONObject().put("market",market).put("strategy",strategy)
             .put("bucket",bucket).put("expected_revision",revision).put("data",data);
         JSONObject reply=put("/v1/record",payload);
         if(reply.optInt("http_status",200)==409 || "revision_conflict".equals(reply.optString("error"))){
-            current=record(market,strategy,bucket);
+            current=recordMeta(market,strategy,bucket);
             revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
             payload.put("expected_revision",revision);
             reply=put("/v1/record",payload);
