@@ -636,6 +636,8 @@ public final class UnifiedVisualActivity extends Activity {
         JSONArray positions=new JSONArray(),pending=new JSONArray(),executions=new JSONArray(),research=new JSONArray();
         double realized=Double.NaN,unrealized=Double.NaN,total=Double.NaN,win=Double.NaN,target=Double.NaN;
         int candidates=0,bought=0,confirmed=0,hits=0,closed=0;
+        int flowPending=0,flowBought=0,flowHolding=0,flowSold=0;
+        boolean flowKnown=false;
     }
 
     private Stats stats(String m,String s){
@@ -695,12 +697,15 @@ public final class UnifiedVisualActivity extends Activity {
         Stats all=stats(m,stg),st=new Stats();
         st.positions=filterTf(all.positions,tf);st.pending=filterTf(all.pending,tf);st.executions=filterTf(all.executions,tf);st.research=filterTf(all.research,tf);
         JSONObject l=ledger(m,stg);
-        if("stock".equals(m)&&"ma".equals(stg)){
-            JSONObject pf=l.optJSONObject("performance_by_frame");JSONObject p=pf==null?null:pf.optJSONObject(tf);
-            if(p!=null){
-                st.realized=num(p,"realized_won","realized_pnl","realized");
-                st.unrealized=num(p,"holding_won","unrealized_pnl","holding");
-            }
+        JSONObject pf=l.optJSONObject("performance_by_frame");JSONObject p=pf==null?null:pf.optJSONObject(tf);
+        if(p!=null){
+            st.realized=num(p,"realized_won","realized_pnl","realized");
+            st.unrealized=num(p,"holding_won","unrealized_pnl","holding");
+            st.flowPending=p.optInt("pending_count",st.pending.length());
+            st.flowBought=p.has("bought_count")?p.optInt("bought_count",0):p.optInt("total_trades",0);
+            st.flowHolding=p.optInt("open_count",st.positions.length());
+            st.flowSold=p.optInt("closed_count",0);
+            st.flowKnown=true;
         }
         if(!finite(st.realized)||!finite(st.unrealized)){
             JSONArray ac=array(l,"accounts");
@@ -732,6 +737,12 @@ public final class UnifiedVisualActivity extends Activity {
             Boolean hit=target(r);if(hit!=null){st.confirmed++;if(hit)st.hits++;}
         }
         if(st.confirmed>0)st.target=st.hits*100.0/st.confirmed;
+        if(!st.flowKnown){
+            st.flowPending=st.pending.length();
+            st.flowHolding=st.positions.length();
+            st.flowSold=st.closed;
+            st.flowBought=Math.max(st.flowHolding+st.flowSold,st.bought);
+        }
         return st;
     }
 
@@ -837,13 +848,15 @@ public final class UnifiedVisualActivity extends Activity {
             sec.setTextColor(Color.rgb(220,224,235));sec.setPadding(0,dp(18),0,dp(8));content.addView(sec);
             TextView guide=text("5분 · 30분 · 1시간 · 일봉을 각각 독립 계좌로 시각화",12);guide.setTextColor(Color.rgb(128,138,160));guide.setPadding(0,0,0,dp(7));content.addView(guide);
 
-            java.util.ArrayList<TimeframePerformanceGridView.Cell> cells=new java.util.ArrayList<>();
             for(String tf:new String[]{"5m","30m","60m","day"}){
                 Stats q=statsTf(market,strategy,tf);
-                cells.add(new TimeframePerformanceGridView.Cell(tfLabel(tf),q.total,q.realized,q.unrealized,q.win,q.target,q.positions.length(),q.pending.length()));
+                TimeframeAccountFlowView flow=new TimeframeAccountFlowView(this);
+                flow.setData(tfLabel(tf),q.total,q.realized,q.unrealized,q.win,q.target,
+                    q.flowPending,q.flowBought,q.flowHolding,q.flowSold);
+                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(205));
+                if(!"5m".equals(tf))fp.setMargins(0,dp(9),0,0);
+                content.addView(flow,fp);
             }
-            TimeframePerformanceGridView grid=new TimeframePerformanceGridView(this);grid.setCells(cells);
-            content.addView(grid,new LinearLayout.LayoutParams(-1,dp(410)));
         }
 
         TextView trendTitle=text("실현손익 추세",18);trendTitle.setTypeface(null,Typeface.BOLD);trendTitle.setTextColor(Color.rgb(220,224,235));trendTitle.setPadding(0,dp(18),0,dp(8));content.addView(trendTitle);
