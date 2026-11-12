@@ -161,7 +161,7 @@ function recordName(bucket){
 function tagOf(row){return String(pick(row,['tf','strategy','engine','strategy_name'])||'').toLowerCase();}
 function belongs(row){
  if(S.market==='coin'||S.strategy==='close')return true;
- var tag=tagOf(row),ma=/(^ma$|[_ -]ma|ma[_ -]|이평|moving.average)/i.test(tag);
+ var tag=tagOf(row),ma=/(^ma$|^ma[0-9._-]|[_ -]ma|ma[_ -]|이평|moving.average)/i.test(tag);
  var gmo=/(gmo|수급)/i.test(tag);
  var close=/(close|종가|cw)/i.test(tag);
  if(S.strategy==='ma')return ma;
@@ -173,6 +173,12 @@ function filteredRows(raw){return arr(raw).filter(belongs);}
 function ledger(){
  var source=record(recordName('Ledger'));
  if(!Object.keys(source).length)return {};
+ // Original stock MA engine uses a different SQLite database. It is carried
+ // as a read-only nested snapshot within stock/at, since the installed hub
+ // currently allows only stock/at, stock/cw and stock/shared record keys.
+ if(S.market==='stock'&&S.strategy==='ma'&&source.ma_subledger&&typeof source.ma_subledger==='object'){
+  return Object.assign({},source.ma_subledger);
+ }
  var copy=Object.assign({},source);
  if(S.market==='stock'&&S.strategy!=='close'){
   ['positions','pending','executions','holdings','fills','transactions'].forEach(function(k){if(Array.isArray(source[k]))copy[k]=filteredRows(source[k]);});
