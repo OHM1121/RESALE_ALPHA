@@ -1,0 +1,82 @@
+from __future__ import annotations
+import contextlib, hashlib, hmac, json, os, re, sqlite3, threading, time, uuid
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal
+from pathlib import Path
+from urllib.parse import urlencode
+
+_RUNTIME=None
+_LOCK=threading.RLock()
+ADAPTER_VERSION="ARTITRADE_ANDROID_LIVE_BRIDGE_V071_PRIVATE_WS"
+
+class LiveOrderError(RuntimeError): pass
+class LiveOrderNoFill(LiveOrderError): pass
+class LiveOrderAmbiguous(LiveOrderError): pass
+
+
+def _num(v):
+    try:
+        s=str(v or '').replace(',','').replace('+','').strip()
+        return abs(float(s))
+    except Exception:return 0.0
+
+def _safe_key(s):
+    return hashlib.sha256(str(s).encode('utf-8')).hexdigest()[:28]
+
+def _now():
+    return datetime.now(timezone(timedelta(hours=9))).isoformat(timespec='seconds')
+
+class Journal:
+    def __init__(self,root):
+        self.path=Path(root)/'live_order_journal.sqlite3';self.lock=threading.RLock()
+        self.path.parent.mkdir(parents=True,exist_ok=True)
+        with self._db() as c:
+            c.execute('''CREATE TABLE IF NOT EXISTS live_orders(
+              event_key TEXT PRIMARY KEY, market TEXT NOT NULL, side TEXT NOT NULL,
+              symbol TEXT NOT NULL, qty TEXT NOT NULL, limit_price TEXT NOT NULL,
+              status TEXT NOT NULL, broker_order_id TEXT NOT NULL DEFAULT '',
+              fill_qty TEXT NOT NULL DEFAULT '', fill_price TEXT NOT NULL DEFAULT '',
+              reason TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+              detail TEXT NOT NULL DEFAULT '', attempt INTEGER NOT NULL DEFAULT 1,
+              source TEXT NOT NULL DEFAULT '', strategy TEXT NOT NULL DEFAULT '',
+              strategy_event_key TEXT NOT NULL DEFAULT '')''')
+            cols={r[1] for r in c.execute('PRAGMA table_info(live_orders)').fetchall()}
+            for name,ddl in (('attempt','INTEGER NOT NULL DEFAULT 1'),('source',"TEXT NOT NULL DEFAULT ''"),
+                             ('strategy',"TEXT NOT NULL DEFAULT ''"),('strategy_event_key',"TEXT NOT NULL DEFAULT ''")):
+                if name not in cols:c.execute('ALTER TABLE live_orders ADD COLUMN '+name+' '+ddl)
+            c.commit()
+    def _db(self):
+        c=sqlite3.connect(str(self.path),timeout=10);c.row_factory=sqlite3.Row;return c
+    def get(self,key):
+        with self.lock,self._db() as c:return c.execute('SELECT * FROM live_orders WHERE event_key=?',(key,)).fetchone()
+    def prepare(self,key,market,side,symbol,qty,price,reason,source='',strategy='',strategy_event_key=''):
+        with self.lock,self._db() as c:
+            row=c.execute('SELECT * FROM live_orders WHERE event_key=?',(key,)).fetchone()
+            if row:
+                # A confirmed FOK zero-fill is safe to retry when the exact strategy event
+                # is evaluated again. Rejected/ambiguous/partial events never auto-retry.
+                if row['status']=='NO_FILL' and int(row['attempt'] or 1)<3 and not str(row['fill_qty'] or '').strip('0.'):
+                    c.execute("UPDATE live_orders SET status='PREPARED',attempt=attempt+1,broker_order_id='',fill_qty='',fill_price='',detail='RETRY_AFTER_CONFIRMED_ZERO_FILL',updated_at=? WHERE event_key=?",(_now(),key))
+                    c.commit();return c.execute('SELECT * FROM live_orders WHERE event_key=?',(key,)).fetchone()
+                return row
+            c.execute('''INSERT INTO live_orders(event_key,market,side,symbol,qty,limit_price,status,reason,created_at,updated_at,attempt,source,strategy,strategy_event_key)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (key,market,side,symbol,str(qty),str(price),'PREPARED',reason[:240],_now(),_now(),1,str(source)[:80],str(strategy)[:40],str(strategy_event_key)[:500]))
+            c.commit();return c.execute('SELECT * FROM live_orders WHERE event_key=?',(key,)).fetchone()
+    def set(self,key,status,order_id='',fill_qty='',fill_price='',detail=''):
+        with self.lock,self._db() as c:
+            c.execute('UPDATE live_orders SET status=?,broker_order_id=CASE WHEN ?<>'' THEN ? ELSE broker_order_id END,fill_qty=CASE WHEN ?<>'' THEN ? ELSE fill_qty END,fill_price=CASE WHEN ?<>'' THEN ? ELSE fill_price END,detail=?,updated_at=? WHERE event_key=?',
+                (status,order_id,order_id,str(fill_qty),str(fill_qty),str(fill_price),str(fill_price),str(detail)[:600],_now(),key));c.commit()
+    def recent(self,n=50,market='',strategy=''):
+        with self.lock,self._db() as c:
+            q='SELECT * FROM live_orders';args=[];where=[]
+            if market:where.append('market=?');args.append(market)
+            if strategy:where.append('strategy=?');args.append(strategy)
+            if where:q+=' WHERE '+' AND '.join(where)
+            q+=' ORDER BY updated_at DESC LIMIT ?';args.append(int(n))
+            return [dict(x) for x in c.execute(q,args).fetchall()]
+
+class BrokerFeedTracker:
+    """Thread-safe private/account WebSocket evidence used before REST reconciliation."""
+    def __init__(self):
+        self.cv=threading.Condition();self.stock_orders={};self.coin_orders={};self.coin_ids={};self.assets=[]
