@@ -1,4 +1,3 @@
-ARTITRADE unified v0.7.9 manual verification build marker
-Date: 2026-11-13 KST
-Changes: native full-width stock/coin trade cards; scenario summary; policy history; manual-sell safety; PC MSERVER transfer UI.
-One marker update triggers one Android build. PC migrator CI is workflow_dispatch only.
+ARTITRADE unified v0.7.10 and MSERVER v0.2.5 one-time verified build marker
+2026-11-13 KST
+Android local ledger publisher retry + diagnostic error codes + longer encryption-save timeouts; MSERVER returns explicit storage error; PC VPN address clarified.
