@@ -40,8 +40,8 @@ public final class HubService extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this,CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("ARTITRADE 폰 서버 실행 중")
-            .setContentText("로컬 데이터·실행 권한 서버 | 누르면 설정")
+            .setContentTitle("ARTITRADE MSERVER 실행 중")
+            .setContentText("모바일 기준원장·실행권한 서버 | 누르면 설정")
             .setOngoing(true)
             .setContentIntent(pending)
             .build();
