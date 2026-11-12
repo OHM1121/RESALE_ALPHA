@@ -1,0 +1,68 @@
+        return {'positions':positions,'pending':pending,'executions':executions,'accounts':accounts,
+                'realized_pnl':realized,'unrealized_pnl':holding,'total_pnl':realized+holding,
+                '_research_items':signals,'_errors':issues+runtime}
+    def _ma_ledger(self):
+        if not self.stock_runner:return {}
+        try:snap=self.stock_runner.ma.snapshot()
+        except Exception as e:self._err('stock_ma_snapshot',e);return {}
+        perf=snap.get('performance_by_frame') or {};real=sum(float(x.get('realized_won') or 0) for x in perf.values());hold=sum(float(x.get('holding_won') or 0) for x in perf.values())
+        snap['realized_pnl']=real;snap['unrealized_pnl']=hold;snap['total_pnl']=real+hold
+        for key in ('positions','pending','executions','research'):
+            for row in snap.get(key) or []:row['strategy']='ma'
+        return snap
+    def _gmo_bundle(self):
+        if not self.stock_runner:return {},{},[]
+        try:led=self.stock_runner.gmo.snapshot()
+        except Exception as e:self._err('gmo_snapshot',e);return {},{},[]
+        for key in ('positions','pending','executions'):
+            for row in led.get(key) or []:row['strategy']='gmo'
+        w=led.get('wallet') or {};led['accounts']=[{'strategy':'gmo','realized_pnl':w.get('realized',0),'unrealized_pnl':w.get('holding',0),'cash':w.get('cash',0)}]
+        led['realized_pnl']=w.get('realized',0);led['unrealized_pnl']=w.get('holding',0);led['total_pnl']=float(w.get('realized',0) or 0)+float(w.get('holding',0) or 0)
+        try:research=self.stock_runner.gmo.signal_summary()
+        except Exception:research=[]
+        for row in research:
+            row['strategy']='gmo'
+            status=str(row.get('status') or '')
+            row['target_hit']=('목표' in status and ('달성' in status or '도달' in status))
+        errs=[]
+        if led.get('last_error'):errs.append({'at':_now(),'stage':'gmo','message':str(led.get('last_error'))})
+        return led,{'items':research},errs
+    def _close_bundle(self):
+        if not self.close_store:return {},{},[]
+        try:
+            pos=self.close_store.open_positions('CLOSE');exe=self.close_store.recent_exec(220);metrics=(self.close_store.dashboard_metrics() or {}).get('CLOSE',{});settings=(self.close_store.settings() or {}).get('CLOSE',{})
+            sig=self.close_store.recent_signals(220);cand=self.close_store.recent_candidates(250);events=self.close_store.recent_events(120)
+            for r in pos:r['strategy']='close';r['paper_pnl']=int(r.get('qty') or 0)*(int(r.get('last_price') or 0)-int(r.get('entry_price') or 0))
+            for r in exe:r['strategy']='close';r['net_profit']=r.get('net_realized')
+            for r in sig:r['strategy']='close'
+            pending=[dict(r) for r in sig if str(r.get('decision') or '')=='BUY' and not str(r.get('entry_result') or '').startswith('BOUGHT')]
+            for r in pending:
+                r['ref_ts']=r.get('ts');r['reason']='종가베팅 진입조건 충족 · 체결 대기'
+            realized=float(metrics.get('realized_pnl') or 0);holding=float(metrics.get('holding_pnl') or 0)
+            led={'positions':pos,'pending':pending,'executions':exe,'realized_pnl':realized,'unrealized_pnl':holding,'total_pnl':realized+holding,
+                 'seed':settings.get('seed'),'max_positions':settings.get('max_positions'),'accounts':[{'strategy':'close','realized_pnl':realized,'unrealized_pnl':holding}]}
+            for r in cand:r['strategy']='close'
+            return led,{'items':cand},events
+        except Exception as e:self._err('close_snapshot',e);return {},{},[]
+    def _coin_bundle(self,ledger,strategy):
+        if ledger is None:return {},{},[]
+        try:snap=ledger.snapshot()
+        except Exception as e:self._err('coin_'+strategy+'_snapshot',e);return {},{},[]
+        pos=[];pending=[];exe=[];accounts=[];real=hold=0.0
+        for tf,x in snap.items():
+            r=float(x.get('realized') or 0);h=float(x.get('holding') or 0);real+=r;hold+=h
+            accounts.append({'tf':tf,'strategy':strategy,'realized_pnl':r,'unrealized_pnl':h,'cash':x.get('cash'),'seed':x.get('seed')})
+            for row in x.get('positions') or []:d=dict(row);d['strategy']=strategy;pos.append(d)
+            for row in x.get('orders') or []:d=dict(row);d['strategy']=strategy;d.setdefault('ref_ts',d.get('ref_at'));d.setdefault('reason','코인 기준봉 조건 충족 · 매수대기');pending.append(d)
+            for row in x.get('executions') or []:d=dict(row);d['strategy']=strategy;d['net_profit']=d.get('net_pnl');exe.append(d)
+        out={'positions':pos,'pending':pending,'executions':exe,'accounts':accounts,'realized_pnl':real,'unrealized_pnl':hold,'total_pnl':real+hold}
+        try:
+            _,items=ledger.research_page('', '', 200, 0)
+            for row in items:
+                row['strategy']=strategy;row['ref_ts']=row.get('ref_at');row['target_hit']=bool(row.get('prebuy_target_touched_at'))
+            research={'items':items}
+        except Exception:research={'items':[]}
+        try:errors=(ledger.diagnostics_snapshot(120) or {}).get('issues') or []
+        except Exception:errors=[]
+        return out,research,errors
+    def _attach_broker_orders(self,ledger,market,strategy):
