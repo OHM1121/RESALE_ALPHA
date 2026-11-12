@@ -75,6 +75,16 @@ jobs:
       - name: Build stock, coin, unified and phone hub APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleUnifiedDebug :app:assembleHubDebug --stacktrace
+      - name: Validate unified native launcher
+        shell: bash
+        run: |
+          APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -f "$APK"
+          "$AAPT" dump badging "$APK" | tee /tmp/unified_badging.txt
+          grep -F "launchable-activity: name='com.artitrade.mobile.UnifiedNativeActivity'" /tmp/unified_badging.txt
+          grep -F "package: name='com.artitrade.unified.s21dex'" /tmp/unified_badging.txt
+          ! grep -q "android.webkit.WebView" ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedNativeActivity.java
       - name: Create version-labeled APK files
         shell: bash
         run: |
