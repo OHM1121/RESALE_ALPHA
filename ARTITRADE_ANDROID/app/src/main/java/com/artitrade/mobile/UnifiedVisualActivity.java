@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.util.TypedValue;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -138,6 +139,11 @@ public final class UnifiedVisualActivity extends Activity {
         t.setIncludeFontPadding(false);
         t.setLineSpacing(dp(2),1.0f);
         return t;
+    }
+
+    private void autoSingle(TextView t,int minSp,int maxSp){
+        t.setSingleLine(true);
+        if(Build.VERSION.SDK_INT>=26)t.setAutoSizeTextTypeUniformWithConfiguration(minSp,maxSp,1,TypedValue.COMPLEX_UNIT_SP);
     }
 
     private GradientDrawable bg(int color,int stroke,int radius){
@@ -763,7 +769,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout pnl=card();
         TextView pl=text("누적손익",14);pl.setTextColor(Color.rgb(150,159,180));pnl.addView(pl);
-        TextView pv=text(money(selected.total),36);pv.setTypeface(null,Typeface.BOLD);paintProfit(pv,selected.total);pv.setPadding(0,dp(3),0,dp(8));pnl.addView(pv);
+        TextView pv=text(money(selected.total),36);pv.setTypeface(null,Typeface.BOLD);autoSingle(pv,20,36);paintProfit(pv,selected.total);pv.setPadding(0,dp(3),0,dp(8));pnl.addView(pv);
         LinearLayout split=new LinearLayout(this);split.setOrientation(LinearLayout.HORIZONTAL);
         addMini(split,"실현손익",money(selected.realized));addMini(split,"평가손익",money(selected.unrealized));pnl.addView(split);
         hero.addView(pnl,new LinearLayout.LayoutParams(0,dp(178),15));
@@ -828,14 +834,14 @@ public final class UnifiedVisualActivity extends Activity {
     private void addMini(LinearLayout row,String label,String value){
         LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setGravity(Gravity.CENTER_VERTICAL);
         TextView a=text(label,12);a.setTextColor(Color.rgb(142,152,173));c.addView(a,new LinearLayout.LayoutParams(-1,dp(22)));
-        TextView b=text(value,19);b.setTypeface(null,Typeface.BOLD);b.setTextColor(Color.rgb(235,238,246));c.addView(b,new LinearLayout.LayoutParams(-1,dp(30)));
+        TextView b=text(value,19);b.setTypeface(null,Typeface.BOLD);autoSingle(b,14,19);b.setTextColor(Color.rgb(235,238,246));c.addView(b,new LinearLayout.LayoutParams(-1,dp(30)));
         row.addView(c,new LinearLayout.LayoutParams(0,dp(54),1));
     }
 
     private void addKpi(LinearLayout row,String label,String value){
         LinearLayout c=card();c.setGravity(Gravity.CENTER_VERTICAL);
         TextView a=text(label,12);a.setTextColor(Color.rgb(142,152,173));c.addView(a,new LinearLayout.LayoutParams(-1,dp(22)));
-        TextView b=text(value,24);b.setTypeface(null,Typeface.BOLD);b.setTextColor(Color.rgb(240,242,248));c.addView(b,new LinearLayout.LayoutParams(-1,dp(38)));
+        TextView b=text(value,24);b.setTypeface(null,Typeface.BOLD);autoSingle(b,16,24);b.setTextColor(Color.rgb(240,242,248));c.addView(b,new LinearLayout.LayoutParams(-1,dp(38)));
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(82),1);if(row.getChildCount()>0)p.setMargins(dp(8),0,0,0);row.addView(c,p);
     }
 
