@@ -1,3 +1,1 @@
-ARTITRADE unified v0.7.10 and MSERVER v0.2.5 one-time verified build marker
-2026-11-13 KST
-Android local ledger publisher retry + diagnostic error codes + longer encryption-save timeouts; MSERVER returns explicit storage error; PC VPN address clarified.
+ARTITRADE unified v0.7.11 and MSERVER v0.2.6: one-time build of streaming large ledger migration (4GiB bound) on 2026-11-13 KST; keep original accounts, nonce checks and version integrity.
