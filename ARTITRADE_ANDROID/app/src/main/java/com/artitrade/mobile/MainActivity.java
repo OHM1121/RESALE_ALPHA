@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.content.Intent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -372,6 +375,19 @@ public final class MainActivity extends Activity {
                 i.setAction(HubService.UPDATE_VPN);startService(i);
             }
             showHub();
+        }));
+        panel.addView(button("MSERVER 연결 토큰 복사",()->{
+            try{
+                String token=new SecureBox(this).token();
+                ClipboardManager cb=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+                if(cb==null)throw new IllegalStateException("클립보드 사용 불가");
+                cb.setPrimaryClip(ClipData.newPlainText("ARTITRADE MSERVER token",token));
+                new AlertDialog.Builder(this).setTitle("복사 완료")
+                    .setMessage("MSERVER 64자리 연결 토큰을 클립보드에 복사했습니다. ARTITRADE 통합앱 설정에 붙여넣으십시오.")
+                    .setPositiveButton("확인",null).show();
+            }catch(Exception e){
+                new AlertDialog.Builder(this).setTitle("토큰 복사 실패").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
+            }
         }));
         panel.addView(button("MSERVER 연결 토큰 보기",()->{
             try {
