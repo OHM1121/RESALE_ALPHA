@@ -40,6 +40,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+      - name: Restore stable ARTITRADE update signing key
+        id: artitrade-signing-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Create first stable ARTITRADE update signing key
+        if: steps.artitrade-signing-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v             -keystore "$HOME/.android/debug.keystore"             -storepass android             -alias androiddebugkey             -keypass android             -dname "CN=ARTITRADE S21 Plus Update,O=ARTITRADE,C=KR"             -keyalg RSA -keysize 2048 -validity 10000
+      - name: Verify stable signing certificate
+        shell: bash
+        run: |
+          test -f "$HOME/.android/debug.keystore"
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey             | grep -E "SHA256:|Valid from:"
       - name: Android SDK 35
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
