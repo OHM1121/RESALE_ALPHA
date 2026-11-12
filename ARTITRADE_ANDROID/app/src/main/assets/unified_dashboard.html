@@ -20,6 +20,7 @@
 .ops{display:grid;grid-template-columns:1fr 1fr;gap:9px}.opCard{padding:14px}.opTitle{font-size:13px;font-weight:900;margin-bottom:12px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field label{font-size:9px;color:#839bb8;display:block;margin-bottom:4px}.field input{width:100%;height:36px;border-radius:9px;border:1px solid #2d4665;background:#0d1b2e;color:#eef7ff;padding:0 9px;font-size:12px}.save{margin-top:10px;width:100%;height:35px;border:0;border-radius:9px;background:var(--mint);color:#062019;font-weight:900}.deviceBtns{display:flex;gap:6px}.deviceBtns button{flex:1;height:35px;border-radius:9px;border:1px solid #2d4664;background:#11243a;color:#b7cae1;font-size:10px;font-weight:850}.deviceBtns button.active{background:#263f5b;color:#fff;border-color:#4c7098}
 .researchSummary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:9px}.rs{padding:11px}.rs b{display:block;font-size:22px;margin-top:4px}.mapGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.band{padding:10px 11px}.bandTitle{font-size:10px;color:#95acc7;font-weight:900}.bandPct{font-size:24px;font-weight:950;margin-top:8px}.bar{height:6px;background:#21344a;border-radius:8px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--mint))}.bandFoot{font-size:9px;color:#7f97b3;display:flex;justify-content:space-between}
 .detailOverlay[hidden]{display:none}.detailOverlay{position:fixed;inset:0;background:#020711c7;display:grid;place-items:center;z-index:50;padding:16px}.sheet{width:min(560px,94vw);max-height:86dvh;overflow:auto;padding:15px;background:#12233a;border:1px solid #375675;border-radius:18px}.sheetHead{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:900;margin-bottom:8px}.close{width:31px;height:31px;border-radius:9px;border:1px solid #34506d;background:#152a43;color:#d9e8f8}.detailLine{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #263b54;font-size:11px}.detailLine span:first-child{color:#88a0bc}.detailLine span:last-child{text-align:right}
+.feedbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.feed{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;min-height:42px}.feedLeft{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:900}.feedDot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px #ff77851b}.feed.live .feedDot{background:var(--mint);box-shadow:0 0 0 3px #3ee0b51b}.feedDetail{font-size:9px;color:#8da5c2;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
 @media(max-height:550px){.top{height:45px;min-height:45px}.strategybar{min-height:37px;padding:3px 10px}.strategy{min-height:28px}.view{padding:8px 10px}.summary,.chart{min-height:118px;padding:9px 11px}.big{font-size:31px}.graph{height:72px}.kpi{min-height:56px;padding:7px 9px}.metric{font-size:17px}.perf{min-height:103px;padding:8px 9px}.perfMeta{margin-top:7px}.sectionTitle{margin:8px 0 5px}.rail{gap:2px}.nav{min-height:35px}.logo{height:34px;width:38px}}
 @media(max-width:850px){.perfGrid{grid-template-columns:repeat(2,1fr)}.mapGrid{grid-template-columns:repeat(3,1fr)}.kpis{grid-template-columns:repeat(3,1fr)}}
 </style>
@@ -47,6 +48,10 @@
  <main class="view" id="view">
   <section class="page active" id="page-home">
    <div class="head"><span class="kicker" id="caption">전략 OVERVIEW</span><span class="device">실행기기 <b id="device">—</b></span></div>
+   <div class="feedbar">
+    <article class="card feed" id="stockFeed"><div class="feedLeft"><i class="feedDot"></i><span>키움 직접수신</span></div><div class="feedDetail" id="stockFeedDetail">API 설정 필요</div></article>
+    <article class="card feed" id="coinFeed"><div class="feedLeft"><i class="feedDot"></i><span>업비트 직접수신</span></div><div class="feedDetail" id="coinFeedDetail">연결 준비</div></article>
+   </div>
    <div class="hero">
     <article class="card summary">
      <div class="label">선택 전략 누적손익</div><div class="big" id="total">—</div>
@@ -85,7 +90,7 @@
   </section>
 
   <section class="page" id="page-errors"><div class="paneHead"><div class="paneTitle">오류 기록</div><span class="pill">전략별</span></div><div class="list" id="errorsList"></div></section>
-  <section class="page" id="page-more"><div class="paneHead"><div class="paneTitle">도구</div><span class="pill">통합 런타임</span></div><div class="ops"><article class="card opCard"><div class="opTitle">폰 서버</div><button class="save" id="pair">연결 토큰 등록</button></article><article class="card opCard"><div class="opTitle">백그라운드</div><button class="save" id="battery">절전 예외 설정 열기</button></article></div></section>
+  <section class="page" id="page-more"><div class="paneHead"><div class="paneTitle">도구</div><span class="pill">S21+ PHONE MAIN</span></div><div class="ops"><article class="card opCard"><div class="opTitle">키움 · 업비트 API</div><button class="save" id="apiSettings">직접 API 키 설정</button><div class="rowMeta" style="margin-top:8px">주식·코인 실시간 시세는 PC를 거치지 않고 이 휴대폰이 직접 수신함.</div></article><article class="card opCard"><div class="opTitle">폰 서버</div><button class="save" id="pair">연결 토큰 등록</button><div class="rowMeta" style="margin-top:8px">폰 원장이 원본이며 PC는 필요할 때 원장을 가져오는 서브 조회기임.</div></article><article class="card opCard"><div class="opTitle">백그라운드</div><button class="save" id="battery">절전 예외 설정 열기</button></article></div></section>
  </main>
 </div>
 </div>
@@ -232,7 +237,20 @@ function renderOperation(){
 function renderResearch(){
  var rs=researchStats(S.market,S.strategy);txt('rCandidates',n(rs.candidates));txt('rBought',n(rs.bought));txt('rConfirmed',n(rs.confirmed));txt('rTarget',n(rs.rate,'%'));sign($('rTarget'),rs.rate);scoreBands()
 }
+function renderFeeds(){
+ var rt=S.packet.realtime||{},cred=S.packet.credentials||{};
+ [['stock','stockFeed','stockFeedDetail','kiwoom'],['coin','coinFeed','coinFeedDetail','upbit']].forEach(function(x){
+  var r=rt[x[0]]||{},box=$(x[1]),detail=$(x[2]),connected=!!r.connected;
+  if(box)box.classList.toggle('live',connected);
+  var age=r.last_frame?Math.max(0,Math.round((Date.now()-Number(r.last_frame))/1000)):null;
+  var text=String(r.detail||'');
+  if(!connected&&!cred[x[3]])text=x[0]==='stock'?'API Key 등록 필요':'공개시세 연결 준비';
+  else if(connected)text=(r.subscribed||0)+'종목 · '+(age===null?'':age+'초 전')+(text?' · '+text:'');
+  if(detail)detail.textContent=text||'연결 확인 중';
+ });
+}
 function renderAll(){
+ renderFeeds();
  var st=stats(S.market,S.strategy);txt('caption',title(S.market,S.strategy)+' / OVERVIEW');txt('device',deviceState(S.market));txt('total',n(st.total));sign($('total'),st.total);txt('realized',n(st.realized));sign($('realized'),st.realized);txt('unrealized',n(st.unrealized));sign($('unrealized'),st.unrealized);txt('targetRate',n(st.research.rate,'%'));txt('winRate',n(st.win,'%'));txt('posCount',n(st.positions.length));txt('pendingCount',n(st.pending.length));txt('closedCount',n(st.closed));txt('refCoverage',n(st.coverage,'%'));txt('posPill',n(st.positions.length));txt('pendingPill',n(st.pending.length));
  drawGraph(pick(st.ledger,['equity_curve','profit_series','balance_history']));renderPerf();list('positionsList',st.positions,'positions');list('pendingList',st.pending,'pending');list('executionsList',st.executions,'executions');var er=bucket(S.market,S.strategy,'Errors');list('errorsList',arr(er.items),'errors');renderOperation();renderResearch()
 }
@@ -244,6 +262,7 @@ document.querySelectorAll('[data-desired]').forEach(function(b){b.onclick=functi
 $('refresh').onclick=function(){if(window.Artitrade&&Artitrade.refresh)Artitrade.refresh()};
 $('pair').onclick=function(){if(window.Artitrade&&Artitrade.pair)Artitrade.pair()};
 $('battery').onclick=function(){if(window.Artitrade&&Artitrade.runtimeSettings)Artitrade.runtimeSettings()};
+$('apiSettings').onclick=function(){if(window.Artitrade&&Artitrade.apiSettings)Artitrade.apiSettings()};
 $('saveOperation').onclick=function(){var seed=Number($('seedInput').value),mx=Number($('maxInput').value);if(window.Artitrade&&Artitrade.saveOperation&&Number.isFinite(seed)&&Number.isFinite(mx)&&seed>=0&&mx>=0){Artitrade.saveOperation(S.market,S.strategy,String(Math.round(seed)),String(Math.round(mx)));$('saveOperation').textContent='저장됨';setTimeout(function(){$('saveOperation').textContent='설정 저장'},900)}};
 $('close').onclick=function(){$('detail').hidden=true};$('detail').onclick=function(e){if(e.target===$('detail'))$('detail').hidden=true};
 var touch=null;$('view').addEventListener('touchstart',function(e){if(e.touches.length===1&&$('detail').hidden){touch={x:e.touches[0].clientX,y:e.touches[0].clientY}}},{passive:true});$('view').addEventListener('touchend',function(e){if(!touch||e.changedTouches.length!==1)return;var dx=e.changedTouches[0].clientX-touch.x,dy=e.changedTouches[0].clientY-touch.y;touch=null;if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.4)return;var a=seq[S.market],i=a.findIndex(function(x){return x.k===S.strategy}),next=i+(dx<0?1:-1);if(next>=0&&next<a.length){S.strategy=a[next].k;renderStrategyBar();renderAll()}},{passive:true});

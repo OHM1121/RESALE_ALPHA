@@ -202,6 +202,11 @@ public final class UnifiedActivity extends Activity {
                 JSONObject status;
                 try{status=client.status();}catch(Exception e){status=new JSONObject().put("ok",false);}
                 packet.put("status",status);
+                packet.put("realtime",new RealtimeState(this).all());
+                BrokerSecretStore brokerSecrets=new BrokerSecretStore(this);
+                packet.put("credentials",new JSONObject()
+                    .put("kiwoom",brokerSecrets.hasKiwoom())
+                    .put("upbit",brokerSecrets.hasUpbit()));
                 int n=done.incrementAndGet();
                 if(first)main.post(()->updatePreload(n,"서버 상태 확인"));
 
@@ -303,6 +308,51 @@ public final class UnifiedActivity extends Activity {
                 try{startActivity(i);}catch(Exception ignored){}
             });
         }
+        @JavascriptInterface public void apiSettings(){
+            main.post(()->{
+                BrokerSecretStore store=new BrokerSecretStore(UnifiedActivity.this);
+                LinearLayout form=new LinearLayout(UnifiedActivity.this);
+                form.setOrientation(LinearLayout.VERTICAL);
+                form.setPadding(dp(12),dp(4),dp(12),dp(4));
+                EditText kk=new EditText(UnifiedActivity.this),ks=new EditText(UnifiedActivity.this),
+                    ua=new EditText(UnifiedActivity.this),us=new EditText(UnifiedActivity.this);
+                kk.setHint(store.hasKiwoom()?"키움 App Key · 저장됨":"키움 App Key");
+                ks.setHint(store.hasKiwoom()?"키움 Secret Key · 저장됨":"키움 Secret Key");
+                ua.setHint(store.hasUpbit()?"업비트 Access Key · 저장됨":"업비트 Access Key");
+                us.setHint(store.hasUpbit()?"업비트 Secret Key · 저장됨":"업비트 Secret Key");
+                for(EditText v:new EditText[]{kk,ks,ua,us}){
+                    v.setSingleLine(true);
+                    v.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    form.addView(v,new LinearLayout.LayoutParams(-1,dp(48)));
+                }
+                new AlertDialog.Builder(UnifiedActivity.this).setTitle("S21+ 직접 API 설정")
+                    .setMessage("빈 칸은 기존 값을 유지합니다. 키는 APK나 폰 서버 원장에 기록하지 않고 Android Keystore로 암호화합니다.")
+                    .setView(form).setNegativeButton("취소",null)
+                    .setNeutralButton("전체 삭제",(d,w)->{
+                        store.saveKiwoom("","");store.saveUpbit("","");
+                        restartDirectFeeds();refreshAll(false);
+                    })
+                    .setPositiveButton("저장",(d,w)->{
+                        String k1=kk.getText().toString().trim(),k2=ks.getText().toString().trim();
+                        String u1=ua.getText().toString().trim(),u2=us.getText().toString().trim();
+                        if(!k1.isEmpty()||!k2.isEmpty()){
+                            if(k1.isEmpty()||k2.isEmpty()){
+                                new AlertDialog.Builder(UnifiedActivity.this).setMessage("키움 App Key와 Secret Key를 함께 입력하십시오.").setPositiveButton("확인",null).show();
+                                return;
+                            }
+                            store.saveKiwoom(k1,k2);
+                        }
+                        if(!u1.isEmpty()||!u2.isEmpty()){
+                            if(u1.isEmpty()||u2.isEmpty()){
+                                new AlertDialog.Builder(UnifiedActivity.this).setMessage("업비트 Access Key와 Secret Key를 함께 입력하십시오.").setPositiveButton("확인",null).show();
+                                return;
+                            }
+                            store.saveUpbit(u1,u2);
+                        }
+                        restartDirectFeeds();refreshAll(false);
+                    }).show();
+            });
+        }
         @JavascriptInterface public void setDesired(String market,String desired){
             if(!("stock".equals(market)||"coin".equals(market)))return;
             if(!("pc".equals(desired)||"phone".equals(desired)||"off".equals(desired)))return;
@@ -328,6 +378,14 @@ public final class UnifiedActivity extends Activity {
                     .putString(market+"_"+strategy,value.toString()).apply();
             }catch(Exception ignored){}
         }
+    }
+
+    private void restartDirectFeeds(){
+        try{
+            Intent i=new Intent(this,UnifiedTradingService.class);
+            i.setAction(UnifiedTradingService.RESTART_FEEDS);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+        }catch(Exception ignored){}
     }
 
     @Override protected void onResume(){
