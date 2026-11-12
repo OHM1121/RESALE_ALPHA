@@ -9,8 +9,8 @@ android {
         applicationId 'com.artitrade.mobile'
         minSdk 28
         targetSdk 35
-        versionCode 4
-        versionName '0.3.2-CLOSE-PNL'
+        versionCode 5
+        versionName '0.3.3-CLOSE-PNL-FIX2'
     }
     flavorDimensions 'market'
     productFlavors {
