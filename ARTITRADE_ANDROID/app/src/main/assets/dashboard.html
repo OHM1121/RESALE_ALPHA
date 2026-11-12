@@ -115,7 +115,7 @@
 'use strict';
 var state={market:'stock',status:null,records:{},selectedStrategy:'at',page:'home'};
 var $=function(id){return document.getElementById(id);};
-var marketNames={stock:['AT','CW'],coin:['B','MA']};
+var marketNames={stock:['AT','종가'],coin:['B','MA']};
 var bucketRecords={};
 function validData(record){return record && record.ok===true && record.exists===true && record.data && typeof record.data==='object' ? record.data : {};}
 function n(v,suffix){
@@ -135,11 +135,20 @@ function list(container,rows,kind){
  }
  rows.slice(0,80).forEach(function(row){
   if(!row || typeof row!=='object')return;
-  var name=value(row,kind==='positions'?['symbol','ticker','name','market']:kind==='pending'?['symbol','ticker','name','market']:['symbol','ticker','name','action','type']);
-  var hint=value(row,kind==='executions'?['filled_at','time','at','side']:kind==='research'?['decision','at','tf']:['stage','status','tf','time']);
-  var amt=value(row,kind==='positions'?['profit_rate','pnl_pct','pnl','paper_pnl']:kind==='pending'||kind==='research'?['score','price','target_price']:['price','fill_price','qty','pnl']);
+  var name=value(row,kind==='positions'?['name','symbol','ticker','market']:kind==='pending'?['name','symbol','ticker','market']:['name','symbol','ticker','action','type']);
+  var hint=value(row,kind==='executions'?['side','filled_at','time','at']:kind==='research'?['decision','at','tf']:['stage','status','tf','time']);
+  var amt=null;
+  if(kind==='positions')amt=value(row,['net_pnl','paper_pnl','pnl','profit_rate','pnl_pct']);
+  else if(kind==='pending'||kind==='research')amt=value(row,['score','price','target_price']);
+  else if(kind==='executions'){
+   // BUY has no realized profit. A SELL must not silently show its price as profit.
+   var isSell=String(value(row,['side'])||'').toUpperCase()==='SELL';
+   amt=isSell?value(row,['net_profit','net_realized','pnl','net_pnl']):null;
+  }
   var outer=el('div','list-row');var left=el('div');left.appendChild(el('div','name',name===null?'—':String(name).slice(0,45)));left.appendChild(el('div','hint',hint===null?'':String(hint).slice(0,72)));outer.appendChild(left);
-  var right=el('div','num',amt===null?'—':n(amt,kind==='positions'&&String(value(row,['profit_rate','pnl_pct']))===String(amt)?'%':''));shade(right,amt);outer.appendChild(right);container.appendChild(outer);
+  var right=el('div','num',amt===null?'—':n(amt,kind==='positions'&&String(value(row,['profit_rate','pnl_pct']))===String(amt)?'%':''));shade(right,amt);
+  if(kind==='executions' && String(value(row,['side'])||'').toUpperCase()==='SELL')right.setAttribute('aria-label','순수익');
+  outer.appendChild(right);container.appendChild(outer);
  });
 }
 function drawGraph(series){
@@ -184,9 +193,13 @@ function redraw(){
  text('syncName',connected?'서버 연결':'서버 연결 안 됨');
  text('deviceMode',currentMode());text('detailSync',connected?'정상':'미연결');text('detailDevice',currentMode());text('strategyMode',currentMode());
  var ledger=currentLedger(),pnl=value(ledger,['total_pnl','net_pnl','profit','total_profit']);
+ // Prefer authoritative account totals; never infer from last 100 fills.
+ var accountRealized=value(ledger,['realized_pnl','realized_profit']);
+ var accountHolding=value(ledger,['unrealized_pnl','unrealized_profit','holding_pnl']);
+ if(pnl===null && accountRealized!==null && accountHolding!==null)pnl=Number(accountRealized)+Number(accountHolding);
  var pnlRate=value(ledger,['total_return_pct','pnl_pct','profit_rate','return_pct']);
  text('pnl',n(pnl));shade($('pnl'),pnl);text('pnlPct',n(pnlRate,'%'));shade($('pnlPct'),pnlRate);
- var realized=value(ledger,['realized_pnl','realized_profit']);var unreal=value(ledger,['unrealized_pnl','unrealized_profit','holding_pnl']);
+ var realized=accountRealized;var unreal=accountHolding;
  text('realized',n(realized));text('unrealized',n(unreal));shade($('realized'),realized);shade($('unrealized'),unreal);
  var win=value(ledger,['win_rate','win_rate_pct','winning_pct']);text('winRate',n(win,'%'));
  var positions=value(ledger,['positions','holdings']);var pending=value(ledger,['pending','pending_orders','candidates']);
@@ -245,14 +258,14 @@ window.__ARTI_UPDATE=function(raw){
   state.status=incoming.status&&incoming.status.ok?incoming.status:null;
   state.records=incoming.records||{};
   state.selectedStrategy=strategyKey(marketNames[state.market][0]);
-  text('marketSub',state.market==='stock'?'STOCK / AT + CW':'COIN / B + MA');
+  text('marketSub',state.market==='stock'?'STOCK / AT + 종가':'COIN / B + MA');
   text('marketChip',state.market==='stock'?'KOSPI · KOSDAQ':'DIGITAL ASSETS');
   redraw();
  }catch(error){text('syncName','조회 오류');}
 };
 if(window.Artitrade && typeof window.Artitrade.market==='function'){
  var market=window.Artitrade.market();state.market=market==='coin'?'coin':'stock';
- text('marketSub',state.market==='stock'?'STOCK / AT + CW':'COIN / B + MA');
+ text('marketSub',state.market==='stock'?'STOCK / AT + 종가':'COIN / B + MA');
  text('marketChip',state.market==='stock'?'KOSPI · KOSDAQ':'DIGITAL ASSETS');
  state.selectedStrategy=strategyKey(marketNames[state.market][0]);
 }
