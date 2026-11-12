@@ -41,6 +41,20 @@ jobs:
           if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Validate v0.7.1 Android live bridge overlay
+        shell: bash
+        run: |
+          cat ARTITRADE_ANDROID/app/src/main/assets/live_bridge_v071/part_*.txt > /tmp/android_live_bridge_v071.py
+          python3 -m py_compile /tmp/android_live_bridge_v071.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('/tmp/android_live_bridge_v071.py')
+          got=hashlib.sha256(p.read_bytes()).hexdigest()
+          want='e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e'
+          print('live bridge sha256',got)
+          assert got==want,(got,want)
+          PY
       - name: Validate dashboard JavaScript
         shell: bash
         run: |
