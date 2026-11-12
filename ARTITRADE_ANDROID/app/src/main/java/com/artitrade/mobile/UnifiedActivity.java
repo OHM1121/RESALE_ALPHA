@@ -515,6 +515,7 @@ public final class UnifiedActivity extends Activity {
     }
 
     private final class Bridge {
+        @JavascriptInterface public void uiReady(){main.post(()->markDashboardReady("js_bridge"));}
         @JavascriptInterface public void refresh(){refreshAll(false);}
         @JavascriptInterface public void pair(){
             main.post(()->{
