@@ -184,7 +184,9 @@ public final class MainActivity extends Activity {
                         {"shared","ledger","sharedLedger"},
                         {"shared","research","sharedResearch"},
                         {market.equals("stock")?"at":"general","ledger",market.equals("stock")?"atLedger":"generalLedger"},
-                        {market.equals("stock")?"cw":"ma","ledger",market.equals("stock")?"cwLedger":"maLedger"}
+                        {market.equals("stock")?"cw":"ma","ledger",market.equals("stock")?"cwLedger":"maLedger"},
+                        {market.equals("stock")?"at":"general","research",market.equals("stock")?"atResearch":"generalResearch"},
+                        {market.equals("stock")?"cw":"ma","research",market.equals("stock")?"cwResearch":"maResearch"}
                     }){
                     try{records.put(key[2],client.record(market,key[0],key[1]));}
                     catch(Exception ignored){records.put(key[2],new JSONObject().put("ok",false));}
