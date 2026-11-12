@@ -28,7 +28,7 @@ final class SyncStore extends SQLiteOpenHelper {
     private static final long MIN_FREE_AFTER_UPLOAD=128L*1024L*1024L;
     private static final int RECORD_MAX_BYTES=32*1024*1024;
     private static final int MIGRATION_UPLOAD_CHUNK_MAX=1_000_000;
-    private static final int MIGRATION_READ_CHUNK=240000;
+    private static final int MIGRATION_READ_CHUNK=1_000_000;
     private static final long LEASE_MS=30000;
     SyncStore(Context context,SecureBox box){
         super(context,"artitrade_phone_sync_v1.db",null,1);
