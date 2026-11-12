@@ -1,0 +1,73 @@
+            from at_close_runner import AtCloseRunner
+            d_live.credentials=lambda:(self.kiwoom.key,self.kiwoom.secret)
+            if self.kiwoom.key:os.environ['KIWOOM_APP_KEY']=self.kiwoom.key
+            if self.kiwoom.secret:os.environ['KIWOOM_SECRET_KEY']=self.kiwoom.secret
+            os.environ['ARTITRADE_AT_CLOSE_COMBINED']='1'
+            stock_root=self.root/'stock';coin_root=self.root/'coin'
+            store=d_storage.DStore(stock_root)
+            self.stock_runner=d_live.LivePaperRunner(store=store,per_market=100,on_progress=self._stock_progress)
+            self._patch_stock_account_feed();self._patch_gmo()
+            self.close_store=AtCloseStore(stock_root/'close')
+            self.close_runner=AtCloseRunner(self.close_store)
+            self.coin_ledger=d_upbit.CoinLedger(coin_root/'base');self.coin_ma_ledger=MACoinLedger(coin_root/'ma')
+            self.coin_runner=d_upbit.UpbitPaperRunner(self.coin_ledger,ma_ledger=self.coin_ma_ledger)
+            # Register AT CLOSE before AT opens the one shared Kiwoom websocket.
+            # Upbit private myOrder+myAsset is isolated from the public ticker/orderbook feed.
+            self._start_private_feeds();self.close_runner.start();self.stock_runner.start_background();self.coin_runner.start();self.started=True
+        except Exception as e:
+            self._err('start',e);raise
+    def _stock_progress(self,item):pass
+    def stop(self):
+        self._private_stop.set()
+        try:
+            if self.stock_runner:self.stock_runner.stop()
+        except Exception as e:self._err('stop_stock',e)
+        try:
+            if self.coin_runner:self.coin_runner.stop_event.set()
+        except Exception as e:self._err('stop_coin',e)
+        try:
+            if self.close_runner:self.close_runner.stop()
+        except Exception as e:self._err('stop_close',e)
+        self.started=False
+    @staticmethod
+    def _sum_num(rows,key):
+        total=0.0
+        for r in rows:
+            try:total+=float(r.get(key) or 0)
+            except Exception:pass
+        return total
+    def _stock_at_ledger(self):
+        if not self.stock_runner:return {}
+        store=self.stock_runner.store
+        with store.lock,store.connect() as c:
+            positions=[]
+            for row in c.execute("SELECT * FROM positions WHERE status='OPEN' ORDER BY id DESC LIMIT 300").fetchall():
+                d=dict(row);d['strategy']='at';d['paper_pnl']=int(d.get('qty') or 0)*(int(d.get('last_price') or 0)-int(d.get('entry_price') or 0));positions.append(d)
+            pending=[]
+            for row in c.execute("""SELECT p.*,s.name,s.market,s.target,s.decision FROM pending p
+                    LEFT JOIN signals s ON s.id=p.signal_id ORDER BY p.score DESC""").fetchall():
+                d=dict(row);d['strategy']='at';d['limit_won']=d.get('price');d['first_target_won']=d.get('target');d['reason']='기준봉 조건 충족 · 지정가 대기';pending.append(d)
+            executions=[]
+            for row in c.execute("""SELECT e.*,p.entry_price,p.entry_qty,p.entry_fee FROM executions e
+                    LEFT JOIN positions p ON p.id=e.position_id ORDER BY e.id DESC LIMIT 350""").fetchall():
+                d=dict(row);d['strategy']='at'
+                if str(d.get('side'))=='SELL':
+                    try:
+                        alloc=round(int(d.get('entry_fee') or 0)*int(d.get('qty') or 0)/max(1,int(d.get('entry_qty') or 1)))
+                        d['net_profit']=int(d.get('gross') or 0)-int(d.get('qty') or 0)*int(d.get('entry_price') or 0)-int(d.get('fees') or 0)-int(d.get('tax') or 0)-alloc
+                    except Exception:d['net_profit']=None
+                else:d['net_profit']=None
+                executions.append(d)
+            accounts=[]
+            for row in c.execute('SELECT * FROM accounts ORDER BY tf').fetchall():
+                a=dict(row);tf=a.get('tf');held=sum((x['paper_pnl'] for x in positions if x.get('tf')==tf))
+                accounts.append({'tf':tf,'strategy':'at','cash':a.get('cash'),'realized_pnl':a.get('realized_pnl',0),'unrealized_pnl':held})
+            signals=[dict(x) for x in c.execute("""SELECT s.id,s.ts,s.tf,s.code,s.name,s.market,s.ref_ts,s.buy_price,s.target,s.score,s.decision,
+                    cf.first_limit_touch_ts,cf.first_target_after_touch_ts,cf.post_touch_min,cf.post_touch_max
+                    FROM signals s LEFT JOIN candidate_forward cf ON cf.signal_id=s.id
+                    ORDER BY s.id DESC LIMIT 350""").fetchall()]
+            issues=[dict(x) for x in c.execute('SELECT seen_at AS at,code,message,details,severity FROM issues ORDER BY id DESC LIMIT 120').fetchall()]
+            runtime=[dict(x) for x in c.execute('SELECT last_seen AS at,context AS stage,error_type AS type,message,occurrences AS count,sample_traceback AS stack FROM runtime_error_summary ORDER BY last_seen DESC LIMIT 80').fetchall()]
+        for r in signals:
+            r['strategy']='at';r['target_hit']=bool(r.get('first_target_after_touch_ts'));r['entry_touched']=bool(r.get('first_limit_touch_ts'))
+        realized=sum(float(a.get('realized_pnl') or 0) for a in accounts);holding=sum(float(a.get('unrealized_pnl') or 0) for a in accounts)
