@@ -30,8 +30,8 @@ final class LegacyLedgerMigration {
         "stock/ARTITRADE_D.sqlite3",
         "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
         "stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3",
-        "stock/PROJECTGMO_V1.0_research.sqlite3",
-        "stock/PROJECTGMO_V1.0_account_state.json",
+        "stock/gmo/PROJECTGMO_V1.0_research.sqlite3",
+        "stock/gmo/PROJECTGMO_V1.0_account_state.json",
         "coin/base/upbit_paper.sqlite3",
         "coin/ma/upbit_paper.sqlite3"
     ));
@@ -82,7 +82,7 @@ final class LegacyLedgerMigration {
         total+=count(new File(r,"stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3"),"executions");
         total+=count(new File(r,"coin/base/upbit_paper.sqlite3"),"executions");
         total+=count(new File(r,"coin/ma/upbit_paper.sqlite3"),"executions");
-        File gmo=new File(r,"stock/PROJECTGMO_V1.0_account_state.json");
+        File gmo=new File(r,"stock/gmo/PROJECTGMO_V1.0_account_state.json");
         if(gmo.isFile()){
             try(FileInputStream in=new FileInputStream(gmo)){
                 ByteArrayOutputStream out=new ByteArrayOutputStream((int)Math.min(gmo.length(),4_000_000));
