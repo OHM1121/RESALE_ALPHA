@@ -10,7 +10,7 @@ android {
         applicationId 'com.artitrade.mobile'
         minSdk 28
         targetSdk 35
-        versionCode 17
+        versionCode 18
         versionName '0.4.1-SWIPE-KST-EVENTDATE'
         manifestPlaceholders = [launcherActivity: ".MainActivity"]
         ndk { abiFilters 'arm64-v8a' }
@@ -25,7 +25,7 @@ android {
         }
         hub {
             dimension 'market'
-            versionName '0.2.2-MSERVER-LARGE-LEDGER-MIGRATION'
+            versionName '0.2.3-MSERVER-INCREMENTAL-SYNC'
             applicationId 'com.artitrade.hub.s21dex'
             buildConfigField 'String', 'MARKET', '"hub"'
             resValue 'string', 'app_name', 'ARTITRADE MSERVER'
@@ -38,7 +38,7 @@ android {
         }
         unified {
             dimension 'market'
-            versionName '0.7.7-MSERVER-LEDGER-MIGRATION-FUNNEL'
+            versionName '0.7.8-ACTUAL-DASHBOARD-HISTORY-SYNC'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
