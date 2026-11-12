@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.UUID;
@@ -182,9 +183,28 @@ public final class UnifiedTradingService extends Service {
         }
     }
 
+    private boolean meaningfulRecord(Object value){
+        if(value==null||value==JSONObject.NULL)return false;
+        if(value instanceof JSONArray)return ((JSONArray)value).length()>0;
+        if(!(value instanceof JSONObject))return false;
+        JSONObject o=(JSONObject)value;
+        for(String key:new String[]{"positions","pending","executions","items","candidate_rows","restorations"}){
+            JSONArray a=o.optJSONArray(key);if(a!=null&&a.length()>0)return true;
+        }
+        for(String key:new String[]{"realized_pnl","unrealized_pnl","total_pnl","candidate_count","positions_count","pending_count"}){
+            if(Math.abs(o.optDouble(key,0))>0.000001)return true;
+        }
+        java.util.Iterator<String> it=o.keys();
+        while(it.hasNext()){
+            String k=it.next();Object child=o.opt(k);
+            if(child instanceof JSONObject||child instanceof JSONArray)if(meaningfulRecord(child))return true;
+        }
+        return false;
+    }
+
     private void publishPhoneLedgers(LocalHubClient hub,JSONObject all){
         if(all==null||all.length()==0)return;
-        int ok=0,failed=0;String lastError="";
+        int ok=0,failed=0,preserved=0;String lastError="";
         try{
             for(String market:new String[]{"stock","coin"}){
                 JSONObject m=all.optJSONObject(market);if(m==null)continue;
@@ -194,6 +214,15 @@ public final class UnifiedTradingService extends Service {
                     for(String bucket:new String[]{"ledger","research","errors"}){
                         JSONObject data=s.optJSONObject(bucket);if(data==null)continue;
                         try{
+                            if(!meaningfulRecord(data)){
+                                JSONObject remote=hub.record(market,strategyName,bucket);
+                                JSONObject old=remote.optJSONObject("data");
+                                if(meaningfulRecord(old)){
+                                    preserved++;
+                                    lastError="LEGACY_HUB_RECORD_PRESERVED:"+market+"/"+strategyName+"/"+bucket;
+                                    continue;
+                                }
+                            }
                             JSONObject result=hub.putRecord(market,strategyName,bucket,data);
                             if(result.optBoolean("ok"))ok++;
                             else{
@@ -209,8 +238,8 @@ public final class UnifiedTradingService extends Service {
             }
         }catch(Throwable e){failed++;lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());crashes.add("hub_publish",e);}
         getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE).edit()
-            .putLong("at",System.currentTimeMillis()).putInt("ok",ok).putInt("failed",failed)
-            .putString("last_error",lastError).apply();
+            .putLong("at",System.currentTimeMillis()).putInt("ok",ok).putInt("failed",failed).putInt("preserved",preserved)
+            .putBoolean("legacy_preserved",preserved>0).putString("last_error",lastError).apply();
     }
 
     private long maintain(LocalHubClient hub,String market,JSONObject status,long epoch){
