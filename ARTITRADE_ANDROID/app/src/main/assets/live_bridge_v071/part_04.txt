@@ -1,0 +1,73 @@
+        pos=d.get('position_id') or '';stamp=d.get('at') or d.get('ts') or _now();event=d.get('event_key')
+        if not event:event=f'{market}:{self._source}:{pos}:{stamp}:{side}:{symbol}:{qty}:{price}:{reason}'
+        key='SQL-'+_safe_key(event);strategy=self._rt.strategy_for_source(self._source)
+        try:
+            if market=='coin':
+                fill=self._rt.upbit.fok(key,side,symbol,qty,price,reason,self._source,strategy,event)
+                # FOK full fill required. Ledger uses its conservative trigger price;
+                # actual broker fill is kept in the authoritative live journal.
+            else:
+                fill=self._rt.kiwoom.fok(key,side,symbol,qty,price,reason,'KRX',self._source,strategy,event)
+        except LiveOrderNoFill as e:
+            row=self._rt.journal.get(key)
+            # A true FOK zero-fill is a normal cancelled attempt. Any nonzero fill is
+            # impossible under FOK semantics and therefore halts the market fail-closed.
+            if row is not None and str(row['status'])=='PARTIAL':self._rt.halt_market(market,'BROKER_PARTIAL_FOK',e)
+            raise
+        except Exception as e:
+            self._rt.halt_market(market,'BROKER_ORDER_UNCERTAIN',e);raise
+        self._rt.on_live_fill(market,side,symbol,qty,price,fill,reason,strategy,key)
+        return {'filled':True,'market':market,'key':key}
+
+class Runtime:
+    def __init__(self,root,kiwoom_key,kiwoom_secret,upbit_access,upbit_secret,live_stock=False,live_coin=False):
+        self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
+        self.journal=Journal(self.root/'broker');self.feed_tracker=BrokerFeedTracker()
+        self.kiwoom=KiwoomBroker(kiwoom_key,kiwoom_secret,self.journal,self.feed_tracker)
+        self.upbit=UpbitBroker(upbit_access,upbit_secret,self.journal,self.feed_tracker)
+        self._live={'stock':bool(live_stock),'coin':bool(live_coin)};self._halted={'stock':None,'coin':None}
+        self.started=False;self.stock_runner=None;self.coin_runner=None;self.coin_ledger=None;self.coin_ma_ledger=None;self.close_store=None;self.close_runner=None;self.errors=[];self.fills=[]
+        self._private_stop=threading.Event();self._upbit_private_thread=None
+        self._orig={};self._patch_connections()
+    def live_enabled(self,m):return bool(self._live.get(m))
+    def set_live(self,m,v):
+        if m in self._live:
+            self._live[m]=bool(v)
+            if v:self._halted[m]=None
+    @staticmethod
+    def strategy_for_source(source):
+        return {'stock_at':'at','stock_ma':'ma','stock_close':'close','stock_gmo':'gmo',
+                'coin_base':'general','coin_ma':'ma'}.get(str(source),'')
+    def _err(self,stage,e):
+        self.errors.insert(0,{'at':_now(),'stage':stage,'type':type(e).__name__,'message':str(e)[:500]});self.errors=self.errors[:50]
+    def halt_market(self,market,stage,error):
+        if market not in self._live:return
+        self._live[market]=False;self._halted[market]={'at':_now(),'stage':str(stage),'type':type(error).__name__,'message':str(error)[:300]}
+        self._err('auto_halt_'+market+'_'+str(stage),error)
+    def on_live_fill(self,market,side,symbol,qty,price,fill,reason,strategy='',event_key=''):
+        self.fills.insert(0,{'at':_now(),'market':market,'strategy':strategy,'event_key':event_key,'side':side,'symbol':symbol,'qty':str(qty),'strategy_price':str(price),'broker_price':str(fill.get('price')),'broker_order_id':fill.get('order_id',''),'reason':reason});self.fills=self.fills[:100]
+    def _patch_connections(self):
+        import d_storage,d_upbit,stock_ma_engine,at_close_store
+        rt=self
+        if not hasattr(d_storage.DStore,'_android_live_orig_connect'):
+            d_storage.DStore._android_live_orig_connect=d_storage.DStore.connect
+            def ds_connect(obj):
+                raw=d_storage.DStore._android_live_orig_connect(obj);return LiveConnectionProxy(raw,rt,'stock_at')
+            d_storage.DStore.connect=ds_connect
+        if not hasattr(d_upbit.CoinLedger,'_android_live_orig_connect'):
+            d_upbit.CoinLedger._android_live_orig_connect=d_upbit.CoinLedger.connect
+            @contextlib.contextmanager
+            def coin_connect(obj):
+                with d_upbit.CoinLedger._android_live_orig_connect(obj) as raw:
+                    yield LiveConnectionProxy(raw,rt,'coin_'+str(getattr(obj,'account_variant','base')))
+            d_upbit.CoinLedger.connect=coin_connect
+        if not hasattr(stock_ma_engine,'_android_live_orig_connect'):
+            stock_ma_engine._android_live_orig_connect=stock_ma_engine._connect
+            @contextlib.contextmanager
+            def ma_connect(path):
+                with stock_ma_engine._android_live_orig_connect(path) as raw:
+                    yield LiveConnectionProxy(raw,rt,'stock_ma')
+            stock_ma_engine._connect=ma_connect
+        if not hasattr(at_close_store.AtCloseStore,'_android_live_orig_connect'):
+            at_close_store.AtCloseStore._android_live_orig_connect=at_close_store.AtCloseStore.connect
+            def close_connect(obj):
