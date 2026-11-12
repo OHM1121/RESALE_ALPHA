@@ -279,6 +279,7 @@ $('close').onclick=function(){$('detail').hidden=true};$('detail').onclick=funct
 var touch=null;$('view').addEventListener('touchstart',function(e){if(e.touches.length===1&&$('detail').hidden){touch={x:e.touches[0].clientX,y:e.touches[0].clientY}}},{passive:true});$('view').addEventListener('touchend',function(e){if(!touch||e.changedTouches.length!==1)return;var dx=e.changedTouches[0].clientX-touch.x,dy=e.changedTouches[0].clientY-touch.y;touch=null;if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.4)return;var a=seq[S.market],i=a.findIndex(function(x){return x.k===S.strategy}),next=i+(dx<0?1:-1);if(next>=0&&next<a.length){S.strategy=a[next].k;renderStrategyBar();renderAll()}},{passive:true});
 window.__ARTI_SNAPSHOT=function(raw){try{var p=JSON.parse(raw);S.packet=p;S.status=p.status&&p.status.ok?p.status:null;S.records=p.records||{};var online=!!S.status;$('sync').className='status'+(online?' online':'');$('sync').querySelector('span').textContent=online?'서버 연결':'서버 미연결';renderAll()}catch(e){$('sync').querySelector('span').textContent='데이터 오류'}};
 renderStrategyBar();renderAll();
+try{if(window.Artitrade&&Artitrade.uiReady)Artitrade.uiReady()}catch(e){}
 })();
 </script>
 </body>
