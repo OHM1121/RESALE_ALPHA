@@ -697,10 +697,8 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text("대시보드  ·  "+strategyName(market,strategy),18);title.setTypeface(null,Typeface.BOLD);content.addView(title);
         TextView sub=text("전략 성과를 계좌·시간봉·연구결과 기준으로 시각화",10);sub.setTextColor(Color.rgb(130,155,185));sub.setPadding(0,dp(2),0,dp(8));content.addView(sub);
 
-        LinearLayout feeds=new LinearLayout(this);feeds.setOrientation(LinearLayout.HORIZONTAL);
-        feeds.addView(feedCard("stock","키움 직접수신"),new LinearLayout.LayoutParams(0,dp(60),1));
-        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(60),1);fp.setMargins(dp(7),0,0,0);feeds.addView(feedCard("coin","업비트 직접수신"),fp);
-        content.addView(feeds,new LinearLayout.LayoutParams(-1,dp(60)));
+        String feedName="stock".equals(market)?"키움 DIRECT · KOSPI/KOSDAQ":"업비트 DIRECT · KRW TOP35";
+        content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(54)));
 
         LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout pnl=card();TextView pl=text("선택 전략 누적손익",10);pl.setTextColor(Color.rgb(135,160,190));pnl.addView(pl);
@@ -757,9 +755,17 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private View feedCard(String m,String title){
-        LinearLayout c=card();JSONObject rt=copyCache().optJSONObject("realtime");JSONObject r=rt==null?null:rt.optJSONObject(m);boolean on=r!=null&&r.optBoolean("connected",false);
-        TextView t=text(title,11);t.setTypeface(null,Typeface.BOLD);t.setTextColor(on?Color.rgb(62,224,181):Color.rgb(255,119,133));c.addView(t);
-        String d=r==null?"연결 확인 중":r.optString("detail","");int n=r==null?0:r.optInt("subscribed",0);TextView x=text((on?"연결 · ":"대기 · ")+(n>0?n+"종목 · ":"")+d,9);x.setTextColor(Color.rgb(139,164,194));c.addView(x);return c;
+        LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.HORIZONTAL);c.setGravity(Gravity.CENTER_VERTICAL);c.setPadding(dp(13),0,dp(13),0);
+        c.setBackground(bg(Color.rgb(15,18,27),Color.rgb(38,43,58),14));
+        JSONObject rt=copyCache().optJSONObject("realtime");JSONObject r=rt==null?null:rt.optJSONObject(m);boolean on=r!=null&&r.optBoolean("connected",false);
+        TextView dot=text("●",10);dot.setTextColor(on?Color.rgb(86,214,170):Color.rgb(255,176,92));c.addView(dot,new LinearLayout.LayoutParams(dp(20),dp(34)));
+        LinearLayout copy=new LinearLayout(this);copy.setOrientation(LinearLayout.VERTICAL);copy.setGravity(Gravity.CENTER_VERTICAL);
+        TextView t=text(title,10);t.setTypeface(null,Typeface.BOLD);t.setTextColor(Color.rgb(220,226,239));copy.addView(t);
+        String d=r==null?"연결 확인 중":r.optString("detail","");int n=r==null?0:r.optInt("subscribed",0);
+        TextView x=text((on?"실시간 수신":"재연결 중")+(n>0?" · "+n+"종목":"")+(d.isEmpty()?"":" · "+d),8);x.setTextColor(Color.rgb(120,130,151));copy.addView(x);
+        c.addView(copy,new LinearLayout.LayoutParams(0,dp(42),1));
+        TextView badge=text(on?"LIVE":"WAIT",9);badge.setGravity(Gravity.CENTER);badge.setTypeface(null,Typeface.BOLD);badge.setTextColor(on?Color.rgb(86,214,170):Color.rgb(255,176,92));badge.setBackground(bg(Color.rgb(22,26,36),Color.rgb(48,54,70),10));c.addView(badge,new LinearLayout.LayoutParams(dp(54),dp(28)));
+        return c;
     }
 
     private void addMini(LinearLayout row,String label,String value){
