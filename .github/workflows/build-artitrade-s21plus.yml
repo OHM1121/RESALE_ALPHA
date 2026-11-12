@@ -50,6 +50,26 @@ jobs:
       - name: Build stock, coin and phone hub APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleHubDebug --stacktrace
+      - name: Render compact and DeX UI previews
+        shell: bash
+        run: |
+          mkdir -p ui-previews
+          BROWSER="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$BROWSER" ]; then
+            echo "Chrome is not installed on the runner; skipping preview."
+          else
+            PAGE="file://$(pwd)/ARTITRADE_ANDROID/app/src/main/assets/dashboard.html"
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=990,450 --screenshot=ui-previews/artitrade_s21_landscape.png "$PAGE" || true
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1400,900 --screenshot=ui-previews/artitrade_dex.png "$PAGE" || true
+          fi
+      - name: Upload UI previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_Number_First_UI_Previews
+          path: ui-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
