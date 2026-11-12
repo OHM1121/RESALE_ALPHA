@@ -18,6 +18,7 @@
 @media(max-height:540px){.top{height:47px;min-height:47px}.view{padding:9px 12px 12px}.section-head{margin-bottom:7px}.summary,.chart{min-height:126px;padding:10px 13px}.big{font-size:34px}.summary .micro{margin-top:8px}.graph{height:80px;margin-top:0}.kpi{min-height:65px;padding:8px 11px}.metric{font-size:22px}.kpis,.grid-top,.strategy-grid{gap:7px}.section2{margin:9px 0 6px}.strategy{min-height:52px;padding:7px 10px}.strat-title{font-size:14px}.donut{width:34px;height:34px}.donut:after{width:24px;height:24px}.rail{padding-top:6px;gap:4px}.nav{min-height:37px}.nav .ico{height:17px;width:17px}.nav small{font-size:8px}.logo{height:32px;width:36px}.sync{padding:6px 9px}}
 @media(max-width:700px){.ident{min-width:0}.wordmark{font-size:11px}.market{padding:5px 6px;font-size:9px}.top{padding:0 9px;gap:7px}.right{gap:5px}.read-only{font-size:9px}.sync{font-size:9px;padding:6px}.rail{width:48px;flex-basis:48px;padding:7px 3px}.nav{width:40px}.view{padding:10px}.summary{padding:10px}.big{font-size:29px}.metric{font-size:19px}.kpi{padding:9px}.label{font-size:10px}.strategy{gap:3px}.strat-title{font-size:13px}.donut{display:none}}
 @media(max-width:530px){.grid-top{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.strategy-grid{grid-template-columns:1fr}.top .market{display:none}.read-only{display:none}}
+.expanded-only{display:none}.dex-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.dex-grid .card{min-height:170px}.dex-title{font-size:12px;color:#9db5d1;font-weight:850;padding:13px 16px 9px}.list-plain{padding:0 7px 12px}.list-plain .list-row{padding:10px 12px}.list-plain .empty{padding:30px 12px}@media(min-height:610px) and (min-width:990px){.expanded-only{display:block}}
 </style>
 </head>
 <body>
@@ -78,6 +79,13 @@
     <div class="strategy-grid" id="strategyGrid">
       <article class="card strategy"><div><div class="strat-title">AT</div><div class="strat-note">—</div></div><div class="value">—</div></article>
       <article class="card strategy"><div><div class="strat-title">CW</div><div class="strat-note">—</div></div><div class="value">—</div></article>
+    </div>
+    <div class="expanded-only">
+      <div class="section2"><h2>MARKET ACTIVITY</h2><span class="quiet">원장</span></div>
+      <div class="dex-grid">
+        <article class="card"><div class="dex-title">보유 종목</div><div class="list-plain" id="homePositions"></div></article>
+        <article class="card"><div class="dex-title">최근 체결</div><div class="list-plain" id="homeExecutions"></div></article>
+      </div>
     </div>
    </section>
    <section class="detail" id="page-positions"><div class="pane-header"><div class="pane-title">보유 종목</div><span class="pill" id="positionCount">—</span></div><div class="list" id="positionsList"></div></section>
@@ -188,6 +196,10 @@ function redraw(){
  var fraction=value(ledger,['invested_pct','utilization_pct']);$('accountBar').style.width=fraction!==null?Math.max(0,Math.min(100,Number(fraction)))+'%':'0%';text('accountShare',n(fraction,'%'));
  drawGraph(value(ledger,['equity_curve','profit_series','balance_history']));
  list($('positionsList'),positions,'positions');list($('pendingList'),pending,'pending');list($('executionsList'),value(ledger,['executions','fills','transactions']),'executions');
+ var homePositions=$('homePositions'),homeExecutions=$('homeExecutions');
+ if(homePositions)list(homePositions,Array.isArray(positions)?positions.slice(0,5):null,'positions');
+ var recent=value(ledger,['executions','fills','transactions']);
+ if(homeExecutions)list(homeExecutions,Array.isArray(recent)?recent.slice(0,5):null,'executions');
  buildStrategies('strategyGrid');buildStrategies('strategyDetail');
  var rd=validData(state.records.sharedResearch);
  var rr=value(rd,['items','results','research']);
