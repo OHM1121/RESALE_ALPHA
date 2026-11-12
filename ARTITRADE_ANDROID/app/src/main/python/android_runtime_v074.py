@@ -9,7 +9,53 @@ import android_live_bridge as _core
 
 _ORIG_PATCH_GMO = _core.Runtime._patch_gmo
 _ORIG_STOP = _core.Runtime.stop
+_ORIG_STOCK_AT_LEDGER = _core.Runtime._stock_at_ledger
 
+
+
+def _stock_at_ledger_v19(self):
+    out=_ORIG_STOCK_AT_LEDGER(self)
+    if not self.stock_runner:
+        return out
+    try:
+        store=self.stock_runner.store
+        with store.lock,store.connect() as c:
+            tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            if 'v19_accounts' not in tables:
+                return out
+            try:
+                wallets=self.stock_runner.engine.wallet_snapshot(c)
+            except Exception:
+                wallets={}
+                try:
+                    alloc={r['tf']:int(r['target_seed']) for r in c.execute('SELECT tf,target_seed FROM v19_seed_allocations')}
+                except Exception:
+                    alloc={}
+                for r in c.execute('SELECT tf,cash,realized_pnl,seed FROM v19_accounts').fetchall():
+                    wallets[str(r['tf'])]={
+                        'tf':str(r['tf']),'cash':int(r['cash']),
+                        'realized_pnl':int(r['realized_pnl']),
+                        'seed':alloc.get(str(r['tf']),int(r['seed']))
+                    }
+        accounts=[]
+        positions=out.get('positions') or []
+        realized=0.0;holding=0.0
+        for tf in ('5m','30m','60m','day'):
+            w=wallets.get(tf) or {}
+            held=sum(float(x.get('paper_pnl') or 0) for x in positions if str(x.get('tf') or '')==tf)
+            rp=float(w.get('realized_pnl') or 0)
+            accounts.append({
+                'tf':tf,'strategy':'at','cash':w.get('cash',0),'seed':w.get('seed',2_000_000),
+                'realized_pnl':rp,'unrealized_pnl':held
+            })
+            realized+=rp;holding+=held
+        out['accounts']=accounts
+        out['realized_pnl']=realized
+        out['unrealized_pnl']=holding
+        out['total_pnl']=realized+holding
+    except Exception as exc:
+        self._err('stock_at_v19_wallet_snapshot',exc)
+    return out
 
 def _patched_gmo(self):
     if not self.stock_runner:
@@ -55,6 +101,7 @@ def _patched_stop(self):
 
 
 _core.Runtime._patch_gmo = _patched_gmo
+_core.Runtime._stock_at_ledger = _stock_at_ledger_v19
 _core.Runtime.stop = _patched_stop
 
 # Re-export the stable Android bridge API.
