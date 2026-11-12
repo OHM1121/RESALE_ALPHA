@@ -5,6 +5,7 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -49,6 +50,41 @@ final class LocalHubClient {
             JSONObject body=new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8));
             if(code!=200)body.put("http_status",code);
             return body;
+        }finally{c.disconnect();}
+    }
+    JSONObject control(String market,String desired) throws Exception {
+        if(!("stock".equals(market)||"coin".equals(market)))
+            throw new IllegalArgumentException("Unsupported market");
+        if(!("pc".equals(desired)||"phone".equals(desired)||"off".equals(desired)))
+            throw new IllegalArgumentException("Unsupported device");
+        JSONObject payload=new JSONObject();
+        payload.put("market",market);
+        payload.put("desired",desired);
+        byte[] body=payload.toString().getBytes(StandardCharsets.UTF_8);
+        HttpURLConnection c=(HttpURLConnection)new URL(BASE+"/v1/control").openConnection();
+        c.setConnectTimeout(4000);c.setReadTimeout(4000);
+        c.setRequestMethod("POST");
+        c.setInstanceFollowRedirects(false);
+        c.setRequestProperty("Authorization","Bearer "+savedPairingToken());
+        c.setRequestProperty("Accept","application/json");
+        c.setRequestProperty("Content-Type","application/json; charset=utf-8");
+        c.setFixedLengthStreamingMode(body.length);
+        c.setDoOutput(true);
+        try{
+            try(OutputStream out=c.getOutputStream()){out.write(body);}
+            int status=c.getResponseCode();
+            InputStream in=(status>=200&&status<300)?c.getInputStream():c.getErrorStream();
+            if(in==null)throw new IllegalStateException("Empty server response");
+            ByteArrayOutputStream buffer=new ByteArrayOutputStream();
+            byte[] chunk=new byte[4096];
+            int n;
+            while((n=in.read(chunk))!=-1){
+                if(buffer.size()+n>524288)throw new IllegalStateException("Response too large");
+                buffer.write(chunk,0,n);
+            }
+            JSONObject reply=new JSONObject(new String(buffer.toByteArray(),StandardCharsets.UTF_8));
+            if(status!=200)reply.put("http_status",status);
+            return reply;
         }finally{c.disconnect();}
     }
     JSONObject status() throws Exception {return request("/v1/status");}
