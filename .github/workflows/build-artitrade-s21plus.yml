@@ -57,6 +57,14 @@ jobs:
           print('live bridge sha256',got)
           assert got==want,(got,want)
           PY
+      - name: Validate v0.7.4 runtime and operation adapters
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_runtime_v074.py
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "DEFAULT_SEED=2_000_000" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "DEFAULT_MAX=4" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "GMOService" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v074.py
       - name: Validate dashboard JavaScript
         shell: bash
         run: |
@@ -82,9 +90,14 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | tee /tmp/unified_badging.txt
-          grep -F "launchable-activity: name='com.artitrade.mobile.UnifiedNativeActivity'" /tmp/unified_badging.txt
+          grep -F "launchable-activity: name='com.artitrade.mobile.UnifiedVisualActivity'" /tmp/unified_badging.txt
           grep -F "package: name='com.artitrade.unified.s21dex'" /tmp/unified_badging.txt
-          ! grep -q "android.webkit.WebView" ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedNativeActivity.java
+          ! grep -q "android.webkit.WebView" ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '"대시보드"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'new String[]{"5m","30m","60m","day"}' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '"주식 전체 오류이력"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java || grep -F '+" 전체 오류이력"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
       - name: Create version-labeled APK files
         shell: bash
         run: |
