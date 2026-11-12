@@ -288,7 +288,7 @@ public final class UnifiedVisualActivity extends Activity {
         if(p==null)return name+" · "+masked+" · 저장됨 · 인증검사 필요";
         if(p.optBoolean("ok",false))return name+" · "+masked+" · 인증 정상";
         String msg=p.optString("message","인증 실패");
-        if("upbit".equals(which)&&p.optBoolean("ip_hint",false))msg+=" · 허용 IP 확인";
+        if(p.optBoolean("ip_hint",false))msg+=" · 허용 IP 확인";
         return name+" · "+masked+" · "+msg;
     }
 
@@ -1008,6 +1008,7 @@ public final class UnifiedVisualActivity extends Activity {
                 JSONObject k=result.optJSONObject("kiwoom"),u=result.optJSONObject("upbit");
                 String km=k==null?"검사 실패":k.optBoolean("ok",false)?"정상":k.optString("message","인증 실패");
                 String um=u==null?"검사 실패":u.optBoolean("ok",false)?"정상":u.optString("message","인증 실패");
+                if(k!=null&&k.optBoolean("ip_hint",false))km+="\n허용 IP에 현재 S21+ 외부 IP가 등록되어 있는지 확인 필요";
                 if(u!=null&&u.optBoolean("ip_hint",false))um+="\n허용 IP에 현재 S21+ 외부 IP가 등록되어 있는지 확인 필요";
                 new AlertDialog.Builder(this).setTitle("API 인증 검사 결과").setMessage("키움: "+km+"\n\n업비트: "+um).setPositiveButton("확인",null).show();
                 if(drawerOverlay!=null){closeSettingsDrawer();main.postDelayed(this::openSettingsDrawer,220);}
