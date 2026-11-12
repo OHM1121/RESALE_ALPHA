@@ -14,6 +14,7 @@ import java.security.MessageDigest;
 import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 /**
  * One-time migration of the latest Windows EXE paper ledger into the phone-main runtime.
@@ -25,6 +26,9 @@ import java.util.zip.ZipInputStream;
 final class LegacyLedgerMigration {
     private static final String PREF="artitrade_pc_ledger_import_v1";
     private static final String SCHEMA="ARTITRADE_PC_LEDGER_MIGRATION_V1";
+    private static final long MAX_MIGRATION_ZIP=4L*1024L*1024L*1024L;
+    private static final long MAX_EXPANDED_DATA=16L*1024L*1024L*1024L;
+    private static final long MIN_FREE_SPACE=128L*1024L*1024L;
     private static final Set<String> ALLOWED=new HashSet<>(Arrays.asList(
         "manifest.json",
         "stock/ARTITRADE_D.sqlite3",
@@ -119,8 +123,55 @@ final class LegacyLedgerMigration {
                 zin.closeEntry();
             }
         }
-        if(manifest==null||!SCHEMA.equals(manifest.optString("schema")))throw new SecurityException("migration manifest mismatch");
+        if(manifest==null||!SCHEMA.equals(manifest.optString("schema")))
+            throw new SecurityException("migration manifest mismatch");
+        JSONObject files=manifest.optJSONObject("files");
+        if(files==null)throw new SecurityException("migration file hashes missing");
+        java.util.Iterator<String> names=files.keys();
+        while(names.hasNext()){
+            String name=names.next();
+            if(!ALLOWED.contains(name))throw new SecurityException("invalid manifest entry");
+            JSONObject entry=files.optJSONObject(name);
+            File saved=new File(staging,name);
+            if(entry==null||!saved.isFile()||entry.optLong("size",-1)!=saved.length()||
+                !sha256(saved).equalsIgnoreCase(entry.optString("sha256")))
+                throw new SecurityException("Migration integrity check failed: "+name);
+        }
         return manifest;
+    }
+    private long expandedArchiveBytes(File archive)throws Exception{
+        long total=0;Set<String> seen=new HashSet<>();
+        try(ZipFile zip=new ZipFile(archive)){
+            Enumeration<? extends ZipEntry> entries=zip.entries();
+            while(entries.hasMoreElements()){
+                ZipEntry e=entries.nextElement();
+                if(e.isDirectory())continue;
+                String name=e.getName().replace('\\','/');
+                if(!ALLOWED.contains(name)||!seen.add(name))
+                    throw new SecurityException("Unexpected or duplicate archive entry: "+name);
+                long size=e.getSize();
+                if(size<0||total>MAX_EXPANDED_DATA-size)
+                    throw new SecurityException("Migration archive decompressed size exceeded safe limit");
+                total+=size;
+            }
+        }
+        for(String required:new String[]{"stock/ARTITRADE_D.sqlite3",
+                "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+                "coin/base/upbit_paper.sqlite3","coin/ma/upbit_paper.sqlite3"})
+            if(!seen.contains(required))throw new SecurityException("Required PC ledger missing: "+required);
+        return total;
+    }
+    private long oldFilesBackupBytes(){
+        long bytes=0;File root=runtimeRoot();
+        for(String rel:ALLOWED){
+            if("manifest.json".equals(rel))continue;
+            File f=new File(root,rel);
+            if(f.isFile())bytes+=f.length();
+        }
+        return bytes;
+    }
+    private static long freeStorageBytes(File base){
+        return new android.os.StatFs(base.getAbsolutePath()).getAvailableBytes();
     }
     private void install(File staging,String sha)throws Exception{
         File root=runtimeRoot();if(!root.exists()&&!root.mkdirs())throw new IOException("runtime root unavailable");
@@ -133,7 +184,16 @@ final class LegacyLedgerMigration {
                 File backup=new File(target.getParentFile(),target.getName()+".pre_pc_import_"+stamp);
                 copy(target,backup);
             }
-            copy(source,target);
+            // Same-app cache and runtime files share the filesystem. A verified
+            // atomic rename avoids a second full raw-DB copy during migration.
+            try{
+                java.nio.file.Files.move(source.toPath(),target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            }catch(java.nio.file.AtomicMoveNotSupportedException e){
+                java.nio.file.Files.move(source.toPath(),target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
         }
         prefs().edit().putString("imported_sha256",sha).putLong("imported_at",System.currentTimeMillis()).commit();
     }
@@ -161,7 +221,14 @@ final class LegacyLedgerMigration {
                 return blocked;
             }
             int chunks=status.optInt("read_chunks",0);long total=status.optLong("total_bytes",-1);
-            if(chunks<1||total<1||total>250L*1024L*1024L)throw new SecurityException("invalid migration size");
+            if(chunks<1||total<1||total>MAX_MIGRATION_ZIP||
+               chunks!=(total+240000L-1)/240000L)
+                throw new SecurityException("Invalid migration chunk manifest");
+            long initialFree=freeStorageBytes(context.getCacheDir());
+            if(initialFree<total+MIN_FREE_SPACE)
+                throw new IOException("S21+ 저장공간 부족 · ZIP 수신 필요 "+
+                    ((total+MIN_FREE_SPACE+1048575)/1048576)+"MB, 여유 "+
+                    (initialFree/1048576)+"MB");
             File archive=new File(context.getCacheDir(),"pc_ledger_import_"+session+".zip");
             progress("DOWNLOAD","MSERVER에서 PC EXE 원장 수신",0,chunks,false,"");
             try(FileOutputStream out=new FileOutputStream(archive,false)){
@@ -179,6 +246,12 @@ final class LegacyLedgerMigration {
             }
             progress("VERIFY","PC EXE 원장 무결성 검사",0,1,false,"");
             if(!sha256(archive).equalsIgnoreCase(sha))throw new SecurityException("migration archive hash mismatch");
+            long expanded=expandedArchiveBytes(archive);
+            long remain=freeStorageBytes(context.getCacheDir());
+            long needed=expanded+oldFilesBackupBytes()+MIN_FREE_SPACE;
+            if(remain<needed)
+                throw new IOException("S21+ 저장공간 부족 · 압축 해제/기존 데이터 백업 필요 "+
+                    ((needed+1048575)/1048576)+"MB, 여유 "+(remain/1048576)+"MB");
             progress("EXTRACT","PC EXE 원장 압축 해제",0,1,false,"");
             File staging=new File(context.getCacheDir(),"pc_ledger_stage_"+session);
             JSONObject manifest=extract(archive,staging);
