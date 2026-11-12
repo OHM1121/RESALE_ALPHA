@@ -12,7 +12,13 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.util.Base64;
+import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -47,9 +53,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 3) switch market/strategy/pages entirely inside WebView without network waits,
  * 4) refresh the cache in the background and push one atomic packet to the UI.
  *
- * This class intentionally contains no broker order endpoint. The original Windows
- * strategy engine is not embedded in this public repository, so order execution is
- * kept disabled rather than re-created from guesses.
+ * The activity is a UI shell only. Broker sessions and strategy execution live in
+ * UnifiedTradingService / the EXE-derived Python runtime so a WebView fault never
+ * changes strategy state or order semantics.
  */
 public final class UnifiedActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -57,9 +63,13 @@ public final class UnifiedActivity extends Activity {
     private final Object cacheLock = new Object();
     private FrameLayout root;
     private WebView web;
+    private View dashboardCover;
     private JSONObject cache = new JSONObject();
     private volatile boolean dashboardReady = false;
     private volatile boolean refreshRunning = false;
+    private volatile boolean pageCommitted = false;
+    private volatile boolean runtimeStartIssued = false;
+    private int webReloadAttempts = 0;
     private long preloadStarted;
     private static final int TOTAL_PRELOAD = 25;
     private static final long REFRESH_MS = 3500L;
