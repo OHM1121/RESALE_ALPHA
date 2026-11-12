@@ -18,11 +18,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.zip.GZIPInputStream;
 
 /** Runs the exact latest uploaded EXE Python strategy state machines inside Android. */
 final class StrategyRuntimeBridge {
     private static final int PARTS=22;
-    private static final int LIVE_BRIDGE_PARTS=9; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
+    private static final int LIVE_BRIDGE_PARTS=8; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
     private static final String CORE_SHA256="e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0";
     private static final String LIVE_BRIDGE_SHA256="e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e";
     private final Context context;
@@ -127,7 +128,12 @@ final class StrategyRuntimeBridge {
                 int n;while((n=in.read(buf))!=-1)encoded.write(buf,0,n);
             }
         }
-        byte[] decoded=Base64.decode(encoded.toByteArray(),Base64.DEFAULT);
+        byte[] compressed=Base64.decode(encoded.toByteArray(),Base64.DEFAULT);
+        ByteArrayOutputStream plain=new ByteArrayOutputStream(50000);
+        try(GZIPInputStream gz=new GZIPInputStream(new ByteArrayInputStream(compressed))){
+            int n;while((n=gz.read(buf))!=-1)plain.write(buf,0,n);
+        }
+        byte[] decoded=plain.toByteArray();
         if(!LIVE_BRIDGE_SHA256.equals(sha256(decoded)))throw new SecurityException("v0.7.1 live bridge digest mismatch");
         try(FileOutputStream out=new FileOutputStream(target,false)){
             out.write(decoded);
