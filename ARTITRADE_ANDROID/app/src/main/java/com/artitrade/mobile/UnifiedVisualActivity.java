@@ -315,11 +315,32 @@ public final class UnifiedVisualActivity extends Activity {
 
         TextView srvTitle=text("폰 원장 · PC 동기화",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
         LinearLayout tools=card();
-        JSONObject hubPub=copyCache().optJSONObject("hub_publish");
+        JSONObject snapshot=copyCache();
+        JSONObject hubPub=snapshot.optJSONObject("hub_publish");
+        JSONObject mAuth=snapshot.optJSONObject("mserver_auth");
         int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);int preserved=hubPub==null?0:hubPub.optInt("preserved",0);
-        String mserverMsg=preserved>0?"기존 MSERVER 원장 "+preserved+"개 보존 · 새 빈 원장으로 덮어쓰기 차단":failed==0&&okPub>0?"폰 원장 → MSERVER 동기화 정상":failed>0?"MSERVER 동기화 실패 · PC 원장 조회에 반영되지 않음":"MSERVER 동기화 준비 중";
-        TextView mserverState=text(mserverMsg,11);mserverState.setTextColor(failed>0?Color.rgb(255,119,133):preserved>0?Color.rgb(255,194,91):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));mserverState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(mserverState);
-        if(failed>0){TextView he=text(hubPub.optString("last_error",""),9);he.setTextColor(Color.rgb(180,151,158));he.setPadding(dp(2),0,dp(2),dp(8));tools.addView(he);}
+        boolean authOk=mAuth!=null&&mAuth.optBoolean("ok",false);
+        String authError=mAuth==null?"":mAuth.optString("error","");
+        int authHttp=mAuth==null?0:mAuth.optInt("http_status",0);
+        String mserverMsg;
+        if(!authOk&&("unauthorized".equals(authError)||authHttp==401))mserverMsg="MSERVER 인증 실패 · 연결 토큰 불일치";
+        else if(!authOk&&authError.startsWith("UNREACHABLE:"))mserverMsg="MSERVER 연결 실패 · 모바일 서버 실행상태 확인";
+        else if(preserved>0)mserverMsg="기존 MSERVER 원장 "+preserved+"개 보존 · 빈 원장 덮어쓰기 차단";
+        else if(failed==0&&okPub>0)mserverMsg="폰 원장 → MSERVER 동기화 정상";
+        else if(failed>0)mserverMsg="MSERVER 원장 동기화 실패";
+        else mserverMsg="MSERVER 원장 동기화 준비 중";
+        TextView mserverState=text(mserverMsg,12);
+        boolean bad=!authOk||failed>0;
+        mserverState.setTextColor(bad?Color.rgb(255,119,133):preserved>0?Color.rgb(255,194,91):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));
+        mserverState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(mserverState);
+        if(!authOk&&!authError.isEmpty()){
+            TextView ae=text("인증/연결: "+authError+(authHttp>0?" · HTTP "+authHttp:""),10);ae.setTextColor(Color.rgb(210,151,161));ae.setPadding(dp(2),0,dp(2),dp(7));tools.addView(ae);
+        }
+        if(failed>0&&hubPub!=null){
+            String detail=hubPub.optString("last_error","");
+            String where=hubPub.optString("last_market","")+"/"+hubPub.optString("last_strategy","")+"/"+hubPub.optString("last_bucket","");
+            TextView he=text("원장: "+detail+(where.equals("//")?"":" · "+where),10);he.setTextColor(Color.rgb(210,151,161));he.setPadding(dp(2),0,dp(2),dp(8));tools.addView(he);
+        }
         JSONObject pairState=copyCache().optJSONObject("hub_pairing");
         if(pairState!=null){
             String ps=pairState.optBoolean("saved",false)?"연결 토큰 기기 저장됨 · "+pairState.optString("masked",""):"연결 토큰 미저장";
@@ -433,8 +454,18 @@ public final class UnifiedVisualActivity extends Activity {
                         .put("at",hp.getLong("at",0L)).put("ok",hp.getInt("ok",0))
                         .put("failed",hp.getInt("failed",0)).put("preserved",hp.getInt("preserved",0))
                         .put("legacy_preserved",hp.getBoolean("legacy_preserved",false))
-                        .put("last_error",hp.getString("last_error","")));
+                        .put("last_error",hp.getString("last_error",""))
+                        .put("last_market",hp.getString("last_market",""))
+                        .put("last_strategy",hp.getString("last_strategy",""))
+                        .put("last_bucket",hp.getString("last_bucket",""))
+                        .put("last_http_status",hp.getInt("last_http_status",200)));
                 }catch(Exception e){packet.put("hub_publish",new JSONObject());}
+                try{
+                    android.content.SharedPreferences ap=getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE);
+                    packet.put("mserver_auth",new JSONObject()
+                        .put("at",ap.getLong("at",0L)).put("ok",ap.getBoolean("ok",false))
+                        .put("error",ap.getString("error","")).put("http_status",ap.getInt("http_status",0)));
+                }catch(Exception e){packet.put("mserver_auth",new JSONObject());}
                 packet.put("records",records);packet.put("loaded_at",System.currentTimeMillis());
             }catch(Exception e){try{packet.put("refresh_error",e.getClass().getSimpleName()+": "+e.getMessage());}catch(Exception ignored){}}
             synchronized(cacheLock){cache=packet;}
