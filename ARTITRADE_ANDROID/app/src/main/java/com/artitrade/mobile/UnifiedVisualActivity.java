@@ -300,6 +300,33 @@ public final class UnifiedVisualActivity extends Activity {
         render();
     }
 
+    private String etaText(JSONObject p){
+        if(p==null)return "";
+        int done=p.optInt("done",0),total=p.optInt("total",0);
+        long start=p.optLong("started_at",0L);
+        if(done<=0||total<=done||start<=0)return total>0?done+"/"+total:"";
+        long elapsed=Math.max(1,System.currentTimeMillis()-start);
+        long remain=Math.max(0,(long)((elapsed/(double)done)*(total-done)));
+        long sec=remain/1000;
+        return done+"/"+total+" · 예상 "+(sec>=60?(sec/60)+"분 "+(sec%60)+"초":sec+"초");
+    }
+
+    private void addProgressBlock(LinearLayout parent,String title,JSONObject state,int accent){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(7),dp(2),dp(8));
+        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);
+        TextView t=text(title,12);t.setTypeface(null,Typeface.BOLD);t.setTextColor(Color.rgb(215,222,237));head.addView(t,new LinearLayout.LayoutParams(0,dp(24),1));
+        int pct=state==null?0:Math.max(0,Math.min(100,state.optInt("percent",0)));
+        TextView pc=text(pct+"%",12);pc.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);pc.setTypeface(null,Typeface.BOLD);pc.setTextColor(accent);head.addView(pc,new LinearLayout.LayoutParams(dp(58),dp(24)));box.addView(head);
+        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(false);bar.setMax(100);bar.setProgress(pct);
+        if(Build.VERSION.SDK_INT>=21)bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));
+        box.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
+        String stage=state==null?"대기":state.optString("stage","대기");
+        String current=state==null?"":state.optString("current",state.optString("detail",""));
+        String eta=etaText(state);
+        TextView d=text(stage+(current.isEmpty()?"":" · "+current)+(eta.isEmpty()?"":" · "+eta),10);d.setTextColor(Color.rgb(139,151,174));d.setPadding(0,dp(5),0,0);box.addView(d);
+        parent.addView(box,new LinearLayout.LayoutParams(-1,-2));
+    }
+
     private void openSettingsDrawer(){
         if(drawerOverlay!=null)return;
         FrameLayout overlay=new FrameLayout(this);overlay.setBackgroundColor(Color.argb(125,0,0,0));
@@ -330,47 +357,64 @@ public final class UnifiedVisualActivity extends Activity {
         ar.addView(button(brokerName+" 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(44),1));
         LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(44),1);prp.setMargins(dp(8),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
 
-        TextView srvTitle=text("폰 원장 · PC 동기화",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
+        TextView srvTitle=text("MSERVER · 기준원장 동기화",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
         LinearLayout tools=card();
         JSONObject snapshot=copyCache();
         JSONObject hubPub=snapshot.optJSONObject("hub_publish");
         JSONObject mAuth=snapshot.optJSONObject("mserver_auth");
+        JSONObject syncProgress=snapshot.optJSONObject("mserver_sync");
+        JSONObject importProgress=snapshot.optJSONObject("pc_import_progress");
+        JSONObject migrationServer=snapshot.optJSONObject("mserver_migration");
         int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);int preserved=hubPub==null?0:hubPub.optInt("preserved",0);
         boolean authOk=mAuth!=null&&mAuth.optBoolean("ok",false);
         String authError=mAuth==null?"":mAuth.optString("error","");
         int authHttp=mAuth==null?0:mAuth.optInt("http_status",0);
+
         String mserverMsg;
         if(!authOk&&("unauthorized".equals(authError)||authHttp==401))mserverMsg="MSERVER 인증 실패 · 연결 토큰 불일치";
         else if(!authOk&&authError.startsWith("UNREACHABLE:"))mserverMsg="MSERVER 연결 실패 · 모바일 서버 실행상태 확인";
-        else if(preserved>0)mserverMsg="기존 MSERVER 원장 "+preserved+"개 보존 · 빈 원장 덮어쓰기 차단";
-        else if(failed==0&&okPub>0)mserverMsg="폰 원장 → MSERVER 동기화 정상";
-        else if(failed>0)mserverMsg="MSERVER 원장 동기화 실패";
-        else mserverMsg="MSERVER 원장 동기화 준비 중";
+        else if(syncProgress!=null&&syncProgress.optBoolean("complete",false))mserverMsg="폰 기준원장 → MSERVER 게시 완료";
+        else if(failed>0)mserverMsg="MSERVER 원장 게시 실패";
+        else mserverMsg="MSERVER 원장 게시 진행/대기";
         TextView mserverState=text(mserverMsg,12);
         boolean bad=!authOk||failed>0;
-        mserverState.setTextColor(bad?Color.rgb(255,119,133):preserved>0?Color.rgb(255,194,91):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));
-        mserverState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(mserverState);
+        mserverState.setTextColor(bad?Color.rgb(255,119,133):syncProgress!=null&&syncProgress.optBoolean("complete",false)?Color.rgb(86,214,170):Color.rgb(255,194,91));
+        mserverState.setPadding(dp(2),0,dp(2),dp(5));tools.addView(mserverState);
         if(!authOk&&!authError.isEmpty()){
-            TextView ae=text("인증/연결: "+authError+(authHttp>0?" · HTTP "+authHttp:""),10);ae.setTextColor(Color.rgb(210,151,161));ae.setPadding(dp(2),0,dp(2),dp(7));tools.addView(ae);
+            TextView ae=text("인증/연결: "+authError+(authHttp>0?" · HTTP "+authHttp:""),10);ae.setTextColor(Color.rgb(210,151,161));ae.setPadding(dp(2),0,dp(2),dp(5));tools.addView(ae);
         }
+        addProgressBlock(tools,"① 폰 기준원장 → MSERVER 게시",syncProgress,Color.rgb(0,196,164));
         if(failed>0&&hubPub!=null){
             String detail=hubPub.optString("last_error","");
             String where=hubPub.optString("last_market","")+"/"+hubPub.optString("last_strategy","")+"/"+hubPub.optString("last_bucket","");
-            TextView he=text("원장: "+detail+(where.equals("//")?"":" · "+where),10);he.setTextColor(Color.rgb(210,151,161));he.setPadding(dp(2),0,dp(2),dp(8));tools.addView(he);
+            TextView he=text("게시 오류: "+detail+(where.equals("//")?"":" · "+where),10);he.setTextColor(Color.rgb(210,151,161));he.setPadding(dp(2),0,dp(2),dp(6));tools.addView(he);
         }
-        JSONObject migState=copyCache().optJSONObject("pc_ledger_migration");
+
+        JSONObject migState=snapshot.optJSONObject("pc_ledger_migration");
+        if(importProgress==null)importProgress=new JSONObject();
+        if(migrationServer!=null&&!migrationServer.optBoolean("ready",false)&&migrationServer.optInt("total_chunks",0)>0&&!importProgress.optBoolean("complete",false)){
+            try{
+                int received=migrationServer.optInt("received",0),totalChunks=migrationServer.optInt("total_chunks",0);
+                importProgress.put("stage","PC→MSERVER 업로드").put("detail","승계 ZIP 수신")
+                    .put("done",received).put("total",totalChunks)
+                    .put("percent",totalChunks>0?(received*100/totalChunks):0);
+            }catch(Exception ignored){}
+        }
+        addProgressBlock(tools,"② 기존 PC EXE 원장 → S21+ 승계",importProgress,Color.rgb(77,124,254));
+
         if(migState!=null&&migState.length()>0){
             String ms=migState.optString("status","");
-            String mt="IMPORTED".equals(ms)?"기존 EXE 원장 승계 완료":
-                "ALREADY_IMPORTED".equals(ms)?"기존 EXE 원장 승계 완료":
-                "PHONE_HAS_TRADES".equals(ms)?"기존 EXE 원장 자동승계 차단 · 폰 신규체결 존재":
-                "IMPORT_FAILED".equals(ms)?"기존 EXE 원장 승계 실패":
-                "NO_PC_ARCHIVE".equals(ms)?"기존 EXE 원장 승계자료 대기":"기존 EXE 원장: "+ms;
+            String mt="IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms)?"기존 PC EXE 원장 승계 완료":
+                "PHONE_HAS_REAL_FILLS".equals(ms)?"실제 브로커 체결 존재 · 자동 원장교체 차단":
+                "IMPORT_FAILED".equals(ms)?"기존 PC EXE 원장 승계 실패":
+                "NO_PC_ARCHIVE".equals(ms)?"기존 PC EXE 원장 승계자료 대기":"기존 PC EXE 원장: "+ms;
             TextView mv=text(mt,11);
             mv.setTextColor(("IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms))?Color.rgb(86,214,170):
-                ("PHONE_HAS_TRADES".equals(ms)||"IMPORT_FAILED".equals(ms))?Color.rgb(255,119,133):Color.rgb(147,160,185));
-            mv.setPadding(dp(2),0,dp(2),dp(8));tools.addView(mv);
+                ("PHONE_HAS_REAL_FILLS".equals(ms)||"IMPORT_FAILED".equals(ms))?Color.rgb(255,119,133):Color.rgb(147,160,185));
+            mv.setPadding(dp(2),dp(3),dp(2),dp(7));tools.addView(mv);
         }
+        TextView explain=text("※ 'MSERVER 게시 완료'와 'PC 과거원장 승계 완료'는 서로 다른 상태임.",10);
+        explain.setTextColor(Color.rgb(255,194,91));explain.setPadding(dp(2),0,dp(2),dp(7));tools.addView(explain);
         JSONObject pairState=copyCache().optJSONObject("hub_pairing");
         if(pairState!=null){
             String ps=pairState.optBoolean("saved",false)?"연결 토큰 기기 저장됨 · "+pairState.optString("masked",""):"연결 토큰 미저장";
@@ -478,6 +522,25 @@ public final class UnifiedVisualActivity extends Activity {
                     }
                     packet.put("using_hub_fallback",true);
                 }else packet.put("using_hub_fallback",false);
+                try{
+                    android.content.SharedPreferences sp=getSharedPreferences("artitrade_mserver_sync_v078",MODE_PRIVATE);
+                    packet.put("mserver_sync",new JSONObject()
+                        .put("stage",sp.getString("stage","")).put("current",sp.getString("current",""))
+                        .put("done",sp.getInt("done",0)).put("total",sp.getInt("total",0))
+                        .put("failed",sp.getInt("failed",0)).put("percent",sp.getInt("percent",0))
+                        .put("started_at",sp.getLong("started_at",0L)).put("updated_at",sp.getLong("updated_at",0L))
+                        .put("complete",sp.getBoolean("complete",false)));
+                }catch(Exception e){packet.put("mserver_sync",new JSONObject());}
+                try{
+                    android.content.SharedPreferences ip=getSharedPreferences("artitrade_pc_ledger_import_progress_v078",MODE_PRIVATE);
+                    packet.put("pc_import_progress",new JSONObject()
+                        .put("stage",ip.getString("stage","")).put("detail",ip.getString("detail",""))
+                        .put("done",ip.getLong("done",0L)).put("total",ip.getLong("total",0L))
+                        .put("percent",ip.getInt("percent",0)).put("updated_at",ip.getLong("updated_at",0L))
+                        .put("complete",ip.getBoolean("complete",false)).put("error",ip.getString("error","")));
+                }catch(Exception e){packet.put("pc_import_progress",new JSONObject());}
+                try{packet.put("mserver_migration",client.migrationStatus());}
+                catch(Exception e){packet.put("mserver_migration",new JSONObject());}
                 try{
                     android.content.SharedPreferences hp=getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE);
                     packet.put("hub_publish",new JSONObject()
