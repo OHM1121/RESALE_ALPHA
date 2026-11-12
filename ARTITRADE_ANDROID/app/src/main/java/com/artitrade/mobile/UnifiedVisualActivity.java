@@ -781,6 +781,19 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject actual=l.optJSONObject("actual_target");
         if(actual!=null)st.target=num(actual,"rate_pct");
         st.flowPending=st.pending.length();st.flowHolding=st.positions.length();st.flowBought=buy;st.flowSold=sell;
+        JSONObject perf=l.optJSONObject("performance_by_frame");
+        if(perf!=null){
+            int fp=0,fb=0,fh=0,fs=0;boolean any=false;
+            java.util.Iterator<String> keys=perf.keys();
+            while(keys.hasNext()){
+                String k=keys.next();if("all".equals(k))continue;
+                JSONObject q=perf.optJSONObject(k);if(q==null)continue;any=true;
+                fp+=q.optInt("pending_count",0);
+                fb+=q.has("bought_count")?q.optInt("bought_count",0):q.optInt("total_trades",0);
+                fh+=q.optInt("open_count",0);fs+=q.optInt("closed_count",0);
+            }
+            if(any){st.flowPending=fp;st.flowBought=fb;st.flowHolding=fh;st.flowSold=fs;}
+        }
 
         JSONObject rs=research(m,s);JSONArray items=rs.optJSONArray("items");
         if(items==null&&"ma".equals(s))items=l.optJSONArray("research");
@@ -1018,7 +1031,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void renderList(String title,JSONArray a,String kind){
         TextView h=text(title+"  ·  "+a.length()+"건",22);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
         if(a.length()==0){empty("기록 없음");return;}
-        for(int i=0;i<Math.min(100,a.length());i++){JSONObject r=a.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
+        for(int i=0;i<Math.min(500,a.length());i++){JSONObject r=a.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
             TextView n=text(nameOf(r),18);n.setTypeface(null,Typeface.BOLD);c.addView(n);
             String when=timeOf(r);TextView tm=text(refLabel()+" "+when,12);tm.setTextColor(Color.rgb(135,158,187));tm.setPadding(0,dp(2),0,0);c.addView(tm);
             TextView why=text("근거: "+reasonOf(r),13);why.setTextColor(Color.rgb(191,209,228));why.setPadding(0,dp(4),0,0);c.addView(why);
