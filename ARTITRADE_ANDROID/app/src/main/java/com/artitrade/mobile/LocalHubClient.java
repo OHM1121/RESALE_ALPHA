@@ -88,6 +88,14 @@ final class LocalHubClient {
     }
     private JSONObject post(String path,JSONObject payload)throws Exception{return send("POST",path,payload);}
     private JSONObject put(String path,JSONObject payload)throws Exception{return send("PUT",path,payload);}
+    JSONObject migrationStatus() throws Exception {return request("/v1/migration/status");}
+    JSONObject migrationChunk(String session,int index)throws Exception{
+        return request("/v1/migration/chunk?session="+encode(session)+"&index="+index);
+    }
+    JSONObject migrationAck(String session,String archiveSha)throws Exception{
+        return post("/v1/migration/ack",new JSONObject().put("session",session).put("archive_sha256",archiveSha));
+    }
+
     JSONObject control(String market,String desired) throws Exception {
         if(!("stock".equals(market)||"coin".equals(market)))throw new IllegalArgumentException("Unsupported market");
         if(!("pc".equals(desired)||"phone".equals(desired)||"off".equals(desired)))throw new IllegalArgumentException("Unsupported device");
