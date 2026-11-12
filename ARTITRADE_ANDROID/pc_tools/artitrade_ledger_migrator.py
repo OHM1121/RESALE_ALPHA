@@ -94,8 +94,8 @@ def source_map() -> dict[str, tuple[Path, bool]]:
         "stock/ARTITRADE_D.sqlite3": (sr / "ARTITRADE_D.sqlite3", True),
         "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3": (sr / "STOCK_MA_ENGINE_V1" / "ma_paper.sqlite3", True),
         "stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3": (sr / "AT_CLOSE_PAPER.sqlite3", True),
-        "stock/gmo/PROJECTGMO_V1.0_research.sqlite3": (sr / "PROJECTGMO_V1.0_research.sqlite3", True),
-        "stock/gmo/PROJECTGMO_V1.0_account_state.json": (sr / "PROJECTGMO_V1.0_account_state.json", False),
+        "stock/PROJECTGMO_V1.0_research.sqlite3": (sr / "PROJECTGMO_V1.0_research.sqlite3", True),
+        "stock/PROJECTGMO_V1.0_account_state.json": (sr / "PROJECTGMO_V1.0_account_state.json", False),
         "coin/base/upbit_paper.sqlite3": (cr / "upbit_paper.sqlite3", True),
         "coin/ma/upbit_paper.sqlite3": (cr / "MA_ENGINE_V1" / "upbit_paper.sqlite3", True),
     }
@@ -284,14 +284,14 @@ def run_gui():
     from tkinter import messagebox, ttk
 
     root = tk.Tk()
-    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계")
+    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 V2")
     root.geometry("760x620")
     root.minsize(700, 540)
 
     frm = ttk.Frame(root, padding=18)
     frm.pack(fill="both", expand=True)
 
-    ttk.Label(frm, text="ARTITRADE 기존 EXE 원장 승계", font=("Malgun Gothic", 17, "bold")).pack(anchor="w")
+    ttk.Label(frm, text="ARTITRADE 기존 EXE 원장 승계 V2", font=("Malgun Gothic", 17, "bold")).pack(anchor="w")
     ttk.Label(frm, text="최신 주식/코인 EXE의 SQLite · GMO 상태를 읽기 전용 스냅샷으로 만들어 MSERVER에 전송합니다.").pack(anchor="w", pady=(4, 14))
 
     roots = ttk.LabelFrame(frm, text="자동 탐색 결과", padding=10)
