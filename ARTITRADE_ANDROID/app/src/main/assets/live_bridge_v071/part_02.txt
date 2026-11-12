@@ -1,0 +1,74 @@
+    def _get_order(self,order_id,identifier):
+        params={'uuid':order_id} if order_id else {'identifier':identifier}
+        r=self.s.get(self.REST+'/v1/order',params=params,headers={'Authorization':'Bearer '+self._jwt(params)},timeout=3)
+        r.raise_for_status();return r.json()
+    def fok(self,event_key,side,market,qty,limit_price,reason='',source='',strategy='',strategy_event_key=''):
+        if not self.ready():raise LiveOrderError('UPBIT_KEYS_MISSING')
+        row=self.journal.prepare(event_key,'coin',side,market,qty,limit_price,reason,source,strategy,strategy_event_key)
+        identifier='ARTI-'+_safe_key(event_key)+'-'+str(int(row['attempt'] or 1))
+        if row['status']=='FILLED':return {'qty':float(row['fill_qty']),'price':float(row['fill_price']),'order_id':row['broker_order_id']}
+        if row['status'] in ('SENT','AMBIGUOUS'):
+            try:data=self._get_order(row['broker_order_id'],identifier)
+            except Exception as e:raise LiveOrderAmbiguous('UPBIT_EXISTING_ORDER_REVIEW:'+type(e).__name__)
+            return self._finish(event_key,data,qty,limit_price)
+        if row['status']!='PREPARED':raise LiveOrderError('UPBIT_JOURNAL_'+row['status'])
+        params={'market':market,'side':'bid' if side=='BUY' else 'ask','volume':str(qty),'price':str(limit_price),'ord_type':'limit','time_in_force':'fok','identifier':identifier}
+        headers={'Authorization':'Bearer '+self._jwt(params),'Content-Type':'application/json'}
+        try:
+            r=self.s.post(self.REST+'/v1/orders',json=params,headers=headers,timeout=3)
+            data=r.json() if r.content else {}
+            if r.status_code>=400:raise LiveOrderError('UPBIT_ORDER_REJECTED:'+str(data)[:240])
+        except LiveOrderError:raise
+        except Exception as e:
+            self.journal.set(event_key,'AMBIGUOUS',detail=type(e).__name__);raise LiveOrderAmbiguous('UPBIT_SEND_AMBIGUOUS')
+        oid=str(data.get('uuid') or '')
+        self.journal.set(event_key,'SENT',oid,detail='FOK_ACCEPTED')
+        # Prefer private myOrder evidence; REST remains the reconciliation fallback.
+        if self.tracker is not None:
+            wsrow=self.tracker.wait_coin(oid,identifier,qty,1.4)
+            if wsrow is not None:
+                try:return self._finish(event_key,wsrow,qty,limit_price)
+                except LiveOrderNoFill:raise
+                except Exception:pass
+        for _ in range(18):
+            try:
+                data=self._get_order(oid,identifier)
+                state=str(data.get('state') or '')
+                if state in ('done','cancel'):break
+            except Exception:pass
+            time.sleep(.12)
+        return self._finish(event_key,data,qty,limit_price)
+    def _finish(self,key,data,qty,limit_price):
+        ex=Decimal(str(data.get('executed_volume') or '0'));want=Decimal(str(qty))
+        if ex!=want:
+            self.journal.set(key,'NO_FILL' if ex==0 else 'PARTIAL',str(data.get('uuid') or ''),str(ex),detail=str(data.get('state') or ''))
+            raise LiveOrderNoFill('UPBIT_FOK_NOT_FULL')
+        trades=data.get('trades') or []
+        if trades:
+            total=sum((Decimal(str(x.get('funds') or '0')) for x in trades),Decimal(0));avg=total/ex if ex else Decimal(str(limit_price))
+        else:avg=Decimal(str(data.get('avg_price') or data.get('price') or limit_price))
+        self.journal.set(key,'FILLED',str(data.get('uuid') or ''),str(ex),str(avg),'UPBIT_FOK_FULL')
+        return {'qty':float(ex),'price':float(avg),'order_id':str(data.get('uuid') or '')}
+
+class KiwoomBroker:
+    REST='https://api.kiwoom.com'
+    def __init__(self,key,secret,journal,tracker=None):
+        self.key=key or '';self.secret=secret or '';self.journal=journal;self.tracker=tracker;self.token='';self.exp=0;self.lock=threading.RLock()
+        import requests
+        self.s=requests.Session()
+    def ready(self):return bool(self.key and self.secret)
+    def access_token(self):
+        with self.lock:
+            if self.token and time.time()<self.exp-120:return self.token
+            r=self.s.post(self.REST+'/oauth2/token',json={'grant_type':'client_credentials','appkey':self.key,'secretkey':self.secret},timeout=4);r.raise_for_status();d=r.json()
+            if not d.get('token') or str(d.get('return_code',0)) not in ('0','None'):raise LiveOrderError('KIWOOM_TOKEN:'+str(d.get('return_msg') or ''))
+            self.token=str(d['token']);self.exp=time.time()+22*3600;return self.token
+    def _post(self,api_id,path,body,timeout=4):
+        token=self.access_token();r=self.s.post(self.REST+path,json=body,headers={'authorization':'Bearer '+token,'api-id':api_id,'Content-Type':'application/json;charset=UTF-8','Accept':'application/json'},timeout=timeout)
+        d=r.json() if r.content else {};return r,d
+    def _find_fill(self,ord_no,code,side,qty):
+        body={'ord_dt':datetime.now().strftime('%Y%m%d'),'stk_bond_tp':'1','mrkt_tp':'0','sell_tp':'2' if side=='BUY' else '1','qry_tp':'1','stk_cd':code,'fr_ord_no':'','dmst_stex_tp':'%'}
+        for _ in range(14):
+            try:
+                r,d=self._post('kt00009','/api/dostk/acnt',body,3)
+                rows=d.get('acnt_ord_cntr_prst_array') or []
