@@ -303,9 +303,9 @@ public final class UnifiedVisualActivity extends Activity {
         TextView srvTitle=text("폰 원장 · PC 동기화",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
         LinearLayout tools=card();
         JSONObject hubPub=copyCache().optJSONObject("hub_publish");
-        int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);
-        String hubMsg=failed==0&&okPub>0?"폰 원장 → Phone Hub 동기화 정상":failed>0?"Phone Hub 동기화 실패 · PC 원장 조회에 반영되지 않음":"Phone Hub 동기화 준비 중";
-        TextView hubState=text(hubMsg,10);hubState.setTextColor(failed>0?Color.rgb(255,119,133):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));hubState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(hubState);
+        int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);int preserved=hubPub==null?0:hubPub.optInt("preserved",0);
+        String hubMsg=preserved>0?"기존 Hub 원장 "+preserved+"개 보존 · 새 빈 원장으로 덮어쓰기 차단":failed==0&&okPub>0?"폰 원장 → Phone Hub 동기화 정상":failed>0?"Phone Hub 동기화 실패 · PC 원장 조회에 반영되지 않음":"Phone Hub 동기화 준비 중";
+        TextView hubState=text(hubMsg,11);hubState.setTextColor(failed>0?Color.rgb(255,119,133):preserved>0?Color.rgb(255,194,91):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));hubState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(hubState);
         if(failed>0){TextView he=text(hubPub.optString("last_error",""),9);he.setTextColor(Color.rgb(180,151,158));he.setPadding(dp(2),0,dp(2),dp(8));tools.addView(he);}
         tools.addView(button("폰 서버 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
@@ -412,7 +412,9 @@ public final class UnifiedVisualActivity extends Activity {
                     android.content.SharedPreferences hp=getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE);
                     packet.put("hub_publish",new JSONObject()
                         .put("at",hp.getLong("at",0L)).put("ok",hp.getInt("ok",0))
-                        .put("failed",hp.getInt("failed",0)).put("last_error",hp.getString("last_error","")));
+                        .put("failed",hp.getInt("failed",0)).put("preserved",hp.getInt("preserved",0))
+                        .put("legacy_preserved",hp.getBoolean("legacy_preserved",false))
+                        .put("last_error",hp.getString("last_error","")));
                 }catch(Exception e){packet.put("hub_publish",new JSONObject());}
                 packet.put("records",records);packet.put("loaded_at",System.currentTimeMillis());
             }catch(Exception e){try{packet.put("refresh_error",e.getClass().getSimpleName()+": "+e.getMessage());}catch(Exception ignored){}}
