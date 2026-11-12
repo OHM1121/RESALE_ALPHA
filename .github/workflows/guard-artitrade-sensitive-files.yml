@@ -1,11 +1,14 @@
 name: Reject ARTITRADE sensitive file paths
 on:
+  workflow_dispatch:
   push:
+    branches: [ main ]
     paths:
       - '.gitignore'
       - 'ARTITRADE_ANDROID/**'
       - '.github/workflows/guard-artitrade-sensitive-files.yml'
   pull_request:
+    branches: [ main ]
     paths:
       - '.gitignore'
       - 'ARTITRADE_ANDROID/**'
