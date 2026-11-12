@@ -99,6 +99,7 @@
       <button class="action-card" data-act="pair">⌁ &nbsp; 폰 서버 연결</button>
       <button class="action-card" data-act="status">◉ &nbsp; 서버 상태</button>
       <button class="action-card" data-act="records">▤ &nbsp; 동기화 원장</button>
+      <button class="action-card" data-act="control">◎ &nbsp; PC / 폰 / 정지</button>
       <button class="action-card" data-act="cloud">☁ &nbsp; 별도 서버</button>
       <button class="action-card" data-act="logs">⇩ &nbsp; 오류 기록</button>
       <button class="action-card" data-act="refresh">↻ &nbsp; 새로고침</button>
@@ -161,10 +162,10 @@ function statusOf(){return state.status && state.status.ok ? state.status : null
 function currentMode(){
  var s=statusOf();var o=s?s[state.market]:null;
  if(!o || !o.ok)return '—';
+ if(o.lease_active && o.active_device==='pc')return 'PC 실행';
+ if(o.lease_active && o.active_device==='phone')return '폰 실행';
  if(o.desired==='off')return '정지';
- if(o.desired==='pc')return 'PC';
- if(o.desired==='phone')return '폰';
- return '—';
+ return '대기';
 }
 function strategyKey(label){return state.market==='stock'?(label==='AT'?'at':'cw'):(label==='B'?'general':'ma');}
 function buildStrategies(targetId){
