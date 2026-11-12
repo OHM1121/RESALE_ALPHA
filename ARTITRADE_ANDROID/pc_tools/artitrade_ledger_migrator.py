@@ -94,8 +94,8 @@ def source_map() -> dict[str, tuple[Path, bool]]:
         "stock/ARTITRADE_D.sqlite3": (sr / "ARTITRADE_D.sqlite3", True),
         "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3": (sr / "STOCK_MA_ENGINE_V1" / "ma_paper.sqlite3", True),
         "stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3": (sr / "AT_CLOSE_PAPER.sqlite3", True),
-        "stock/PROJECTGMO_V1.0_research.sqlite3": (sr / "PROJECTGMO_V1.0_research.sqlite3", True),
-        "stock/PROJECTGMO_V1.0_account_state.json": (sr / "PROJECTGMO_V1.0_account_state.json", False),
+        "stock/gmo/PROJECTGMO_V1.0_research.sqlite3": (sr / "PROJECTGMO_V1.0_research.sqlite3", True),
+        "stock/gmo/PROJECTGMO_V1.0_account_state.json": (sr / "PROJECTGMO_V1.0_account_state.json", False),
         "coin/base/upbit_paper.sqlite3": (cr / "upbit_paper.sqlite3", True),
         "coin/ma/upbit_paper.sqlite3": (cr / "MA_ENGINE_V1" / "upbit_paper.sqlite3", True),
     }
