@@ -6,6 +6,7 @@ seed and 4 maximum holdings for every strategy account.
 """
 from __future__ import annotations
 import json, os
+from datetime import datetime, timezone, timedelta
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,6 +16,9 @@ FRAMES=('5m','30m','60m','day')
 DEFAULT_SEED=2_000_000
 DEFAULT_MAX=4
 STRATEGIES={'stock':('at','ma','close','gmo'),'coin':('general','ma')}
+
+def _now_kst():
+    return datetime.now(timezone(timedelta(hours=9))).isoformat(timespec='seconds')
 
 
 def _defaults():
@@ -58,19 +62,41 @@ def _save(rt,data):
 def _apply_at(rt,cfg):
     import d_v19_portfolio as v19
     seed=int(cfg['seed']);maxp=int(cfg['max_positions'])
-    v19.SEED=seed;v19.MAX_POSITIONS=maxp;v19.MAX_SYMBOL_WON=max(10_000,seed//maxp)
+    # Latest EXE keeps v19_accounts.seed physically fixed at 2m with a CHECK.
+    # User operating capital is tracked separately in v19_seed_allocations and
+    # applied as a cash delta. Strategy thresholds/state transitions are untouched.
+    v19.MAX_POSITIONS=maxp
+    v19.MAX_POSITIONS_BY_TF={f:maxp for f in FRAMES}
+    per_symbol=max(10_000,seed//maxp)
+    v19.MAX_SYMBOL_WON=per_symbol
+    v19.MAX_SYMBOL_WON_BY_TF={f:per_symbol for f in FRAMES}
     store=rt.stock_runner.store
     with store.lock,store.connect() as c:
         tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if 'v19_accounts' not in tables:return {'applied':True,'wallet':'engine_constants_only'}
-        rows=c.execute('SELECT tf,cash,seed FROM v19_accounts').fetchall()
+        if 'v19_accounts' not in tables:return {'applied':True,'wallet':'engine_constants_only','per_symbol_limit':per_symbol}
+        c.execute('''CREATE TABLE IF NOT EXISTS v19_seed_allocations(
+           tf TEXT PRIMARY KEY,target_seed INTEGER NOT NULL,changed_at TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS v19_seed_adjustment_audit(
+           id INTEGER PRIMARY KEY AUTOINCREMENT,tf TEXT NOT NULL,at TEXT NOT NULL,
+           before_seed INTEGER NOT NULL,after_seed INTEGER NOT NULL,delta INTEGER NOT NULL,
+           cash_before INTEGER NOT NULL,cash_after INTEGER NOT NULL,reason TEXT NOT NULL)''')
+        rows=c.execute('SELECT tf,cash FROM v19_accounts').fetchall()
+        changes=[]
         for r in rows:
-            old=int(r['seed']);cash=int(r['cash']);new_cash=cash+(seed-old)
-            if new_cash<0:raise ValueError(str(r['tf'])+' 계좌 잔여현금 부족: 시드 감소 불가')
-        for r in rows:
-            old=int(r['seed']);new_cash=int(r['cash'])+(seed-old)
-            c.execute('UPDATE v19_accounts SET seed=?,cash=? WHERE tf=?',(seed,new_cash,r['tf']))
-    return {'applied':True,'per_symbol_limit':max(10_000,seed//maxp)}
+            old=c.execute('SELECT target_seed FROM v19_seed_allocations WHERE tf=?',(r['tf'],)).fetchone()
+            prev=int(old[0]) if old else DEFAULT_SEED
+            before=int(r['cash']);delta=seed-prev;after=before+delta
+            if after<0:raise ValueError(str(r['tf'])+' 계좌 잔여현금 부족: 시드 감소 불가')
+            changes.append((r['tf'],prev,before,delta,after))
+        now=_now_kst()
+        for tf,prev,before,delta,after in changes:
+            if delta:
+                c.execute('UPDATE v19_accounts SET cash=?,last_update=? WHERE tf=?',(after,now,tf))
+                c.execute('INSERT INTO v19_seed_adjustment_audit(tf,at,before_seed,after_seed,delta,cash_before,cash_after,reason) VALUES(?,?,?,?,?,?,?,?)',
+                          (tf,now,prev,seed,delta,before,after,'ANDROID_USER_SEED_CHANGE'))
+            c.execute('INSERT INTO v19_seed_allocations(tf,target_seed,changed_at) VALUES(?,?,?) ON CONFLICT(tf) DO UPDATE SET target_seed=excluded.target_seed,changed_at=excluded.changed_at',
+                      (tf,seed,now))
+    return {'applied':True,'per_symbol_limit':per_symbol}
 
 
 def _apply_stock_ma(rt,cfg):
