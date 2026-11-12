@@ -23,9 +23,11 @@ import java.security.MessageDigest;
 final class SyncStore extends SQLiteOpenHelper {
     private final SecureBox box;
     private final Context context;
-    private static final long MIGRATION_MAX_BYTES=250L*1024L*1024L;
+    private static final long MIGRATION_MAX_BYTES=4L*1024L*1024L*1024L;
+    private static final int MIGRATION_MAX_CHUNKS=5000;
+    private static final long MIN_FREE_AFTER_UPLOAD=128L*1024L*1024L;
     private static final int RECORD_MAX_BYTES=32*1024*1024;
-    private static final int MIGRATION_UPLOAD_CHUNK_MAX=350000;
+    private static final int MIGRATION_UPLOAD_CHUNK_MAX=1_000_000;
     private static final int MIGRATION_READ_CHUNK=240000;
     private static final long LEASE_MS=30000;
     SyncStore(Context context,SecureBox box){
@@ -242,61 +244,108 @@ final class SyncStore extends SQLiteOpenHelper {
         if(f.isDirectory()){File[] xs=f.listFiles();if(xs!=null)for(File x:xs)deleteTree(x);}
         if(!f.delete()&&f.exists())throw new IllegalStateException("Cannot clear migration staging");
     }
+    private File migrationUpload(){return new File(migrationDir(),"pc_ledger_upload.tmp");}
     synchronized JSONObject migrationBegin(String session,int totalChunks,long totalBytes,String archiveSha,JSONObject source){
-        if(!validSession(session)||totalChunks<1||totalChunks>2000||totalBytes<1||totalBytes>MIGRATION_MAX_BYTES||
-           archiveSha==null||!archiveSha.matches("[0-9a-fA-F]{64}"))
-            return obj("ok",false,"error","invalid_migration_manifest");
-        File dir=migrationDir();File[] old=dir.listFiles();if(old!=null)for(File x:old)deleteTree(x);
+        int chunkBytes=source==null?300000:source.optInt("chunk_bytes",300000);
+        long requiredParts=chunkBytes>0?(totalBytes+(long)chunkBytes-1)/chunkBytes:0L;
+        if(!validSession(session)||totalChunks<1||totalChunks>MIGRATION_MAX_CHUNKS||
+           totalBytes<1||totalBytes>MIGRATION_MAX_BYTES||chunkBytes<1||chunkBytes>MIGRATION_UPLOAD_CHUNK_MAX||
+           requiredParts!=totalChunks||archiveSha==null||!archiveSha.matches("[0-9a-fA-F]{64}"))
+            return obj("ok",false,"error","invalid_migration_manifest","max_bytes",MIGRATION_MAX_BYTES,
+                "max_chunks",MIGRATION_MAX_CHUNKS);
+        // Never erase a fully received archive that the phone has not imported.
+        JSONObject existing=readMigrationMeta();
+        if(existing.optBoolean("ready",false)&&migrationArchive().isFile())
+            return obj("ok",false,"error","previous_migration_pending",
+                "message","Phone must consume pending migration before a new upload.");
+        File dir=migrationDir();
+        long free=new android.os.StatFs(dir.getAbsolutePath()).getAvailableBytes();
+        if(free<totalBytes+MIN_FREE_AFTER_UPLOAD)
+            return obj("ok",false,"error","not_enough_phone_storage",
+                "required_bytes",totalBytes+MIN_FREE_AFTER_UPLOAD,"available_bytes",free);
+        File[] old=dir.listFiles();
+        if(old!=null)for(File x:old)deleteTree(x);
         JSONObject meta=obj("session",session,"total_chunks",totalChunks,"total_bytes",totalBytes,
-            "archive_sha256",archiveSha.toLowerCase(java.util.Locale.ROOT),"received",0,"ready",false,
-            "created_at",System.currentTimeMillis(),"source",source==null?new JSONObject():source);
+            "chunk_bytes",chunkBytes,"archive_sha256",archiveSha.toLowerCase(java.util.Locale.ROOT),
+            "received",0,"ready",false,"created_at",System.currentTimeMillis(),
+            "source",source==null?new JSONObject():source);
         writeMigrationMeta(meta);
-        return obj("ok",true,"session",session,"total_chunks",totalChunks);
+        return obj("ok",true,"session",session,"total_chunks",totalChunks,"chunk_bytes",chunkBytes);
     }
     synchronized JSONObject migrationPutChunk(String session,int index,String dataB64,String chunkSha){
         JSONObject meta=readMigrationMeta();
-        if(!validSession(session)||!session.equals(meta.optString("session"))||index<0||index>=meta.optInt("total_chunks",-1)||
-           dataB64==null||dataB64.length()>520000||chunkSha==null||!chunkSha.matches("[0-9a-fA-F]{64}"))
+        int total=meta.optInt("total_chunks",-1), next=meta.optInt("received",0);
+        int chunkBytes=meta.optInt("chunk_bytes",300000);
+        if(!validSession(session)||!session.equals(meta.optString("session"))||
+            meta.optBoolean("ready")||index<0||index>=total||chunkBytes<1||
+            dataB64==null||dataB64.length()>1_400_000||chunkSha==null||
+            !chunkSha.matches("[0-9a-fA-F]{64}"))
             return obj("ok",false,"error","invalid_migration_chunk");
         byte[] data;
-        try{data=Base64.decode(dataB64,Base64.DEFAULT);}catch(Exception e){return obj("ok",false,"error","invalid_chunk_base64");}
-        if(data.length<1||data.length>MIGRATION_UPLOAD_CHUNK_MAX)return obj("ok",false,"error","migration_chunk_too_large");
-        if(!sha256(data).equalsIgnoreCase(chunkSha))return obj("ok",false,"error","migration_chunk_hash_mismatch");
-        File part=new File(migrationDir(),String.format(java.util.Locale.ROOT,"part_%05d.bin",index));
-        try(FileOutputStream out=new FileOutputStream(part,false)){out.write(data);out.flush();out.getFD().sync();}
-        catch(Exception e){throw new IllegalStateException("Cannot store migration chunk",e);}
-        int received=0;for(int i=0;i<meta.optInt("total_chunks",0);i++)if(new File(migrationDir(),String.format(java.util.Locale.ROOT,"part_%05d.bin",i)).isFile())received++;
-        try{meta.put("received",received).put("updated_at",System.currentTimeMillis());}catch(Exception e){throw new IllegalStateException(e);}
+        try{data=Base64.decode(dataB64,Base64.DEFAULT);}
+        catch(Exception e){return obj("ok",false,"error","invalid_chunk_base64");}
+        long offset=(long)index*chunkBytes;
+        long remaining=meta.optLong("total_bytes",-1)-offset;
+        int expected=(int)Math.min(chunkBytes,remaining);
+        if(expected<=0||data.length!=expected||data.length>MIGRATION_UPLOAD_CHUNK_MAX)
+            return obj("ok",false,"error","invalid_migration_chunk_size",
+                "expected_bytes",expected,"got_bytes",data.length);
+        if(!sha256(data).equalsIgnoreCase(chunkSha))
+            return obj("ok",false,"error","migration_chunk_hash_mismatch");
+        if(index>next)
+            return obj("ok",false,"error","migration_out_of_order","expected_index",next);
+        try(RandomAccessFile file=new RandomAccessFile(migrationUpload(),"rw")){
+            if(index<next){
+                if(file.length()<offset+data.length)
+                    return obj("ok",false,"error","migration_chunk_missing_on_disk");
+                byte[] existing=new byte[data.length];
+                file.seek(offset);file.readFully(existing);
+                if(!sha256(existing).equalsIgnoreCase(chunkSha))
+                    return obj("ok",false,"error","migration_chunk_conflict");
+                return obj("ok",true,"received",next,"total_chunks",total,"duplicate",true);
+            }
+            if(file.length()<offset)
+                return obj("ok",false,"error","migration_stream_gap");
+            if(file.length()!=offset)file.setLength(offset);
+            file.seek(offset);file.write(data);file.getFD().sync();
+        }catch(Exception e){throw new IllegalStateException("Cannot store migration chunk",e);}
+        try{meta.put("received",index+1).put("updated_at",System.currentTimeMillis());}
+        catch(Exception e){throw new IllegalStateException(e);}
         writeMigrationMeta(meta);
-        return obj("ok",true,"received",received,"total_chunks",meta.optInt("total_chunks"));
+        return obj("ok",true,"received",index+1,"total_chunks",total);
     }
     synchronized JSONObject migrationCommit(String session){
         JSONObject meta=readMigrationMeta();
-        if(!validSession(session)||!session.equals(meta.optString("session")))return obj("ok",false,"error","invalid_migration_session");
-        int total=meta.optInt("total_chunks",0);
-        File tmp=new File(migrationDir(),"pc_ledger_import.zip.tmp"),target=migrationArchive();
-        long bytes=0;
-        try(FileOutputStream out=new FileOutputStream(tmp,false)){
-            byte[] buf=new byte[65536];
-            for(int i=0;i<total;i++){
-                File part=new File(migrationDir(),String.format(java.util.Locale.ROOT,"part_%05d.bin",i));
-                if(!part.isFile())return obj("ok",false,"error","migration_chunks_missing","index",i);
-                try(FileInputStream in=new FileInputStream(part)){int n;while((n=in.read(buf))!=-1){out.write(buf,0,n);bytes+=n;}}
-            }
-            out.flush();out.getFD().sync();
-        }catch(Exception e){throw new IllegalStateException("Cannot assemble migration archive",e);}
-        if(bytes!=meta.optLong("total_bytes",-1)){tmp.delete();return obj("ok",false,"error","migration_size_mismatch","bytes",bytes);}
+        if(!validSession(session)||!session.equals(meta.optString("session")))
+            return obj("ok",false,"error","invalid_migration_session");
+        if(meta.optBoolean("ready")&&migrationArchive().isFile())
+            return obj("ok",true,"ready",true,"duplicate",true,"total_bytes",
+                meta.optLong("total_bytes",0),"archive_sha256",meta.optString("archive_sha256"));
+        int total=meta.optInt("total_chunks",0),received=meta.optInt("received",0);
+        if(total<1||received!=total)
+            return obj("ok",false,"error","migration_chunks_missing","received",received,"total",total);
+        File tmp=migrationUpload(),target=migrationArchive();
+        long bytes=tmp.isFile()?tmp.length():0L;
+        if(bytes!=meta.optLong("total_bytes",-1))
+            return obj("ok",false,"error","migration_size_mismatch",
+                "bytes",bytes,"expected_bytes",meta.optLong("total_bytes",-1));
         String got;
-        try{got=sha256File(tmp);}catch(Exception e){tmp.delete();throw new IllegalStateException(e);}
-        if(!got.equalsIgnoreCase(meta.optString("archive_sha256"))){tmp.delete();return obj("ok",false,"error","migration_archive_hash_mismatch");}
-        if(target.exists()&&!target.delete())throw new IllegalStateException("Cannot replace migration archive");
-        if(!tmp.renameTo(target))throw new IllegalStateException("Cannot commit migration archive");
-        for(int i=0;i<total;i++)new File(migrationDir(),String.format(java.util.Locale.ROOT,"part_%05d.bin",i)).delete();
+        try{got=sha256File(tmp);}
+        catch(Exception e){throw new IllegalStateException("Cannot verify migration archive",e);}
+        if(!got.equalsIgnoreCase(meta.optString("archive_sha256")))
+            return obj("ok",false,"error","migration_archive_hash_mismatch");
+        try{
+            java.nio.file.Files.move(tmp.toPath(),target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        }catch(Exception e){throw new IllegalStateException("Cannot commit migration archive",e);}
         int readChunks=(int)((bytes+MIGRATION_READ_CHUNK-1)/MIGRATION_READ_CHUNK);
-        try{meta.put("ready",true).put("read_chunk_bytes",MIGRATION_READ_CHUNK).put("read_chunks",readChunks)
-            .put("committed_at",System.currentTimeMillis());}catch(Exception e){throw new IllegalStateException(e);}
+        try{meta.put("ready",true).put("read_chunk_bytes",MIGRATION_READ_CHUNK)
+                .put("read_chunks",readChunks).put("committed_at",System.currentTimeMillis());}
+        catch(Exception e){throw new IllegalStateException(e);}
         writeMigrationMeta(meta);
-        return obj("ok",true,"ready",true,"archive_sha256",got,"total_bytes",bytes,"read_chunks",readChunks);
+        return obj("ok",true,"ready",true,"archive_sha256",got,
+            "total_bytes",bytes,"read_chunks",readChunks);
     }
     synchronized JSONObject migrationStatus(){
         JSONObject meta=readMigrationMeta();
