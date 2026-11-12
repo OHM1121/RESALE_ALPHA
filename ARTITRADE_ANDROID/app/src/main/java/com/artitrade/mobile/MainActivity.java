@@ -93,8 +93,14 @@ public final class MainActivity extends Activity {
         }
         setContentView(root);
         if (Build.VERSION.SDK_INT >= 30) root.requestApplyInsets();
-        if ("hub".equals(BuildConfig.MARKET)) showHub();
-        else showModernDashboard();
+        if ("hub".equals(BuildConfig.MARKET)) {
+            try{
+                Intent server=new Intent(this,HubService.class);
+                server.setAction(HubService.START);
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(server);else startService(server);
+            }catch(Exception ignored){}
+            new Handler(getMainLooper()).postDelayed(this::showHub,350);
+        } else showModernDashboard();
     }
 
     private int dp(float value) { return (int)(value * getResources().getDisplayMetrics().density + 0.5f); }
