@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ARTITRADE one-time Windows EXE ledger -> S21+ Phone Hub migration.
+# ARTITRADE one-time Windows EXE ledger -> S21+ MSERVER migration.
 # Standard library only. SQLite files are copied with sqlite3.backup for consistency.
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def sha256_bytes(data: bytes) -> str:
 def validated_url(raw: str) -> str:
     parsed = urllib.parse.urlsplit((raw or "").strip().rstrip("/"))
     if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password:
-        raise ValueError("Phone Hub 주소는 http://100.x.y.z:8765 형식이어야 합니다.")
+        raise ValueError("MSERVER 주소는 http://100.x.y.z:8765 형식이어야 합니다.")
     try:
         addr = ipaddress.ip_address(parsed.hostname)
     except ValueError as exc:
@@ -226,7 +226,7 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
         },
     })
     if not begin.get("ok"):
-        raise RuntimeError("Phone Hub begin 실패: " + json.dumps(begin, ensure_ascii=False))
+        raise RuntimeError("MSERVER begin 실패: " + json.dumps(begin, ensure_ascii=False))
 
     with archive.open("rb") as f:
         for index in range(total_chunks):
@@ -238,12 +238,12 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
                 "sha256": sha256_bytes(data),
             }, timeout=30)
             if not result.get("ok"):
-                raise RuntimeError(f"Phone Hub chunk {index} 실패: " + json.dumps(result, ensure_ascii=False))
+                raise RuntimeError(f"MSERVER chunk {index} 실패: " + json.dumps(result, ensure_ascii=False))
             progress(f"폰 전송 {index+1}/{total_chunks}")
 
     commit = request(base, token, "POST", "/v1/migration/commit", {"session": session}, timeout=30)
     if not commit.get("ok"):
-        raise RuntimeError("Phone Hub commit 실패: " + json.dumps(commit, ensure_ascii=False))
+        raise RuntimeError("MSERVER commit 실패: " + json.dumps(commit, ensure_ascii=False))
     commit["session"] = session
     return commit
 
@@ -264,7 +264,7 @@ def summary_text(manifest: dict) -> str:
 def migrate(base: str, token: str, progress=lambda msg: None) -> tuple[dict, dict]:
     token = (token or "").strip()
     if len(token) != 64:
-        raise ValueError("Phone Hub 연결 토큰은 64자리여야 합니다.")
+        raise ValueError("MSERVER 연결 토큰은 64자리여야 합니다.")
     archive, manifest = build_archive(progress)
     try:
         progress(summary_text(manifest))
@@ -292,7 +292,7 @@ def run_gui():
     frm.pack(fill="both", expand=True)
 
     ttk.Label(frm, text="ARTITRADE 기존 EXE 원장 승계", font=("Malgun Gothic", 17, "bold")).pack(anchor="w")
-    ttk.Label(frm, text="최신 주식/코인 EXE의 SQLite · GMO 상태를 읽기 전용 스냅샷으로 만들어 Phone Hub에 전송합니다.").pack(anchor="w", pady=(4, 14))
+    ttk.Label(frm, text="최신 주식/코인 EXE의 SQLite · GMO 상태를 읽기 전용 스냅샷으로 만들어 MSERVER에 전송합니다.").pack(anchor="w", pady=(4, 14))
 
     roots = ttk.LabelFrame(frm, text="자동 탐색 결과", padding=10)
     roots.pack(fill="x")
@@ -303,7 +303,7 @@ def run_gui():
     source_var.set("\n".join(found + missing))
     ttk.Label(roots, textvariable=source_var, justify="left").pack(anchor="w")
 
-    conn = ttk.LabelFrame(frm, text="S21+ Phone Hub", padding=10)
+    conn = ttk.LabelFrame(frm, text="S21+ MSERVER", padding=10)
     conn.pack(fill="x", pady=(12, 0))
     row = ttk.Frame(conn); row.pack(fill="x")
     ttk.Label(row, text="Tailscale 주소", width=16).pack(side="left")
@@ -335,7 +335,7 @@ def run_gui():
                 log("완료 SHA256: " + manifest["archive_sha256"])
                 root.after(0, lambda: messagebox.showinfo(
                     "승계 전송 완료",
-                    "기존 EXE 원장을 Phone Hub에 안전하게 전송했습니다.\n\n"
+                    "기존 EXE 원장을 MSERVER에 안전하게 전송했습니다.\n\n"
                     "이제 S21+ ARTITRADE 앱을 완전히 종료 후 다시 실행하십시오.\n"
                     "앱 시작 전에 기존 체결·보유·대기·연구 DB가 자동 승계됩니다."
                 ))
@@ -348,12 +348,12 @@ def run_gui():
 
     btn = ttk.Button(frm, text="기존 EXE 원장을 S21+로 승계", command=start)
     btn.pack(fill="x", ipady=7)
-    ttk.Label(frm, text="원본 EXE 원장은 읽기만 하며 수정하지 않습니다. Phone Hub는 Tailscale 사설망에서만 전송을 허용합니다.").pack(anchor="w", pady=(8, 0))
+    ttk.Label(frm, text="원본 EXE 원장은 읽기만 하며 수정하지 않습니다. MSERVER는 Tailscale 사설망에서만 전송을 허용합니다.").pack(anchor="w", pady=(8, 0))
     root.mainloop()
 
 
 def cli():
-    ap = argparse.ArgumentParser(description="ARTITRADE PC ledger -> S21+ Phone Hub migration")
+    ap = argparse.ArgumentParser(description="ARTITRADE PC ledger -> S21+ MSERVER migration")
     ap.add_argument("--url", default=os.getenv("ARTITRADE_HUB_URL", ""))
     ap.add_argument("--token", default=os.getenv("ARTITRADE_HUB_TOKEN", ""))
     ap.add_argument("--no-gui", action="store_true")
@@ -364,7 +364,7 @@ def cli():
     if not args.url or not args.token:
         ap.error("--url and --token (or env vars) are required with --no-gui")
     manifest, result = migrate(args.url, args.token, print)
-    print(json.dumps({"manifest": manifest, "phone_hub": result}, ensure_ascii=False, indent=2))
+    print(json.dumps({"manifest": manifest, "mserver": result}, ensure_ascii=False, indent=2))
     return 0
 
 
