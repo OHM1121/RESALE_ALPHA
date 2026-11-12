@@ -317,15 +317,15 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout tools=card();
         JSONObject hubPub=copyCache().optJSONObject("hub_publish");
         int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);int preserved=hubPub==null?0:hubPub.optInt("preserved",0);
-        String hubMsg=preserved>0?"기존 Hub 원장 "+preserved+"개 보존 · 새 빈 원장으로 덮어쓰기 차단":failed==0&&okPub>0?"폰 원장 → Phone Hub 동기화 정상":failed>0?"Phone Hub 동기화 실패 · PC 원장 조회에 반영되지 않음":"Phone Hub 동기화 준비 중";
-        TextView hubState=text(hubMsg,11);hubState.setTextColor(failed>0?Color.rgb(255,119,133):preserved>0?Color.rgb(255,194,91):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));hubState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(hubState);
+        String mserverMsg=preserved>0?"기존 MSERVER 원장 "+preserved+"개 보존 · 새 빈 원장으로 덮어쓰기 차단":failed==0&&okPub>0?"폰 원장 → MSERVER 동기화 정상":failed>0?"MSERVER 동기화 실패 · PC 원장 조회에 반영되지 않음":"MSERVER 동기화 준비 중";
+        TextView mserverState=text(mserverMsg,11);mserverState.setTextColor(failed>0?Color.rgb(255,119,133):preserved>0?Color.rgb(255,194,91):okPub>0?Color.rgb(86,214,170):Color.rgb(147,160,185));mserverState.setPadding(dp(2),0,dp(2),dp(8));tools.addView(mserverState);
         if(failed>0){TextView he=text(hubPub.optString("last_error",""),9);he.setTextColor(Color.rgb(180,151,158));he.setPadding(dp(2),0,dp(2),dp(8));tools.addView(he);}
         JSONObject pairState=copyCache().optJSONObject("hub_pairing");
         if(pairState!=null){
             String ps=pairState.optBoolean("saved",false)?"연결 토큰 기기 저장됨 · "+pairState.optString("masked",""):"연결 토큰 미저장";
             TextView pst=text(ps,11);pst.setTextColor(pairState.optBoolean("saved",false)?Color.rgb(86,214,170):Color.rgb(255,176,92));pst.setPadding(dp(2),0,dp(2),dp(8));tools.addView(pst);
         }
-        tools.addView(button("폰 서버 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
+        tools.addView(button("MSERVER(모바일 서버) 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(40));rp.setMargins(0,dp(7),0,0);tools.addView(button("실시간 엔진 재연결",false,this::restartFeeds),rp);panel.addView(tools);
 
@@ -1156,7 +1156,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void renderMore(){
         TextView h=text("도구",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
         LinearLayout c=card();c.addView(text("키움 · 업비트 API",13));Button api=button("직접 API 키 설정",true,this::apiSettings);LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(42));ap.setMargins(0,dp(8),0,0);c.addView(api,ap);content.addView(c);
-        LinearLayout p=card();p.addView(text("폰 서버",13));Button pair=button("연결 토큰 등록",true,this::pair);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(42));pp.setMargins(0,dp(8),0,0);p.addView(pair,pp);LinearLayout.LayoutParams pc=new LinearLayout.LayoutParams(-1,-2);pc.setMargins(0,dp(8),0,0);content.addView(p,pc);
+        LinearLayout p=card();p.addView(text("MSERVER(모바일 서버)",13));Button pair=button("연결 토큰 등록",true,this::pair);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(42));pp.setMargins(0,dp(8),0,0);p.addView(pair,pp);LinearLayout.LayoutParams pc=new LinearLayout.LayoutParams(-1,-2);pc.setMargins(0,dp(8),0,0);content.addView(p,pc);
         LinearLayout b=card();b.addView(text("백그라운드",13));Button bat=button("절전 예외 설정 열기",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}});LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(42));bp.setMargins(0,dp(8),0,0);b.addView(bat,bp);LinearLayout.LayoutParams bc=new LinearLayout.LayoutParams(-1,-2);bc.setMargins(0,dp(8),0,0);content.addView(b,bc);
     }
 
@@ -1216,8 +1216,52 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void pair(){
-        EditText input=new EditText(this);input.setSingleLine(true);input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);input.setHint("폰 서버 64자리 연결 토큰");
-        new AlertDialog.Builder(this).setTitle("폰 서버 연결").setView(input).setNegativeButton("취소",null).setPositiveButton("저장",(d,w)->{try{new LocalHubClient(this).storePairingToken(input.getText().toString().trim());refresh(false);}catch(Exception e){new AlertDialog.Builder(this).setMessage("64자리 연결 토큰을 확인하십시오.").setPositiveButton("확인",null).show();}}).show();
+        EditText input=new EditText(this);
+        input.setSingleLine(true);
+        input.setTextSize(14);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setHint("MSERVER 64자리 연결 토큰");
+        new AlertDialog.Builder(this)
+            .setTitle("MSERVER(모바일 서버) 연결")
+            .setMessage("MSERVER 앱의 '연결 토큰 보기'에 표시된 64자리 값을 입력하십시오. 저장 직후 실제 인증까지 확인합니다.")
+            .setView(input).setNegativeButton("취소",null)
+            .setPositiveButton("저장 및 인증",(d,w)->{
+                String raw=input.getText().toString().trim();
+                try{
+                    LocalHubClient client=new LocalHubClient(this);
+                    client.storePairingToken(raw);
+                    io.execute(()->{
+                        try{
+                            JSONObject status=client.status();
+                            boolean ok=status.optBoolean("ok",false);
+                            String error=status.optString("error","");
+                            int http=status.optInt("http_status",200);
+                            main.post(()->{
+                                refresh(false);
+                                if(ok){
+                                    new AlertDialog.Builder(this).setTitle("MSERVER 인증 정상")
+                                        .setMessage("토큰 저장 및 인증이 완료되었습니다.\n이 값은 기기 로컬 보안저장소에 유지됩니다.")
+                                        .setPositiveButton("확인",null).show();
+                                }else{
+                                    String msg=("unauthorized".equals(error)||http==401)
+                                        ?"토큰 불일치입니다. 현재 실행 중인 MSERVER의 새 64자리 토큰을 다시 확인하십시오."
+                                        :"MSERVER 응답 오류: "+(error.isEmpty()?"HTTP "+http:error);
+                                    new AlertDialog.Builder(this).setTitle("MSERVER 인증 실패")
+                                        .setMessage(msg).setPositiveButton("확인",null).show();
+                                }
+                            });
+                        }catch(Exception e){
+                            main.post(()->new AlertDialog.Builder(this).setTitle("MSERVER 연결 실패")
+                                .setMessage("MSERVER가 실행 중인지 확인하십시오.\n"+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()))
+                                .setPositiveButton("확인",null).show());
+                        }
+                    });
+                }catch(Exception e){
+                    new AlertDialog.Builder(this).setTitle("토큰 형식 확인")
+                        .setMessage("64자리 16진수 연결 토큰을 확인하십시오.")
+                        .setPositiveButton("확인",null).show();
+                }
+            }).show();
     }
 
     private void apiSettings(){
