@@ -379,7 +379,7 @@ public final class UnifiedVisualActivity extends Activity {
         if(!authOk&&("unauthorized".equals(authError)||authHttp==401))mserverMsg="MSERVER 인증 실패 · 연결 토큰 불일치";
         else if(!authOk&&authError.startsWith("UNREACHABLE:"))mserverMsg="MSERVER 연결 실패 · 모바일 서버 실행상태 확인";
         else if(syncProgress!=null&&syncProgress.optBoolean("complete",false))mserverMsg="폰 기준원장 → MSERVER 게시 완료";
-        else if(failed>0)mserverMsg="MSERVER 원장 게시 실패";
+        else if(failed>0)mserverMsg="MSERVER 원장 게시 실패 · "+failed+"건 (아래 원인 확인)";
         else mserverMsg="MSERVER 원장 게시 진행/대기";
         TextView mserverState=text(mserverMsg,12);
         boolean bad=!authOk||failed>0;
@@ -392,7 +392,11 @@ public final class UnifiedVisualActivity extends Activity {
         if(failed>0&&hubPub!=null){
             String detail=hubPub.optString("last_error","");
             String where=hubPub.optString("last_market","")+"/"+hubPub.optString("last_strategy","")+"/"+hubPub.optString("last_bucket","");
-            TextView he=text("게시 오류: "+detail+(where.equals("//")?"":" · "+where),10);he.setTextColor(Color.rgb(210,151,161));he.setPadding(dp(2),0,dp(2),dp(6));tools.addView(he);
+            String explanation=mserverErrorHelp(detail);
+            TextView he=text("게시 실패 위치: "+(where.equals("//")?"서버 인증 단계":where)+"\n"
+                +"원인: "+explanation+"\n"+"진단 코드: "+detail,12);
+            he.setTextColor(Color.rgb(255,163,172));he.setPadding(dp(2),dp(5),dp(2),dp(9));
+            he.setMaxLines(6);tools.addView(he);
         }
 
         JSONObject migState=snapshot.optJSONObject("pc_ledger_migration");
@@ -425,7 +429,9 @@ public final class UnifiedVisualActivity extends Activity {
             String ps=pairState.optBoolean("saved",false)?"연결 토큰 기기 저장됨 · "+pairState.optString("masked",""):"연결 토큰 미저장";
             TextView pst=text(ps,11);pst.setTextColor(pairState.optBoolean("saved",false)?Color.rgb(86,214,170):Color.rgb(255,176,92));pst.setPadding(dp(2),0,dp(2),dp(8));tools.addView(pst);
         }
-        tools.addView(button("MSERVER(모바일 서버) 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
+        tools.addView(button("MSERVER 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
+        LinearLayout.LayoutParams retryLp=new LinearLayout.LayoutParams(-1,dp(43));retryLp.setMargins(0,dp(7),0,0);
+        tools.addView(button("원장 다시 게시 · 연결 재확인",true,this::requestLedgerRepublish),retryLp);
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(40));rp.setMargins(0,dp(7),0,0);tools.addView(button("실시간 엔진 재연결",false,this::restartFeeds),rp);panel.addView(tools);
 
@@ -1599,6 +1605,35 @@ public final class UnifiedVisualActivity extends Activity {
         try{Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.SET_LIVE);i.putExtra("market",market);i.putExtra("enabled",enabled);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);main.postDelayed(()->refresh(false),1000);}catch(Throwable e){new RuntimeCrashStore(this).add("native_live_"+market,e);}
     }
 
+    private String mserverErrorHelp(String raw){
+        String e=(raw==null?"":raw).toLowerCase(Locale.ROOT);
+        if(e.contains("unauthorized")||e.contains("401"))return "연결 토큰이 MSERVER의 토큰과 다름";
+        if(e.contains("timeout")||e.contains("timed out"))return "암호화 원장 저장 응답시간 초과 (자동 재시도 대상)";
+        if(e.contains("data_too_large")||e.contains("too_large")||e.contains("413"))return "원장 자료가 서버 허용 용량을 초과함";
+        if(e.contains("server_storage_failed"))return "MSERVER 내부 저장 처리 실패 · 앱 오류이력 확인";
+        if(e.contains("connection refused")||e.contains("connectexception"))return "MSERVER가 꺼져 있거나 8765 포트에 연결되지 않음";
+        if(e.contains("revision_conflict"))return "원장 기록 버전 충돌 · 최신 버전 재확인 필요";
+        if(e.contains("invalid_key"))return "원장 항목 이름이 서버에서 허용되지 않음";
+        if(e.isEmpty())return "기존 실패 기록이 사라졌거나 원장 생성 대기 중";
+        return "원장 게시 중 예외 발생 · 진단 코드 확인";
+    }
+
+    private void requestLedgerRepublish(){
+        try{
+            Intent intent=new Intent(this,UnifiedTradingService.class);
+            intent.setAction(UnifiedTradingService.RETRY_SYNC);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
+            new AlertDialog.Builder(this).setTitle("원장 게시 재시도")
+                .setMessage("연결 및 인증을 다시 확인한 뒤 기존 주식·코인 원장을 순서대로 게시합니다.\n실거래 ON/OFF 설정과 주문에는 영향을 주지 않습니다.")
+                .setPositiveButton("확인",null).show();
+            main.postDelayed(()->refresh(false),2300);
+        }catch(Throwable e){
+            new RuntimeCrashStore(this).add("mserver_retry_ui",e);
+            new AlertDialog.Builder(this).setTitle("MSERVER 재시도 실패")
+                .setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
+        }
+    }
+
     private void pair(){
         EditText input=new EditText(this);
         input.setSingleLine(true);
@@ -1623,6 +1658,7 @@ public final class UnifiedVisualActivity extends Activity {
                             main.post(()->{
                                 refresh(false);
                                 if(ok){
+                                    requestLedgerRepublish();
                                     new AlertDialog.Builder(this).setTitle("MSERVER 인증 정상")
                                         .setMessage("토큰 저장 및 인증이 완료되었습니다.\n이 값은 기기 로컬 보안저장소에 유지됩니다.")
                                         .setPositiveButton("확인",null).show();
