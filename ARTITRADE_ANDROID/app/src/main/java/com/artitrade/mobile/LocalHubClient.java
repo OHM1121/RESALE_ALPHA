@@ -27,6 +27,21 @@ final class LocalHubClient {
         String sealed=context.getSharedPreferences("hub_pairing",Context.MODE_PRIVATE).getString("token",null);
         return sealed==null?"":crypt.unseal(sealed);
     }
+    JSONObject pairingStatus(){
+        JSONObject out=new JSONObject();
+        android.content.SharedPreferences p=context.getSharedPreferences("hub_pairing",Context.MODE_PRIVATE);
+        boolean encrypted=p.contains("token");
+        try{
+            String token=savedPairingToken();
+            String masked=token.isEmpty()?"":("••••"+token.substring(Math.max(0,token.length()-6)));
+            return out.put("encrypted_present",encrypted).put("saved",!token.isEmpty())
+                .put("decrypt_ok",!encrypted||!token.isEmpty()).put("masked",masked)
+                .put("storage","ANDROID_KEYSTORE_LOCAL");
+        }catch(Exception e){
+            try{return out.put("encrypted_present",encrypted).put("saved",false).put("decrypt_ok",false)
+                .put("storage","ANDROID_KEYSTORE_LOCAL");}catch(Exception ignored){return new JSONObject();}
+        }
+    }
     private static String encode(String s){
         try{return URLEncoder.encode(s,"UTF-8");}catch(Exception e){throw new IllegalArgumentException(e);}
     }
