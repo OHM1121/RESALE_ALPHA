@@ -90,6 +90,11 @@ public final class UnifiedTradingService extends Service {
 
     private void safeStartStrategy(){
         try{
+            JSONObject migration=new LegacyLedgerMigration(this,crashes).importIfReady();
+            getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
+                .putString("result",migration.toString()).putLong("at",System.currentTimeMillis()).apply();
+            if(!migration.optBoolean("ok",true)&&!"PHONE_HAS_TRADES".equals(migration.optString("status")))
+                crashes.add("pc_ledger_migration_reply",new IllegalStateException(migration.toString()));
             JSONObject s=strategy.start();
             if(!s.optBoolean("ok",true))crashes.add("strategy_start_reply",new IllegalStateException(s.toString()));
             applyPendingOperation();
@@ -266,7 +271,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.5")
+        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.7")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
