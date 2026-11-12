@@ -68,15 +68,8 @@ public final class UnifiedTradingService extends Service {
             }
             if(intent!=null&&APPLY_OPERATION.equals(intent.getAction())){
                 final String raw=intent.getStringExtra("settings");
-                new Thread(()->{
-                    try{
-                        JSONObject cfg=new JSONObject(raw==null?"{}":raw);
-                        JSONObject result=strategy.applyOperation(cfg);
-                        getSharedPreferences("artitrade_operation_result",MODE_PRIVATE).edit()
-                            .putString("result",result.toString()).putLong("at",System.currentTimeMillis()).apply();
-                        if(!result.optBoolean("ok",false))crashes.add("operation_apply_reply",new IllegalStateException(result.toString()));
-                    }catch(Throwable e){crashes.add("operation_apply_intent",e);}
-                },"artitrade-v074-operation").start();
+                if(raw!=null)getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).edit().putString("settings",raw).apply();
+                new Thread(()->applyPendingOperation(),"artitrade-v074-operation").start();
             }
             if(running.compareAndSet(false,true)){
                 if(wakeLock!=null&&!wakeLock.isHeld())wakeLock.acquire();
@@ -98,7 +91,20 @@ public final class UnifiedTradingService extends Service {
         try{
             JSONObject s=strategy.start();
             if(!s.optBoolean("ok",true))crashes.add("strategy_start_reply",new IllegalStateException(s.toString()));
+            applyPendingOperation();
         }catch(Throwable e){crashes.add("strategy_start_thread",e);}
+    }
+    private void applyPendingOperation(){
+        try{
+            String raw=getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).getString("settings","");
+            if(raw.isEmpty()||strategy==null||!strategy.isStarted())return;
+            JSONObject result=strategy.applyOperation(new JSONObject(raw));
+            getSharedPreferences("artitrade_operation_result",MODE_PRIVATE).edit()
+                .putString("result",result.toString()).putLong("at",System.currentTimeMillis()).apply();
+            if(result.optBoolean("ok",false)){
+                getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).edit().remove("settings").apply();
+            }else crashes.add("operation_apply_reply",new IllegalStateException(result.toString()));
+        }catch(Throwable e){crashes.add("operation_apply_pending",e);}
     }
     private void safeRestartStrategy(){
         try{strategy.restart();}catch(Throwable e){crashes.add("strategy_restart",e);}
