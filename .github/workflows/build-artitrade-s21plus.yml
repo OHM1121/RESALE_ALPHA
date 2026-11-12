@@ -1,0 +1,45 @@
+name: Build ARTITRADE S21 Plus Android clients
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/build-artitrade-s21plus.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/build-artitrade-s21plus.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Build stock and coin APKs
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug --stacktrace
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_S21PLUS_Stock_Coin_Cloud_Client_APKs
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ARTITRADE_ANDROID/app/build/outputs/apk/stock/debug/*.apk
+            ARTITRADE_ANDROID/app/build/outputs/apk/coin/debug/*.apk
