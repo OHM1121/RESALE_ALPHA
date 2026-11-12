@@ -79,13 +79,19 @@ jobs:
           print('live bridge sha256',got)
           assert got==want,(got,want)
           PY
-      - name: Validate v0.7.5 runtime, ledger and operation adapters
+      - name: Validate v0.7.6 runtime, ledger and per-account operation adapters
         shell: bash
         run: |
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "DEFAULT_SEED=2_000_000" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "DEFAULT_MAX=4" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "PER_ACCOUNT_V076" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "v19.MAX_POSITIONS_BY_TF" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "rt.stock_runner.ma.settings(values)" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "ledger.save_allocation(payload)" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "'close':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX}" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
+          grep -F "'gmo':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX}" ARTITRADE_ANDROID/app/src/main/python/android_operation_bridge.py
           grep -F "GMOService" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
           grep -F '"alg":"HS512"' ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
           grep -F "_hub_records_v075" ARTITRADE_ANDROID/app/src/main/python/android_runtime_v075.py
@@ -128,7 +134,21 @@ jobs:
           grep -F 'HmacSHA512' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/BrokerApiProbe.java
           grep -F 'HmacSHA512' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UpbitRealtimeClient.java
           grep -F 'LEGACY_HUB_RECORD_PRESERVED' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+          grep -F 'operationFields.put(m+"."+stg+"."+tf' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'addFrameOperationSection("기준봉", "stock","at"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'addFrameOperationSection("MA", "stock","ma"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'addFrameOperationSection("기준봉", "coin","general"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'addFrameOperationSection("MA", "coin","ma"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'operationSingleCard("stock","close","종가베팅"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'operationSingleCard("stock","gmo","수급매매"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'ANDROID_KEYSTORE_LOCAL' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LocalHubClient.java
           ! grep -F '전체 전략 계좌 성과 비교' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+      - name: Record APK signing certificate fingerprint
+        shell: bash
+        run: |
+          APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" verify --print-certs "$APK" | tee ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/SIGNING_CERT_V076.txt
       - name: Create version-labeled APK files
         shell: bash
         run: |
