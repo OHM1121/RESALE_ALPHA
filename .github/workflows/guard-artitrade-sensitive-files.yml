@@ -1,0 +1,56 @@
+name: Reject ARTITRADE sensitive file paths
+on:
+  push:
+    paths:
+      - '.gitignore'
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/guard-artitrade-sensitive-files.yml'
+  pull_request:
+    paths:
+      - '.gitignore'
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/guard-artitrade-sensitive-files.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prohibit-committed-credentials-and-ledgers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block tracked credentials, local data and databases
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import subprocess
+          import sys
+          
+          raw = subprocess.check_output(["git", "ls-files", "-z"])
+          files = [x.decode("utf-8", errors="replace") for x in raw.split(b"\0") if x]
+          blocked_dirs = {
+              "secrets", ".secrets", "credentials", "api_keys",
+              "private_data", "personal_data", "user_data",
+              "trading_data", "ledgers", "account_backups",
+              "research_exports", "error_exports",
+          }
+          blocked_ext = {".db", ".sqlite", ".sqlite3", ".pem", ".p12", ".pfx", ".key", ".keystore", ".jks"}
+          violations = []
+          for value in files:
+              path = pathlib.PurePosixPath(value)
+              name = path.name.lower()
+              parents = {p.lower() for p in path.parts[:-1]}
+              if (parents & blocked_dirs or
+                  name == ".env" or name.startswith(".env.") and name != ".env.example" or
+                  name == ".dev.vars" or name.startswith(".dev.vars.") and name != ".dev.vars.example" or
+                  name.endswith("-credentials.json") or name.startswith("service-account") and name.endswith(".json") or
+                  path.suffix.lower() in blocked_ext):
+                  violations.append(value)
+          if violations:
+              print("SECURITY ERROR: forbidden credential/personal-data filenames are tracked:")
+              for path in violations: print(" -", path)
+              print("Remove tracked files from Git and rotate any credentials already committed.")
+              sys.exit(1)
+          print("ARTITRADE sensitive file path check passed. Content-based secret scanning still required.")
+          PY
