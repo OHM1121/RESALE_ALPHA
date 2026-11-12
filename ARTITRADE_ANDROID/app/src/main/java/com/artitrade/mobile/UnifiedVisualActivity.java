@@ -320,7 +320,12 @@ public final class UnifiedVisualActivity extends Activity {
                 try{
                     BrokerSecretStore b=new BrokerSecretStore(this);
                     packet.put("credentials",new JSONObject().put("kiwoom",b.hasKiwoom()).put("upbit",b.hasUpbit()));
-                }catch(Exception e){packet.put("credentials",new JSONObject());}
+                    packet.put("broker_storage",b.status());
+                    String rawProbe=getSharedPreferences("broker_probe_v1",MODE_PRIVATE).getString("result","{}");
+                    packet.put("broker_probe",new JSONObject(rawProbe));
+                }catch(Exception e){
+                    packet.put("credentials",new JSONObject());packet.put("broker_storage",new JSONObject());packet.put("broker_probe",new JSONObject());
+                }
                 try{
                     android.content.SharedPreferences p=getSharedPreferences("unified_live_orders",MODE_PRIVATE);
                     packet.put("live_orders",new JSONObject().put("stock",p.getBoolean("live_stock",false)).put("coin",p.getBoolean("live_coin",false)));
