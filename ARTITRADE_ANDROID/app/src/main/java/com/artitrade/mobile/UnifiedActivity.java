@@ -214,6 +214,15 @@ public final class UnifiedActivity extends Activity {
                 packet.put("credentials",new JSONObject()
                     .put("kiwoom",brokerSecrets.hasKiwoom())
                     .put("upbit",brokerSecrets.hasUpbit()));
+                try{
+                    String runtimeRaw=getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).getString("snapshot","{}");
+                    packet.put("strategy_runtime",new JSONObject(runtimeRaw));
+                }catch(Exception ignored){packet.put("strategy_runtime",new JSONObject());}
+                android.content.SharedPreferences livePrefs=getSharedPreferences("unified_live_orders",MODE_PRIVATE);
+                packet.put("live_orders",new JSONObject()
+                    .put("stock",livePrefs.getBoolean("live_stock",false))
+                    .put("coin",livePrefs.getBoolean("live_coin",false)));
+                packet.put("runtime_diagnostics",new RuntimeCrashStore(this).read());
                 int n=done.incrementAndGet();
                 if(first)main.post(()->updatePreload(n,"서버 상태 확인"));
 
@@ -392,6 +401,28 @@ public final class UnifiedActivity extends Activity {
                         }
                         restartDirectFeeds();refreshAll(false);
                     }).show();
+            });
+        }
+        @JavascriptInterface public void setLiveTrading(String market,boolean enabled){
+            if(!("stock".equals(market)||"coin".equals(market)))return;
+            main.post(()->{
+                Runnable apply=()->{
+                    try{
+                        Intent i=new Intent(UnifiedActivity.this,UnifiedTradingService.class);
+                        i.setAction(UnifiedTradingService.SET_LIVE);
+                        i.putExtra("market",market);
+                        i.putExtra("enabled",enabled);
+                        if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+                        main.postDelayed(()->refreshAll(false),900);
+                    }catch(Throwable e){new RuntimeCrashStore(UnifiedActivity.this).add("ui_live_toggle_"+market,e);}
+                };
+                if(!enabled){apply.run();return;}
+                String name="stock".equals(market)?"주식":"코인";
+                new AlertDialog.Builder(UnifiedActivity.this)
+                    .setTitle(name+" 실거래 자동주문 ON")
+                    .setMessage("최신 EXE 전략 신호가 실제 계좌 주문으로 전송됩니다. FOK 전량체결만 전략 원장에 반영되며, 부분체결·응답불명은 자동 정지합니다.")
+                    .setNegativeButton("취소",null)
+                    .setPositiveButton("실거래 ON",(d,w)->apply.run()).show();
             });
         }
         @JavascriptInterface public void setDesired(String market,String desired){
