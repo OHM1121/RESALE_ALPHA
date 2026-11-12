@@ -49,7 +49,7 @@ final class StrategyRuntimeBridge {
             Python py=Python.getInstance();
             PyObject sys=py.getModule("sys");
             sys.get("path").callAttr("insert",0,source.getAbsolutePath());
-            module=py.getModule("android_runtime_v077");
+            module=py.getModule("android_runtime_v078");
             operationModule=py.getModule("android_operation_bridge");
             File root=new File(context.getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
             if(!root.exists()&&!root.mkdirs())throw new IllegalStateException("strategy runtime directory unavailable");
