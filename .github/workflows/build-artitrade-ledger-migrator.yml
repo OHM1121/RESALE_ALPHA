@@ -1,0 +1,42 @@
+name: Build ARTITRADE PC Ledger Migrator
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - artitrade-phone-main-v070-live-orders-20261112
+    paths:
+      - 'ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py'
+      - '.github/workflows/build-artitrade-ledger-migrator.yml'
+
+concurrency:
+  group: artitrade-ledger-migrator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate source
+        shell: pwsh
+        run: |
+          python -m py_compile ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
+          Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "ARTITRADE_PC_LEDGER_MIGRATION_V1"
+          Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "src.backup"
+      - name: Install PyInstaller
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.16.0
+      - name: Build one-file Windows migrator
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_LEDGER_MIGRATOR_V1_20261112 ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
+          if (!(Test-Path "dist/ARTITRADE_LEDGER_MIGRATOR_V1_20261112.exe")) { throw "EXE not created" }
+          Get-FileHash "dist/ARTITRADE_LEDGER_MIGRATOR_V1_20261112.exe" -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_LEDGER_MIGRATOR_V1_20261112
+          path: dist/ARTITRADE_LEDGER_MIGRATOR_V1_20261112.exe
+          if-no-files-found: error
