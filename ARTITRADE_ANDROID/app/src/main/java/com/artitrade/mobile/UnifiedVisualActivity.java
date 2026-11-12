@@ -346,6 +346,19 @@ public final class UnifiedVisualActivity extends Activity {
             String where=hubPub.optString("last_market","")+"/"+hubPub.optString("last_strategy","")+"/"+hubPub.optString("last_bucket","");
             TextView he=text("원장: "+detail+(where.equals("//")?"":" · "+where),10);he.setTextColor(Color.rgb(210,151,161));he.setPadding(dp(2),0,dp(2),dp(8));tools.addView(he);
         }
+        JSONObject migState=copyCache().optJSONObject("pc_ledger_migration");
+        if(migState!=null&&migState.length()>0){
+            String ms=migState.optString("status","");
+            String mt="IMPORTED".equals(ms)?"기존 EXE 원장 승계 완료":
+                "ALREADY_IMPORTED".equals(ms)?"기존 EXE 원장 승계 완료":
+                "PHONE_HAS_TRADES".equals(ms)?"기존 EXE 원장 자동승계 차단 · 폰 신규체결 존재":
+                "IMPORT_FAILED".equals(ms)?"기존 EXE 원장 승계 실패":
+                "NO_PC_ARCHIVE".equals(ms)?"기존 EXE 원장 승계자료 대기":"기존 EXE 원장: "+ms;
+            TextView mv=text(mt,11);
+            mv.setTextColor(("IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms))?Color.rgb(86,214,170):
+                ("PHONE_HAS_TRADES".equals(ms)||"IMPORT_FAILED".equals(ms))?Color.rgb(255,119,133):Color.rgb(147,160,185));
+            mv.setPadding(dp(2),0,dp(2),dp(8));tools.addView(mv);
+        }
         JSONObject pairState=copyCache().optJSONObject("hub_pairing");
         if(pairState!=null){
             String ps=pairState.optBoolean("saved",false)?"연결 토큰 기기 저장됨 · "+pairState.optString("masked",""):"연결 토큰 미저장";
@@ -465,6 +478,11 @@ public final class UnifiedVisualActivity extends Activity {
                         .put("last_bucket",hp.getString("last_bucket",""))
                         .put("last_http_status",hp.getInt("last_http_status",200)));
                 }catch(Exception e){packet.put("hub_publish",new JSONObject());}
+                try{
+                    android.content.SharedPreferences mp=getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE);
+                    String raw=mp.getString("result","{}");
+                    packet.put("pc_ledger_migration",new JSONObject(raw));
+                }catch(Exception e){packet.put("pc_ledger_migration",new JSONObject());}
                 try{
                     android.content.SharedPreferences ap=getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE);
                     packet.put("mserver_auth",new JSONObject()
