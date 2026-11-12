@@ -143,8 +143,11 @@ public final class UnifiedTradingService extends Service {
                 NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
                 if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
                 long now=System.currentTimeMillis();
+                JSONObject localRecords=strategy.hubRecords();
+                getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE).edit()
+                    .putString("records",localRecords.toString()).putLong("updated_at",now).apply();
                 if(now-lastHubPublish>=4500){
-                    publishPhoneLedgers(hub,strategy.hubRecords());
+                    publishPhoneLedgers(hub,localRecords);
                     lastHubPublish=now;
                 }
                 if(strategy.liveEnabled("stock")&&stockEpoch<=0)strategy.setLive("stock",false);
@@ -181,6 +184,7 @@ public final class UnifiedTradingService extends Service {
 
     private void publishPhoneLedgers(LocalHubClient hub,JSONObject all){
         if(all==null||all.length()==0)return;
+        int ok=0,failed=0;String lastError="";
         try{
             for(String market:new String[]{"stock","coin"}){
                 JSONObject m=all.optJSONObject(market);if(m==null)continue;
@@ -191,13 +195,22 @@ public final class UnifiedTradingService extends Service {
                         JSONObject data=s.optJSONObject(bucket);if(data==null)continue;
                         try{
                             JSONObject result=hub.putRecord(market,strategyName,bucket,data);
-                            if(!result.optBoolean("ok"))crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,
-                                new IllegalStateException(result.optString("error","HUB_WRITE_FAILED")));
-                        }catch(Throwable e){crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,e);}
+                            if(result.optBoolean("ok"))ok++;
+                            else{
+                                failed++;lastError=result.optString("error","HUB_WRITE_FAILED");
+                                crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,new IllegalStateException(lastError));
+                            }
+                        }catch(Throwable e){
+                            failed++;lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+                            crashes.add("hub_publish_"+market+"_"+strategyName+"_"+bucket,e);
+                        }
                     }
                 }
             }
-        }catch(Throwable e){crashes.add("hub_publish",e);}
+        }catch(Throwable e){failed++;lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());crashes.add("hub_publish",e);}
+        getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE).edit()
+            .putLong("at",System.currentTimeMillis()).putInt("ok",ok).putInt("failed",failed)
+            .putString("last_error",lastError).apply();
     }
 
     private long maintain(LocalHubClient hub,String market,JSONObject status,long epoch){
@@ -224,7 +237,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.4")
+        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.5")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
