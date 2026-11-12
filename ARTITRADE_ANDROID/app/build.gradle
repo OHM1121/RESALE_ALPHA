@@ -9,7 +9,7 @@ android {
         applicationId 'com.artitrade.mobile'
         minSdk 28
         targetSdk 35
-        versionCode 8
+        versionCode 9
         versionName '0.4.1-SWIPE-KST-EVENTDATE'
         manifestPlaceholders = [launcherActivity: ".MainActivity"]
     }
@@ -36,7 +36,7 @@ android {
         }
         unified {
             dimension 'market'
-            versionName '0.5.0-UNIFIED-FAST-PRELOAD'
+            versionName '0.6.0-PHONE-MAIN-DIRECT-REALTIME'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
@@ -52,4 +52,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
