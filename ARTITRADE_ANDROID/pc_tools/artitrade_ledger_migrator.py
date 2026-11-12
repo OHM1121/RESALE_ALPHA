@@ -258,7 +258,9 @@ def verified_connection(raw: str, token: str, progress=lambda message: None) -> 
         raise ValueError("MSERVER 연결 토큰 64자리를 먼저 입력하십시오.")
     base = resolve_server(raw, progress)
     answer = request(base, token.strip(), "GET", "/v1/status", timeout=5)
-    if not isinstance(answer, dict) or not answer.get("ok"):
+    if not isinstance(answer, dict):
+        raise ConnectionError("MSERVER 응답이 JSON 객체가 아니어서 전송을 차단했습니다.")
+    if not answer.get("ok"):
         if answer.get("http_status") == 401 or answer.get("error") == "unauthorized":
             raise PermissionError("연결 성공, 인증 실패: 휴대폰 MSERVER의 최신 연결 토큰을 확인하십시오.")
         raise ConnectionError("MSERVER 인증 오류: " + str(answer.get("error", "unknown")))
