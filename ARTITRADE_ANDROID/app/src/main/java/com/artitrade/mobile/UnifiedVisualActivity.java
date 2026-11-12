@@ -692,15 +692,45 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderResearch(){
-        Stats st=stats(market,strategy);TextView h=text("리서치 결과",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
-        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);addKpi(row,"후보",String.valueOf(st.candidates));addKpi(row,"매수완료",String.valueOf(st.bought));addKpi(row,"판정완료",String.valueOf(st.confirmed));addKpi(row,"목표도달율",pct(st.target));content.addView(row);
-        TextView m=text("점수대별 목표 도달 지도",11);m.setTypeface(null,Typeface.BOLD);m.setTextColor(Color.rgb(148,171,199));m.setPadding(0,dp(13),0,dp(6));content.addView(m);
+        Stats st=stats(market,strategy);
+        TextView h=text(strategyName(market,strategy)+" 연구이력",18);h.setTypeface(null,Typeface.BOLD);content.addView(h);
+        TextView sub=text("후보 → 매수 → 판정 → 목표도달 흐름과 점수대별 결과",10);sub.setTextColor(Color.rgb(135,160,190));sub.setPadding(0,dp(3),0,dp(8));content.addView(sub);
+
+        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout kpis=card();LinearLayout kr=new LinearLayout(this);kr.setOrientation(LinearLayout.HORIZONTAL);addMini(kr,"후보",String.valueOf(st.candidates));addMini(kr,"매수완료",String.valueOf(st.bought));addMini(kr,"판정완료",String.valueOf(st.confirmed));kpis.addView(kr);TextView note=text("최근 연구 데이터 기준",9);note.setTextColor(Color.rgb(127,151,181));note.setPadding(0,dp(7),0,0);kpis.addView(note);
+        top.addView(kpis,new LinearLayout.LayoutParams(0,dp(112),2));
+        LinearLayout dc=card();DonutMetricView donut=new DonutMetricView(this);donut.setMetric("목표도달율",st.target,pct(st.target));dc.addView(donut,new LinearLayout.LayoutParams(-1,0,1));LinearLayout.LayoutParams dcp=new LinearLayout.LayoutParams(0,dp(112),1);dcp.setMargins(dp(7),0,0,0);top.addView(dc,dcp);
+        content.addView(top,new LinearLayout.LayoutParams(-1,dp(112)));
+
+        TextView m=text("점수대별 목표 도달 지도",12);m.setTypeface(null,Typeface.BOLD);m.setTextColor(Color.rgb(157,181,208));m.setPadding(0,dp(13),0,dp(6));content.addView(m);
         int[][] bands="gmo".equals(strategy)?new int[][]{{40,60},{61,80},{81,100}}:new int[][]{{0,20},{21,40},{41,60},{61,80},{81,100}};
         LinearLayout br=new LinearLayout(this);br.setOrientation(LinearLayout.HORIZONTAL);
-        for(int[] b:bands){int judged=0,hits=0;for(int i=0;i<st.research.length();i++){JSONObject r=st.research.optJSONObject(i);if(r==null)continue;double sc=num(r,"score","original_score","signal_score");if(!finite(sc)||sc<b[0]||sc>b[1])continue;Boolean hit=target(r);if(hit!=null){judged++;if(hit)hits++;}}
-            LinearLayout c=card();TextView t=text(b[0]+"~"+b[1]+"점",10);t.setTextColor(Color.rgb(149,173,201));c.addView(t);TextView p=text(judged>0?pct(hits*100.0/judged):"—",22);p.setTypeface(null,Typeface.BOLD);c.addView(p);TextView f=text(judged+"건 판정 · "+hits+"건 도달",9);f.setTextColor(Color.rgb(124,149,179));c.addView(f);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(90),1);if(br.getChildCount()>0)lp.setMargins(dp(6),0,0,0);br.addView(c,lp);
-        }content.addView(br);
+        for(int[] band:bands){
+            int judged=0,hits=0;
+            for(int i=0;i<st.research.length();i++){
+                JSONObject r=st.research.optJSONObject(i);if(r==null)continue;
+                double sc=num(r,"score","original_score","signal_score");if(!finite(sc)||sc<band[0]||sc>band[1])continue;
+                Boolean hit=target(r);if(hit!=null){judged++;if(hit)hits++;}
+            }
+            double rate=judged>0?hits*100.0/judged:Double.NaN;
+            LinearLayout c=card();TextView t=text(band[0]+"~"+band[1]+"점",10);t.setTypeface(null,Typeface.BOLD);c.addView(t);
+            MetricProgressView pv=new MetricProgressView(this);pv.setMetric("목표도달",rate);c.addView(pv,new LinearLayout.LayoutParams(-1,dp(34)));
+            TextView f=text(judged+"건 판정 · "+hits+"건 도달",8);f.setTextColor(Color.rgb(124,149,179));c.addView(f);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(82),1);if(br.getChildCount()>0)lp.setMargins(dp(5),0,0,0);br.addView(c,lp);
+        }
+        content.addView(br,new LinearLayout.LayoutParams(-1,dp(82)));
+
+        TextView hist=text("최근 연구 기록",12);hist.setTypeface(null,Typeface.BOLD);hist.setTextColor(Color.rgb(157,181,208));hist.setPadding(0,dp(13),0,dp(6));content.addView(hist);
+        if(st.research.length()==0){empty("연구이력 없음");return;}
+        for(int i=0;i<Math.min(80,st.research.length());i++){
+            JSONObject r=st.research.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
+            LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);
+            TextView n=text(nameOf(r),12);n.setTypeface(null,Typeface.BOLD);head.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
+            double sc=num(r,"score","original_score","signal_score");TextView score=text(finite(sc)?number(sc)+"점":"—",11);score.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);score.setTextColor(Color.rgb(255,201,94));head.addView(score,new LinearLayout.LayoutParams(dp(70),dp(28)));c.addView(head);
+            Boolean hit=target(r);String verdict=hit==null?"판정 중":hit?"목표 도달":"미도달";TextView v=text(verdict+" · "+refLabel()+" "+timeOf(r),9);v.setTextColor(hit==null?Color.rgb(156,179,205):hit?Color.rgb(62,224,181):Color.rgb(255,145,155));c.addView(v);
+            TextView why=text("근거: "+reasonOf(r),9);why.setTextColor(Color.rgb(176,197,220));why.setPadding(0,dp(3),0,0);c.addView(why);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
+        }
     }
 
     private void appendErrorItems(JSONArray out,JSONObject bucket){
