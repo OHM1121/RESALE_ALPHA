@@ -10,7 +10,9 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -66,8 +68,10 @@ def request(base: str, token: str, method: str, endpoint: str, payload=None, par
     if data is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+    # Tailscale/ADB endpoints must be reached directly, not via Windows/enterprise HTTP proxies.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
+        with opener.open(req, timeout=timeout) as res:
             return json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
@@ -76,6 +80,192 @@ def request(base: str, token: str, method: str, endpoint: str, payload=None, par
             body = {"ok": False, "error": "HTTP_" + str(exc.code)}
         body["http_status"] = exc.code
         return body
+
+
+# A phone's 127.0.0.1 is never a Windows PC's 127.0.0.1. The only accepted
+# localhost path is a verified Android Debug Bridge (ADB) USB port forward.
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+MSERVER_HEALTH = "ARTITRADE MSERVER"
+
+
+def _executable(name: str, relative_paths: tuple[str, ...]) -> str:
+    candidates = [shutil.which(name)]
+    for candidate in relative_paths:
+        candidates.append(os.path.expandvars(candidate))
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    return ""
+
+
+def _command(program: str, *args: str, timeout: int = 6) -> tuple[int, str]:
+    if not program:
+        return -1, ""
+    try:
+        run = subprocess.run(
+            [program, *args],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+        return run.returncode, run.stdout or ""
+    except (OSError, subprocess.TimeoutExpired):
+        return -1, ""
+
+
+def _tailscale_program() -> str:
+    return _executable("tailscale", (
+        r"%ProgramFiles%\Tailscale\tailscale.exe",
+        r"%ProgramFiles(x86)%\Tailscale\tailscale.exe",
+        r"%LOCALAPPDATA%\Tailscale\tailscale.exe",
+    ))
+
+
+def _adb_program() -> str:
+    return _executable("adb", (
+        r"%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe",
+        r"%ANDROID_HOME%\platform-tools\adb.exe",
+        r"%ANDROID_SDK_ROOT%\platform-tools\adb.exe",
+        r"%ProgramFiles%\Android\platform-tools\adb.exe",
+    ))
+
+
+def tailscale_candidates() -> list[tuple[str, str]]:
+    """Return Android peers only; do not scan unrelated tailnet devices."""
+    program = _tailscale_program()
+    code, output = _command(program, "status", "--json")
+    if code != 0 or not output:
+        return []
+    try:
+        state = json.loads(output)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if state.get("BackendState", "Running") != "Running":
+        return []
+    peers = state.get("Peer") or {}
+    if isinstance(peers, dict):
+        peers = list(peers.values())
+    if not isinstance(peers, list):
+        return []
+    result = []
+    for peer in peers:
+        if not isinstance(peer, dict) or peer.get("Online", True) is False:
+            continue
+        system = str(peer.get("OS") or "").lower()
+        nickname = str(peer.get("HostName") or peer.get("DNSName") or "Android 기기")
+        if system != "android":
+            continue
+        for ip in peer.get("TailscaleIPs") or []:
+            try:
+                addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            if addr in TAILNET:
+                result.append((f"http://{ip}:8765", nickname))
+    # A limit prevents a large tailnet from causing excessive network checks.
+    return list(dict.fromkeys(result))[:20]
+
+
+def _adb_forward_status(adb: str, serial: str) -> bool:
+    code, out = _command(adb, "-s", serial, "forward", "--list", timeout=6)
+    if code != 0:
+        return False
+    for line in out.splitlines():
+        cols = line.strip().split()
+        if len(cols) == 3 and cols[0] == serial and cols[1] == "tcp:8765" and cols[2] == "tcp:8765":
+            return True
+    return False
+
+
+def usb_forward_available() -> bool:
+    """Bind PC 127.0.0.1 only to one authorized phone, using adb forward."""
+    adb = _adb_program()
+    code, devices = _command(adb, "devices", timeout=8)
+    if code != 0:
+        return False
+    serials = []
+    for line in devices.splitlines():
+        columns = line.strip().split()
+        if len(columns) >= 2 and columns[1] == "device" and not line.startswith("List of"):
+            serials.append(columns[0])
+    if len(serials) != 1:
+        return False
+    serial = serials[0]
+    if _adb_forward_status(adb, serial):
+        return True
+    code, _ = _command(adb, "-s", serial, "forward", "--no-rebind", "tcp:8765", "tcp:8765", timeout=8)
+    return code == 0 and _adb_forward_status(adb, serial)
+
+
+def probe_mserver(base: str) -> bool:
+    """Verify product identity before sending a bearer token or database."""
+    try:
+        health = request(base, "", "GET", "/health", timeout=2.4)
+        return (isinstance(health, dict) and health.get("ok") is True
+                and health.get("name") == MSERVER_HEALTH and health.get("api") == 1)
+    except (OSError, ValueError, TimeoutError, urllib.error.URLError):
+        return False
+
+
+def resolve_server(raw: str, progress=lambda message: None) -> str:
+    """Auto-discover MSERVER over tailnet, then an authorized USB/ADB tunnel."""
+    manual = (raw or "").strip()
+    explicit = ""
+    if manual and manual != "자동 검색":
+        try:
+            explicit = validated_url(manual)
+        except (ValueError, TypeError):
+            progress("직접 입력한 주소를 확인할 수 없어 연결된 기기를 자동 검색합니다.")
+    if explicit and explicit != "http://127.0.0.1:8765":
+        if probe_mserver(explicit):
+            progress("MSERVER 연결 확인: " + explicit)
+            return explicit
+        progress("입력한 주소에 MSERVER가 응답하지 않아 자동 검색으로 전환합니다.")
+
+    progress("Tailscale에서 연결된 안드로이드 기기를 찾는 중")
+    candidates = tailscale_candidates()
+    hits = []
+    for base, device in candidates:
+        if probe_mserver(base):
+            hits.append((base, device))
+    if len(hits) == 1:
+        base, device = hits[0]
+        progress("MSERVER 자동 발견: " + device + " (" + base + ")")
+        return base
+    if len(hits) > 1:
+        raise ConnectionError(
+            "MSERVER가 설치된 Android 기기가 여러 대 감지되었습니다. "
+            "주소를 직접 선택하십시오: " + ", ".join(base for base, _ in hits)
+        )
+
+    progress("Tailscale 연결 없음 · USB 디버깅 연결을 확인하는 중")
+    if usb_forward_available() and probe_mserver("http://127.0.0.1:8765"):
+        progress("USB로 연결된 S21+ MSERVER를 발견했습니다. PC 내부 터널 사용 중")
+        return "http://127.0.0.1:8765"
+
+    raise ConnectionError(
+        "휴대폰 MSERVER를 찾을 수 없습니다.\n"
+        "휴대폰에서 Tailscale 연결 및 MSERVER의 'Tailscale 접속 켜기'를 확인하십시오.\n"
+        "USB로 연결했다면 Android USB 디버깅 허용 및 PC ADB 설치가 필요합니다.\n"
+        "중요: 휴대폰의 127.0.0.1은 PC에서 직접 접속할 수 없습니다."
+    )
+
+
+def verified_connection(raw: str, token: str, progress=lambda message: None) -> str:
+    if len((token or "").strip()) != 64:
+        raise ValueError("MSERVER 연결 토큰 64자리를 먼저 입력하십시오.")
+    base = resolve_server(raw, progress)
+    answer = request(base, token.strip(), "GET", "/v1/status", timeout=5)
+    if not isinstance(answer, dict) or not answer.get("ok"):
+        if answer.get("http_status") == 401 or answer.get("error") == "unauthorized":
+            raise PermissionError("연결 성공, 인증 실패: 휴대폰 MSERVER의 최신 연결 토큰을 확인하십시오.")
+        raise ConnectionError("MSERVER 인증 오류: " + str(answer.get("error", "unknown")))
+    if answer.get("owner") != "phone":
+        raise ConnectionError("S21+ MSERVER 이외의 장치가 응답하여 전송을 차단했습니다.")
+    progress("MSERVER 연결과 인증 정상: " + base)
+    return base
 
 
 def stock_root() -> Path:
@@ -285,7 +475,7 @@ def run_gui():
     from tkinter import messagebox, ttk
 
     root = tk.Tk()
-    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 V2 FIX1")
+    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 V2 FIX2 (자동 연결)")
     root.geometry("760x680")
     root.minsize(700, 540)
 
@@ -316,13 +506,17 @@ def run_gui():
     conn = ttk.LabelFrame(frm, text="S21+ MSERVER", padding=10)
     conn.pack(fill="x", pady=(12, 0))
     row = ttk.Frame(conn); row.pack(fill="x")
-    ttk.Label(row, text="Tailscale 주소", width=16).pack(side="left")
-    url_var = tk.StringVar(value=os.getenv("ARTITRADE_HUB_URL", "http://100.x.x.x:8765"))
+    ttk.Label(row, text="휴대폰 주소", width=16).pack(side="left")
+    url_var = tk.StringVar(value=os.getenv("ARTITRADE_HUB_URL", "자동 검색"))
     ttk.Entry(row, textvariable=url_var).pack(side="left", fill="x", expand=True)
+    auto_btn = ttk.Button(row, text="자동 찾기", command=lambda: auto_scan())
+    auto_btn.pack(side="left", padx=(6, 0))
     row2 = ttk.Frame(conn); row2.pack(fill="x", pady=(8, 0))
     ttk.Label(row2, text="연결 토큰", width=16).pack(side="left")
     token_var = tk.StringVar(value=os.getenv("ARTITRADE_HUB_TOKEN", ""))
     ttk.Entry(row2, textvariable=token_var, show="●").pack(side="left", fill="x", expand=True)
+    connection_hint = tk.StringVar(value="휴대폰 주소 입력 없이 자동 찾기 가능 · Tailscale 또는 USB/ADB")
+    ttk.Label(conn, textvariable=connection_hint, wraplength=670).pack(anchor="w", pady=(7, 0))
 
     progress_box = ttk.Frame(frm)
     progress_box.pack(fill="x", pady=(12, 2))
@@ -365,31 +559,50 @@ def run_gui():
             status.configure(state="disabled")
         root.after(0, put)
 
-    def check_connection():
-        test_btn.configure(state="disabled")
-        def check():
+    def auto_scan():
+        raw = url_var.get()
+        auto_btn.configure(state="disabled")
+        connection_hint.set("연결된 S21+ MSERVER 자동 검색 중…")
+        def worker():
             try:
-                base = validated_url(url_var.get())
-                token = token_var.get().strip()
-                if len(token) != 64:
-                    raise ValueError("연결 토큰은 64자리여야 합니다.")
-                answer = request(base, token, "GET", "/v1/status")
-                if not isinstance(answer, dict) or not answer.get("ok"):
-                    raise RuntimeError("MSERVER 인증 응답이 정상적이지 않습니다.")
-                log("MSERVER 연결 및 인증 확인 완료")
-                root.after(0, lambda: messagebox.showinfo("연결 확인", "MSERVER 연결과 인증이 정상입니다."))
+                base = resolve_server(raw, log)
+                root.after(0, lambda: url_var.set(base))
+                root.after(0, lambda: connection_hint.set("자동 연결됨: " + base + " · 토큰 입력 후 연결 확인"))
             except Exception as exc:
-                log("MSERVER 연결 확인 실패: " + type(exc).__name__)
+                log("기기 자동 검색: " + str(exc))
+                root.after(0, lambda: connection_hint.set("기기 검색 실패 · Tailscale 또는 USB 연결 확인"))
+            finally:
+                root.after(0, lambda: auto_btn.configure(state="normal"))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def check_connection():
+        requested = url_var.get()
+        token = token_var.get().strip()
+        test_btn.configure(state="disabled")
+        def worker():
+            try:
+                base = verified_connection(requested, token, log)
+                root.after(0, lambda: url_var.set(base))
+                root.after(0, lambda: connection_hint.set("인증 성공: " + base))
+                root.after(0, lambda: messagebox.showinfo("연결 확인", "휴대폰 MSERVER 연결과 인증이 정상입니다.\n원장 승계를 시작할 수 있습니다."))
+            except Exception as exc:
+                log("MSERVER 연결 확인 실패: " + str(exc))
                 root.after(0, lambda msg=str(exc): messagebox.showerror("연결 확인 실패", msg))
             finally:
                 root.after(0, lambda: test_btn.configure(state="normal"))
-        threading.Thread(target=check, daemon=True).start()
+        threading.Thread(target=worker, daemon=True).start()
 
     def start():
+        requested = url_var.get()
+        token = token_var.get().strip()
         btn.configure(state="disabled")
         def work():
             try:
-                manifest, result = migrate(url_var.get(), token_var.get(), log)
+                # Do not snapshot or transmit account data before a successful
+                # MSERVER identity AND token check.
+                base = verified_connection(requested, token, log)
+                root.after(0, lambda: url_var.set(base))
+                manifest, result = migrate(base, token, log)
                 log("완료 SHA256: " + manifest["archive_sha256"])
                 root.after(0, lambda: messagebox.showinfo(
                     "승계 전송 완료",
@@ -398,13 +611,16 @@ def run_gui():
                     "앱 시작 전에 기존 체결·보유·대기·연구 DB가 자동 승계됩니다."
                 ))
             except Exception as exc:
-                log(type(exc).__name__ + ": " + str(exc))
-                root.after(0, lambda: messagebox.showerror("승계 실패", str(exc)))
+                log("승계 실패: " + str(exc))
+                root.after(0, lambda msg=str(exc): messagebox.showerror("승계 실패", msg))
             finally:
                 root.after(0, lambda: btn.configure(state="normal"))
         threading.Thread(target=work, daemon=True).start()
 
-    ttk.Label(frm, text="원본 EXE 원장은 읽기만 하며 수정하지 않습니다. MSERVER는 Tailscale 사설망에서만 전송을 허용합니다.").pack(anchor="w", pady=(8, 0))
+    # Probe the tailnet on launch. Never sends the token during discovery.
+    root.after(700, auto_scan)
+
+    ttk.Label(frm, text="원본 EXE 데이터는 읽기 전용 · 외부 접속은 Tailscale 전용 · USB는 ADB 로컬 터널만 사용").pack(anchor="w", pady=(8, 0))
     root.mainloop()
 
 
