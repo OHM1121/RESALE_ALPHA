@@ -217,51 +217,57 @@ public final class UnifiedVisualActivity extends Activity {
     private void showShell(){
         root.removeAllViews();
         drawerOverlay=null;
-        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(7,16,28));
+        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(9,11,17));
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
 
-        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(12),dp(6),dp(10),dp(6));
+        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(14),dp(7),dp(10),dp(5));
         LinearLayout brandBox=new LinearLayout(this);brandBox.setOrientation(LinearLayout.VERTICAL);brandBox.setGravity(Gravity.CENTER_VERTICAL);
-        TextView brand=text("ARTITRADE",18);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.08f);brandBox.addView(brand);
-        statusText=text("데이터 확인 중",9);statusText.setTextColor(Color.rgb(153,177,205));brandBox.addView(statusText);
-        top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(42),1));
+        TextView brand=text("ARTITRADE",18);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.09f);brandBox.addView(brand);
+        statusText=text("데이터 확인 중",9);statusText.setTextColor(Color.rgb(138,147,167));brandBox.addView(statusText);
+        top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(43),1));
 
-        Button stock=button("주식","stock".equals(market),()->{market="stock";strategy="at";page="home";showShell();});
-        Button coin=button("코인","coin".equals(market),()->{market="coin";strategy="general";page="home";showShell();});
-        top.addView(stock,new LinearLayout.LayoutParams(dp(64),dp(34)));
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(64),dp(34));cp.setMargins(dp(5),0,0,0);top.addView(coin,cp);
-        clockText=text("",9);clockText.setTextColor(Color.rgb(139,164,194));clockText.setGravity(Gravity.CENTER);LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(dp(92),dp(34));tp.setMargins(dp(7),0,0,0);top.addView(clockText,tp);
-        Button menu=button("☰",false,this::openSettingsDrawer);LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(44),dp(34));mp.setMargins(dp(4),0,0,0);top.addView(menu,mp);
-        shell.addView(top,new LinearLayout.LayoutParams(-1,dp(54)));
+        LinearLayout marketSwitch=new LinearLayout(this);marketSwitch.setOrientation(LinearLayout.HORIZONTAL);marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
+        marketSwitch.setBackground(bg(Color.rgb(20,23,33),Color.rgb(42,47,63),18));
+        TextView stock=segmentItem("주식","stock".equals(market),()->{market="stock";strategy="at";page="home";showShell();});
+        TextView coin=segmentItem("코인","coin".equals(market),()->{market="coin";strategy="general";page="home";showShell();});
+        marketSwitch.addView(stock,new LinearLayout.LayoutParams(dp(58),dp(30)));
+        marketSwitch.addView(coin,new LinearLayout.LayoutParams(dp(58),dp(30)));
+        top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(122),dp(36)));
 
-        HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);
-        strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setPadding(dp(10),dp(5),dp(10),dp(5));
+        clockText=text("",9);clockText.setTextColor(Color.rgb(116,126,148));clockText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(dp(86),dp(34));tp.setMargins(dp(7),0,dp(4),0);top.addView(clockText,tp);
+        top.addView(iconAction("☰",this::openSettingsDrawer),new LinearLayout.LayoutParams(dp(38),dp(38)));
+        shell.addView(top,new LinearLayout.LayoutParams(-1,dp(56)));
+        shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
+
+        HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);sh.setFillViewport(false);
+        strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(13),dp(5),dp(13),dp(5));
         sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-2,-1));shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(44)));
         buildStrategyBar();
 
-        HorizontalScrollView nh=new HorizontalScrollView(this);nh.setHorizontalScrollBarEnabled(false);
-        LinearLayout nav=new LinearLayout(this);nav.setOrientation(LinearLayout.HORIZONTAL);nav.setPadding(dp(10),dp(4),dp(10),dp(4));
-        String[][] navs={{"home","대시보드"},{"positions","보유"},{"pending","대기"},{"executions","체결"},{"research","연구"},{"operation","운용"},{"errors","오류"}};
-        for(String[] n:navs){
-            Button b=button(n[1],n[0].equals(page),()->{page=n[0];showShell();});
-            int width="home".equals(n[0])?dp(92):dp(76);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(width,dp(34));lp.setMargins(0,0,dp(5),0);nav.addView(b,lp);
-        }
-        nh.addView(nav,new HorizontalScrollView.LayoutParams(-2,-1));shell.addView(nh,new LinearLayout.LayoutParams(-1,dp(42)));
-
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(7,16,28));
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(12),dp(10),dp(12),dp(20));
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(9,11,17));
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(14),dp(9),dp(14),dp(24));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
             if("operation".equals(page)||"errors".equals(page))return false;
             if(e.getAction()==MotionEvent.ACTION_DOWN)swipeX=e.getX();
             else if(e.getAction()==MotionEvent.ACTION_UP&&!Float.isNaN(swipeX)){
                 float dx=e.getX()-swipeX;swipeX=Float.NaN;
-                if(Math.abs(dx)>dp(70)){switchStrategy(dx<0?1:-1);return true;}
+                if(Math.abs(dx)>dp(78)){switchStrategy(dx<0?1:-1);return true;}
             }
             return false;
         });
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+
+        shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
+        LinearLayout bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.HORIZONTAL);bottom.setGravity(Gravity.CENTER);bottom.setPadding(dp(6),dp(3),dp(6),dp(3));bottom.setBackgroundColor(Color.rgb(13,15,22));
+        bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("positions","◆","보유"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("pending","◌","대기"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("executions","↔","체결"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("research","◎","연구"),new LinearLayout.LayoutParams(0,dp(48),1));
+        shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(54)));
+
         updateClock();
         render();
     }
@@ -330,12 +336,12 @@ public final class UnifiedVisualActivity extends Activity {
     private void buildStrategyBar(){
         if(strategyBar==null)return;
         strategyBar.removeAllViews();
-        String[][] list="stock".equals(market)
-            ?new String[][]{{"at","기준봉"},{"ma","MA"},{"close","종가베팅"},{"gmo","수급매매"}}
-            :new String[][]{{"general","기준봉"},{"ma","MA"}};
-        for(String[] s:list){
-            Button b=button(s[1],s[0].equals(strategy),()->{strategy=s[0];page="home";showShell();});
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(122),dp(33));lp.setMargins(0,0,dp(6),0);strategyBar.addView(b,lp);
+        String[][] list=strategyList(market);
+        for(String[] item:list){
+            boolean active=item[0].equals(strategy);
+            TextView tab=strategyTab(item[1],active,()->{strategy=item[0];page="home";showShell();});
+            int w="close".equals(item[0])||"gmo".equals(item[0])?dp(104):dp(82);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(w,dp(32));lp.setMargins(0,0,dp(5),0);strategyBar.addView(tab,lp);
         }
     }
 
