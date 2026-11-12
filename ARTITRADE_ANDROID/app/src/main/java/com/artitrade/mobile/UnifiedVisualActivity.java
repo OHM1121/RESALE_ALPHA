@@ -935,13 +935,54 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void apiSettings(){
-        BrokerSecretStore store=new BrokerSecretStore(this);LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(12),dp(4),dp(12),dp(4));
+        BrokerSecretStore store=new BrokerSecretStore(this);JSONObject saved=store.status();
+        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(12),dp(4),dp(12),dp(4));
         EditText kk=new EditText(this),ks=new EditText(this),ua=new EditText(this),us=new EditText(this);
-        kk.setHint(store.hasKiwoom()?"키움 App Key · 저장됨":"키움 App Key");ks.setHint(store.hasKiwoom()?"키움 Secret Key · 저장됨":"키움 Secret Key");ua.setHint(store.hasUpbit()?"업비트 Access Key · 저장됨":"업비트 Access Key");us.setHint(store.hasUpbit()?"업비트 Secret Key · 저장됨":"업비트 Secret Key");
-        for(EditText v:new EditText[]{kk,ks,ua,us}){v.setSingleLine(true);v.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(v,new LinearLayout.LayoutParams(-1,dp(48)));}
-        new AlertDialog.Builder(this).setTitle("S21+ 직접 API 설정").setMessage("빈 칸은 기존 값을 유지합니다. 키는 Android Keystore로 암호화합니다.").setView(form).setNegativeButton("취소",null)
-            .setNeutralButton("전체 삭제",(d,w)->{store.saveKiwoom("","");store.saveUpbit("","");restartFeeds();})
-            .setPositiveButton("저장",(d,w)->{String a=kk.getText().toString().trim(),b=ks.getText().toString().trim(),c=ua.getText().toString().trim(),e=us.getText().toString().trim();if((!a.isEmpty()||!b.isEmpty())&&(!a.isEmpty()&&!b.isEmpty()))store.saveKiwoom(a,b);if((!c.isEmpty()||!e.isEmpty())&&(!c.isEmpty()&&!e.isEmpty()))store.saveUpbit(c,e);restartFeeds();main.postDelayed(()->refresh(false),900);}).show();
+        kk.setHint(saved.optBoolean("kiwoom_saved",false)?"키움 App Key · "+saved.optString("kiwoom_key_masked","저장됨"):"키움 App Key");
+        ks.setHint(saved.optBoolean("kiwoom_saved",false)?"키움 App Secret · 저장됨":"키움 App Secret");
+        ua.setHint(saved.optBoolean("upbit_saved",false)?"업비트 Access Key · "+saved.optString("upbit_access_masked","저장됨"):"업비트 Access Key");
+        us.setHint(saved.optBoolean("upbit_saved",false)?"업비트 Secret Key · 저장됨":"업비트 Secret Key");
+        for(EditText v:new EditText[]{kk,ks,ua,us}){
+            v.setSingleLine(true);v.setTextColor(Color.WHITE);v.setHintTextColor(Color.rgb(130,154,183));
+            v.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            form.addView(v,new LinearLayout.LayoutParams(-1,dp(48)));
+        }
+        new AlertDialog.Builder(this).setTitle("S21+ 직접 API 설정")
+            .setMessage("빈 칸은 기존 값을 유지합니다. 저장 후 키움 OAuth와 업비트 인증 REST를 즉시 검사합니다. 업비트는 발급 키의 허용 IP에 현재 S21+ 외부 IP가 포함되어야 합니다.")
+            .setView(form).setNegativeButton("취소",null)
+            .setNeutralButton("전체 삭제",(d,w)->{
+                store.saveKiwoom("","");store.saveUpbit("","");
+                getSharedPreferences("broker_probe_v1",MODE_PRIVATE).edit().clear().apply();restartFeeds();refresh(false);
+            })
+            .setPositiveButton("저장",(d,w)->{
+                String a=kk.getText().toString().trim(),b=ks.getText().toString().trim(),c=ua.getText().toString().trim(),e=us.getText().toString().trim();
+                if(a.isEmpty()!=b.isEmpty()){
+                    new AlertDialog.Builder(this).setTitle("키움 키 확인").setMessage("App Key와 App Secret을 둘 다 입력하거나 둘 다 비워 기존 값을 유지하십시오.").setPositiveButton("확인",null).show();return;
+                }
+                if(c.isEmpty()!=e.isEmpty()){
+                    new AlertDialog.Builder(this).setTitle("업비트 키 확인").setMessage("Access Key와 Secret Key를 둘 다 입력하거나 둘 다 비워 기존 값을 유지하십시오.").setPositiveButton("확인",null).show();return;
+                }
+                if(!a.isEmpty())store.saveKiwoom(a,b);
+                if(!c.isEmpty())store.saveUpbit(c,e);
+                runBrokerProbe(true);
+            }).show();
+    }
+
+    private void runBrokerProbe(boolean restartAfter){
+        io.execute(()->{
+            JSONObject result=BrokerApiProbe.all(new BrokerSecretStore(this));
+            getSharedPreferences("broker_probe_v1",MODE_PRIVATE).edit().putString("result",result.toString()).putLong("checked_at",System.currentTimeMillis()).apply();
+            if(restartAfter)main.post(this::restartFeeds);
+            main.post(()->{
+                refresh(false);
+                JSONObject k=result.optJSONObject("kiwoom"),u=result.optJSONObject("upbit");
+                String km=k==null?"검사 실패":k.optBoolean("ok",false)?"정상":k.optString("message","인증 실패");
+                String um=u==null?"검사 실패":u.optBoolean("ok",false)?"정상":u.optString("message","인증 실패");
+                if(u!=null&&u.optBoolean("ip_hint",false))um+="\n허용 IP에 현재 S21+ 외부 IP가 등록되어 있는지 확인 필요";
+                new AlertDialog.Builder(this).setTitle("API 인증 검사 결과").setMessage("키움: "+km+"\n\n업비트: "+um).setPositiveButton("확인",null).show();
+                if(drawerOverlay!=null){closeSettingsDrawer();main.postDelayed(this::openSettingsDrawer,220);}
+            });
+        });
     }
 
     private void restartFeeds(){try{Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.RESTART_FEEDS);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Exception e){new RuntimeCrashStore(this).add("native_restart_feeds",e);}}
