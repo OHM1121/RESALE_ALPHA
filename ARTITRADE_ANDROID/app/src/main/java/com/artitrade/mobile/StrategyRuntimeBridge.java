@@ -22,6 +22,7 @@ import java.util.zip.ZipInputStream;
 /** Runs the exact latest uploaded EXE Python strategy state machines inside Android. */
 final class StrategyRuntimeBridge {
     private static final int PARTS=22;
+    private static final int LIVE_BRIDGE_PARTS=9;
     private static final String CORE_SHA256="e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0";
     private final Context context;
     private final RuntimeCrashStore crashes;
@@ -67,7 +68,10 @@ final class StrategyRuntimeBridge {
             try(InputStream in=new java.io.FileInputStream(marker)){
                 byte[] b=new byte[(int)marker.length()];
                 int n=in.read(b);
-                if(n>0&&CORE_SHA256.equals(new String(b,0,n,StandardCharsets.US_ASCII).trim()))return dir;
+                if(n>0&&CORE_SHA256.equals(new String(b,0,n,StandardCharsets.US_ASCII).trim())){
+                    applyLiveBridgeOverlay(dir);
+                    return dir;
+                }
             }catch(Exception ignored){}
         }
         deleteTree(dir);
@@ -104,11 +108,27 @@ final class StrategyRuntimeBridge {
                 zin.closeEntry();
             }
         }
+        applyLiveBridgeOverlay(dir);
         try(FileOutputStream out=new FileOutputStream(marker)){
             out.write(CORE_SHA256.getBytes(StandardCharsets.US_ASCII));
         }
         if(!main.isFile())throw new IllegalStateException("strategy bridge missing after extraction");
         return dir;
+    }
+
+    private void applyLiveBridgeOverlay(File dir) throws Exception{
+        File target=new File(dir,"android_live_bridge.py");
+        byte[] buf=new byte[8192];
+        try(FileOutputStream out=new FileOutputStream(target,false)){
+            for(int i=0;i<LIVE_BRIDGE_PARTS;i++){
+                String name=String.format(java.util.Locale.ROOT,"live_bridge_v071/part_%02d.txt",i);
+                try(InputStream in=context.getAssets().open(name)){
+                    int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);
+                }
+            }
+            out.flush();
+        }
+        if(!target.isFile()||target.length()<40000)throw new IllegalStateException("v0.7.1 live bridge overlay unavailable");
     }
 
     private static void deleteTree(File f){
