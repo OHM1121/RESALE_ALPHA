@@ -3,6 +3,7 @@ package com.artitrade.mobile;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -28,6 +29,8 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
@@ -68,6 +71,8 @@ public final class UnifiedVisualActivity extends Activity {
     private float swipeX=Float.NaN;
     private View drawerOverlay;
     private final Map<String,EditText[]> operationFields=new HashMap<>();
+    private static final int REQUEST_EXPORT_RESEARCH=7711;
+    private byte[] pendingResearchExport;
     private static final long REFRESH_MS=3500L;
 
     private final Runnable periodic=new Runnable(){
@@ -915,9 +920,53 @@ public final class UnifiedVisualActivity extends Activity {
         }
     }
 
+    private void exportResearch(Stats st){
+        try{
+            JSONObject out=new JSONObject();
+            out.put("schema","ARTITRADE_RESEARCH_EXPORT_V077");
+            out.put("market",market);
+            out.put("strategy",strategy);
+            out.put("strategy_name",strategyName(market,strategy));
+            out.put("exported_at",System.currentTimeMillis());
+            out.put("candidate_count",st.candidates);
+            out.put("bought_count",st.bought);
+            out.put("evaluated_count",st.confirmed);
+            out.put("target_hits",st.hits);
+            out.put("target_hit_rate",finite(st.target)?st.target:JSONObject.NULL);
+            out.put("items",st.research);
+            pendingResearchExport=out.toString(2).getBytes(StandardCharsets.UTF_8);
+            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/json");
+            i.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_"+market+"_"+strategy+"_RESEARCH_"+stamp+".json");
+            startActivityForResult(i,REQUEST_EXPORT_RESEARCH);
+        }catch(Exception e){
+            pendingResearchExport=null;
+            new AlertDialog.Builder(this).setTitle("연구자료 추출 실패").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
+        }
+    }
+
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode!=REQUEST_EXPORT_RESEARCH)return;
+        byte[] payload=pendingResearchExport;pendingResearchExport=null;
+        if(resultCode!=RESULT_OK||payload==null||data==null)return;
+        Uri target=data.getData();if(target==null)return;
+        try(OutputStream out=getContentResolver().openOutputStream(target,"w")){
+            if(out==null)throw new IllegalStateException("저장 위치를 열 수 없습니다.");
+            out.write(payload);out.flush();
+            new AlertDialog.Builder(this).setTitle("연구자료 추출 완료").setMessage("선택한 전략의 연구이력을 JSON으로 저장했습니다.").setPositiveButton("확인",null).show();
+        }catch(Exception e){
+            new AlertDialog.Builder(this).setTitle("연구자료 저장 실패").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
+        }
+    }
+
     private void renderResearch(){
         Stats st=stats(market,strategy);
-        TextView h=text(strategyName(market,strategy)+" 연구이력",22);h.setTypeface(null,Typeface.BOLD);content.addView(h);
+        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView h=text(strategyName(market,strategy)+" 연구이력",22);h.setTypeface(null,Typeface.BOLD);head.addView(h,new LinearLayout.LayoutParams(0,dp(44),1));
+        Button export=button("연구자료 추출",true,()->exportResearch(st));export.setTextSize(12);head.addView(export,new LinearLayout.LayoutParams(dp(112),dp(40)));
+        content.addView(head,new LinearLayout.LayoutParams(-1,dp(44)));
         TextView sub=text("후보 → 매수 → 판정 → 목표도달 흐름과 점수대별 결과",13);sub.setTextColor(Color.rgb(135,160,190));sub.setPadding(0,dp(3),0,dp(8));content.addView(sub);
 
         LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);
