@@ -45,6 +45,25 @@ def _sell_net_stock(e, pos):
 
 
 
+def _closed_position_win_rate(positions, executions):
+    closed={int(p.get('id') or 0) for p in positions or [] if str(p.get('status') or '').upper()=='CLOSED' and int(p.get('id') or 0)>0}
+    if not closed:return None
+    pnl={pid:0.0 for pid in closed}
+    seen=set()
+    for e in executions or []:
+        try:pid=int(e.get('position_id') or 0)
+        except Exception:continue
+        if pid not in closed or str(e.get('side') or '').upper()!='SELL':continue
+        val=e.get('net_profit')
+        if val is None:val=e.get('net_pnl')
+        if val is None:val=e.get('net_realized')
+        try:pnl[pid]+=float(val or 0);seen.add(pid)
+        except Exception:pass
+    evaluated=[pid for pid in closed if pid in seen]
+    if not evaluated:return None
+    return round(sum(1 for pid in evaluated if pnl.get(pid,0)>0)*100.0/len(evaluated),2)
+
+
 def _target_summary(rows, mode):
     hit=miss=pending=0
     for p in rows or []:
@@ -227,7 +246,7 @@ def _close_full(self):
         e['at']=e.get('ts');e['net_profit']=e.get('net_realized');e['strategy']='CLOSE'
     realized=sum(float(x.get('realized') or 0) for x in wallets)
     unreal=sum((float(x.get('last_price') or 0)-float(x.get('entry_price') or 0))*float(x.get('qty') or 0) for x in positions)
-    sells=[x for x in executions if str(x.get('side') or '').upper()=='SELL']
+    win_rate=_closed_position_win_rate(all_positions,executions)
     target=_target_summary(all_positions,'close')
     bought=len(all_positions);closed=sum(1 for x in all_positions if str(x.get('status') or '').upper()=='CLOSED')
     performance={'close':{'realized_won':round(realized),'holding_won':round(unreal),'total_trades':bought,
@@ -236,7 +255,7 @@ def _close_full(self):
         'actual_target_hit':target['hit'],'actual_target_miss':target['miss'],'actual_target_pending':target['pending']}}
     return {'schema':'phone-v078','origin':'phone','accounts':wallets,'positions':positions,'pending':pending,'executions':executions,
         'performance_by_frame':performance,'actual_target':target,'realized_pnl':round(realized),'unrealized_pnl':round(unreal),
-        'total_pnl':round(realized+unreal),'win_rate':(sum(1 for x in sells if float(x.get('net_realized') or 0)>0)*100/len(sells) if sells else None),
+        'total_pnl':round(realized+unreal),'win_rate':win_rate,
         'positions_count':len(positions),'pending_count':len(pending)}
 
 
@@ -328,8 +347,7 @@ def _stock_at_v19_full(self, base):
         'realized_pnl':round(total_real),'unrealized_pnl':round(total_hold),
         'total_pnl':round(total_real+total_hold),'positions_count':len(positions),
         'pending_count':len(pending)})
-    sells=[x for x in executions if str(x.get('side') or '').upper()=='SELL' and x.get('net_profit') is not None]
-    base['win_rate']=(sum(1 for x in sells if float(x.get('net_profit') or 0)>0)*100.0/len(sells)) if sells else None
+    base['win_rate']=_closed_position_win_rate(all_positions,executions)
     return base
 
 
@@ -365,8 +383,7 @@ def _stock_ma_full(self):
                 'total_pnl':round(realized+holding),'actual_target':_target_summary(all_positions,'stock_ma'),
                 'positions_count':len(snap.get('positions') or []),
                 'pending_count':len(snap.get('pending') or [])})
-    sells=[x for x in full_exec if str(x.get('side') or '').upper()=='SELL']
-    out['win_rate']=(sum(1 for x in sells if float(x.get('net_profit') or 0)>0)*100.0/len(sells)) if sells else None
+    out['win_rate']=_closed_position_win_rate(all_positions,full_exec)
     return out
 
 def _coin_full(ledger):
@@ -402,13 +419,12 @@ def _coin_full(ledger):
         e['net_profit']=e.get('net_pnl');e['strategy']=e.get('tf')
     realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
     holding=sum(float(x.get('unrealized_pnl') or 0) for x in accounts)
-    sells=[x for x in executions if str(x.get('side') or '').upper()=='SELL']
+    win_rate=_closed_position_win_rate(all_positions,executions)
     return {'schema':'phone-v078','origin':'phone','accounts':accounts,'positions':positions,
             'pending':pending,'executions':executions,'performance_by_frame':performance,
             'actual_target':_target_summary(all_positions,'coin'),
             'realized_pnl':round(realized),'unrealized_pnl':round(holding),
-            'total_pnl':round(realized+holding),
-            'win_rate':(sum(1 for x in sells if float(x.get('net_pnl') or 0)>0)*100.0/len(sells) if sells else None),
+            'total_pnl':round(realized+holding),'win_rate':win_rate,
             'positions_count':len(positions),'pending_count':len(pending)}
 
 def _research_history(self, out):
