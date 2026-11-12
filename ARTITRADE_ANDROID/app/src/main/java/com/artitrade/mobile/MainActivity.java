@@ -75,7 +75,10 @@ public final class MainActivity extends Activity {
         panel.addView(label("ARTITRADE  |  " + market, 22));
         panel.addView(label("Galaxy S21+ 가로 화면 / Samsung DeX",14));
         panel.addView(label("클라우드 서버 URL 설정이 필요합니다.\n현재 설치파일은 연결용 시험 앱이며 거래 엔진이 아닙니다.",14));
-        panel.addView(button("서버 연결 설정",this::configure));
+        panel.addView(button("갤럭시 데이터 서버 연결 토큰 입력",this::configurePhoneHub));
+        panel.addView(button("갤럭시 데이터 서버 상태 조회",this::readPhoneHubStatus));
+        panel.addView(button("동기화 기록 확인",this::selectHubRecord));
+        panel.addView(button("기존 HTTPS 서버 연결 설정",this::configure));
         panel.addView(button("저장된 서버에 연결",this::connectSaved));
     }
     private void configure() {
@@ -268,7 +271,65 @@ public final class MainActivity extends Activity {
         panel.addView(label("배터리 최적화 제외를 설정하더라도 Android가 서버를 중단할 수 있음.",12));
     }
 
+
+    private void configurePhoneHub() {
+        android.widget.EditText input=new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
+            android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setHint("허브 APK에서 표시한 64자리 연결 토큰");
+        new android.app.AlertDialog.Builder(this).setTitle("폰 서버 페어링")
+            .setMessage("같은 S21+에 설치한 'ARTITRADE 폰 서버' 앱의 토큰을 붙여넣으십시오.")
+            .setView(input).setNegativeButton("취소",null)
+            .setPositiveButton("저장",(d,w)->{
+                try{
+                    new LocalHubClient(this).storePairingToken(input.getText().toString().trim());
+                    new android.app.AlertDialog.Builder(this).setMessage("연결 토큰 저장 완료")
+                        .setPositiveButton("확인",null).show();
+                }catch(Exception e){
+                    new android.app.AlertDialog.Builder(this).setMessage("토큰 형식을 확인하십시오.")
+                        .setPositiveButton("확인",null).show();
+                }
+            }).show();
+    }
+    private void readPhoneHubStatus() {
+        new Thread(()->{
+            try{
+                org.json.JSONObject status=new LocalHubClient(this).status();
+                runOnUiThread(()->showHubResult("폰 서버 상태",status.toString(2)));
+            }catch(Exception e){runOnUiThread(()->showHubResult("폰 서버 연결 오류",
+                "폰 서버 앱이 실행 중이고 페어링 토큰이 맞는지 확인하십시오."));}
+        },"hub-client-status").start();
+    }
+    private void selectHubRecord() {
+        String market=BuildConfig.MARKET;
+        final String[] strategies="stock".equals(market)?new String[]{"at","cw","shared"}:
+            new String[]{"general","ma","shared"};
+        new android.app.AlertDialog.Builder(this).setTitle("동기화 전략")
+            .setItems(strategies,(d,i)->{
+                final String strategy=strategies[i];
+                final String[] buckets={"settings","ledger","research","errors"};
+                new android.app.AlertDialog.Builder(this).setTitle("조회할 데이터")
+                    .setItems(buckets,(dialog,j)->{
+                        new Thread(()->{
+                            try{
+                                org.json.JSONObject record=new LocalHubClient(this).record(market,strategy,buckets[j]);
+                                runOnUiThread(()->showHubResult(strategy+" / "+buckets[j],record.toString(2)));
+                            }catch(Exception e){runOnUiThread(()->showHubResult("조회 실패",
+                                "서버 실행 상태와 연결 토큰을 확인하십시오."));}
+                        },"hub-client-record").start();
+                    }).show();
+            }).show();
+    }
+    private void showHubResult(String title,String message){
+        ScrollView scroll=new ScrollView(this);
+        TextView text=label(message,13);text.setTextIsSelectable(true);
+        scroll.addView(text);scroll.setPadding(dp(12),dp(8),dp(12),dp(8));
+        new android.app.AlertDialog.Builder(this).setTitle(title).setView(scroll)
+            .setPositiveButton("닫기",null).show();
+    }
     @Override public void onBackPressed() {
+        if("hub".equals(BuildConfig.MARKET)){super.onBackPressed();return;}
         if (web!=null && web.canGoBack()) web.goBack();
         else showWelcome();
     }
