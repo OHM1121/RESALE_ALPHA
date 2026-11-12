@@ -2,10 +2,9 @@ name: Build ARTITRADE S21 Plus Android clients
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, artitrade-phone-main-v070-live-orders-20261112 ]
     paths:
-      - 'ARTITRADE_ANDROID/**'
-      - '.github/workflows/build-artitrade-s21plus.yml'
+      - 'ARTITRADE_ANDROID/BUILD_V078_FINAL_TRIGGER.txt'
   pull_request:
     branches: [ main ]
     paths:
