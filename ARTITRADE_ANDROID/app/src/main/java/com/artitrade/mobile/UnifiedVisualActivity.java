@@ -394,11 +394,20 @@ public final class UnifiedVisualActivity extends Activity {
                 }catch(Exception e){packet.put("strategy_runtime",new JSONObject());}
                 try{packet.put("runtime_diagnostics",new RuntimeCrashStore(this).read());}catch(Exception e){packet.put("runtime_diagnostics",new JSONArray());}
 
+                JSONObject localRecords=new JSONObject();
                 try{
                     android.content.SharedPreferences lp=getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE);
-                    packet.put("local_records",new JSONObject(lp.getString("records","{}")));
+                    localRecords=new JSONObject(lp.getString("records","{}"));
+                    packet.put("local_records",localRecords);
                     packet.put("local_records_at",lp.getLong("updated_at",0L));
                 }catch(Exception e){packet.put("local_records",new JSONObject());}
+                if(!meaningfulTree(localRecords)){
+                    for(String[] k:RECORDS){
+                        try{records.put(k[3],client.record(k[0],k[1],k[2]));}
+                        catch(Exception e){records.put(k[3],new JSONObject().put("ok",false));}
+                    }
+                    packet.put("using_hub_fallback",true);
+                }else packet.put("using_hub_fallback",false);
                 try{
                     android.content.SharedPreferences hp=getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE);
                     packet.put("hub_publish",new JSONObject()
@@ -436,6 +445,38 @@ public final class UnifiedVisualActivity extends Activity {
         synchronized(cacheLock){try{return new JSONObject(cache.toString());}catch(Exception e){return new JSONObject();}}
     }
 
+    private boolean meaningfulTree(Object value){
+        if(value==null||value==JSONObject.NULL)return false;
+        if(value instanceof JSONArray){
+            JSONArray a=(JSONArray)value;
+            if(a.length()>0)return true;
+            return false;
+        }
+        if(value instanceof JSONObject){
+            JSONObject o=(JSONObject)value;
+            for(String key:new String[]{"positions","pending","executions","items","candidate_rows","restorations"}){
+                JSONArray a=o.optJSONArray(key);if(a!=null&&a.length()>0)return true;
+            }
+            for(String key:new String[]{"realized_pnl","unrealized_pnl","total_pnl","candidate_count","positions_count","pending_count"}){
+                if(Math.abs(o.optDouble(key,0))>0.000001)return true;
+            }
+            java.util.Iterator<String> it=o.keys();
+            while(it.hasNext()){
+                String k=it.next();
+                if("schema".equals(k)||"origin".equals(k)||"ok".equals(k)||"version".equals(k))continue;
+                Object child=o.opt(k);
+                if(child instanceof JSONObject||child instanceof JSONArray){
+                    if(meaningfulTree(child))return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean meaningfulRecord(JSONObject value){
+        return value!=null&&meaningfulTree(value);
+    }
+
     private JSONObject localRecord(String key){
         JSONObject all=copyCache().optJSONObject("local_records");if(all==null)return new JSONObject();
         try{
@@ -457,10 +498,14 @@ public final class UnifiedVisualActivity extends Activity {
 
     private JSONObject record(String key){
         JSONObject local=localRecord(key);
-        if(local.length()>0)return local;
-        JSONObject p=copyCache().optJSONObject("records");if(p==null)return new JSONObject();
-        JSONObject r=p.optJSONObject(key);if(r==null)return new JSONObject();
-        JSONObject d=r.optJSONObject("data");return d==null?new JSONObject():d;
+        if(meaningfulRecord(local))return local;
+        JSONObject p=copyCache().optJSONObject("records");
+        if(p!=null){
+            JSONObject r=p.optJSONObject(key);
+            JSONObject d=r==null?null:r.optJSONObject("data");
+            if(meaningfulRecord(d))return d;
+        }
+        return local==null?new JSONObject():local;
     }
 
     private JSONObject ledger(String m,String s){
