@@ -341,10 +341,17 @@ public final class UnifiedVisualActivity extends Activity {
                 }catch(Exception e){packet.put("strategy_runtime",new JSONObject());}
                 try{packet.put("runtime_diagnostics",new RuntimeCrashStore(this).read());}catch(Exception e){packet.put("runtime_diagnostics",new JSONArray());}
 
-                for(String[] k:RECORDS){
-                    try{records.put(k[3],client.record(k[0],k[1],k[2]));}
-                    catch(Exception e){records.put(k[3],new JSONObject().put("ok",false));}
-                }
+                try{
+                    android.content.SharedPreferences lp=getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE);
+                    packet.put("local_records",new JSONObject(lp.getString("records","{}")));
+                    packet.put("local_records_at",lp.getLong("updated_at",0L));
+                }catch(Exception e){packet.put("local_records",new JSONObject());}
+                try{
+                    android.content.SharedPreferences hp=getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE);
+                    packet.put("hub_publish",new JSONObject()
+                        .put("at",hp.getLong("at",0L)).put("ok",hp.getInt("ok",0))
+                        .put("failed",hp.getInt("failed",0)).put("last_error",hp.getString("last_error","")));
+                }catch(Exception e){packet.put("hub_publish",new JSONObject());}
                 packet.put("records",records);packet.put("loaded_at",System.currentTimeMillis());
             }catch(Exception e){try{packet.put("refresh_error",e.getClass().getSimpleName()+": "+e.getMessage());}catch(Exception ignored){}}
             synchronized(cacheLock){cache=packet;}
@@ -355,14 +362,15 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void updateHeader(){
         if(statusText==null)return;
-        JSONObject c=copyCache();JSONObject st=c.optJSONObject("status");
-        boolean ok=st!=null&&st.optBoolean("ok",false);
-        JSONObject rt=c.optJSONObject("strategy_runtime");
+        JSONObject c=copyCache();JSONObject rt=c.optJSONObject("strategy_runtime");
+        JSONObject mr=rt==null?null:rt.optJSONObject(market);
+        boolean live=mr!=null&&mr.optBoolean("connected",false);
         JSONObject halted=rt==null?null:rt.optJSONObject("halted");
-        String h="";
-        if(halted!=null&&!halted.isNull(market)&&halted.optJSONObject(market)!=null)h=" · 실거래 자동정지";
-        statusText.setText((ok?"폰 서버 연결":"폰 서버 미연결")+h);
-        statusText.setTextColor(ok?Color.rgb(62,224,181):Color.rgb(255,119,133));
+        boolean stopped=halted!=null&&!halted.isNull(market)&&halted.optJSONObject(market)!=null;
+        long recordsAt=c.optLong("local_records_at",0L);
+        String sync=recordsAt>0?" · 원장 "+Math.max(0,(System.currentTimeMillis()-recordsAt)/1000)+"초":" · 원장 준비";
+        statusText.setText((live?"실시간 LIVE":"실시간 대기")+sync+(stopped?" · 주문정지":""));
+        statusText.setTextColor(stopped?Color.rgb(255,119,133):live?Color.rgb(62,224,181):Color.rgb(255,201,94));
     }
 
     private void updateClock(){
@@ -375,7 +383,28 @@ public final class UnifiedVisualActivity extends Activity {
         synchronized(cacheLock){try{return new JSONObject(cache.toString());}catch(Exception e){return new JSONObject();}}
     }
 
+    private JSONObject localRecord(String key){
+        JSONObject all=copyCache().optJSONObject("local_records");if(all==null)return new JSONObject();
+        try{
+            String market="",strategy="",bucket="";
+            if(key.startsWith("stock"))market="stock";else if(key.startsWith("coin"))market="coin";else return new JSONObject();
+            if(key.contains("Shared"))strategy="shared";
+            else if(key.contains("At"))strategy="at";
+            else if(key.contains("Cw"))strategy="cw";
+            else if(key.contains("General"))strategy="general";
+            else if(key.contains("Ma"))strategy="ma";
+            if(key.endsWith("Ledger"))bucket="ledger";
+            else if(key.endsWith("Research"))bucket="research";
+            else if(key.endsWith("Errors"))bucket="errors";
+            JSONObject m=all.optJSONObject(market),st=m==null?null:m.optJSONObject(strategy);
+            JSONObject out=st==null?null:st.optJSONObject(bucket);
+            return out==null?new JSONObject():out;
+        }catch(Exception e){return new JSONObject();}
+    }
+
     private JSONObject record(String key){
+        JSONObject local=localRecord(key);
+        if(local.length()>0)return local;
         JSONObject p=copyCache().optJSONObject("records");if(p==null)return new JSONObject();
         JSONObject r=p.optJSONObject(key);if(r==null)return new JSONObject();
         JSONObject d=r.optJSONObject("data");return d==null?new JSONObject():d;
