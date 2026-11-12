@@ -268,9 +268,16 @@ public final class UnifiedActivity extends Activity {
     }
 
     private void showDashboard(){
-        dashboardReady=true;
+        dashboardReady=false;
+        pageCommitted=false;
         root.removeAllViews();
+
         web=new WebView(this);
+        // Samsung/DeX/Phone Link can occasionally leave a hardware-composited
+        // WebView surface blank while the Activity itself stays alive. The
+        // dashboard is UI-only, so software composition is the safer first paint.
+        web.setLayerType(View.LAYER_TYPE_SOFTWARE,null);
+        web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         WebSettings s=web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(false);
@@ -283,23 +290,186 @@ public final class UnifiedActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(false);
         web.setBackgroundColor(Color.rgb(8,15,26));
         web.addJavascriptInterface(new Bridge(),"Artitrade");
-        web.setWebViewClient(new WebViewClient(){
-            @Override public void onPageFinished(WebView view,String url){
-                pushCache();
-                main.postDelayed(()->{
-                    try{startRuntimeService();}
-                    catch(Throwable e){new RuntimeCrashStore(UnifiedActivity.this).add("delayed_runtime_start",e);}
-                },900);
+
+        web.setWebChromeClient(new WebChromeClient(){
+            @Override public boolean onConsoleMessage(ConsoleMessage msg){
+                try{
+                    if(msg!=null&&msg.messageLevel()==ConsoleMessage.MessageLevel.ERROR){
+                        new RuntimeCrashStore(UnifiedActivity.this).add(
+                            "web_console",
+                            new IllegalStateException(msg.message()+" @"+msg.lineNumber())
+                        );
+                    }
+                }catch(Throwable ignored){}
+                return false;
             }
         });
+
+        web.setWebViewClient(new WebViewClient(){
+            @Override public void onPageCommitVisible(WebView view,String url){
+                pageCommitted=true;
+                updateDashboardCover("대시보드 첫 화면 확인 · 기능 준비 중");
+            }
+
+            @Override public void onPageFinished(WebView view,String url){
+                // Do not start Python/broker engines merely because WebView reported
+                // "finished". Confirm that the dashboard JavaScript is actually alive.
+                main.postDelayed(()->probeDashboardReady(view),120);
+            }
+
+            @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError err){
+                if(req!=null&&req.isForMainFrame()){
+                    String detail=err==null?"main frame load error":String.valueOf(err.getDescription());
+                    new RuntimeCrashStore(UnifiedActivity.this).add("web_main_frame",
+                        new IllegalStateException(detail));
+                    showWebFailure("대시보드 로드 실패",detail);
+                }
+            }
+
+            @Override public boolean onRenderProcessGone(WebView view,RenderProcessGoneDetail detail){
+                String why=(detail!=null&&detail.didCrash())?"WebView renderer crash":"WebView renderer killed";
+                new RuntimeCrashStore(UnifiedActivity.this).add("web_renderer",
+                    new IllegalStateException(why));
+                try{
+                    if(view!=null){root.removeView(view);view.destroy();}
+                }catch(Throwable ignored){}
+                if(web==view)web=null;
+                dashboardReady=false;
+                pageCommitted=false;
+                webReloadAttempts++;
+                if(webReloadAttempts<=1){
+                    showPreloader();
+                    updatePreload(1,"화면 렌더러 자동 복구");
+                    main.postDelayed(UnifiedActivity.this::showDashboard,650);
+                }else{
+                    showWebFailure("대시보드 렌더러 복구 실패",why);
+                }
+                return true;
+            }
+        });
+
         root.addView(web,new FrameLayout.LayoutParams(-1,-1));
+        dashboardCover=createDashboardCover();
+        root.addView(dashboardCover,new FrameLayout.LayoutParams(-1,-1));
+
         try(InputStream in=getAssets().open("unified_dashboard.html")){
             ByteArrayOutputStream out=new ByteArrayOutputStream();
             byte[] b=new byte[8192];int n;
             while((n=in.read(b))!=-1)out.write(b,0,n);
-            String html=new String(out.toByteArray(),StandardCharsets.UTF_8);
-            web.loadDataWithBaseURL("https://appassets.androidplatform.net/",html,"text/html","UTF-8",null);
-        }catch(Exception e){showFatal("통합 대시보드 로드 실패");}
+            byte[] htmlBytes=out.toByteArray();
+            String encoded=Base64.encodeToString(htmlBytes,Base64.NO_WRAP);
+            // A base64 data document avoids asset/file-origin policy differences
+            // between Samsung WebView, DeX and Phone Link.
+            web.loadData(encoded,"text/html","base64");
+        }catch(Throwable e){
+            new RuntimeCrashStore(this).add("dashboard_asset",e);
+            showWebFailure("통합 대시보드 로드 실패",e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));
+            return;
+        }
+
+        main.postDelayed(()->{
+            if(!dashboardReady&&web!=null){
+                String stage=pageCommitted?"JavaScript 준비 지연":"첫 화면 표시 지연";
+                new RuntimeCrashStore(UnifiedActivity.this).add("web_ready_timeout",
+                    new IllegalStateException(stage));
+                showWebFailure("대시보드 표시 지연",stage+" · 다시 열기를 누르면 엔진을 건드리지 않고 UI만 재생성합니다.");
+            }
+        },8000);
+    }
+
+    private View createDashboardCover(){
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(36),dp(24),dp(36),dp(24));
+        box.setBackgroundColor(Color.rgb(8,15,26));
+        TextView brand=text("ARTITRADE",24);
+        brand.setTypeface(null,android.graphics.Typeface.BOLD);
+        brand.setLetterSpacing(.12f);
+        box.addView(brand);
+        TextView state=text("대시보드 화면 불러오는 중",14);
+        state.setId(0x61710011);
+        state.setTextColor(Color.rgb(173,197,224));
+        state.setPadding(0,dp(12),0,dp(14));
+        box.addView(state);
+        ProgressBar spin=new ProgressBar(this);
+        box.addView(spin,new LinearLayout.LayoutParams(dp(34),dp(34)));
+        TextView note=text("화면 확인 후 주식·코인 엔진을 지연 시작합니다.",11);
+        note.setTextColor(Color.rgb(116,143,178));
+        note.setPadding(0,dp(14),0,0);
+        box.addView(note);
+        return box;
+    }
+
+    private void updateDashboardCover(String msg){
+        if(dashboardCover==null)return;
+        TextView t=dashboardCover.findViewById(0x61710011);
+        if(t!=null)t.setText(msg);
+    }
+
+    private void probeDashboardReady(WebView target){
+        if(target==null||target!=web||dashboardReady)return;
+        try{
+            target.evaluateJavascript(
+                "(typeof window.__ARTI_SNAPSHOT==='function' && !!document.getElementById('view'))",
+                value->{
+                    if("true".equals(String.valueOf(value)))markDashboardReady("js_probe");
+                    else main.postDelayed(()->{
+                        if(target==web&&!dashboardReady){
+                            try{target.evaluateJavascript(
+                                "(typeof window.__ARTI_SNAPSHOT==='function' && !!document.getElementById('view'))",
+                                v->{if("true".equals(String.valueOf(v)))markDashboardReady("js_probe_retry");}
+                            );}catch(Throwable e){new RuntimeCrashStore(UnifiedActivity.this).add("web_probe_retry",e);}
+                        }
+                    },450);
+                }
+            );
+        }catch(Throwable e){
+            new RuntimeCrashStore(this).add("web_probe",e);
+        }
+    }
+
+    private void markDashboardReady(String source){
+        if(dashboardReady)return;
+        dashboardReady=true;
+        webReloadAttempts=0;
+        if(dashboardCover!=null){
+            try{root.removeView(dashboardCover);}catch(Throwable ignored){}
+            dashboardCover=null;
+        }
+        pushCache();
+        if(!runtimeStartIssued){
+            runtimeStartIssued=true;
+            main.postDelayed(()->{
+                try{startRuntimeService();}
+                catch(Throwable e){new RuntimeCrashStore(UnifiedActivity.this).add("delayed_runtime_start_"+source,e);}
+            },1800);
+        }
+    }
+
+    private void showWebFailure(String title,String detail){
+        dashboardReady=false;
+        if(web!=null){
+            try{root.removeView(web);web.stopLoading();web.destroy();}catch(Throwable ignored){}
+            web=null;
+        }
+        root.removeAllViews();
+        LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(dp(34),dp(20),dp(34),dp(20));
+        panel.addView(text("ARTITRADE 화면 안전복구",22));
+        TextView h=text(title,14);h.setTextColor(Color.rgb(255,190,120));h.setPadding(0,dp(10),0,dp(6));panel.addView(h);
+        TextView d=text(detail==null?"상세 미기록":detail,11);d.setTextColor(Color.rgb(181,202,225));panel.addView(d);
+        Button retry=button("UI만 다시 열기",()->{
+            try{showDashboard();}
+            catch(Throwable e){new RuntimeCrashStore(UnifiedActivity.this).add("web_manual_retry",e);showStartupRecovery(e);}
+        });
+        retry.setPadding(dp(12),dp(8),dp(12),dp(8));
+        panel.addView(retry);
+        TextView engine=text("화면 오류만으로 실시간 엔진/원장 상태를 임의 변경하지 않습니다.",10);
+        engine.setTextColor(Color.rgb(116,143,178));engine.setPadding(0,dp(10),0,0);panel.addView(engine);
+        root.addView(panel,new FrameLayout.LayoutParams(-1,-1));
     }
 
     private void pushCache(){
