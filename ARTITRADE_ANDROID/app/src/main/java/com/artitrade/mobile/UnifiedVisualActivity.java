@@ -2001,8 +2001,11 @@ public final class UnifiedVisualActivity extends Activity {
             LinearLayout c=card();
             TextView name=text(nameOf(r)+" · "+r.optString("side",r.optString("type","체결")),15);
             name.setTypeface(null,Typeface.BOLD);c.addView(name);
-            TextView time=text(formatKst(r.opt("at"))+" · "+reasonOf(r),12);
-            time.setTextColor(Color.rgb(171,194,219));c.addView(time);
+            String side=tradeSideOf(r);
+            TextView time=text(side+" 체결 · "+fillTimeOf(r,"executions",strategy),13);
+            time.setTextColor(PremiumUi.MUTED);c.addView(time);
+            TextView why=text(side+" 원인 · "+tradeReasonOf(r,side),13);
+            why.setTextColor(PremiumUi.TEXT);c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
         addHistoryPager("policyHistory",executions.length());
@@ -2367,7 +2370,9 @@ public final class UnifiedVisualActivity extends Activity {
                 outcome=reached==null?"PENDING":reached?"HIT":"MISS";}
             boolean actualEntry=bool(row,"bought");
             String tag=actualEntry?"실제":"가상";
-            TextView status=text(tag+"  ·  "+outcome+"  ·  "+timeOf(row,item.source),12);
+            String outcomeKo="HIT".equals(outcome)?"목표 도달":
+                "MISS".equals(outcome)?"목표 미도달":"관측 중";
+            TextView status=text(tag+"  ·  "+outcomeKo+"  ·  신호 "+timeOf(row,item.source),13);
             status.setTextColor("HIT".equals(outcome)?Color.rgb(62,224,181):
                 "MISS".equals(outcome)?Color.rgb(255,119,133):Color.rgb(255,194,91));
             panel.addView(status);
@@ -2375,6 +2380,20 @@ public final class UnifiedVisualActivity extends Activity {
             TextView detail=text("판단근거  "+basis,11);
             detail.setTextColor(Color.rgb(177,199,223));
             detail.setMaxLines(4);detail.setPadding(dp(2),dp(5),0,0);panel.addView(detail);
+            // Research observations are NOT fills. Only actual recorded
+            // executions produce these extra buy/sell time and reason rows.
+            Object buyAt=firstValue(row,"buy_at","buy_filled_at","entry_at","entry_ts");
+            if(actualEntry&&buyAt!=null){
+                TextView bought=text("매수 체결 · "+TradeExplanation.kst(buyAt,false),12);
+                bought.setTextColor(PremiumUi.MUTED);panel.addView(bought);
+            }
+            Object sellAt=firstValue(row,"sell_at","paper_last_exit_at","sold_at","exit_at");
+            if(actualEntry&&sellAt!=null){
+                TextView sold=text("매도 체결 · "+TradeExplanation.kst(sellAt,false),12);
+                sold.setTextColor(PremiumUi.MUTED);panel.addView(sold);
+                TextView exit=text("매도 원인 · "+tradeReasonOf(row,"매도"),13);
+                exit.setTextColor(PremiumUi.TEXT);panel.addView(exit);
+            }
             LinearLayout.LayoutParams itemLp=new LinearLayout.LayoutParams(-1,-2);
             itemLp.setMargins(0,0,0,dp(6));content.addView(panel,itemLp);
         }
