@@ -30,6 +30,7 @@ def _phone_stock_progress(self, item):
 
 async def _phone_guard_stock_run(self):
     try:
+        self._progress('주식 원장 사전점검', 0, 1, 'PC 승계 원장 및 키움 시세 엔진 준비', state='running')
         return await _ORIGINAL_STOCK_RUN(self)
     except Exception as exc:
         # The Windows runner's bare background thread previously died silently:
@@ -57,9 +58,7 @@ def _phone_runtime_snapshot(self):
         runner = getattr(self, 'stock_runner', None)
         status = str(getattr(runner, 'status', '전략엔진 준비')) if runner is not None else '전략엔진 준비'
         stock = snapshot.get('stock') or {}
-        # "연결 끊김 - 재연결 대기" contains the Korean word 연결;
-        # substring matching used to report a dead stream as connected.
-        stock['connected'] = (status == '실시간 연결됨')
+        # Never classify a disconnected stock feed as live solely from a status substring.
         stock['status'] = status
         snapshot['stock'] = stock
         last = dict(getattr(self, '_phone_stock_progress', {}) or {})
@@ -68,6 +67,11 @@ def _phone_runtime_snapshot(self):
             transport = broker_transport_snapshot()
         except Exception:
             transport = {}
+        # REG/tick was confirmed on this socket AND the broker transport is still alive.
+        # The runner may temporarily change its status to NXT-universe refresh during LIVE.
+        stock['connected'] = bool(runner is not None and
+            getattr(runner, '_confirmed_ws_session', False) and
+            transport.get('state') == 'connected')
         try:
             preload = runner.preload_gate.snapshot() if runner is not None else {}
         except Exception:

@@ -161,7 +161,8 @@ jobs:
           assert 'showKiwoomFeedDiagnosis' in ui
           assert 'stockFeed.optInt("subscribed",0)' in service
           assert 'stockFeed.optLong("last_frame_ms",0L)' in service
-          assert "status == '실시간 연결됨'" in py
+          assert "_confirmed_ws_session" in py
+          assert "transport.get('state') == 'connected'" in py
           assert '_phone_stock_progress' in py and 'ANDROID_KIWOOM_FEED_FATAL' in py
           print('TAB_DRAFT_FLOW_KIWOOM_DIAGNOSTIC_TEST_OK')
           PY
@@ -225,7 +226,7 @@ jobs:
           grep -F '"매수대기"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '"체결이력"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '"연구자료"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'operationFields.put(m+"."+stg+"."+tf' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'operationFields.put(key,new EditText[]{seedEdit,maxEdit})' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'addFrameOperationSection("기준봉", "stock","at"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'addFrameOperationSection("MA", "stock","ma"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'addFrameOperationSection("기준봉", "coin","general"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
