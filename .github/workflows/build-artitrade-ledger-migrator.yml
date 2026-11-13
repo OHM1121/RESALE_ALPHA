@@ -28,16 +28,17 @@ jobs:
           Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "src.backup"
           Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "MSERVER 전송"
           Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "stock/PROJECTGMO_V1.0"
+          Select-String -Path ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py -Pattern "DATA_SUFFIXES"
       - name: Install PyInstaller
         run: python -m pip install --disable-pip-version-check pyinstaller==6.16.0
       - name: Build one-file Windows migrator
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_LEDGER_MIGRATOR_V2_FIX4_20261113 ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
-          if (!(Test-Path "dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX4_20261113.exe")) { throw "EXE not created" }
-          Get-FileHash "dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX4_20261113.exe" -Algorithm SHA256 | Format-List
+          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_LEDGER_MIGRATOR_V3_FULL_RESEARCH_20261113 ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
+          if (!(Test-Path "dist/ARTITRADE_LEDGER_MIGRATOR_V3_FULL_RESEARCH_20261113.exe")) { throw "EXE not created" }
+          Get-FileHash "dist/ARTITRADE_LEDGER_MIGRATOR_V3_FULL_RESEARCH_20261113.exe" -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_LEDGER_MIGRATOR_V2_FIX4_20261113
-          path: dist/ARTITRADE_LEDGER_MIGRATOR_V2_FIX4_20261113.exe
+          name: ARTITRADE_LEDGER_MIGRATOR_V3_FULL_RESEARCH_20261113
+          path: dist/ARTITRADE_LEDGER_MIGRATOR_V3_FULL_RESEARCH_20261113.exe
           if-no-files-found: error
