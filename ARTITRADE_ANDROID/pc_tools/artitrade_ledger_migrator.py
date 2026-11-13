@@ -621,7 +621,8 @@ def verify_phone_backup(path: Path, progress=lambda msg: None) -> dict:
         all_entries={**entries,**reports}
         for i,(name,info) in enumerate(sorted(all_entries.items()),1):
             p=Path(name)
-            prefix_ok=name.startswith(("stock/","coin/")) if name in entries \
+            prefix_ok=(name.startswith(("stock/","coin/")) or \
+                       name=="ANDROID_OPERATION_V074.json") if name in entries \
                 else name.startswith("analysis/")
             if (p.is_absolute() or ".." in p.parts or "\\" in name or
                 not prefix_ok or any(mark in name.lower() for mark in PRIVATE_PARTS)):
