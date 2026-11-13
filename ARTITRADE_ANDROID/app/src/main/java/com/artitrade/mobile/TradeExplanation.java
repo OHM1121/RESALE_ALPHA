@@ -38,6 +38,40 @@ final class TradeExplanation {
             "매수".equals(event)?"원장에 매수 사유가 기록되지 않음":"원장에 판단 사유가 기록되지 않음";
         String x=raw.toUpperCase(Locale.ROOT).replace('-','_').replace(' ','_');
         // Most distinctive sell outcomes first. Never interpret a target HIGH as a fill.
+        // Verified against the frozen PC EXE's stock MA/CLOSE and GMO reason codes.
+        if(has(x,"MA_SECOND_3PCT_HALF_REMAINING"))
+            return "2차 매도 · 1차 매도가보다 3% 상승, 잔량 절반";
+        if(has(x,"MA_THIRD_PEAK_TRAIL_EXIT"))
+            return "3차 매도 · 고점 이후 하락으로 잔량 정리";
+        if(has(x,"MA_AFTER_FIRST_MIDPOINT_CROSS"))
+            return "1차 매도 후 기준봉 중간가격 하락 이탈";
+        if(has(x,"MA_V26_RECOVERY_2"))
+            return "큰 폭 하락 후 손실 회복 시 매도";
+        if(has(x,"MA_V26_RECOVERY_1"))
+            return "하락 이후 회복 기준 도달";
+        if(has(x,"MA_HOLD_EXPIRE_NONPROFIT"))
+            return "보유기간 만료 · 수익 미발생으로 매도";
+        if(has(x,"MA_HOLD_EXPIRE_TRAIL"))
+            return "보유기간 만료 · 고점 추적 매도";
+        if(has(x,"HOLDING_DEADLINE","HOLD_EXPIRE"))
+            return "보유기간 만료로 매도";
+        if(has(x,"NO_IMMEDIATE_REACTION"))
+            return "매수 이후 단기 반등 부족";
+        if(has(x,"BREAK_EVEN_RETURN","BREAKEVEN_RETURN"))
+            return "본전 가격으로 되돌아와 매도";
+        if(has(x,"FINAL_TARGET"))
+            return "최종 목표가 도달";
+        if(has(x,"TRAIL_EXIT","PEAK_TRAIL"))
+            return "고점에서 내려와 추적매도";
+        if(has(x,"RECOVERY_PEAK_MINUS2PP"))
+            return "회복 중 최고점 대비 2%p 하락";
+        if(has(x,"MA_NORMAL_REFERENCE"))
+            return "이동평균선 기준 매수 조건";
+        if(has(x,"MA_BEAR_SPECIAL_PLUS10"))
+            return "하락장 이동평균선 특별 조건";
+        if(has(x,"AT_CLOSE_SIGNAL_ENTRY"))
+            return "종가베팅 진입 조건 충족";
+
         if(has(x,"THIRD_TARGET","THIRD_TP","TP3","3차매도","3차_목표","3차목표"))
             return "3차 목표가 도달";
         if(has(x,"SECOND_TARGET","SECOND_TP","TP2","2차매도","2차_목표","2차목표"))
