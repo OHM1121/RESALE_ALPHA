@@ -103,8 +103,63 @@ def _db_snapshot(source: Path, target: Path) -> dict:
     return counts
 
 
-def make_backup(root_path: str, output_path: str) -> str:
+def _research_class(table):
+    x=table.lower()
+    if ("shadow" in x or "forward" in x or "milestone" in x
+            or "book_path" in x):
+        return "virtual_research"
+    if ("execution" in x or "fill" in x or x in
+            ("positions","orders","wallets","accounts")):
+        return "actual_trade"
+    if ("candidate" in x or "signal" in x or "research" in x
+            or "scan" in x or "cohort" in x):
+        return "signal_and_decision"
+    return "other_original_data"
+
+
+def _source_catalog(manifest):
+    """Every SQLite table count, not a UI 3,000-row preview."""
+    rows=[]
+    for source, info in manifest["strategy_files"].items():
+        if info.get("kind")!="sqlite":
+            continue
+        for table,count in (info.get("tables") or {}).items():
+            rows.append({"source":source,"table":table,"records":count,
+                         "kind":_research_class(table),
+                         "has_original_sqlite_in_zip":True})
+    return {"version":1,"read_only":True,"original_records_not_truncated":True,
+            "tables":rows,
+            "actual_trade_rows":sum(x["records"] for x in rows if x["kind"]=="actual_trade"),
+            "virtual_research_rows":sum(x["records"] for x in rows if x["kind"]=="virtual_research"),
+            "signal_decision_rows":sum(x["records"] for x in rows if x["kind"]=="signal_and_decision"),
+            "note":"Count is per original table, not deduplicated individual trades."}
+
+
+def _reports_from_json(raw):
+    if raw is None:
+        return None
+    if isinstance(raw,str):
+        raw=json.loads(raw)
+    if not isinstance(raw,dict) or len(raw)>8:
+        raise ValueError("Research export report manifest invalid")
+    files={}
+    for name,value in raw.items():
+        if not isinstance(name,str) or not name.startswith("analysis/") or \
+           name.count("/")!=1 or name.endswith((".sqlite3",".db")) or \
+           not name.endswith((".json",".txt",".csv")):
+            raise ValueError("Research report must remain under analysis/")
+        if not isinstance(value,str):
+            raise ValueError("Research report must be UTF-8 text")
+        content=value.encode("utf-8")
+        if len(content)>8*1024*1024:
+            raise ValueError("Research report is too large for inline metadata")
+        files[name]=content
+    return files
+
+
+def make_backup(root_path: str, output_path: str, reports_json=None) -> str:
     """Produce a manifest-verified ZIP at a private app-cache path."""
+    reports=_reports_from_json(reports_json)
     root=Path(root_path).resolve()
     output=Path(output_path).resolve()
     if not root.is_dir() or not output.parent.is_dir():
@@ -124,7 +179,7 @@ def make_backup(root_path: str, output_path: str) -> str:
         raise OSError("Phone free space insufficient for complete WAL-safe backup")
     marker=Path(str(output)+".partial")
     manifest={"schema":SCHEMA,"created_at_epoch_ms":int(time.time()*1000),
-              "source":"ANDROID_PHONE_MAIN","strategy_files":{},
+              "source":"ANDROID_PHONE_MAIN","strategy_files":{},"report_files":{},
               "sqlite_backup_mode":"sqlite3.Connection.backup",
               "independent_db_snapshots":True,"file_count":len(sources)}
     try:
@@ -145,12 +200,36 @@ def make_backup(root_path: str, output_path: str) -> str:
                     "sha256":_sha256(saved),"size":saved.stat().st_size,
                     "kind":kind,"tables":rows
                 }
+            if reports is not None:
+                # Research ZIP includes the full unchanged original PC+phone DBs,
+                # plus a readable table index and the current strategy preview.
+                reports["analysis/source_table_catalog.json"]=json.dumps(
+                    _source_catalog(manifest),ensure_ascii=False,indent=2
+                ).encode("utf-8")
+                reports["analysis/README_ko.txt"]=(
+                    "ARTITRADE 원본 연구 이력 전체 백업\n"
+                    "stock/ 및 coin/ 아래의 각 .sqlite3 파일에 원본 후보·점수·"
+                    "매수·매도·가상매매 테이블의 모든 행이 포함됨.\n"
+                    "analysis/source_table_catalog.json에서 전략별 테이블 건수를 확인할 수 있음.\n"
+                    "stock/ANDROID_RESEARCH_OBSERVATIONS.sqlite3는 휴대폰에서"
+                    " 감지한 원본 행의 수정 이력임.\n"
+                    "analysis/research_summary.json은 화면 요약으로, 원본 전체 행수와 다를 수 있음.\n"
+                    "가상 결과는 원본의 가상 체결/관측 근거가 있을 때만 인정해야 함.\n"
+                    "자동매매 조건·주문·원장은 백업 중 변경하지 않음.\n"
+                ).encode("utf-8")
+                for rel,blob in reports.items():
+                    manifest["report_files"][rel]={
+                        "sha256":hashlib.sha256(blob).hexdigest(),
+                        "size":len(blob),"kind":"report"
+                    }
             with zipfile.ZipFile(marker,"w",compression=zipfile.ZIP_DEFLATED,
                                  compresslevel=6,allowZip64=True) as z:
                 z.writestr("manifest.json",json.dumps(
                     manifest,ensure_ascii=False,separators=(",",":")))
                 for rel in manifest["strategy_files"]:
                     z.write(stage_root/rel,arcname=rel)
+                for rel,blob in (reports or {}).items():
+                    z.writestr(rel,blob)
             with marker.open("rb+") as durable:
                 durable.flush()
                 os.fsync(durable.fileno())
@@ -159,6 +238,7 @@ def make_backup(root_path: str, output_path: str) -> str:
                            "sha256":_sha256(output),
                            "bytes":output.stat().st_size,
                            "file_count":len(sources),
+                           "report_count":len(manifest["report_files"]),
                            "sqlite_count":sum(1 for x in manifest["strategy_files"].values()
                                               if x["kind"]=="sqlite")},
                           ensure_ascii=False)
@@ -177,11 +257,17 @@ def validate_backup(archive_path: str) -> dict:
         if manifest.get("schema")!=SCHEMA:
             raise ValueError("Unknown phone ledger backup schema")
         files=manifest.get("strategy_files")
-        if not isinstance(files,dict) or set(members)!=(set(files)|{"manifest.json"}):
+        reports=manifest.get("report_files") or {}
+        if not isinstance(files,dict) or not isinstance(reports,dict) or \
+           set(files).intersection(reports) or \
+           set(members)!=(set(files)|set(reports)|{"manifest.json"}):
             raise ValueError("Backup ZIP files do not match the signed manifest")
-        for rel,info in files.items():
-            if not rel.startswith(("stock/","coin/")) or ".." in Path(rel).parts:
-                raise ValueError("Unexpected ledger backup path")
+        for rel,info in {**files,**reports}.items():
+            if rel in files:
+                if not rel.startswith(("stock/","coin/")) or ".." in Path(rel).parts:
+                    raise ValueError("Unexpected ledger backup path")
+            elif not rel.startswith("analysis/") or ".." in Path(rel).parts:
+                raise ValueError("Unexpected analysis report path")
             digest=hashlib.sha256()
             count=0
             with z.open(rel,"r") as stream:
@@ -190,4 +276,4 @@ def validate_backup(archive_path: str) -> dict:
                     count+=len(chunk)
             if count!=info.get("size") or digest.hexdigest()!=info.get("sha256"):
                 raise ValueError("Backup member size/SHA mismatch: "+rel)
-    return {"ok":True,"files":len(files),"schema":SCHEMA}
+    return {"ok":True,"files":len(files),"reports":len(reports),"schema":SCHEMA}
