@@ -54,6 +54,11 @@ jobs:
           gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
           mkdir -p ../downloaded-apks
           cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk
+          # Rebuild the same source with service off only for the read-only
+          # synthetic-data render phase. It is never a distributed APK.
+          ARTITRADE_EMULATOR_FIXTURE=1 gradle --no-daemon :app:assembleUnifiedDebug --rerun-tasks --stacktrace
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_FIXTURE_x86_64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_FIXTURE_x86_64.apk AndroidManifest.xml | grep -A8 'UnifiedTradingService' | head -12
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk | grep -E "package:|launchable-activity:"
       - name: Boot Android 15, install APK and exercise all 6 strategy screens
         uses: reactivecircus/android-emulator-runner@v2
