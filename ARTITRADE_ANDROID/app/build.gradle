@@ -38,8 +38,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 27
-            versionName '0.7.16-LEDGER-UI-PERF'
+            versionCode 28
+            versionName '0.7.17-FILTER-TRENDS-LEDGER'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
