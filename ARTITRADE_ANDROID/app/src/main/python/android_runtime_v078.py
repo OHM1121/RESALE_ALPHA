@@ -297,8 +297,10 @@ def _stock_ma_research(root):
         items.append({'at':x.get('at'),'tf':x.get('tf'),'strategy':'MA','code':x.get('code'),'name':x.get('name'),
             'ref_ts':x.get('ref_ts'),'score':x.get('score'),'bought':bought,'entry_observed':bought,
             'closed':closed,'outcome':outcome,'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
-            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_NOT_REPLAYED',
+            'entry_status':'ACTUAL_FILLED' if bought else 'UNSELECTED',
+             'unselected':not bought,'unselected_reason':x.get('status') if not bought else None,
             'candidate_id':x.get('id'),'decision':x.get('status'),
+             'features':x.get('features'),
             'reason':x.get('status') or '판단 근거 별도 저장'})
     return _research_record(items,candidates)
 
@@ -658,8 +660,8 @@ def _attach_fill_cost(execution,position=None):
     execution['buy_price']=entry
     execution['buy_amount']=round(cost,4)
     execution['cost_basis_origin']='EXE_POSITION_FILL'
-    pnl=_first_existing(execution.get('net_profit'),execution.get('net_realized'),
-                        execution.get('net_pnl'))
+    pnl=next((execution.get(k) for k in ('net_profit','net_realized','net_pnl')
+              if execution.get(k) is not None and execution.get(k)!=''),None)
     if pnl is not None:
         try:
             profit=float(pnl)
@@ -996,6 +998,8 @@ def _gmo_original_record(root):
             'event_date':c.get('event_date'),'entry_date':c.get('entry_date'),
             'score':r.get('gmo_original_score'),'score_state':r.get('observation_quality'),
             'bought':bought,'entry_observed':bought or opener>0,
+             'unselected':not bought,
+             'unselected_reason':c.get('status') if not bought else None,
             'outcome':outcome,
             'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
             'reason':('실제 PAPER 매도 체결 기준' if bought else

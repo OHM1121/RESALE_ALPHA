@@ -392,7 +392,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        return "stock".equals(market)?"v0.7.27 · 주식":"v0.7.27 · 코인";
+        return "stock".equals(market)?"v0.7.28 · 주식":"v0.7.28 · 코인";
     }
 
     private void showShell(){
@@ -3005,7 +3005,40 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text("도구",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
         LinearLayout c=card();c.addView(text("키움 · 업비트 API",13));Button api=button("직접 API 키 설정",true,this::apiSettings);LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(42));ap.setMargins(0,dp(8),0,0);c.addView(api,ap);content.addView(c);
         LinearLayout p=card();p.addView(text("MSERVER(모바일 서버) · 토큰 등록 후 연결을 검사할 수 있음",13));Button pair=button("토큰 등록 · 연결 확인",true,this::pair);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(42));pp.setMargins(0,dp(8),0,0);p.addView(pair,pp);LinearLayout.LayoutParams pc=new LinearLayout.LayoutParams(-1,-2);pc.setMargins(0,dp(8),0,0);content.addView(p,pc);
-        LinearLayout b=card();b.addView(text("백그라운드",13));Button bat=button("절전 예외 설정 열기",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}});LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(42));bp.setMargins(0,dp(8),0,0);b.addView(bat,bp);LinearLayout.LayoutParams bc=new LinearLayout.LayoutParams(-1,-2);bc.setMargins(0,dp(8),0,0);content.addView(b,bc);
+        LinearLayout b=card();
+        b.addView(text("화면 꺼짐 · 자동매매 서비스 상태",15));
+        android.content.SharedPreferences health=getSharedPreferences(
+            "artitrade_background_health_v1",MODE_PRIVATE);
+        long last=health.getLong("last_heartbeat_ms",0L);
+        boolean serviceOn=health.getBoolean("service_running",false);
+        boolean cpu=health.getBoolean("cpu_lock",false);
+        boolean wifi=health.getBoolean("wifi_lock",false);
+        long elapsed=last>0?Math.max(0,System.currentTimeMillis()-last):-1;
+        String runtime=(serviceOn&&elapsed>=0&&elapsed<20000L)
+            ?"서비스 작동 · "+(elapsed/1000L)+"초 전 확인":"서비스 중단 또는 응답 지연";
+        TextView status=text(runtime,14);
+        status.setTextColor(serviceOn&&elapsed<20000L?
+            Color.rgb(103,224,184):Color.rgb(255,180,125));
+        status.setPadding(0,dp(6),0,dp(2));
+        b.addView(status);
+        TextView locks=text("CPU 유지 "+(cpu?"적용":"확인 필요")+
+            "   /   Wi-Fi 유지 "+(wifi?"적용":"확인 필요"),13);
+        locks.setTextColor(Color.rgb(166,190,215));
+        b.addView(locks);
+        TextView caveat=text("절전 제한·강제 종료·통신 장애 시 주문 중단 가능 · 연결 이상이면 안전 차단",12);
+        caveat.setTextColor(PremiumUi.MUTED);
+        caveat.setPadding(0,dp(4),0,dp(3));
+        b.addView(caveat);
+        Button bat=button("절전 예외 설정 열기",false,()->{
+            try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}
+            catch(Exception ignored){}
+        });
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(42));
+        bp.setMargins(0,dp(8),0,0);
+        b.addView(bat,bp);
+        LinearLayout.LayoutParams bc=new LinearLayout.LayoutParams(-1,-2);
+        bc.setMargins(0,dp(8),0,0);
+        content.addView(b,bc);
     }
 
     private void empty(String s){TextView e=text(s,13);e.setGravity(Gravity.CENTER);e.setTextColor(PremiumUi.MUTED);e.setPadding(0,dp(22),0,dp(22));content.addView(e);}

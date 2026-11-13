@@ -19,6 +19,7 @@ tree=ast.parse(RUNTIME.read_text(encoding="utf8"))
 names={"_coin_research","_gmo_original_record","_gmo_fill_identity",
        "_merge_gmo_pc_evidence","_research_source_audit","_research_scope",
        "_research_bands","_research_record","_research_history",
+       "_first_existing","_attach_fill_cost",
        "_hub_records_v078"}
 functions=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in names]
 class Reader:
@@ -35,7 +36,7 @@ class Reader:
                     return []
                 raise
 ns={"Path":Path,"sqlite3":sqlite3,"json":json,"Counter":Counter,
-    "_core":Reader(),"threading":__import__("threading"),"time":__import__("time")}
+    "_core":Reader(),"threading":__import__("threading"),"time":__import__("time"),"math":__import__("math")}
 exec(compile(ast.Module(body=functions,type_ignores=[]),str(RUNTIME),"exec"),ns)
 parts=sorted((ROOT/"app/src/main/assets/strategy_v070").glob("part_*.txt"))
 with zipfile.ZipFile(io.BytesIO(base64.b64decode(

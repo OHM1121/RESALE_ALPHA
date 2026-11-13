@@ -79,14 +79,18 @@ class OLEDNativeUiRegressions(unittest.TestCase):
         self.assertIn('11,PremiumUi.MUTED',MATRIX)
 
     def test_version_and_gmo_scope_remain_distinct(self):
-        self.assertIn("versionCode 38",GRADLE)
-        self.assertIn("versionName '0.7.27-PC-RESEARCH-GMO-RECOVERY'",GRADLE)
-        self.assertIn('v0.7.27 · 주식',UI)
-        self.assertIn('v0.7.27 · 코인',UI)
+        self.assertIn("versionCode 39",GRADLE)
+        self.assertIn("versionName '0.7.28-EXE-RESEARCH-BG-TRADE-UI'",GRADLE)
+        self.assertIn('v0.7.28 · 주식',UI)
+        self.assertIn('v0.7.28 · 코인',UI)
         self.assertIn('stats(market,strategy)',UI)
         self.assertIn('market+"/"+scope',UI)
         self.assertIn('StrategyDashboardScope.showFrameCharts(strategy)',UI)
         self.assertIn('WonFormat.signed(selected.total)',UI)
+        self.assertIn('new TradeGeometryView(this,rate,true)',UI)
+        self.assertIn('new TradeRangeView(this,minObs,maxObs)',UI)
+        self.assertIn('tradeMetricTile(figures,"매수금액"',UI)
+        self.assertIn('artitrade_background_health_v1',UI)
 
 
 if __name__=="__main__":

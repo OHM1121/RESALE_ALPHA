@@ -16,9 +16,9 @@ ROOT=Path(__file__).parents[1]
 RUNTIME=ROOT/"app/src/main/python/android_runtime_v078.py"
 nodes=ast.parse(RUNTIME.read_text(encoding="utf8"))
 selected={"_gmo_original_record","_research_source_audit","_research_record",
-          "_research_bands","_research_scope"}
+          "_research_bands","_research_scope","_first_existing","_attach_fill_cost"}
 functions=[n for n in nodes.body if isinstance(n,ast.FunctionDef) and n.name in selected]
-scope={"Path":Path,"sqlite3":sqlite3,"json":json}
+scope={"Path":Path,"sqlite3":sqlite3,"json":json,"math":__import__("math")}
 exec(compile(ast.Module(body=functions,type_ignores=[]),str(RUNTIME),"exec"),scope)
 
 # Don't mock the trading research policy: load the original bundled EXE module
