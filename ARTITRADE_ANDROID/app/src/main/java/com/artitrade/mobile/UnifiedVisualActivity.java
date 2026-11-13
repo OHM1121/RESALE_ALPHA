@@ -1918,6 +1918,31 @@ public final class UnifiedVisualActivity extends Activity {
         origin.setTextColor("ERROR".equals(loadStatus)||shortRead?Color.rgb(255,119,133):
             "OK".equals(loadStatus)?Color.rgb(62,224,181):Color.rgb(255,194,91));
         origin.setPadding(dp(2),dp(3),dp(2),dp(8));content.addView(origin);
+        JSONObject sourceEvidence=rs.optJSONObject("evidence_counts");
+        if(sourceEvidence!=null&&sourceEvidence.length()>0){
+            long evidenceRows=0;
+            StringBuilder evidenceDetail=new StringBuilder();
+            java.util.Iterator<String> tables=sourceEvidence.keys();
+            while(tables.hasNext()){
+                String tableName=tables.next();
+                long count=sourceEvidence.optLong(tableName,0);
+                evidenceRows+=Math.max(0,count);
+                evidenceDetail.append(tableName).append(": ").append(count).append("행\n");
+            }
+            LinearLayout sourceKpis=new LinearLayout(this);
+            sourceKpis.setOrientation(LinearLayout.HORIZONTAL);
+            addKpi(sourceKpis,"후보 원본",sourceCount<0?"—":String.valueOf(sourceCount));
+            addKpi(sourceKpis,"관련 원장 행",String.valueOf(evidenceRows));
+            addKpi(sourceKpis,"화면 게시",String.valueOf(loaded));
+            LinearLayout.LayoutParams auditLp=new LinearLayout.LayoutParams(-1,dp(82));
+            auditLp.setMargins(0,dp(4),0,dp(8));
+            content.addView(sourceKpis,auditLp);
+            final String detail=evidenceDetail.toString();
+            sourceKpis.setOnClickListener(v->new AlertDialog.Builder(this)
+                .setTitle("PC 승계 원본 연구·체결 증거 테이블")
+                .setMessage(detail+"\n※ 원본 테이블 행수이며 화면에 모두 게시됐다는 뜻이 아님")
+                .setPositiveButton("확인",null).show());
+        }
         if(shortRead||"ERROR".equals(loadStatus)){
             String msg="ERROR".equals(loadStatus)?"원장 조회 오류: "+rs.optString("load_error","")+
                 " · 다른 전략 리서치는 별도로 확인":

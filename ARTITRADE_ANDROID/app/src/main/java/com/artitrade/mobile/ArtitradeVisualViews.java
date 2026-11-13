@@ -296,9 +296,23 @@ final class TimeframeAccountFlowView extends View {
         p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);p.setTextSize(sp(20));p.setColor(Color.rgb(215,210,255));c.drawText(label,pad,sp(28),p);p.setFakeBoldText(false);
         String pnl=compact(total);fit(pnl,w*0.52f,29,19);p.setFakeBoldText(true);p.setColor(pnlColor(total));c.drawText(pnl,pad,sp(61),p);p.setFakeBoldText(false);
 
-        p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(12));p.setColor(Color.rgb(143,153,174));
-        c.drawText("실현 "+compact(realized),w-pad,sp(29),p);
-        c.drawText("평가 "+compact(unrealized),w-pad,sp(50),p);
+        // On S21+ the former 12sp right-aligned strings wasted a wide blank zone.
+        // Reserve the right 44% for two high-contrast numeric tiles instead.
+        float rx=w*.56f,rxRight=w-dp(7),rightWidth=rxRight-rx;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(Color.rgb(26,36,52));
+        c.drawRoundRect(new RectF(rx,dp(5),rxRight,dp(36)),dp(8),dp(8),p);
+        c.drawRoundRect(new RectF(rx,dp(40),rxRight,dp(71)),dp(8),dp(8),p);
+        p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(12));
+        p.setColor(Color.rgb(150,176,204));c.drawText("실현",rx+dp(7),sp(28),p);
+        c.drawText("평가",rx+dp(7),sp(63),p);
+        p.setTextAlign(Paint.Align.RIGHT);p.setFakeBoldText(true);
+        String real=compact(realized),held=compact(unrealized);
+        fit(real,Math.max(dp(46),rightWidth-dp(48)),19,13);
+        p.setColor(pnlColor(realized));c.drawText(real,rxRight-dp(6),sp(28),p);
+        fit(held,Math.max(dp(46),rightWidth-dp(48)),19,13);
+        p.setColor(pnlColor(unrealized));c.drawText(held,rxRight-dp(6),sp(63),p);
+        p.setFakeBoldText(false);
 
         float gaugeTop=sp(80),gaugeGap=dp(18),gaugeW=(w-pad*2-gaugeGap)/2;
         progress(c,"승률",win,pad,gaugeTop,gaugeW,Color.rgb(75,129,255));
