@@ -503,8 +503,17 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
                                "신규 MSERVER APK를 덮어쓰기 설치하십시오. 상세: " + json.dumps(begin, ensure_ascii=False))
         raise RuntimeError("MSERVER 승계 준비 실패: " + json.dumps(begin, ensure_ascii=False))
 
+    # The phone may already hold a verified prefix when a Windows process
+    # restarted or an earlier HTTP ACK was lost. Reuse its original session.
+    session = str(begin.get("session") or session)
+    received = int(begin.get("received") or 0)
+    if not (0 <= received <= total_chunks):
+        raise ValueError("MSERVER returned an invalid durable upload offset")
+    if received:
+        progress(f"중단된 PC 원장 전송 복구 · {received:,}/{total_chunks:,} 조각 재사용")
     with archive.open("rb") as f:
-        for index in range(total_chunks):
+        f.seek(received * UPLOAD_CHUNK)
+        for index in range(received, total_chunks):
             data = f.read(UPLOAD_CHUNK)
             payload = {
                 "session": session, "index": index,
@@ -530,7 +539,23 @@ def upload_archive(base: str, token: str, archive: Path, manifest: dict, progres
                 progress(f"MSERVER 전송 {index+1}/{total_chunks}")
 
     progress("승계 ZIP 최종 무결성 검사 중")
-    commit = request(base, token, "POST", "/v1/migration/commit", {"session": session}, timeout=180)
+    # A success response can be lost *after* the server committed its archive.
+    # Re-issuing /commit with this session is idempotent and preserves the ZIP.
+    commit = {}
+    for attempt in range(4):
+        try:
+            commit = request(base, token, "POST", "/v1/migration/commit",
+                             {"session": session}, timeout=180)
+            if commit.get("ok"):
+                break
+            if commit.get("error") not in ("server_storage_failed", "migration_not_ready"):
+                raise RuntimeError("MSERVER commit 거절: " + json.dumps(commit, ensure_ascii=False))
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            if attempt == 3:
+                raise ConnectionError("MSERVER 원장 ZIP 완료 응답 수신 실패: " + str(exc)) from exc
+        if attempt < 3:
+            progress("MSERVER 최종 저장 확인 재시도 " + str(attempt + 2))
+            time.sleep(min(2.0, 0.5*(attempt+1)))
     if not commit.get("ok"):
         raise RuntimeError("MSERVER commit 실패: " + json.dumps(commit, ensure_ascii=False))
     commit["session"] = session
