@@ -38,8 +38,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 33
-            versionName '0.7.22-LEDGER-SAFETY'
+            versionCode 34
+            versionName '0.7.23-OLED-PREMIUM'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
