@@ -530,7 +530,13 @@ final class LegacyLedgerMigration {
      */
     private JSONObject importOnlyMissingResearch(JSONObject previous,String previousSha)throws Exception{
         LocalHubClient hub=new LocalHubClient(context);
-        JSONObject remote=hub.migrationStatus();
+        JSONObject remote;
+        try{remote=hub.migrationStatus();}
+        catch(java.io.IOException networkUnavailable){
+            // An already imported phone must start from its local SQLite while
+            // offline; supplemental PC files are optional until server returns.
+            return null;
+        }
         if(!remote.optBoolean("ok")||!remote.optBoolean("ready")||
            !remote.optBoolean("archive_exists",false))return null;
         String incoming=remote.optString("archive_sha256","");
