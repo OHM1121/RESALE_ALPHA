@@ -79,10 +79,10 @@ class OLEDNativeUiRegressions(unittest.TestCase):
         self.assertIn('11,PremiumUi.MUTED',MATRIX)
 
     def test_version_and_gmo_scope_remain_distinct(self):
-        self.assertIn("versionCode 36",GRADLE)
-        self.assertIn("versionName '0.7.25-UI-LEDGER-VERIFY'",GRADLE)
-        self.assertIn('v0.7.25 · 주식',UI)
-        self.assertIn('v0.7.25 · 코인',UI)
+        self.assertIn("versionCode 37",GRADLE)
+        self.assertIn("versionName '0.7.26-LEDGER-SCREEN-AUDIT'",GRADLE)
+        self.assertIn('v0.7.26 · 주식',UI)
+        self.assertIn('v0.7.26 · 코인',UI)
         self.assertIn('stats(market,strategy)',UI)
         self.assertIn('market+"/"+scope',UI)
         self.assertIn('StrategyDashboardScope.showFrameCharts(strategy)',UI)
