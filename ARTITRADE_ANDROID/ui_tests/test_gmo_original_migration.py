@@ -107,6 +107,11 @@ class GMOMigrationTest(unittest.TestCase):
             rows={r["code"]:r for r in research["items"]}
             self.assertEqual(rows["005930"]["outcome"],"HIT")  # a real TP SELL
             self.assertEqual(rows["005930"]["score"],65)
+            self.assertEqual(rows["005930"]["sell_reason"],"TP_FIRST_PARTIAL")
+            self.assertEqual(rows["005930"]["sell_at"],"2026-11-13T10:00:00")
+            self.assertEqual(rows["000003"]["sell_reason"],"STOP_LOSS")
+            self.assertIsNone(rows["000004"]["sell_at"])
+            self.assertIsNone(rows["000001"]["sell_reason"])
             self.assertEqual(rows["000001"]["outcome"],"HIT")  # virtual 5% high
             self.assertEqual(rows["000002"]["outcome"],"MISS") # 15 final days
             self.assertEqual(rows["000003"]["outcome"],"MISS") # real STOP SELL
