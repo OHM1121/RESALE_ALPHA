@@ -1,1 +1,1 @@
-ARTITRADE v0.7.17 trigger: update tab-navigation assertion for persisted page/strategy; recheck Android build.
+v0.7.17 follow-up trigger: match history prefetch/pagination test to filtered ledger view.

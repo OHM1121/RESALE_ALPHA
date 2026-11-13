@@ -270,8 +270,8 @@ jobs:
           assert "private volatile UiSnapshot uiSnapshot" in src
           assert "calculateStats(packet,m,stg)" in src
           assert "calculateStatsTf(packet,m,stg,tf,st)" in src
-          assert 'HistoryPager.end(first,a.length())' in src
-          assert 'addHistoryPager("research",st.research.length())' in src
+          assert 'HistoryPager.end(first,total)' in src
+          assert 'addHistoryPager("research",filteredResearch.size())' in src
           assert 'addHistoryPager("scores",items.length())' in src
           assert 'addHistoryPager("errors",all.length())' in src
           assert 'DRAWER_PROGRESS_REFRESH_MS=750L' in src
