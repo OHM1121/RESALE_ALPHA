@@ -200,12 +200,11 @@ def start_app(stage):
     return tree
 
 def real_boot():
-    apk_candidates=list(Path("downloaded-apks").rglob("ARTITRADE_UNIFIED*.apk"))
-    if not apk_candidates:
-        apk_candidates=list(Path("downloaded-apks").rglob("app-unified-debug.apk"))
-    if len(apk_candidates)!=1:
-        raise AssertionError("Missing/unexpected UNIFIED APK artifacts: "+str(apk_candidates))
-    apk=apk_candidates[0]
+    # Two APKs exist deliberately: real service-enabled boot and an isolated
+    # synthetic-fixture build. Boot the actual service-enabled one first.
+    apk=Path("downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk")
+    if not apk.is_file():
+        raise AssertionError("Real-boot APK missing: "+str(apk))
     print("APK_INSTALLING",apk,apk.stat().st_size,flush=True)
     print(adb("install","-r",str(apk),timeout=180),flush=True)
     adb("shell","pm","grant",PACKAGE,"android.permission.POST_NOTIFICATIONS",check=False)
