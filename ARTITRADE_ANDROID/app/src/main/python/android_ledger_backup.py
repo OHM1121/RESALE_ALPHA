@@ -41,6 +41,10 @@ def _candidate(root: Path, file: Path) -> bool:
     if file.is_symlink() or not file.is_file():
         return False
     rel = file.relative_to(root)
+    # Paper trading capital/slot settings are part of the reproducible research.
+    # This exact local JSON contains limits, never broker API credentials.
+    if rel.as_posix()=="ANDROID_OPERATION_V074.json":
+        return True
     parts = rel.parts
     if not parts or parts[0] not in ("stock", "coin"):
         return False
@@ -264,7 +268,8 @@ def validate_backup(archive_path: str) -> dict:
             raise ValueError("Backup ZIP files do not match the signed manifest")
         for rel,info in {**files,**reports}.items():
             if rel in files:
-                if not rel.startswith(("stock/","coin/")) or ".." in Path(rel).parts:
+                if (not rel.startswith(("stock/","coin/")) and
+                        rel!="ANDROID_OPERATION_V074.json") or ".." in Path(rel).parts:
                     raise ValueError("Unexpected ledger backup path")
             elif not rel.startswith("analysis/") or ".." in Path(rel).parts:
                 raise ValueError("Unexpected analysis report path")
