@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression: one missing/corrupt PC research table must not hide other strategies."""
 import ast
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,7 @@ ROOT = Path(__file__).parents[1] / "app" / "src" / "main" / "python"
 SRC = ROOT / "android_runtime_v078.py"
 nodes = ast.parse(SRC.read_text(encoding="utf8"))
 fn = next(x for x in nodes.body if isinstance(x, ast.FunctionDef) and x.name == "_research_history")
+audit_fn = next(x for x in nodes.body if isinstance(x, ast.FunctionDef) and x.name == "_research_source_audit")
 
 class RuntimeStub:
     def __init__(self):
@@ -24,12 +26,14 @@ def good(name):
 
 def run_isolated(monkey):
     ns = {
+        "Path": Path,
+        "sqlite3": sqlite3,
         "_stock_at_research": failed_at,
         "_stock_ma_research": good("MA"),
         "_close_research": good("CLOSE"),
         "_coin_research": lambda root, which: good(which)(root),
     }
-    exec(compile(ast.Module(body=[fn],type_ignores=[]),str(SRC),"exec"),ns)
+    exec(compile(ast.Module(body=[audit_fn,fn],type_ignores=[]),str(SRC),"exec"),ns)
     stub=RuntimeStub()
     out=ns["_research_history"](stub,{})
     return stub,out
