@@ -340,6 +340,7 @@ jobs:
           java -cp "$DIR" com.artitrade.mobile.ResearchScoreGridTest
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_source_audit.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_actual_target_fill_only.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_gmo_original_migration.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_premium_ui_layout.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_premium_native_ui.py' -v
