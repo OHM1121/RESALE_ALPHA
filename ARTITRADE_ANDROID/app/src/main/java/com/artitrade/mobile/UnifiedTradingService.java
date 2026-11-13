@@ -36,6 +36,7 @@ public final class UnifiedTradingService extends Service {
     private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
     private volatile long lastMigrationPoll=0L;
     private volatile String lastAutomaticMigrationSha="";
+    private volatile long lastAutomaticMigrationAt=0L;
     private Thread monitor;
     private PowerManager.WakeLock wakeLock;
     private long stockEpoch=0,coinEpoch=0;
@@ -161,16 +162,21 @@ public final class UnifiedTradingService extends Service {
         try{
             String installed=getSharedPreferences("artitrade_pc_ledger_import_v1",MODE_PRIVATE)
                 .getString("imported_sha256","");
-            // Once a verified PC DB is active, all later paper and broker records
-            // belong to this phone. Never auto-import a different PC snapshot.
-            if(!installed.isEmpty())return;
             JSONObject st=hub.migrationStatus();
             if(!st.optBoolean("ok",false)||!st.optBoolean("ready",false)
                 ||!st.optBoolean("archive_exists",false))return;
             String sha=st.optString("archive_sha256","");
-            if(sha.isEmpty()||sha.equalsIgnoreCase(lastAutomaticMigrationSha)||liveOrdersArmed())return;
+            if(sha.isEmpty()||liveOrdersArmed())return;
+            // First import and later missing-only research supplements share the
+            // same restart path. Never overwrite a phone DB after first import.
+            long retryAfter=5L*60L*1000L;
+            if(sha.equalsIgnoreCase(lastAutomaticMigrationSha)&&
+               now-lastAutomaticMigrationAt<retryAfter)return;
             lastAutomaticMigrationSha=sha;
-            new Thread(this::safeRestartStrategy,"artitrade-pc-ledger-auto-apply").start();
+            lastAutomaticMigrationAt=now;
+            new Thread(this::safeRestartStrategy,
+                installed.isEmpty()?"artitrade-pc-ledger-auto-apply":
+                    "artitrade-pc-research-missing-only").start();
         }catch(Throwable e){crashes.add("pc_ledger_auto_check",e);}
     }
     private void applyPendingOperation(){
