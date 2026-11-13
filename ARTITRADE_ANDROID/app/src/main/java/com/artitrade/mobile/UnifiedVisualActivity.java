@@ -349,17 +349,18 @@ public final class UnifiedVisualActivity extends Activity {
         boolean active=key.equals(page);
         int color=active?accent():PremiumUi.MUTED;
         LinearLayout box=new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(3),dp(2),dp(3),dp(2));
+        box.setOrientation(LinearLayout.HORIZONTAL);box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(6),dp(3),dp(6),dp(3));
         box.setBackground(PremiumUi.rounded(this,
             active?PremiumUi.SURFACE_HIGH:Color.TRANSPARENT,
             active?accent():Color.TRANSPARENT,11));
         PremiumIconView glyph=new PremiumIconView(this,key,color);
-        box.addView(glyph,new LinearLayout.LayoutParams(-1,dp(24)));
-        TextView caption=text(label,12);caption.setGravity(Gravity.CENTER);
+        box.addView(glyph,new LinearLayout.LayoutParams(dp(25),dp(29)));
+        TextView caption=text(label,13);caption.setGravity(Gravity.CENTER);
         caption.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         caption.setTextColor(active?PremiumUi.TEXT:PremiumUi.MUTED);
-        box.addView(caption,new LinearLayout.LayoutParams(-1,dp(18)));
+        LinearLayout.LayoutParams capLp=new LinearLayout.LayoutParams(-2,dp(30));
+        capLp.setMargins(dp(4),0,0,0);box.addView(caption,capLp);
         box.setContentDescription(label+(active?" · 현재 화면":" · 탭하여 이동"));
         box.setOnClickListener(v->{page=key;persistNavigation();showShell();});
         PremiumUi.tapMotion(box);
@@ -469,12 +470,12 @@ public final class UnifiedVisualActivity extends Activity {
 
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         LinearLayout bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.HORIZONTAL);bottom.setGravity(Gravity.CENTER);bottom.setPadding(dp(6),dp(3),dp(6),dp(3));bottom.setBackgroundColor(PremiumUi.BG);
-        bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(44),1));
-        bottom.addView(bottomNavItem("positions","◆","보유종목"),new LinearLayout.LayoutParams(0,dp(44),1));
-        bottom.addView(bottomNavItem("pending","◌","매수대기"),new LinearLayout.LayoutParams(0,dp(44),1));
-        bottom.addView(bottomNavItem("executions","↔","체결이력"),new LinearLayout.LayoutParams(0,dp(44),1));
-        bottom.addView(bottomNavItem("research","◎","연구자료"),new LinearLayout.LayoutParams(0,dp(44),1));
-        shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(54)));
+        bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(46),1));
+        bottom.addView(bottomNavItem("positions","◆","보유종목"),new LinearLayout.LayoutParams(0,dp(46),1));
+        bottom.addView(bottomNavItem("pending","◌","매수대기"),new LinearLayout.LayoutParams(0,dp(46),1));
+        bottom.addView(bottomNavItem("executions","↔","체결이력"),new LinearLayout.LayoutParams(0,dp(46),1));
+        bottom.addView(bottomNavItem("research","◎","연구자료"),new LinearLayout.LayoutParams(0,dp(46),1));
+        shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(52)));
 
         updateClock();
         render();
@@ -1620,7 +1621,7 @@ public final class UnifiedVisualActivity extends Activity {
                     ", 대기 "+q.flowPending+", 매수 "+q.flowBought+
                     ", 보유 "+q.flowHolding+", 매도 "+q.flowSold);
                 if(!sideBySide){
-                    LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(162));
+                    LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(172));
                     if(!"5m".equals(tf))fp.setMargins(0,dp(6),0,0);
                     content.addView(flow,fp);
                     continue;
@@ -1628,11 +1629,11 @@ public final class UnifiedVisualActivity extends Activity {
                 if(pairCount==0){
                     pair=new LinearLayout(this);
                     pair.setOrientation(LinearLayout.HORIZONTAL);
-                    LinearLayout.LayoutParams pairParams=new LinearLayout.LayoutParams(-1,dp(162));
+                    LinearLayout.LayoutParams pairParams=new LinearLayout.LayoutParams(-1,dp(172));
                     pairParams.setMargins(0,dp(6),0,0);
                     content.addView(pair,pairParams);
                 }
-                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(162),1);
+                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(172),1);
                 if(pairCount>0)fp.setMargins(dp(7),0,0,0);
                 pair.addView(flow,fp);
                 pairCount=(pairCount+1)%2;
@@ -2656,7 +2657,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout b=card();b.addView(text("백그라운드",13));Button bat=button("절전 예외 설정 열기",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}});LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(42));bp.setMargins(0,dp(8),0,0);b.addView(bat,bp);LinearLayout.LayoutParams bc=new LinearLayout.LayoutParams(-1,-2);bc.setMargins(0,dp(8),0,0);content.addView(b,bc);
     }
 
-    private void empty(String s){TextView e=text(s,12);e.setGravity(Gravity.CENTER);e.setTextColor(Color.rgb(112,137,167));e.setPadding(0,dp(40),0,dp(40));content.addView(e);}
+    private void empty(String s){TextView e=text(s,13);e.setGravity(Gravity.CENTER);e.setTextColor(PremiumUi.MUTED);e.setPadding(0,dp(22),0,dp(22));content.addView(e);}
 
     private String strategyName(String m,String s){
         if("coin".equals(m))return "ma".equals(s)?"MA":"기준봉";
