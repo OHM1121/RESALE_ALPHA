@@ -30,7 +30,7 @@ final class ResearchScoreMatrixView extends View {
         p.setFakeBoldText(false);
     }
     private int shade(double rate){
-        if(Double.isNaN(rate))return Color.rgb(159,175,198);
+        if(Double.isNaN(rate))return PremiumUi.MUTED;
         return rate>=60?Color.rgb(74,217,161):rate>=40?Color.rgb(245,186,100):Color.rgb(248,107,123);
     }
     private void rate(Canvas c,ResearchScoreGrid.Cell q,boolean actual,float left,float right,float baseline){
@@ -41,14 +41,18 @@ final class ResearchScoreMatrixView extends View {
         String pct=Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.0f%%",value);
         String detail=hit+"/"+(hit+miss)+(pending>0?" · "+pending:"");
         float available=right-left-dp(8);
-        p.setTextSize(sp(11));float countWidth=p.measureText(detail);
+        p.setTextSize(sp(11));
+        if(p.measureText(detail)>available)detail=hit+"/"+(hit+miss);
+        if(p.measureText(detail)>available)detail="N"+(hit+miss);
+        if(p.measureText(detail)>available)detail="";
+        float countWidth=p.measureText(detail);
         p.setTextSize(sp(14));float pctWidth=p.measureText(pct);
         boolean stacked=pctWidth+countWidth>available;
         int accent=shade(value);
         line(c,pct,left+dp(3),stacked?baseline-dp(3):baseline,14,accent,Paint.Align.LEFT,true);
-        line(c,detail,right-dp(2),stacked?baseline+dp(9):baseline,
+        line(c,detail,right-dp(2),stacked?baseline+dp(7):baseline,
             11,PremiumUi.MUTED,Paint.Align.RIGHT,false);
-        float top=baseline+dp(stacked?13:5),height=dp(stacked?3:5);
+        float top=baseline+dp(stacked?11:5),height=dp(stacked?3:5);
         p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.LINE);
         c.drawRoundRect(new RectF(left,top,right,top+height),dp(3),dp(3),p);
         if(!Double.isNaN(value)&&value>0){
@@ -66,7 +70,7 @@ final class ResearchScoreMatrixView extends View {
         c.drawRoundRect(new RectF(0,0,w,h),dp(14),dp(14),p);
         if(w<dp(190))return;
         ResearchScoreGrid.Cell total=grid.totals();
-        line(c,title,pad,dp(24),15,Color.rgb(227,239,255),Paint.Align.LEFT,true);
+        line(c,title,pad,dp(24),16,Color.rgb(227,239,255),Paint.Align.LEFT,true);
         line(c,grid.any(frame)?"N="+countFrame(frame):"N=0",w-pad,dp(24),
             12,PremiumUi.MUTED,Paint.Align.RIGHT,false);
         float scoreRight=pad+dp(66);
