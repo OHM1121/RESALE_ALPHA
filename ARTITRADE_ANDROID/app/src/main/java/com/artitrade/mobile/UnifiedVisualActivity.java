@@ -2623,9 +2623,13 @@ public final class UnifiedVisualActivity extends Activity {
             if(outcome.isEmpty()){Boolean reached=target(row);
                 outcome=reached==null?"PENDING":reached?"HIT":"MISS";}
             boolean actualEntry=bool(row,"bought");
-            String tag=actualEntry?"실제":"가상";
-            String outcomeKo="HIT".equals(outcome)?"목표 도달":
-                "MISS".equals(outcome)?"목표 미도달":"관측 중";
+            boolean unselected=bool(row,"unselected")||
+                row.optString("entry_status","").contains("UNSELECTED");
+            String tag=actualEntry?"실제체결":unselected?"불채택":"가상";
+            String outcomeKo="HIT".equals(outcome)?
+                (actualEntry?"1차 매도체결":"가상 고가관측"):
+                "MISS".equals(outcome)?
+                (actualEntry?"목표 미체결 종료":"가상 목표미도달"):"후속 관측 중";
             TextView status=text(tag+"  ·  "+outcomeKo+"  ·  신호 "+timeOf(row,item.source),13);
             status.setTextColor("HIT".equals(outcome)?Color.rgb(62,224,181):
                 "MISS".equals(outcome)?Color.rgb(255,119,133):Color.rgb(255,194,91));
@@ -2633,7 +2637,33 @@ public final class UnifiedVisualActivity extends Activity {
             String basis=reasonOf(row);
             TextView detail=text("판단근거  "+basis,13);
             detail.setTextColor(Color.rgb(177,199,223));
-            detail.setMaxLines(4);detail.setPadding(dp(2),dp(5),0,0);panel.addView(detail);
+            detail.setMaxLines(2);detail.setPadding(dp(2),dp(5),0,0);
+            panel.addView(detail);
+            // These measurements are EXE-observed price excursions, not P&L.
+            double maxObs=num(row,"observed_max_gain_pct","observed_mfe_pct");
+            double minObs=num(row,"observed_min_gain_pct","observed_mae_pct");
+            double finalObs=num(row,"observed_return_pct");
+            if(!finite(maxObs)&&finite(finalObs))maxObs=finalObs;
+            if(!finite(minObs)&&finite(finalObs))minObs=finalObs;
+            if(finite(maxObs)||finite(minObs)){
+                TextView observed=text("후속가격  최고 "+signedPct(maxObs)+
+                    "  /  최저 "+signedPct(minObs),13);
+                observed.setTextColor(Color.rgb(188,209,227));
+                observed.setPadding(dp(2),dp(5),0,0);
+                panel.addView(observed);
+                // Actual min/max points define the geometry; no invented bars.
+                TradeRangeView range=new TradeRangeView(this,minObs,maxObs);
+                panel.addView(range,new LinearLayout.LayoutParams(-1,dp(25)));
+            }
+            int ranked=row.optInt("origin_rank",0);
+            if(unselected&&ranked>0){
+                int peers=row.optInt("cohort_size",0);
+                TextView rankText=text("선정 당시 순위  "+ranked+
+                    (peers>0?" / "+peers:"")+"  ·  "+row.optString("unselected_reason",""),12);
+                rankText.setTextColor(Color.rgb(250,202,125));
+                rankText.setMaxLines(2);
+                panel.addView(rankText);
+            }
             // Research observations are NOT fills. Only actual recorded
             // executions produce these extra buy/sell time and reason rows.
             Object buyAt=firstValue(row,"buy_at","buy_filled_at","entry_at","entry_ts");
