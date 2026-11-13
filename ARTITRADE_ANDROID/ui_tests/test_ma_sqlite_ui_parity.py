@@ -13,9 +13,10 @@ from pathlib import Path
 
 SRC=Path(__file__).parents[1]/"app/src/main/python/android_runtime_v078.py"
 root=ast.parse(SRC.read_text(encoding="utf-8"))
-symbols={"_stock_ma_full","_closed_position_win_rate","_target_summary"}
+symbols={"_stock_ma_full","_closed_position_win_rate","_target_summary",
+         "_attach_fill_cost","_first_existing"}
 selected=[x for x in root.body if isinstance(x,ast.FunctionDef) and x.name in symbols]
-scope={"Path":Path,"_FRAMES":("5m","30m","60m","day")}
+scope={"Path":Path,"_FRAMES":("5m","30m","60m","day"),"math":__import__("math")}
 scope["_ma_pending_diagnostics"]=lambda self,snap:snap
 
 
