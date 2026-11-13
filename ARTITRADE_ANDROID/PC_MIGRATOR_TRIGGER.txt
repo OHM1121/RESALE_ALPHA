@@ -1,0 +1,1 @@
+Build fixed ARTITRADE PC migrator v2 FIX4: archive only manifest SQLite DBs, no -shm/-wal.
