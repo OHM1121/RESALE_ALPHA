@@ -503,6 +503,22 @@ def _stock_ma_full(self):
     db=Path(self.root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
     full_exec=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 10000")
+    # The original MA snapshot omits positions.entry_at and candidate.created_at.
+    # Restore the *recorded* timestamps, not the reference candle time.
+    full_by_id={str(row.get('id')):row for row in all_positions}
+    for item in snap.get('positions') or []:
+        original=full_by_id.get(str(item.get('id'))) or {}
+        for field in ('entry_at','entry_date','candidate_id','first_sold','recovery'):
+            if item.get(field) in (None,'') and original.get(field) not in (None,''):
+                item[field]=original[field]
+    pending_by_id={str(row.get('id')):row for row in _core._db_rows(
+        db,"SELECT id,created_at,reason,ref_ts FROM candidates ORDER BY id DESC LIMIT 10000")}
+    for item in snap.get('pending') or []:
+        original=pending_by_id.get(str(item.get('signal_id') or item.get('id'))) or {}
+        if original.get('created_at') and not item.get('created_at'):
+            item['created_at']=original['created_at']
+        if original.get('reason') and not item.get('reason'):
+            item['reason']=original['reason']
     for x in full_exec:
         x['at']=x.get('ts');x['strategy']='MA'
     realized=sum(float((perf.get(tf) or {}).get('realized_won') or 0) for tf in _FRAMES)
@@ -576,6 +592,11 @@ def _normalize_coin_holdings(positions, history):
         if ref is not None:row['ref_ts']=ref
         if entry is not None:row['entry_price']=entry
         if mark is not None:row['last_price']=mark
+        # Preserve real fill timestamps and actual first-sale quantity for the
+        # position screen. A reference candle is never a BUY execution.
+        for field in ('entry_at','first_sold_qty','entry_qty','entry_reason','reason'):
+            if row.get(field) in (None,'') and db.get(field) not in (None,''):
+                row[field]=db[field]
         result.append(row)
     return result
 
@@ -743,14 +764,24 @@ def _gmo_original_record(root):
         raise ValueError("GMO account state positions/orders schema invalid")
     names = {str(k): str(v.get('name') or k) for k,v in signals.items() if isinstance(v,dict)}
     # Opening price / last price are intentionally NOT manufactured.
+    bought_fill_by_code={}
+    for fill in buys:
+        if not isinstance(fill,dict):continue
+        code=str(fill.get('code') or '')
+        stamp=str(fill.get('time') or '')
+        if code and stamp and (code not in bought_fill_by_code or
+                stamp>str(bought_fill_by_code[code].get('time') or '')):
+            bought_fill_by_code[code]=fill
     active = []
     for code,p in positions.items():
         if not isinstance(p,dict): continue
         qty = int(p.get('qty') or 0)
         if qty <= 0: continue
+        last_buy=bought_fill_by_code.get(str(code)) or {}
         active.append({'tf':'gmo','strategy':'gmo','code':code,
             'name':p.get('name') or names.get(code,code),'qty':qty,
             'entry_price':p.get('entry_price'),'last_price':None,
+            'entry_at':last_buy.get('time'),'buy_reason':last_buy.get('purpose'),
             'gmo_score':p.get('gmo_score'),'status':'OPEN',
             'first_sold':bool(p.get('first_filled_qty')),
             'reason':p.get('stage'),'gmo_event_date':p.get('entry_date')})
