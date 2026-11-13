@@ -235,7 +235,7 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.18-ISOLATED-RESEARCH'" in s
+          assert "versionName '0.7.19-FULL-LEDGER-GMO'" in s
           assert "versionCode 29" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
@@ -336,6 +336,11 @@ jobs:
           java -cp "$DIR" com.artitrade.mobile.ResearchScoreGridTest
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_source_audit.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_gmo_original_migration.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_full_research.py' -v
+          grep -F 'bindSymbolFourTap' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'https://finance.naver.com/item/main.naver?code=' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'https://upbit.com/exchange?code=CRIX.UPBIT.' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           python3 - <<'PY'
           from pathlib import Path
           ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
