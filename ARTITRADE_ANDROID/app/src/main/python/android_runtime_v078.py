@@ -512,13 +512,13 @@ def _stock_ma_full(self):
             if item.get(field) in (None,'') and original.get(field) not in (None,''):
                 item[field]=original[field]
     pending_by_id={str(row.get('id')):row for row in _core._db_rows(
-        db,"SELECT id,created_at,reason,ref_ts FROM candidates ORDER BY id DESC LIMIT 10000")}
+        db,"SELECT id,created_at,ref_ts,features FROM candidates ORDER BY id DESC LIMIT 10000")}
     for item in snap.get('pending') or []:
         original=pending_by_id.get(str(item.get('signal_id') or item.get('id'))) or {}
         if original.get('created_at') and not item.get('created_at'):
             item['created_at']=original['created_at']
-        if original.get('reason') and not item.get('reason'):
-            item['reason']=original['reason']
+        # No 'reason' column exists in the frozen MA candidates schema;
+        # keep the original Korean quote/expiry diagnostic rather than invent one.
     for x in full_exec:
         x['at']=x.get('ts');x['strategy']='MA'
     realized=sum(float((perf.get(tf) or {}).get('realized_won') or 0) for tf in _FRAMES)
