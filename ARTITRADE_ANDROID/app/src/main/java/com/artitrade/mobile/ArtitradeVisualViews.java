@@ -48,7 +48,7 @@ final class HorizontalStrategyBarsView extends View {
         super.onDraw(c);if(items.isEmpty())return;
         float left=sp(82),right=getWidth()-sp(78),top=sp(8),row=Math.max(sp(34),(getHeight()-sp(16))/items.size()),mid=(left+right)/2;
         double max=1;for(Item i:items)if(!Double.isNaN(i.value))max=Math.max(max,Math.abs(i.value));
-        p.setStrokeWidth(1);p.setColor(Color.rgb(46,66,91));c.drawLine(mid,5,mid,getHeight()-5,p);
+        p.setStrokeWidth(1);p.setColor(PremiumUi.LINE);c.drawLine(mid,5,mid,getHeight()-5,p);
         for(int n=0;n<items.size();n++){
             Item it=items.get(n);float y=top+n*row+row*.5f;
             p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));p.setColor(Color.rgb(200,218,238));p.setFakeBoldText(true);c.drawText(it.label,left-sp(8),y+sp(4),p);p.setFakeBoldText(false);
@@ -99,7 +99,7 @@ final class PnlSparklineView extends View {
     }
     private void drawXAxisLabels(Canvas c,float left,float right,float bottom){
         p.setStyle(Paint.Style.FILL);
-        p.setTextSize(sp(11));p.setColor(PremiumUi.MUTED);
+        p.setTextSize(sp(12));p.setColor(PremiumUi.MUTED);
         p.setTextAlign(Paint.Align.LEFT);
         String first=timestamps.length>0?tickDate(timestamps[0]):"날짜";
         c.drawText(first,left,bottom+sp(16),p);
@@ -118,14 +118,14 @@ final class PnlSparklineView extends View {
         // Allocate y-axis width from the *real entire KRW strings*, not an abbreviated value.
         double axisMin=0d,axisMax=0d;
         for(double v:values)if(Double.isFinite(v)){axisMin=Math.min(axisMin,v);axisMax=Math.max(axisMax,v);}
-        p.setTextSize(sp(11));
+        p.setTextSize(sp(12));
         float axisText=Math.max(p.measureText(compactMoney(axisMin)),p.measureText(compactMoney(axisMax)));
         float left=Math.min(w*.56f,Math.max(sp(75f),axisText+sp(13f)));
         float right=w-sp(9),top=sp(35),bottom=h-sp(24);
         if(right<=left||bottom<=top)return;
         p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));
         String headline=values.length>0?WonFormat.signed(values[values.length-1]):"—";
-        while(p.measureText(headline)>w*.57f&&p.getTextSize()>sp(10))p.setTextSize(p.getTextSize()-sp(.5f));
+        while(p.measureText(headline)>w*.57f&&p.getTextSize()>sp(12))p.setTextSize(p.getTextSize()-sp(.5f));
         p.setColor(values.length>0&&values[values.length-1]<0?Color.rgb(255,119,133):Color.rgb(62,224,181));
         c.drawText(headline,w-sp(7),sp(17),p);
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.7f));p.setColor(PremiumUi.LINE);
@@ -133,7 +133,7 @@ final class PnlSparklineView extends View {
         c.drawLine(left,bottom,right,bottom,p);
         p.setStyle(Paint.Style.FILL);
         if(values.length==0){
-            p.setTextSize(sp(11));p.setColor(Color.rgb(255,194,91));
+            p.setTextSize(sp(12));p.setColor(Color.rgb(255,194,91));
             c.drawText("실현손익 체결기록 없음",left+sp(3),top+(bottom-top)/2f,p);
             drawXAxisLabels(c,left,right,bottom);
             return;
@@ -147,7 +147,7 @@ final class PnlSparklineView extends View {
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.5f));p.setColor(PremiumUi.LINE);
             c.drawLine(left,y,right,y,p);
             p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.RIGHT);
-            p.setTextSize(sp(11));p.setColor(PremiumUi.MUTED);
+            p.setTextSize(sp(12));p.setColor(PremiumUi.MUTED);
             while(p.measureText(compactMoney(tick))>left-sp(7)&&p.getTextSize()>sp(10))p.setTextSize(p.getTextSize()-sp(.4f));
             c.drawText(compactMoney(tick),left-sp(3),y+sp(3),p);
         }
@@ -177,7 +177,7 @@ final class MetricProgressView extends View {
     MetricProgressView(Context c){super(c);}
     void setMetric(String label,double value){this.label=label;this.value=value;invalidate();}
     @Override protected void onDraw(Canvas c){
-        super.onDraw(c);float w=getWidth(),h=getHeight();p.setTextSize(sp(13));p.setTextAlign(Paint.Align.LEFT);p.setColor(Color.rgb(154,164,185));c.drawText(label,0,sp(13),p);
+        super.onDraw(c);float w=getWidth(),h=getHeight();p.setTextSize(sp(13));p.setTextAlign(Paint.Align.LEFT);p.setColor(PremiumUi.MUTED);c.drawText(label,0,sp(13),p);
         float by=h-sp(11),bh=sp(6);p.setColor(PremiumUi.LINE);RectF bg=new RectF(0,by,w,by+bh);c.drawRoundRect(bg,bh,bh,p);
         if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;p.setColor(value>=60?Color.rgb(79,219,170):value>=40?Color.rgb(255,194,91):Color.rgb(255,119,142));RectF fg=new RectF(0,by,w*f,by+bh);c.drawRoundRect(fg,bh,bh,p);}
         p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(232,235,244));c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.1f%%",value),w,sp(13),p);
@@ -207,7 +207,7 @@ final class TimeframePerformanceGridView extends View {
     }
     private int pnlColor(double v){return v>0?Color.rgb(79,219,170):v<0?Color.rgb(255,119,142):Color.rgb(238,240,247);}
     private void metricBar(Canvas c,String label,double value,float left,float top,float right){
-        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(11));p.setColor(Color.rgb(143,153,174));c.drawText(label,left,top,p);
+        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(12));p.setColor(Color.rgb(143,153,174));c.drawText(label,left,top,p);
         p.setTextAlign(Paint.Align.RIGHT);p.setColor(Color.rgb(220,224,235));c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.0f%%",value),right,top,p);
         float by=top+sp(7),bh=sp(5);p.setColor(PremiumUi.LINE);c.drawRoundRect(new RectF(left,by,right,by+bh),bh,bh,p);
         if(!Double.isNaN(value)){
@@ -223,8 +223,8 @@ final class TimeframePerformanceGridView extends View {
         for(int i=0;i<Math.min(4,cells.size());i++){
             Cell x=cells.get(i);int col=i%2,row=i/2;
             float l=pad+col*(cw+gap),t=pad+row*(ch+gap),r=l+cw,b=t+ch;
-            p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(18,21,31));c.drawRoundRect(new RectF(l,t,r,b),sp(16),sp(16),p);
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.7f));p.setColor(Color.rgb(43,48,66));c.drawRoundRect(new RectF(l,t,r,b),sp(16),sp(16),p);p.setStyle(Paint.Style.FILL);
+            p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.SURFACE);c.drawRoundRect(new RectF(l,t,r,b),sp(16),sp(16),p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.7f));p.setColor(PremiumUi.LINE);c.drawRoundRect(new RectF(l,t,r,b),sp(16),sp(16),p);p.setStyle(Paint.Style.FILL);
 
             float x0=l+sp(14),x1=r-sp(14),y=t+sp(25);
             p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);p.setTextSize(sp(18));p.setColor(Color.rgb(211,207,255));c.drawText(x.label,x0,y,p);p.setFakeBoldText(false);
@@ -261,7 +261,7 @@ final class TimeframeAccountFlowView extends View {
     private String compact(double v){return WonFormat.signed(v);}
     private void fit(String value,float maxWidth,float preferred,float minimum){
         float size=sp(preferred);p.setTextSize(size);
-        while(size>sp(minimum)&&p.measureText(value)>maxWidth){
+        while(size>sp(Math.max(13f,minimum))&&p.measureText(value)>maxWidth){
             size-=sp(.5f);p.setTextSize(size);
         }
     }
