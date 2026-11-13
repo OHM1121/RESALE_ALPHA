@@ -1,1 +1,1 @@
-ARTITRADE v0.7.18 RED regression: isolated strategy ledger histories/trends and fault tolerant PC research loader.
+Build ARTITRADE Unified v0.7.18-ISOLATED-RESEARCH: per-strategy trend/history isolation, PC EXE research source audit, per-frame/score real vs virtual matrix, larger pnl numbers.

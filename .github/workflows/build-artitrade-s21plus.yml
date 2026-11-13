@@ -149,7 +149,7 @@ jobs:
           visuals=(src/'java/com/artitrade/mobile/ArtitradeVisualViews.java').read_text()
           service=(src/'java/com/artitrade/mobile/UnifiedTradingService.java').read_text()
           py=(src/'python/android_runtime_v078.py').read_text()
-          assert 'strategy=item[0];persistNavigation();showShell();' in ui
+          assert 'strategy=item[0];resetHistoryFilter();}persistNavigation();showShell();' in ui
           assert 'strategy=item[0];page="home"' not in ui
           assert 'if(!"operation".equals(page)' in ui and 'ledgerChanged||"home".equals(page)' in ui
           assert 'artitrade_operation_drafts_v1' in ui
@@ -235,8 +235,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.17-FILTER-TRENDS-LEDGER'" in s
-          assert "versionCode 28" in s
+          assert "versionName '0.7.18-ISOLATED-RESEARCH'" in s
+          assert "versionCode 29" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -271,7 +271,7 @@ jobs:
           assert "calculateStats(packet,m,stg)" in src
           assert "calculateStatsTf(packet,m,stg,tf,st)" in src
           assert 'HistoryPager.end(first,total)' in src
-          assert 'addHistoryPager("research",filteredResearch.size())' in src
+          assert 'addHistoryPager("research",entries.size())' in src
           assert 'addHistoryPager("scores",items.length())' in src
           assert 'addHistoryPager("errors",all.length())' in src
           assert 'DRAWER_PROGRESS_REFRESH_MS=750L' in src
@@ -307,7 +307,9 @@ jobs:
             'persist navigation':'restoreNavigation(state)' in ui and 'onSaveInstanceState(Bundle state)' in ui,
             'preload audit':'화면 사전로딩:' in ui,
             'GMO audit':'PC 수급매매 승계 확인' in ui,
-            'full-width trend':'addTrendCard("all","전 계좌 통합 추세",null)' in ui,
+            'isolated trend':'addTrendCard("all",strategyName(market,strategy)+" 누적",null)' in ui,
+            'scoped trend fetch':'StrategyDashboardScope.trend(market,strategy,frame)' in ui,
+            'scoped history':'StrategyDashboardScope.history(market,strategy,kind,activeHistoryFilter())' in ui,
             'five minute/30 minute':'addTrendCard("5m","5분봉", "30m")' in ui,
             'hour/daily':'addTrendCard("60m","1시간봉","day")' in ui,
             'time/amount axis':'drawXAxisLabels' in visuals and 'compactMoney' in visuals,
@@ -333,6 +335,21 @@ jobs:
           java -cp "$DIR" com.artitrade.mobile.StrategyDashboardScopeTest
           java -cp "$DIR" com.artitrade.mobile.ResearchScoreGridTest
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_source_audit.py' -v
+          python3 - <<'PY'
+          from pathlib import Path
+          ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          py=Path('ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py').read_text()
+          assert 'historyFilterStock="current"' in ui and 'historyFilterCoin="current"' in ui
+          assert 'String[] filters="stock".equals(market)' in ui
+          assert 'StrategyDashboardScope.showFrameCharts(strategy)' in ui
+          assert 'new ResearchScoreMatrixView(this)' in ui
+          assert 'prepareResearchGrids(preparedTotals)' in ui
+          assert 'researchGrids.get(gridKey)' in ui
+          assert "result['source_total']" not in py or '_research_source_audit' in py
+          assert 'partial_window' in py and 'candidate_cohort_decisions' in py
+          print('ISOLATED_STRATEGY_RESEARCH_SOURCE_AUDIT_CHECKS_OK')
+          PY
       - name: Build stock, coin, unified and MSERVER APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleUnifiedDebug :app:assembleHubDebug --stacktrace
@@ -355,8 +372,8 @@ jobs:
           grep -F 'STOCK CLOSE PNL FIX2' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'COIN FIX38 SR1 POLICY' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '실제 목표도달율' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F '실제 매수 목표도달율' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F '가상진입 목표도달율' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '실제 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '가상 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '엔진 점수 비교' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '① 폰 기준원장 → MSERVER 게시' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '② 기존 PC EXE 원장 → S21+ 승계' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
