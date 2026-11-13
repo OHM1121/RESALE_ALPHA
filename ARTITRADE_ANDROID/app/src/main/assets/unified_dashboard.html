@@ -23,6 +23,25 @@
 .feedbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.feed{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;min-height:42px}.feedLeft{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:900}.feedDot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px #ff77851b}.feed.live .feedDot{background:var(--mint);box-shadow:0 0 0 3px #3ee0b51b}.feedDetail{font-size:9px;color:#8da5c2;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
 @media(max-height:550px){.top{height:45px;min-height:45px}.strategybar{min-height:37px;padding:3px 10px}.strategy{min-height:28px}.view{padding:8px 10px}.summary,.chart{min-height:118px;padding:9px 11px}.big{font-size:31px}.graph{height:72px}.kpi{min-height:56px;padding:7px 9px}.metric{font-size:17px}.perf{min-height:103px;padding:8px 9px}.perfMeta{margin-top:7px}.sectionTitle{margin:8px 0 5px}.rail{gap:2px}.nav{min-height:35px}.logo{height:34px;width:38px}}
 @media(max-width:850px){.perfGrid{grid-template-columns:repeat(2,1fr)}.mapGrid{grid-template-columns:repeat(3,1fr)}.kpis{grid-template-columns:repeat(3,1fr)}}
+
+/* ARTITRADE OLED BLACK / DESKTOP PREVIEW: dense but never microtype */
+:root{--bg:#000;--rail:#090A0D;--panel:#0C0E12;--panel2:#14171D;--line:#282D36;--text:#F3F7FB;--sub:#B1BCCA;--mint:#3FDEB0;--blue:#82A5FF;--r:13px}
+.app{background:var(--bg)}.rail{background:var(--rail);border-color:var(--line)}
+.top{border-color:var(--line)}.strategybar{background:var(--bg);border-color:var(--line)}
+.card{background:var(--panel);border-color:var(--line)}
+.nav.active,.strategy.active{background:#141923;border-color:var(--blue);color:var(--text)}
+.market-tab.active{background:#141923;border-color:var(--blue);color:#AFC6FF}
+.market-tab,.strategy,.status,.refresh,.mini,.sheet,.pill,.list,.deviceBtns button{background:var(--panel2);border-color:var(--line)}
+.nav small{font-size:12px}.subtitle,.kicker,.device,.label,.rowMeta,.rowWhy,.rowName,.tinyMetric span,.sectionTitle h2,.sectionTitle span,.mini span,.mini b,.bandTitle,.bandFoot,.feedLeft,.feedDetail,.status,.field label,.strategy,.market-tab,.goalPct{font-size:12px;letter-spacing:normal}
+.rowName,.bandTitle,.opTitle{font-size:14px}.paneTitle{font-size:18px}.metric{font-size:23px}
+.summary{padding:10px 12px}.summaryFoot{margin-top:9px;gap:10px}
+.kpis{gap:6px;margin-top:6px}.kpi{padding:8px 10px;min-height:64px}
+.perfGrid,.researchSummary,.mapGrid{gap:6px}.perf{padding:9px 10px}
+.view{padding:8px 10px}.sectionTitle{margin:9px 0 5px}
+.nav,.market-tab,.strategy,.refresh,.save,.perf,.deviceBtns button{transition:transform .14s ease,background-color .15s ease,border-color .15s ease,opacity .14s ease}
+.nav:active,.market-tab:active,.strategy:active,.refresh:active,.save:active,.perf:active,.deviceBtns button:active{transform:scale(.975);opacity:.91}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.nav,.market-tab,.strategy,.refresh,.save,.perf,.deviceBtns button{transition:none}}
 </style>
 </head>
 <body>
@@ -259,7 +278,7 @@ function renderFeeds(){
 }
 function renderAll(){
  renderFeeds();
- var st=stats(S.market,S.strategy);txt('caption',title(S.market,S.strategy)+' / OVERVIEW');txt('device',deviceState(S.market));txt('total',n(st.total));sign($('total'),st.total);txt('realized',n(st.realized));sign($('realized'),st.realized);txt('unrealized',n(st.unrealized));sign($('unrealized'),st.unrealized);txt('targetRate',n(st.research.rate,'%'));txt('winRate',n(st.win,'%'));txt('posCount',n(st.positions.length));txt('pendingCount',n(st.pending.length));txt('closedCount',n(st.closed));txt('refCoverage',n(st.coverage,'%'));txt('posPill',n(st.positions.length));txt('pendingPill',n(st.pending.length));
+ var st=stats(S.market,S.strategy);txt('caption',title(S.market,S.strategy)+' / OVERVIEW');txt('device',deviceState(S.market));txt('total',n(st.total,'원'));sign($('total'),st.total);txt('realized',n(st.realized,'원'));sign($('realized'),st.realized);txt('unrealized',n(st.unrealized,'원'));sign($('unrealized'),st.unrealized);txt('targetRate',n(st.research.rate,'%'));txt('winRate',n(st.win,'%'));txt('posCount',n(st.positions.length));txt('pendingCount',n(st.pending.length));txt('closedCount',n(st.closed));txt('refCoverage',n(st.coverage,'%'));txt('posPill',n(st.positions.length));txt('pendingPill',n(st.pending.length));
  drawGraph(pick(st.ledger,['equity_curve','profit_series','balance_history']));renderPerf();list('positionsList',st.positions,'positions');list('pendingList',st.pending,'pending');list('executionsList',st.executions,'executions');
  var er=bucket(S.market,S.strategy,'Errors'),runtimeErr=arr(S.packet.runtime_diagnostics),pyErr=arr((S.packet.strategy_runtime||{}).errors);
  list('errorsList',arr(er.items).concat(pyErr).concat(runtimeErr),'errors');renderOperation();renderResearch()
