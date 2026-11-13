@@ -41,6 +41,40 @@ class PhoneBackupVerificationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"SHA-256"):
                 app.verify_phone_backup(zip_path)
 
+    def test_research_report_members_are_verified_and_tampering_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive=Path(root)/"research.zip"
+            payload=b'{"actual":1,"virtual":2}'
+            name="stock/ARTITRADE_D.sqlite3"
+            db=b"readonly original SQLite evidence fixture"
+            report="analysis/research_summary.json"
+            index="analysis/source_table_catalog.json"
+            catalog=b'{"tables":[{"source":"stock/ARTITRADE_D.sqlite3","records":3205}]}'
+            def info(blob,kind):
+                return {"size":len(blob),"sha256":hashlib.sha256(blob).hexdigest(),
+                        "kind":kind}
+            manifest={"schema":"ARTITRADE_PHONE_LEDGER_BACKUP_V1",
+                      "strategy_files":{name:info(db,"sqlite")},
+                      "report_files":{report:info(payload,"report"),
+                                      index:info(catalog,"report")}}
+            with zipfile.ZipFile(archive,"w") as z:
+                z.writestr("manifest.json",json.dumps(manifest))
+                z.writestr(name,db)
+                z.writestr(report,payload)
+                z.writestr(index,catalog)
+            result=app.verify_phone_backup(archive)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["file_count"],1)
+            self.assertEqual(result["report_count"],2)
+            with zipfile.ZipFile(archive) as z:
+                paths=z.namelist()
+                blobs={n:z.read(n) for n in paths}
+            blobs[report]+=b"tampered"
+            with zipfile.ZipFile(archive,"w") as z:
+                for n in paths:z.writestr(n,blobs[n])
+            with self.assertRaisesRegex(ValueError,"SHA-256"):
+                app.verify_phone_backup(archive)
+
     def test_extra_member_and_path_traversal_are_rejected(self):
         with tempfile.TemporaryDirectory() as root:
             zip_path=Path(root)/"phone.zip"
