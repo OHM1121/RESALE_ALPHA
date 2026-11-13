@@ -36,6 +36,18 @@ class CoinPositionFieldsTest(unittest.TestCase):
         self.assertEqual(row["entry_price"], 251000)
         self.assertEqual(row["last_price"], 252000)
 
+    def test_original_exe_buy_time_is_joined_without_price_overwrite(self):
+        compact=[{"id":77,"tf":"5m","market":"KRW-BTC","entry_price":101000}]
+        source=[{"id":77,"tf":"5m","market":"KRW-BTC","status":"OPEN",
+                 "entry":99000,"entry_at":"2026-11-13T00:30:00+00:00",
+                 "first_sold_qty":"0.25","ref_at":"2026-11-13T00:00:00Z"}]
+        row=normalize(compact,source)[0]
+        self.assertEqual(row["entry_price"],101000)
+        self.assertEqual(row["entry_at"],"2026-11-13T00:30:00+00:00")
+        self.assertEqual(row["first_sold_qty"],"0.25")
+        self.assertEqual(row["ref_ts"],"2026-11-13T00:00:00Z")
+        self.assertNotIn("entry_at",compact[0]) # read-only source
+
     def test_ambiguous_symbol_does_not_borrow_another_positions_price(self):
         actual = [{"tf": "5m", "symbol": "KRW-SOL"}]
         db = [{"id": 1, "tf": "5m", "symbol": "KRW-SOL", "status": "OPEN",
