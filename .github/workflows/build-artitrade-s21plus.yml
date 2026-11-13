@@ -239,8 +239,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.23-OLED-PREMIUM'" in s
-          assert "versionCode 34" in s
+          assert "versionName '0.7.24-RESEARCH-KST'" in s
+          assert "versionCode 35" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -349,6 +349,8 @@ jobs:
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_gmo_original_migration.py' -q
           done
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_android_ledger_backup.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_persistence_full.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_exe_timestamp_source_audit.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_resume.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_phone_backup_verify.py' -v
           mkdir -p /tmp/artitrade-krw-test
@@ -356,6 +358,10 @@ jobs:
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/WonFormat.java \
             ARTITRADE_ANDROID/ui_tests/WonFormatTest.java
           java -cp /tmp/artitrade-krw-test com.artitrade.mobile.WonFormatTest
+          javac -d /tmp/artitrade-krw-test \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/TradeExplanation.java \
+            ARTITRADE_ANDROID/ui_tests/TradeExplanationTest.java
+          java -cp /tmp/artitrade-krw-test com.artitrade.mobile.TradeExplanationTest
           javac -d /tmp/artitrade-krw-test \
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/MigrationJournalIO.java \
             ARTITRADE_ANDROID/ui_tests/MigrationJournalIOTest.java
@@ -378,6 +384,12 @@ jobs:
           assert 'openInputStream(target)' in (root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
           assert 'sqlite3.Connection.backup' in (root/'python/android_ledger_backup.py').read_text()
           assert 'verify_phone_backup' in Path('ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py').read_text()
+          assert 'from android_research_audit import capture' in source
+          exporter=(root/'python/android_ledger_backup.py').read_text()
+          assert 'def _source_catalog(' in exporter and '"report_files":{}' in exporter
+          assert 'original_records_not_truncated' in exporter
+          assert 'research_reports' in (root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text().lower() or 'pendingResearchReports' in (root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'source_research' in source and 'gmo_original_research_parity' in source
           assert 'paper_first_target_filled' in source
           print('MIGRATION_INTEGRITY_AND_EXE_RESEARCH_POLICY_OK')
           PY
@@ -436,8 +448,8 @@ jobs:
           grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'TimeframeAccountFlowView' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.23 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.23 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.24 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.24 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '실제 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '가상 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
