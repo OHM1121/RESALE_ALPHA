@@ -289,10 +289,11 @@ public final class UnifiedVisualActivity extends Activity {
         b.setText(label);
         b.setTextSize(13);
         b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
-        b.setTextColor(active?PremiumUi.BG:PremiumUi.TEXT);
+        boolean dangerous=label.contains("강제매도")||label.equals("실거래 ON");
+        b.setTextColor(active?PremiumUi.BG:dangerous?PremiumUi.LOSS:PremiumUi.TEXT);
         b.setBackground(PremiumUi.rounded(this,
             active?accent():PremiumUi.SURFACE_HIGH,
-            active?accent():PremiumUi.LINE,12));
+            active?accent():dangerous?PremiumUi.LOSS:PremiumUi.LINE,12));
         b.setPadding(dp(10),0,dp(10),0);
         b.setMinHeight(0);b.setMinimumHeight(0);
         b.setOnClickListener(v->action.run());
@@ -1148,7 +1149,7 @@ public final class UnifiedVisualActivity extends Activity {
         Button selection=button("목록 ▾ "+HistorySelection.filterLabel(activeHistoryFilter()),
             false,()->{});
         selection.setOnClickListener(v->showHistoryFilterMenu(selection));
-        selection.setTextSize(11);
+        selection.setTextSize(13);
         return selection;
     }
 
