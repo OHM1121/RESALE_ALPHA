@@ -881,7 +881,8 @@ public final class UnifiedVisualActivity extends Activity {
                     JSONObject marketTree=localRecords.optJSONObject(k[0]);
                     JSONObject strategyTree=marketTree==null?null:marketTree.optJSONObject(k[1]);
                     JSONObject localBucket=strategyTree==null?null:strategyTree.optJSONObject(k[2]);
-                    if(meaningfulRecord(localBucket))continue;
+                    if(meaningfulRecord(localBucket)
+                        &&!missingNestedBucket(localBucket,k[3]))continue;
                     JSONObject response=cachedHubGapRecords.optJSONObject(k[3]);
                     if(pollGaps){
                         try{
@@ -1241,6 +1242,32 @@ public final class UnifiedVisualActivity extends Activity {
     private boolean meaningfulRecord(JSONObject value){
         return value!=null&&meaningfulTree(value);
     }
+    private boolean missingNestedBucket(JSONObject local,String recordKey){
+        if(local==null)return true;
+        if("stockAtLedger".equals(recordKey))
+            return !local.has("ma_subledger")||!local.has("gmo");
+        if("stockAtResearch".equals(recordKey))
+            return !local.has("ma")||!local.has("gmo");
+        return false;
+    }
+    /** Only supplement *absent* sub-strategies; never replace a live phone
+     * account, including a legitimate empty or zero-balance strategy.
+     */
+    private JSONObject mergeMissingNested(JSONObject local,JSONObject remote,String recordKey){
+        if(!meaningfulRecord(local))return remote;
+        if(!meaningfulRecord(remote)||!missingNestedBucket(local,recordKey))return local;
+        String[] keys="stockAtLedger".equals(recordKey)
+            ?new String[]{"ma_subledger","gmo"}:new String[]{"ma","gmo"};
+        try{
+            JSONObject merged=new JSONObject(local.toString());
+            for(String nested:keys){
+                JSONObject source=remote.optJSONObject(nested);
+                if(!merged.has(nested)&&meaningfulRecord(source))merged.put(nested,source);
+            }
+            return merged;
+        }catch(Exception ignored){return local;}
+    }
+
 
     private JSONObject localRecord(String key){return localRecord(copyCache(),key);}
     private JSONObject localRecord(JSONObject snapshot,String key){
@@ -1265,13 +1292,15 @@ public final class UnifiedVisualActivity extends Activity {
     private JSONObject record(String key){return record(copyCache(),key);}
     private JSONObject record(JSONObject snapshot,String key){
         JSONObject local=localRecord(snapshot,key);
-        if(meaningfulRecord(local))return local;
         JSONObject p=snapshot.optJSONObject("records");
+        JSONObject remote=null;
         if(p!=null){
-            JSONObject r=p.optJSONObject(key);
-            JSONObject d=r==null?null:r.optJSONObject("data");
-            if(meaningfulRecord(d))return d;
+            JSONObject envelope=p.optJSONObject(key);
+            remote=envelope==null?null:envelope.optJSONObject("data");
         }
+        if(meaningfulRecord(local))
+            return mergeMissingNested(local,remote,key);
+        if(meaningfulRecord(remote))return remote;
         return local==null?new JSONObject():local;
     }
 
