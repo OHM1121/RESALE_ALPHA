@@ -310,6 +310,9 @@ def _coin_research(root,which):
     actual={(str(x.get('tf')),str(x.get('market')),str(x.get('ref_at'))):x for x in positions if str(x.get('status') or '')!='RESET_B_V1'}
     shadows={int(x.get('candidate_id') or 0):x for x in _core._db_rows(db,
         "SELECT candidate_id,state,entry_at,entry_price,peak,realized_net,sell_at FROM coin_shadow_trials")}
+    decisions={}
+    for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY id DESC"):
+        decisions.setdefault(int(decision.get('candidate_id') or 0),decision)
     target_fills=set()
     for x in _core._db_rows(db,"SELECT candidate_id,side,reason FROM coin_shadow_fills WHERE side='SELL'"):
         reason=str(x.get('reason') or '').upper()
@@ -319,6 +322,7 @@ def _coin_research(root,which):
     for x in candidates:
         key=(str(x.get('tf')),str(x.get('market')),str(x.get('ref_ts')))
         p=actual.get(key);sh=shadows.get(int(x.get('id') or 0))
+        selection=decisions.get(int(x.get('id') or 0),{})
         bought=p is not None;entry_observed=bought or bool(sh and sh.get('entry_at'))
         outcome='PENDING';closed=False
         if p:
@@ -333,8 +337,14 @@ def _coin_research(root,which):
             'name':x.get('name'),'ref_ts':x.get('ref_ts'),'score':x.get('score'),
             'bought':bought,'entry_observed':entry_observed,'closed':closed,'outcome':outcome,
             'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
-            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_SHADOW' if entry_observed else 'VIRTUAL_NOT_ENTERED',
-            'reason':x.get('reason')})
+            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_SHADOW' if entry_observed else 'UNSELECTED',
+            'unselected':not bought,
+             'unselected_reason':(selection.get('reason') or x.get('reason')) if not bought else None,
+             'decision':selection.get('decision'),
+             'competing_score':selection.get('competing_score'),
+             'decision_at':selection.get('at'),
+             'limit_price':x.get('limit_price'),'target':x.get('target'),
+             'reason':selection.get('reason') or x.get('reason')})
     return _research_record(items,candidates)
 
 
@@ -768,15 +778,15 @@ def _research_history(self, out):
                'candidate_cohort_decisions','candidate_research_health',
                'stock_shadow_trials','stock_shadow_fills','signals','positions','executions')),
         'MA':('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
-              ('positions','executions','candidate_decisions')),
+              ('positions','executions','research')),
         'CLOSE':('stock/close/AT_CLOSE_PAPER.sqlite3','signals',
                  ('research_candidates','positions','executions')),
         'COIN_BASE':('coin/base/upbit_paper.sqlite3','candidates',
                      ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
-                      'coin_shadow_fills','coin_shadow_book_path','positions','executions')),
+                      'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
         'COIN_MA':('coin/ma/upbit_paper.sqlite3','candidates',
                    ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
-                    'coin_shadow_fills','coin_shadow_book_path','positions','executions')),
+                    'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
     }
     def read(source, loader):
         rel,primary,evidence=roots[source]
