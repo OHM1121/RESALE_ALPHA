@@ -179,6 +179,12 @@ final class StrategyRuntimeBridge {
         try{return parse(module.callAttr("hub_records"));}
         catch(Throwable e){crashes.add("python_hub_records",e);return new JSONObject();}
     }
+    synchronized JSONObject ledgerAudit(JSONObject manifest){
+        if(module==null)return error("PYTHON_LEDGER_AUDIT_NOT_READY",null);
+        try{return parse(module.callAttr("ledger_audit",
+            manifest==null?"{}":manifest.toString()));}
+        catch(Throwable e){crashes.add("python_ledger_audit",e);return error("PYTHON_LEDGER_AUDIT",e);}
+    }
     synchronized JSONObject operationSnapshot(){
         if(operationModule==null)return new JSONObject();
         try{return parse(operationModule.callAttr("snapshot"));}

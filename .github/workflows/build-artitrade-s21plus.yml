@@ -182,6 +182,37 @@ jobs:
           assert service.index('if(!installed.isEmpty())return;') < service.index('hub.migrationStatus()')
           print('PHONE_LEDGER_FIRST_IMPORT_LOCK_CHECK_OK')
           PY
+      - name: Verify v0.7.13 non-destructive ledger recovery, CLOSE views and MA pending diagnostics
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          java=root/'java/com/artitrade/mobile'
+          migration=(java/'LegacyLedgerMigration.java').read_text()
+          service=(java/'UnifiedTradingService.java').read_text()
+          bridge=(java/'StrategyRuntimeBridge.java').read_text()
+          ui=(java/'UnifiedVisualActivity.java').read_text()
+          runtime=(root/'python/android_runtime_v078.py').read_text()
+          ast.parse(runtime)
+          assert "Path(self.root)/'stock'/'close'/'AT_CLOSE_PAPER.sqlite3'" in runtime
+          assert "Path(root)/'stock'/'close'/'AT_CLOSE_PAPER.sqlite3'" in runtime
+          assert "'stock'/'AT_CLOSE'/'AT_CLOSE_PAPER.sqlite3'" not in runtime
+          assert 'stock_ma_pending_diagnostics' in runtime
+          assert "status='EXPIRED'" in runtime and "UPDATE candidates" in runtime
+          assert 'def ledger_audit(manifest_json)' in runtime
+          assert 'SQLITE_READ_ERROR' in runtime and "PRAGMA query_only=ON" in runtime
+          assert 'installed_sha256' in migration and 'installed_manifest' in migration
+          assert 'reuse_existing_files",true' in migration
+          assert 'CLOSE_LEDGER_CONFLICT' not in migration
+          assert migration.index('putString("installed_sha256",sha)') < migration.index('verifyInstalled(manifest,true)')
+          assert 'strategy.ledgerAudit(migration.optJSONObject("manifest"))' in service
+          assert 'synchronized JSONObject ledgerAudit(JSONObject manifest)' in bridge
+          assert 'python_db_audit' in migration and 'python_db_audit' in ui
+          assert "PC_IMPORT_CHECKPOINT_INCOMPLETE" in migration
+          print('LEDGER_CLOSE_MA_REGRESSION_CHECK_OK')
+          PY
       - name: Validate dashboard JavaScript
         shell: bash
         run: |

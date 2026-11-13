@@ -75,8 +75,13 @@ final class LegacyLedgerMigration {
         File old=new File(runtimeRoot(),"stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3");
         if(!old.isFile())return;
         File target=deployedFile("stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3");
-        if(target.isFile()&&historyCount(target)>0)
-            throw new IOException("CLOSE_LEDGER_CONFLICT: old and new paths both contain trades; keep both");
+        if(target.isFile()&&historyCount(target)>0){
+            // The previous release left the PC CLOSE database at the old path.
+            // If the active runtime now contains trades, never replace it and
+            // never abort the restoration of the other five strategy ledgers.
+            prefs().edit().putBoolean("close_path_conflict_preserved",true).apply();
+            return;
+        }
         File parent=target.getParentFile();
         if(!parent.isDirectory()&&!parent.mkdirs())throw new IOException("Cannot create CLOSE ledger folder");
         if(target.isFile()){
@@ -84,6 +89,14 @@ final class LegacyLedgerMigration {
             removeStaleWal(target);
         }
         java.nio.file.Files.move(old.toPath(),target.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        for(String side:new String[]{"-wal","-shm"}){
+            File oldSide=new File(old.getAbsolutePath()+side);
+            if(oldSide.isFile()){
+                File newSide=new File(target.getAbsolutePath()+side);
+                java.nio.file.Files.move(oldSide.toPath(),newSide.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
     }
     private void progress(String stage,String detail,long done,long total,boolean complete,String error){
         int percent=total>0?(int)Math.max(0,Math.min(100,(done*100L)/total)):(complete?100:0);
@@ -249,6 +262,8 @@ final class LegacyLedgerMigration {
         try{
             String saved=prefs().getString("verified_manifest","");
             if(!saved.isEmpty())return new JSONObject(saved);
+            String installed=prefs().getString("installed_manifest","");
+            if(!installed.isEmpty())return new JSONObject(installed);
             JSONObject previous=new JSONObject(prefs().getString("last_status","{}"));
             return previous.optJSONObject("manifest");
         }catch(Exception ignored){return null;}
@@ -289,13 +304,13 @@ final class LegacyLedgerMigration {
                 long want=counts.optLong(table,-1);
                 if(want<0)continue;
                 sourceRows+=want;
-                if(rel.endsWith(".sqlite3")&&table.matches("[A-Za-z0-9_]+")){
-                    long got=count(target,table);
-                    if((exactSnapshot&&want!=got)||(!exactSnapshot&&want>0&&got==0))
-                        throw new IOException("PC history unreadable: "+rel+"/"+table+
-                            " source="+want+" phone="+got);
-                    verifiedRows+=got;checkedTables++;
-                }else verifiedRows+=want; // Non-SQLite GMO state is protected by its full-file SHA-256.
+                // The ZIP's source table counts were captured with Python's sqlite3 backup API.
+                // Android's platform SQLite engine may be older than the bundled Chaquopy
+                // SQLite and can return zero even for a readable database. Verify bytes
+                // before engine start and use the SAME Python SQLite as the strategy
+                // to verify actual per-table counts after startup.
+                if(exactSnapshot){verifiedRows+=want;checkedTables++;}
+                else if(!rel.endsWith(".sqlite3"))verifiedRows+=want;
             }
         }
         return obj("files_verified",verified,"source_rows",sourceRows,
@@ -368,7 +383,8 @@ final class LegacyLedgerMigration {
         }
         return report;
     }
-    JSONObject finishRuntimeVerification(JSONObject installResult,JSONObject engineResult,JSONObject records){
+    JSONObject finishRuntimeVerification(JSONObject installResult,JSONObject engineResult,
+                                           JSONObject records,JSONObject pythonAudit){
         String initial=installResult==null?"":installResult.optString("status","");
         if(!"FILES_INSTALLED".equals(initial)&&!"LOCAL_FILES_PRESENT".equals(initial))
             return installResult==null?obj("ok",false,"status","IMPORT_RESULT_MISSING"):installResult;
@@ -378,6 +394,10 @@ final class LegacyLedgerMigration {
                     (engineResult==null?"missing result":engineResult.toString()));
             JSONObject manifest=installResult.optJSONObject("manifest");
             JSONObject verification=verifyInstalled(manifest,false);
+            if(pythonAudit==null||!pythonAudit.optBoolean("ok",false))
+                throw new IOException("PHONE_SQLITE_AUDIT_FAILED: "+
+                    (pythonAudit==null?"audit missing":pythonAudit.optString("message",pythonAudit.toString())));
+            verification.put("python_db_audit",pythonAudit);
             verification.put("by_strategy",strategyCounts(manifest,records));
             long sourceRows=verification.optLong("source_rows",0L);
             long visibleRows=runtimeRows(records);
@@ -418,7 +438,8 @@ final class LegacyLedgerMigration {
             JSONObject failed=obj("ok",false,"status","RUNTIME_VERIFY_FAILED",
                 "type",e.getClass().getSimpleName(),"message",String.valueOf(e.getMessage()),
                 "sha256",installResult.optString("sha256",""),
-                "manifest",installResult.optJSONObject("manifest"));
+                "manifest",installResult.optJSONObject("manifest"),
+                "python_db_audit",pythonAudit==null?new JSONObject():pythonAudit);
             prefs().edit().putString("last_status",failed.toString()).commit();
             progress("FAILED","PC 파일 복원 후 전략엔진 검증 실패",0,1,false,String.valueOf(e.getMessage()));
             return failed;
@@ -455,6 +476,39 @@ final class LegacyLedgerMigration {
                         "message","Phone ledger retained; manual reconciliation required: "+e.getClass().getSimpleName()+
                             ": "+String.valueOf(e.getMessage()),"sha256",imported);
                     progress("BLOCKED","기존 폰 원장 검증 실패 · 자동 덮어쓰기 차단",0,1,false,"PHONE_LEDGER_VERIFY_FAILED");
+                    return blocked;
+                }
+            }
+            // FILES_INSTALLED (or a prior RUNTIME_VERIFY_FAILED) means the DB bytes
+            // already reached this phone. Never download the same ZIP again, as
+            // the running phone may have added paper or real trade records.
+            String pendingSha=prefs().getString("installed_sha256","");
+            String pendingSession=prefs().getString("installed_session","");
+            if(pendingSha.isEmpty()){
+                JSONObject oldResult=new JSONObject(prefs().getString("last_status","{}"));
+                String oldStatus=oldResult.optString("status","");
+                if("FILES_INSTALLED".equals(oldStatus)||
+                   "RUNTIME_VERIFY_FAILED".equals(oldStatus)){
+                    pendingSha=oldResult.optString("sha256","");
+                    pendingSession=oldResult.optString("session","");
+                }
+            }
+            if(!pendingSha.isEmpty()){
+                if(previous==null)return obj("ok",false,"status","PC_IMPORT_CHECKPOINT_INCOMPLETE",
+                    "message","Unverified PC DB already installed. Keep all phone files; manifest missing.",
+                    "sha256",pendingSha);
+                try{
+                    JSONObject verification=verifyInstalled(previous,false);
+                    progress("VERIFY_RUNTIME","기기 내 PC 원장 재검증 · 파일 재설치 없음",0,1,false,"");
+                    return obj("ok",true,"status","FILES_INSTALLED",
+                        "sha256",pendingSha,"session",pendingSession,
+                        "manifest",previous,"verification",verification,"reuse_existing_files",true);
+                }catch(Exception unsafe){
+                    JSONObject blocked=obj("ok",false,"status","PHONE_LEDGER_VERIFY_FAILED",
+                        "message","Existing DB kept, no overwrite: "+unsafe.getClass().getSimpleName()+
+                            ": "+String.valueOf(unsafe.getMessage()),"sha256",pendingSha);
+                    progress("BLOCKED","설치된 원장 검증 실패 · 기존 기록 보존",0,1,false,
+                        String.valueOf(unsafe.getMessage()));
                     return blocked;
                 }
             }
@@ -535,6 +589,12 @@ final class LegacyLedgerMigration {
             JSONObject manifest=extract(archive,staging);
             progress("INSTALL","기존 PC EXE 원장을 폰 전략 DB로 승계",0,1,false,"");
             install(staging,sha);
+            if(!prefs().edit().putString("installed_sha256",sha)
+                .putString("installed_manifest",manifest.toString())
+                .putString("installed_session",session)
+                .putLong("installed_at",System.currentTimeMillis()).commit())
+                throw new IOException("Cannot persist local installed snapshot checkpoint");
+            // Verify original bytes while the strategy engine is still stopped.
             JSONObject verification=verifyInstalled(manifest,true);
             deleteTree(staging);archive.delete();
             JSONObject result=obj("ok",true,"status","FILES_INSTALLED",
@@ -545,9 +605,15 @@ final class LegacyLedgerMigration {
             return result;
         }catch(Throwable e){
             crashes.add("pc_ledger_migration",e);
-            JSONObject result=obj("ok",false,"status","IMPORT_FAILED","type",e.getClass().getSimpleName(),"message",String.valueOf(e.getMessage()));
+            String stage="IMPORT_FAILED";
+            if(e instanceof java.net.ConnectException||e instanceof java.net.SocketTimeoutException)
+                stage="MSERVER_UNREACHABLE";
+            JSONObject result=obj("ok",false,"status",stage,"type",e.getClass().getSimpleName(),
+                "message",String.valueOf(e.getMessage()));
             prefs().edit().putString("last_status",result.toString()).commit();
-            progress("FAILED","PC EXE 원장 승계 실패",0,1,false,e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));
+            progress("MSERVER_UNREACHABLE".equals(stage)?"WAITING":"FAILED",
+                "MSERVER_UNREACHABLE".equals(stage)?"PC 원장 서버 연결 대기":"PC EXE 원장 승계 실패",
+                0,1,false,e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));
             return result;
         }
     }
@@ -555,7 +621,10 @@ final class LegacyLedgerMigration {
         try{
             String last=prefs().getString("last_status","");
             JSONObject o=last.isEmpty()?new JSONObject():new JSONObject(last);
-            o.put("imported_sha256",prefs().getString("imported_sha256","")).put("imported_at",prefs().getLong("imported_at",0L));
+            o.put("imported_sha256",prefs().getString("imported_sha256",""))
+                .put("installed_sha256",prefs().getString("installed_sha256",""))
+                .put("imported_at",prefs().getLong("imported_at",0L))
+                .put("close_path_conflict_preserved",prefs().getBoolean("close_path_conflict_preserved",false));
             return o;
         }catch(Exception e){return new JSONObject();}
     }

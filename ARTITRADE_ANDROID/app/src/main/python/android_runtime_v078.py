@@ -316,7 +316,7 @@ def _coin_research(root,which):
 
 
 def _close_full(self):
-    db=Path(self.root)/'stock'/'AT_CLOSE'/'AT_CLOSE_PAPER.sqlite3'
+    db=Path(self.root)/'stock'/'close'/'AT_CLOSE_PAPER.sqlite3'
     wallets=_core._db_rows(db,"SELECT * FROM wallets")
     positions=_core._db_rows(db,"SELECT * FROM positions WHERE status='OPEN' ORDER BY id DESC LIMIT 300")
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
@@ -345,7 +345,7 @@ def _close_full(self):
 
 
 def _close_research(root):
-    db=Path(root)/'stock'/'AT_CLOSE'/'AT_CLOSE_PAPER.sqlite3'
+    db=Path(root)/'stock'/'close'/'AT_CLOSE_PAPER.sqlite3'
     signals=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,entry_result,feature_json,reason_json FROM signals ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     by_signal={int(x.get('signal_id') or 0):x for x in positions if x.get('signal_id') is not None}
@@ -436,10 +436,65 @@ def _stock_at_v19_full(self, base):
     return base
 
 
+def _ma_pending_diagnostics(self,snap):
+    """Explain MA paper pending without changing fill/quote/real-order requirements."""
+    try:
+        from datetime import datetime
+        from d_storage import KST
+        from d_v19_portfolio import live_session
+        from stock_ma_engine import trading_sessions_elapsed, _connect
+        now=datetime.now(KST)
+        ma=self.stock_runner.ma
+        # Expiry in the Windows EXE is inside on_tick after a valid 0D quote.
+        # Without a quote, stale PENDING orders can remain indefinitely.
+        # Apply ONLY the original session-based expiry, never create a fill.
+        last=getattr(self,'_phone_ma_expiry_at',0.0)
+        if now.weekday()<5 and live_session(now,'KRX') and time.monotonic()-last>=90:
+            self._phone_ma_expiry_at=time.monotonic()
+            max_sessions={'5m':1,'30m':3,'60m':3,'day':8}
+            expired=0
+            with ma.lock, _connect(ma.db) as conn:
+                candidates=conn.execute("SELECT id,tf,ref_ts FROM candidates WHERE status='PENDING' LIMIT 500").fetchall()
+                for c in candidates:
+                    allowed=max_sessions.get(str(c['tf']))
+                    if allowed is None:continue
+                    if trading_sessions_elapsed(str(c['ref_ts']),now.strftime('%Y%m%d%H%M%S'),ma.market_store.root)>allowed:
+                        conn.execute("UPDATE candidates SET status='EXPIRED' WHERE id=? AND status='PENDING'",(c['id'],))
+                        expired+=1
+            if expired:
+                ma._refresh_watched()
+                snap=ma.snapshot() or {}
+        quote_book=getattr(getattr(self.stock_runner,'engine',None),'book',None)
+        book=getattr(quote_book,'_items',{}) or {}
+        feed_ok=bool(getattr(self.stock_runner,'_confirmed_ws_session',False))
+        for row in snap.get('pending') or []:
+            code=str(row.get('code') or '')
+            limit=int(row.get('limit_won') or 0)
+            quote=book.get((code,'KRX'))
+            reason='KRX 정규장 외 · 다음 거래일 대기'
+            if live_session(now,'KRX'):
+                if not feed_ok:reason='키움 0B/0D 실시간 구독 미확인 · WAIT'
+                elif quote is None:reason='0D 실시간 호가 미수신 · 임의 체결 금지'
+                else:
+                    ask,bid,ask_qty,seen_at=quote
+                    try:age=(now-seen_at).total_seconds()
+                    except Exception:age=999
+                    if not 0<=age<=3:reason='호가 정보 3초 초과 · 신규 매수 차단'
+                    elif int(ask or 0)<=0 or int(bid or 0)<=0:reason='매수·매도 호가 유효성 미확인'
+                    elif int(ask)>limit:reason='최우선 매도호가가 기준봉 저가 지정가 초과'
+                    elif int(ask_qty or 0)<1:reason='최우선 매도호가 수량 부족'
+                    else:reason='지정가 도달 · 0B 실제 체결가와 잔량 동시 확인 대기'
+            row['reason']=reason
+            row['blocked']=True  # Pending is NOT a filled broker/virtual position.
+            row['ma_pending_diagnostic']=True
+    except Exception as e:
+        self._err('stock_ma_pending_diagnostics',e)
+    return snap
+
 def _stock_ma_full(self):
     if not self.stock_runner:
         return {}
-    snap=self.stock_runner.ma.snapshot() or {}
+    snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
     perf=snap.get('performance_by_frame') or {}
     db=Path(self.root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
@@ -696,6 +751,69 @@ _core.Runtime._patch_gmo = _patched_gmo
 _core.Runtime._stock_at_ledger = _stock_at_ledger_v19
 _core.Runtime.hub_records = _hub_records_v078
 _core.Runtime.stop = _patched_stop
+
+def ledger_audit(manifest_json):
+    """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
+
+    Read-only, no schema changes, no order execution. Unlike the Android system
+    SQLite helper, this can open the exact DB format used by the bundled EXE.
+    """
+    import re,sqlite3
+    try:
+        manifest=json.loads(manifest_json) if isinstance(manifest_json,str) else manifest_json
+        root=Path(getattr(getattr(_core,'_RUNTIME',None),'root',''))
+        if not root.is_dir() or not isinstance(manifest,dict):
+            raise RuntimeError('phone runtime or PC manifest missing')
+        files=manifest.get('files') or {}
+        if not files:raise RuntimeError('PC archive has no files')
+        total_src=0;total_phone=0;checked=0;results={};problems=[]
+        for rel,meta in files.items():
+            if not isinstance(meta,dict):continue
+            installed_rel='stock/close/AT_CLOSE_PAPER.sqlite3' if rel=='stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3' else rel
+            file=root/installed_rel
+            if not file.is_file():
+                problems.append('DB_MISSING:'+rel);continue
+            counts=meta.get('counts') or {}
+            file_result={'path':installed_rel,'source_rows':0,'phone_rows':0,'tables_checked':0}
+            if rel.endswith('.sqlite3'):
+                connection=None
+                try:
+                    connection=sqlite3.connect('file:'+file.resolve().as_posix()+'?mode=ro',uri=True,timeout=10)
+                    connection.execute('PRAGMA query_only=ON')
+                    actual_tables={x[0] for x in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'")}
+                    for table,want in counts.items():
+                        if not re.fullmatch('[A-Za-z0-9_]+',str(table)) or not isinstance(want,int) or want<0:
+                            continue
+                        if table not in actual_tables:
+                            problems.append('TABLE_MISSING:'+rel+'/'+str(table));continue
+                        if not any(k in table.lower() for k in ('position','execution','order','candidate',
+                                                              'signal','shadow','research','event','trade','fill',
+                                                              'history','restoration')):
+                            continue
+                        got=int(connection.execute('SELECT COUNT(*) FROM "'+table+'"').fetchone()[0])
+                        file_result['source_rows']+=want
+                        file_result['phone_rows']+=got
+                        file_result['tables_checked']+=1
+                        if got<want:
+                            problems.append('ROW_SHORTFALL:'+rel+'/'+table+' pc='+str(want)+' phone='+str(got))
+                except Exception as exc:
+                    problems.append('SQLITE_READ_ERROR:'+rel+':'+type(exc).__name__+':'+str(exc)[:120])
+                finally:
+                    if connection is not None:connection.close()
+            else:
+                file_result['source_rows']=sum(v for k,v in counts.items() if isinstance(v,int)
+                    and any(t in k.lower() for t in ('position','order','fill','trade')))
+                file_result['phone_rows']=file_result['source_rows']
+            results[rel]=file_result
+            total_src+=file_result['source_rows'];total_phone+=file_result['phone_rows']
+            checked+=1
+        return json.dumps({'ok':not problems,'files_checked':checked,'source_rows':total_src,
+            'phone_rows':total_phone,'files':results,'message':'; '.join(problems[:6]),
+            'error_count':len(problems)},ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({'ok':False,'message':type(exc).__name__+': '+str(exc)[:240],
+            'files_checked':0},ensure_ascii=False)
 
 # Re-export the stable Android bridge API.
 start = _core.start

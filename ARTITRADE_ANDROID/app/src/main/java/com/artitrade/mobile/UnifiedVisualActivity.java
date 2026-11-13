@@ -433,6 +433,9 @@ public final class UnifiedVisualActivity extends Activity {
                 "PHONE_HAS_REAL_FILLS".equals(ms)?"실제 브로커 체결 존재 · 자동 원장교체 차단":
                 "RUNTIME_VERIFY_FAILED".equals(ms)?"PC DB 존재하나 전략엔진 반영 실패":
                 "IMPORT_FAILED".equals(ms)?"기존 PC EXE 원장 승계 실패":
+                "MSERVER_UNREACHABLE".equals(ms)?"MSERVER 연결 불가 · 원장 승계 대기":
+                "PHONE_LEDGER_VERIFY_FAILED".equals(ms)?"기존 폰 원장 보존 · 재검증 실패":
+                "PC_IMPORT_CHECKPOINT_INCOMPLETE".equals(ms)?"설치된 원장 검증정보 불일치 · 덮어쓰기 금지":
                 "NO_PC_ARCHIVE".equals(ms)?"기존 PC EXE 원장 승계자료 대기":"기존 PC EXE 원장: "+ms;
             TextView mv=text(mt,11);
             mv.setTextColor(("IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms))?Color.rgb(86,214,170):
@@ -457,6 +460,16 @@ public final class UnifiedVisualActivity extends Activity {
                 }
             }
             String importError=migState.optString("message","");
+            if(migState.optBoolean("close_path_conflict_preserved",false)){
+                TextView warn=text("과거/현재 종가베팅 원장이 모두 존재 · 원본을 보존하고 자동 덮어쓰기 차단",10);
+                warn.setTextColor(Color.rgb(255,184,119));tools.addView(warn);
+            }
+            JSONObject dbAudit=migState.optJSONObject("python_db_audit");
+            if(dbAudit==null&&verification!=null)dbAudit=verification.optJSONObject("python_db_audit");
+            if(dbAudit!=null&&!dbAudit.optBoolean("ok",true)){
+                TextView check=text("SQLite 전략검증: "+dbAudit.optString("message","원본과 실제 DB 비교 실패"),10);
+                check.setTextColor(Color.rgb(255,153,164));check.setMaxLines(3);tools.addView(check);
+            }
             if(!importError.isEmpty()){
                 TextView issue=text("복원 검증: "+importError,10);
                 issue.setTextColor(Color.rgb(255,153,164));issue.setPadding(dp(2),0,0,dp(8));tools.addView(issue);

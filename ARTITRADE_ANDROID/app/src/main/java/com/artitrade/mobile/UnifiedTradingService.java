@@ -132,7 +132,18 @@ public final class UnifiedTradingService extends Service {
         if(!started.optBoolean("ok",true))
             crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
         JSONObject records=strategy.hubRecords();
-        JSONObject verified=importer.finishRuntimeVerification(migration,started,records);
+        String state=migration.optString("status","");
+        JSONObject audit=new JSONObject();
+        if("FILES_INSTALLED".equals(state)||"LOCAL_FILES_PRESENT".equals(state)){
+            // Allow asynchronous EXE runner bootstrap to finish initializing the
+            // strategy snapshots. No tick or market order is synthesized here.
+            for(int attempt=0;attempt<3&&records.length()==0;attempt++){
+                try{Thread.sleep(500L);}catch(InterruptedException ie){Thread.currentThread().interrupt();break;}
+                records=strategy.hubRecords();
+            }
+            audit=strategy.ledgerAudit(migration.optJSONObject("manifest"));
+        }
+        JSONObject verified=importer.finishRuntimeVerification(migration,started,records,audit);
         saveMigrationResult(verified);
         applyPendingOperation();
     }
