@@ -75,6 +75,26 @@ public final class UnifiedVisualActivity extends Activity {
     private String page="home";
     private float swipeX=Float.NaN;
     private View drawerOverlay;
+    private static final long DRAWER_PROGRESS_REFRESH_MS=750L;
+    private static final class DrawerProgressViews {
+        final TextView percent;
+        final ProgressBar bar;
+        final TextView detail;
+        DrawerProgressViews(TextView percent,ProgressBar bar,TextView detail){
+            this.percent=percent;this.bar=bar;this.detail=detail;
+        }
+    }
+    private DrawerProgressViews drawerPublishProgress;
+    private DrawerProgressViews drawerImportProgress;
+    // Refresh only the visible progress widgets, not the whole drawer or its scroll position.
+    // Import and publish progress are stored locally by the service after each completed unit.
+    private final Runnable drawerProgressTicker=new Runnable(){
+        @Override public void run(){
+            if(drawerOverlay==null)return;
+            refreshOpenDrawerProgress();
+            main.postDelayed(this,DRAWER_PROGRESS_REFRESH_MS);
+        }
+    };
     private final Map<String,EditText[]> operationFields=new HashMap<>();
     // Unsaved drafts are isolated from the live strategy settings. Only Save applies them.
     private final Map<String,String> operationDraftValues=new HashMap<>();
@@ -247,6 +267,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void showShell(){
         root.removeAllViews();
         drawerOverlay=null;
+        stopDrawerProgressTicker();
         LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(9,11,17));
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
 
@@ -317,20 +338,76 @@ public final class UnifiedVisualActivity extends Activity {
         return done+"/"+total+" · 예상 "+(sec>=60?(sec/60)+"분 "+(sec%60)+"초":sec+"초");
     }
 
-    private void addProgressBlock(LinearLayout parent,String title,JSONObject state,int accent){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(7),dp(2),dp(8));
-        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);
-        TextView t=text(title,12);t.setTypeface(null,Typeface.BOLD);t.setTextColor(Color.rgb(215,222,237));head.addView(t,new LinearLayout.LayoutParams(0,dp(24),1));
+    private void updateDrawerProgressView(DrawerProgressViews views,JSONObject state){
+        if(views==null)return;
         int pct=state==null?0:Math.max(0,Math.min(100,state.optInt("percent",0)));
-        TextView pc=text(pct+"%",12);pc.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);pc.setTypeface(null,Typeface.BOLD);pc.setTextColor(accent);head.addView(pc,new LinearLayout.LayoutParams(dp(58),dp(24)));box.addView(head);
-        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(false);bar.setMax(100);bar.setProgress(pct);
-        if(Build.VERSION.SDK_INT>=21)bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));
-        box.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
+        views.percent.setText(pct+"%");
+        views.bar.setProgress(pct,true);
         String stage=state==null?"대기":state.optString("stage","대기");
         String current=state==null?"":state.optString("current",state.optString("detail",""));
         String eta=etaText(state);
-        TextView d=text(stage+(current.isEmpty()?"":" · "+current)+(eta.isEmpty()?"":" · "+eta),10);d.setTextColor(Color.rgb(139,151,174));d.setPadding(0,dp(5),0,0);box.addView(d);
+        views.detail.setText(stage+(current.isEmpty()?"":" · "+current)+(eta.isEmpty()?"":" · "+eta));
+    }
+
+    private DrawerProgressViews addProgressBlock(LinearLayout parent,String title,JSONObject state,int accent){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(7),dp(2),dp(8));
+        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);
+        TextView t=text(title,12);t.setTypeface(null,Typeface.BOLD);t.setTextColor(Color.rgb(215,222,237));head.addView(t,new LinearLayout.LayoutParams(0,dp(24),1));
+        TextView pc=text("0%",12);pc.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);pc.setTypeface(null,Typeface.BOLD);pc.setTextColor(accent);head.addView(pc,new LinearLayout.LayoutParams(dp(58),dp(24)));box.addView(head);
+        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(false);bar.setMax(100);
+        if(Build.VERSION.SDK_INT>=21)bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));
+        box.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
+        TextView d=text("",10);d.setTextColor(Color.rgb(139,151,174));d.setPadding(0,dp(5),0,0);box.addView(d);
         parent.addView(box,new LinearLayout.LayoutParams(-1,-2));
+        DrawerProgressViews views=new DrawerProgressViews(pc,bar,d);
+        updateDrawerProgressView(views,state);
+        return views;
+    }
+
+    private JSONObject effectiveImportProgress(JSONObject raw,JSONObject snapshot){
+        JSONObject state=raw==null?new JSONObject():raw;
+        JSONObject server=snapshot==null?null:snapshot.optJSONObject("mserver_migration");
+        if(server!=null&&!server.optBoolean("ready",false)&&server.optInt("total_chunks",0)>0
+                &&!state.optBoolean("complete",false)){
+            try{
+                state=new JSONObject(state.toString());
+                int received=server.optInt("received",0),total=server.optInt("total_chunks",0);
+                state.put("stage","PC→MSERVER 업로드").put("detail","승계 ZIP 수신")
+                    .put("done",received).put("total",total)
+                    .put("percent",total>0?received*100/total:0);
+            }catch(Exception ignored){}
+        }
+        return state;
+    }
+
+    private JSONObject drawerLocalProgress(String prefName,boolean importStage){
+        android.content.SharedPreferences p=getSharedPreferences(prefName,MODE_PRIVATE);
+        JSONObject state=new JSONObject();
+        try{
+            state.put("stage",p.getString("stage",""));
+            state.put(importStage?"detail":"current",p.getString(importStage?"detail":"current",""));
+            state.put("done",importStage?p.getLong("done",0L):p.getInt("done",0));
+            state.put("total",importStage?p.getLong("total",0L):p.getInt("total",0));
+            state.put("percent",p.getInt("percent",0));
+            state.put("complete",p.getBoolean("complete",false));
+            if(!importStage)state.put("started_at",p.getLong("started_at",0L));
+        }catch(Exception ignored){}
+        return state;
+    }
+
+    private void refreshOpenDrawerProgress(){
+        if(drawerOverlay==null)return;
+        JSONObject snapshot=copyCache();
+        updateDrawerProgressView(drawerPublishProgress,
+            drawerLocalProgress("artitrade_mserver_sync_v078",false));
+        updateDrawerProgressView(drawerImportProgress,
+            effectiveImportProgress(drawerLocalProgress("artitrade_pc_ledger_import_progress_v078",true),snapshot));
+    }
+
+    private void stopDrawerProgressTicker(){
+        main.removeCallbacks(drawerProgressTicker);
+        drawerPublishProgress=null;
+        drawerImportProgress=null;
     }
 
     private void openSettingsDrawer(){
@@ -374,7 +451,7 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject hubPub=snapshot.optJSONObject("hub_publish");
         JSONObject mAuth=snapshot.optJSONObject("mserver_auth");
         JSONObject syncProgress=snapshot.optJSONObject("mserver_sync");
-        JSONObject importProgress=snapshot.optJSONObject("pc_import_progress");
+        JSONObject importProgress=effectiveImportProgress(snapshot.optJSONObject("pc_import_progress"),snapshot);
         JSONObject migrationServer=snapshot.optJSONObject("mserver_migration");
         int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);int preserved=hubPub==null?0:hubPub.optInt("preserved",0);
         boolean authOk=mAuth!=null&&mAuth.optBoolean("ok",false);
@@ -394,7 +471,7 @@ public final class UnifiedVisualActivity extends Activity {
         if(!authOk&&!authError.isEmpty()){
             TextView ae=text("인증/연결: "+authError+(authHttp>0?" · HTTP "+authHttp:""),10);ae.setTextColor(Color.rgb(210,151,161));ae.setPadding(dp(2),0,dp(2),dp(5));tools.addView(ae);
         }
-        addProgressBlock(tools,"① 폰 기준원장 → MSERVER 게시",syncProgress,Color.rgb(0,196,164));
+        drawerPublishProgress=addProgressBlock(tools,"① 폰 기준원장 → MSERVER 게시",syncProgress,Color.rgb(0,196,164));
         if(syncProgress!=null&&syncProgress.optInt("total",0)>0){
             int processed=syncProgress.optInt("processed",syncProgress.optInt("done",0));
             int successful=syncProgress.optInt("successful",Math.max(0,processed-syncProgress.optInt("failed",0)));
@@ -415,16 +492,7 @@ public final class UnifiedVisualActivity extends Activity {
         }
 
         JSONObject migState=snapshot.optJSONObject("pc_ledger_migration");
-        if(importProgress==null)importProgress=new JSONObject();
-        if(migrationServer!=null&&!migrationServer.optBoolean("ready",false)&&migrationServer.optInt("total_chunks",0)>0&&!importProgress.optBoolean("complete",false)){
-            try{
-                int received=migrationServer.optInt("received",0),totalChunks=migrationServer.optInt("total_chunks",0);
-                importProgress.put("stage","PC→MSERVER 업로드").put("detail","승계 ZIP 수신")
-                    .put("done",received).put("total",totalChunks)
-                    .put("percent",totalChunks>0?(received*100/totalChunks):0);
-            }catch(Exception ignored){}
-        }
-        addProgressBlock(tools,"② 기존 PC EXE 원장 → S21+ 승계",importProgress,Color.rgb(77,124,254));
+        drawerImportProgress=addProgressBlock(tools,"② 기존 PC EXE 원장 → S21+ 승계",importProgress,Color.rgb(77,124,254));
 
         if(migState!=null&&migState.length()>0){
             String ms=migState.optString("status","");
@@ -493,11 +561,14 @@ public final class UnifiedVisualActivity extends Activity {
         FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(width,-1,Gravity.END);overlay.addView(scroll,pp);
         drawerOverlay=overlay;root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
         TranslateAnimation anim=new TranslateAnimation(width,0,0,0);anim.setDuration(220);scroll.startAnimation(anim);
+        main.removeCallbacks(drawerProgressTicker);
+        main.post(drawerProgressTicker);
     }
 
     private void closeSettingsDrawer(){
         if(drawerOverlay==null)return;
         View old=drawerOverlay;drawerOverlay=null;
+        stopDrawerProgressTicker();
         TranslateAnimation anim=new TranslateAnimation(0,dp(380),0,0);anim.setDuration(180);
         anim.setAnimationListener(new android.view.animation.Animation.AnimationListener(){
             public void onAnimationStart(android.view.animation.Animation a){}
@@ -1939,7 +2010,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text("ARTITRADE 네이티브 안전모드",22);h.setTypeface(null,Typeface.BOLD);p.addView(h);TextView d=text(e==null?"알 수 없는 오류":e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),11);d.setTextColor(Color.rgb(255,145,155));d.setPadding(0,dp(10),0,dp(10));p.addView(d);p.addView(button("화면 다시 구성",true,()->{try{showShell();refresh(false);}catch(Throwable x){}}),new LinearLayout.LayoutParams(dp(240),dp(44)));root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
-    @Override protected void onResume(){super.onResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);}
-    @Override protected void onPause(){main.removeCallbacks(periodic);super.onPause();}
-    @Override protected void onDestroy(){main.removeCallbacks(periodic);io.shutdownNow();super.onDestroy();}
+    @Override protected void onResume(){super.onResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
+    @Override protected void onPause(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
+    @Override protected void onDestroy(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);io.shutdownNow();super.onDestroy();}
 }
