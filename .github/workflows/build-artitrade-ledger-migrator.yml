@@ -36,11 +36,11 @@ jobs:
       - name: Build one-file Windows migrator
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_LEDGER_MIGRATOR_V4_LEDGER_SAFE_20261113 ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
-          if (!(Test-Path "dist/ARTITRADE_LEDGER_MIGRATOR_V4_LEDGER_SAFE_20261113.exe")) { throw "EXE not created" }
-          Get-FileHash "dist/ARTITRADE_LEDGER_MIGRATOR_V4_LEDGER_SAFE_20261113.exe" -Algorithm SHA256 | Format-List
+          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_LEDGER_MIGRATOR_V5_RESEARCH_KST_20261113 ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
+          if (!(Test-Path "dist/ARTITRADE_LEDGER_MIGRATOR_V5_RESEARCH_KST_20261113.exe")) { throw "EXE not created" }
+          Get-FileHash "dist/ARTITRADE_LEDGER_MIGRATOR_V5_RESEARCH_KST_20261113.exe" -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_LEDGER_MIGRATOR_V4_LEDGER_SAFE_20261113
-          path: dist/ARTITRADE_LEDGER_MIGRATOR_V4_LEDGER_SAFE_20261113.exe
+          name: ARTITRADE_LEDGER_MIGRATOR_V5_RESEARCH_KST_20261113
+          path: dist/ARTITRADE_LEDGER_MIGRATOR_V5_RESEARCH_KST_20261113.exe
           if-no-files-found: error
