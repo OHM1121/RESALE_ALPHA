@@ -12,3 +12,5 @@ ARTITRADE v0.7.23 final rerun: 12sp chart typography (corrected CI), OLED UI, or
 v0.7.24: Korean BUY/SELL reasons, exact KST fill timestamps, append-only real+virtual observations, full untruncated all-source research ZIP. Run all Android tests.
 v0.7.24 FINAL reason parity: validated original MA recovery/second/third exits, CLOSE target/breakeven/deadline; GMO original sell purpose & timestamp in research details; rerun full APK CI and signature tests.
 v0.7.24 FINAL: real target HIT requires first actual SELL in AT/MA/coin and GMO; frozen EXE sell reasons and KST; full untruncated original research ZIP, synthetic 3205 rows, append-only journal; run all tests, signed APK.
+
+v0.7.25: on-emulator boot and UI fixture coverage, per-bucket MSERVER ledger gap recovery, exact MA candidate schema and BUY/KST timestamps; signed arm64 build regression.
