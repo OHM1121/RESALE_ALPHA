@@ -341,6 +341,9 @@ jobs:
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_source_audit.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_gmo_original_migration.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_android_ledger_backup.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_resume.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_phone_backup_verify.py' -v
           mkdir -p /tmp/artitrade-krw-test
           javac -d /tmp/artitrade-krw-test \
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/WonFormat.java \
@@ -364,6 +367,10 @@ jobs:
           assert 'PC_RESEARCH_FILE_CONFLICT' in importer
           assert 'hub.migrationAck(session,incoming)' in importer
           assert 'from d_gmo_score_research_paper import research_rows' in source
+          assert 'android_ledger_backup' in (root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'openInputStream(target)' in (root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'sqlite3.Connection.backup' in (root/'python/android_ledger_backup.py').read_text()
+          assert 'verify_phone_backup' in Path('ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py').read_text()
           assert 'paper_first_target_filled' in source
           print('MIGRATION_INTEGRITY_AND_EXE_RESEARCH_POLICY_OK')
           PY
