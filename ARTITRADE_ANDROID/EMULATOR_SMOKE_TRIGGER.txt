@@ -1,0 +1,1 @@
+First real Android 15 on-GitHub emulator boot/navigation/6-strategy-synthetic-ledger smoke for v0.7.25, with screenshot and crash evidence.
