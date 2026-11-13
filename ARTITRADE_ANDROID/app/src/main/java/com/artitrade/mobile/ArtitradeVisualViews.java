@@ -81,13 +81,7 @@ final class PnlSparklineView extends View {
         this.label=label==null?"":label;
         invalidate();
     }
-    private String compactMoney(double v){
-        if(Double.isNaN(v)||Double.isInfinite(v))return "—";
-        double abs=Math.abs(v);
-        if(abs>=100000000)return String.format(Locale.KOREA,"%.1f억",v/100000000d);
-        if(abs>=10000)return String.format(Locale.KOREA,"%.1f만",v/10000d);
-        return String.format(Locale.KOREA,"%.0f",v);
-    }
+    private String compactMoney(double v){return WonFormat.won(v);}
     private String tickDate(long ts){
         if(ts<=0)return "날짜 없음";
         java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("MM.dd",Locale.KOREA);
@@ -121,10 +115,19 @@ final class PnlSparklineView extends View {
         p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);
         p.setTextSize(sp(12));p.setColor(Color.rgb(215,226,239));
         c.drawText(label,sp(4),sp(15),p);
-        float left=sp(w<sp(260)?44:55),right=w-sp(7),top=sp(36),bottom=h-sp(24);
+        // Allocate y-axis width from the *real entire KRW strings*, not an abbreviated value.
+        double axisMin=0d,axisMax=0d;
+        for(double v:values)if(Double.isFinite(v)){axisMin=Math.min(axisMin,v);axisMax=Math.max(axisMax,v);}
+        p.setTextSize(sp(8.5f));
+        float axisText=Math.max(p.measureText(compactMoney(axisMin)),p.measureText(compactMoney(axisMax)));
+        float left=Math.min(w*.46f,Math.max(sp(65f),axisText+sp(13f)));
+        float right=w-sp(9),top=sp(35),bottom=h-sp(24);
         if(right<=left||bottom<=top)return;
-        p.setTextSize(sp(9));p.setColor(Color.rgb(123,139,165));p.setTextAlign(Paint.Align.LEFT);
-        c.drawText("금액(원)",sp(3),sp(28),p);
+        p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));
+        String headline=values.length>0?WonFormat.signed(values[values.length-1]):"—";
+        while(p.measureText(headline)>w*.57f&&p.getTextSize()>sp(10))p.setTextSize(p.getTextSize()-sp(.5f));
+        p.setColor(values.length>0&&values[values.length-1]<0?Color.rgb(255,119,133):Color.rgb(62,224,181));
+        c.drawText(headline,w-sp(7),sp(17),p);
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.7f));p.setColor(Color.rgb(54,67,88));
         c.drawLine(left,top,left,bottom,p);
         c.drawLine(left,bottom,right,bottom,p);
@@ -144,7 +147,8 @@ final class PnlSparklineView extends View {
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.5f));p.setColor(Color.rgb(36,49,69));
             c.drawLine(left,y,right,y,p);
             p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.RIGHT);
-            p.setTextSize(sp(8.2f));p.setColor(Color.rgb(143,159,181));
+            p.setTextSize(sp(8.5f));p.setColor(Color.rgb(143,159,181));
+            while(p.measureText(compactMoney(tick))>left-sp(7)&&p.getTextSize()>sp(7))p.setTextSize(p.getTextSize()-sp(.4f));
             c.drawText(compactMoney(tick),left-sp(3),y+sp(3),p);
         }
         int n=values.length;
@@ -195,19 +199,8 @@ final class TimeframePerformanceGridView extends View {
     TimeframePerformanceGridView(Context c){super(c);}
     void setCells(List<Cell> xs){cells.clear();if(xs!=null)cells.addAll(xs);invalidate();}
     private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
-    private String compactWon(double v){
-        if(Double.isNaN(v))return "—";
-        double a=Math.abs(v);String sign=v>0?"+":v<0?"−":"";
-        if(a>=100000000)return sign+String.format(Locale.KOREA,"%.1f억",a/100000000d);
-        if(a>=10000)return sign+String.format(Locale.KOREA,"%.1f만",a/10000d);
-        NumberFormat f=NumberFormat.getNumberInstance(Locale.KOREA);f.setMaximumFractionDigits(0);
-        return sign+f.format(a)+"원";
-    }
-    private String wonSmall(double v){
-        if(Double.isNaN(v))return "—";
-        NumberFormat f=NumberFormat.getNumberInstance(Locale.KOREA);f.setMaximumFractionDigits(0);
-        return f.format(v)+"원";
-    }
+    private String compactWon(double v){return WonFormat.signed(v);}
+    private String wonSmall(double v){return WonFormat.won(v);}
     private void fitText(String text,float max,float preferred){
         float size=sp(preferred);p.setTextSize(size);
         while(size>sp(13)&&p.measureText(text)>max){size-=sp(.7f);p.setTextSize(size);}
@@ -264,74 +257,91 @@ final class TimeframeAccountFlowView extends View {
     private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
     private float dp(float v){return v*getResources().getDisplayMetrics().density;}
     private int pnlColor(double v){return v>0?Color.rgb(75,222,171):v<0?Color.rgb(255,111,139):Color.rgb(236,239,247);}
-    private String compact(double v){
-        if(Double.isNaN(v))return "—";
-        double a=Math.abs(v);String sign=v>0?"+":v<0?"−":"";
-        if(a>=100000000)return sign+String.format(Locale.KOREA,"%.1f억",a/100000000d);
-        if(a>=10000)return sign+String.format(Locale.KOREA,"%.1f만",a/10000d);
-        NumberFormat f=NumberFormat.getNumberInstance(Locale.KOREA);f.setMaximumFractionDigits(0);return sign+f.format(a)+"원";
-    }
-    private void fit(String value,float maxWidth,float maxSp,float minSp){
-        float size=sp(maxSp);p.setTextSize(size);
-        while(size>sp(minSp)&&p.measureText(value)>maxWidth){size-=sp(.8f);p.setTextSize(size);}
-    }
-    private void progress(Canvas c,String name,double value,float left,float top,float width,int accent){
-        p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(12));p.setColor(Color.rgb(147,157,178));c.drawText(name,left,top,p);
-        p.setTextAlign(Paint.Align.RIGHT);p.setColor(Color.rgb(225,229,239));c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.0f%%",value),left+width,top,p);
-        float y=top+sp(7),h=dp(6);p.setColor(Color.rgb(43,48,63));c.drawRoundRect(new RectF(left,y,left+width,y+h),h,h,p);
-        if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;p.setColor(accent);c.drawRoundRect(new RectF(left,y,left+width*f,y+h),h,h,p);}
-    }
-    private void step(Canvas c,float left,float top,float width,float height,String name,int count,int accent){
-        p.setColor(Color.rgb(22,25,36));c.drawRoundRect(new RectF(left,top,left+width,top+height),dp(12),dp(12),p);
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(Color.argb(180,Color.red(accent),Color.green(accent),Color.blue(accent)));
-        c.drawRoundRect(new RectF(left,top,left+width,top+height),dp(12),dp(12),p);p.setStyle(Paint.Style.FILL);
-        p.setTextAlign(Paint.Align.CENTER);p.setTextSize(sp(11));p.setColor(Color.rgb(151,160,181));c.drawText(name,left+width/2,top+sp(16),p);
-        p.setFakeBoldText(true);p.setTextSize(sp(23));p.setColor(accent);c.drawText(String.valueOf(count),left+width/2,top+height-sp(10),p);p.setFakeBoldText(false);
-    }
-    @Override protected void onDraw(Canvas c){
-        super.onDraw(c);float w=getWidth(),h=getHeight(),pad=dp(14);
-        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(18,21,31));c.drawRoundRect(new RectF(0,0,w,h),dp(18),dp(18),p);
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(Color.rgb(43,48,66));c.drawRoundRect(new RectF(0,0,w,h),dp(18),dp(18),p);p.setStyle(Paint.Style.FILL);
-
-        p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);p.setTextSize(sp(20));p.setColor(Color.rgb(215,210,255));c.drawText(label,pad,sp(28),p);p.setFakeBoldText(false);
-        String pnl=compact(total);fit(pnl,w*0.52f,29,19);p.setFakeBoldText(true);p.setColor(pnlColor(total));c.drawText(pnl,pad,sp(61),p);p.setFakeBoldText(false);
-
-        // On S21+ the former 12sp right-aligned strings wasted a wide blank zone.
-        // Reserve the right 44% for two high-contrast numeric tiles instead.
-        float rx=w*.56f,rxRight=w-dp(7),rightWidth=rxRight-rx;
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(Color.rgb(26,36,52));
-        c.drawRoundRect(new RectF(rx,dp(5),rxRight,dp(36)),dp(8),dp(8),p);
-        c.drawRoundRect(new RectF(rx,dp(40),rxRight,dp(71)),dp(8),dp(8),p);
-        p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(12));
-        p.setColor(Color.rgb(150,176,204));c.drawText("실현",rx+dp(7),sp(28),p);
-        c.drawText("평가",rx+dp(7),sp(63),p);
-        p.setTextAlign(Paint.Align.RIGHT);p.setFakeBoldText(true);
-        String real=compact(realized),held=compact(unrealized);
-        fit(real,Math.max(dp(46),rightWidth-dp(48)),19,13);
-        p.setColor(pnlColor(realized));c.drawText(real,rxRight-dp(6),sp(28),p);
-        fit(held,Math.max(dp(46),rightWidth-dp(48)),19,13);
-        p.setColor(pnlColor(unrealized));c.drawText(held,rxRight-dp(6),sp(63),p);
-        p.setFakeBoldText(false);
-
-        float gaugeTop=sp(80),gaugeGap=dp(18),gaugeW=(w-pad*2-gaugeGap)/2;
-        progress(c,"승률",win,pad,gaugeTop,gaugeW,Color.rgb(75,129,255));
-        progress(c,"목표도달",target,pad+gaugeW+gaugeGap,gaugeTop,gaugeW,Color.rgb(0,202,167));
-
-        // Preserve typography, but make each of the 4 transaction boxes about 2/3 as tall.
-        // The parent timeframe card is shortened too; this is not just reduced text spacing.
-        float stepTop=sp(111),gap=dp(8),stepW=(w-pad*2-gap*3)/4f;
-        float originalStepH=Math.max(dp(66),dp(205)-stepTop-dp(12));
-        float stepH=Math.max(dp(54),originalStepH*(2f/3f));
-        int[] accents={Color.rgb(255,183,77),Color.rgb(75,129,255),Color.rgb(154,119,255),Color.rgb(0,202,167)};
-        String[] names={"매수대기","매수완료","보유중","매도완료"};
-        int[] counts={pending,bought,holding,sold};
-        for(int i=0;i<4;i++){
-            float x=pad+i*(stepW+gap);step(c,x,stepTop,stepW,stepH,names[i],counts[i],accents[i]);
-            if(i<3){
-                float ax=x+stepW+gap/2,ay=stepTop+stepH/2;p.setColor(Color.rgb(89,98,118));p.setStrokeWidth(dp(2));
-                c.drawLine(ax-dp(3),ay,ax+dp(3),ay,p);Path q=new Path();q.moveTo(ax+dp(3),ay);q.lineTo(ax,ay-dp(3));q.lineTo(ax,ay+dp(3));q.close();c.drawPath(q,p);
-            }
+    // Keep the method name for compatibility with older visual tests; never abbreviate money.
+    private String compact(double v){return WonFormat.signed(v);}
+    private void fit(String value,float maxWidth,float preferred,float minimum){
+        float size=sp(preferred);p.setTextSize(size);
+        while(size>sp(minimum)&&p.measureText(value)>maxWidth){
+            size-=sp(.5f);p.setTextSize(size);
         }
     }
+    private void amountTile(Canvas c,String icon,String label,double value,
+                            float left,float top,float width,float height,int accent){
+        p.setTextAlign(Paint.Align.LEFT);p.setStyle(Paint.Style.FILL);
+        p.setColor(Color.rgb(24,36,54));
+        c.drawRoundRect(new RectF(left,top,left+width,top+height),dp(9),dp(9),p);
+        p.setTextSize(sp(11));p.setColor(accent);p.setFakeBoldText(true);
+        c.drawText(icon,left+dp(8),top+dp(15),p);
+        p.setFakeBoldText(false);p.setTextSize(sp(10));p.setColor(Color.rgb(158,182,208));
+        c.drawText(label,left+dp(25),top+dp(15),p);
+        String amount=compact(value);
+        p.setTextAlign(Paint.Align.RIGHT);p.setFakeBoldText(true);
+        fit(amount,width-dp(16),22,12);
+        p.setColor(pnlColor(value));
+        c.drawText(amount,left+width-dp(8),top+height-dp(5),p);
+        p.setFakeBoldText(false);
+    }
+    private void progress(Canvas c,String name,double value,float left,float top,float width,int accent){
+        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(sp(10));p.setColor(Color.rgb(165,186,212));
+        c.drawText(name,left,top,p);
+        p.setTextAlign(Paint.Align.RIGHT);p.setFakeBoldText(true);
+        p.setColor(Double.isNaN(value)?Color.rgb(154,165,185):accent);
+        c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.0f%%",value),
+            left+width,top,p);p.setFakeBoldText(false);
+        float y=top+dp(5),gh=dp(5);
+        p.setColor(Color.rgb(40,53,72));
+        c.drawRoundRect(new RectF(left,y,left+width,y+gh),gh,gh,p);
+        if(Double.isFinite(value)&&value>0){
+            p.setColor(accent);float part=(float)Math.max(0,Math.min(100,value))/100f;
+            c.drawRoundRect(new RectF(left,y,left+width*part,y+gh),gh,gh,p);
+        }
+    }
+    private void step(Canvas c,float left,float top,float width,float height,
+                      String icon,String name,int count,int accent){
+        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(23,31,45));
+        c.drawRoundRect(new RectF(left,top,left+width,top+height),dp(9),dp(9),p);
+        p.setColor(Color.rgb(56,69,88));p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(.6f));
+        c.drawRoundRect(new RectF(left,top,left+width,top+height),dp(9),dp(9),p);
+        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);
+        p.setTextSize(sp(11));p.setColor(accent);c.drawText(icon,left+dp(7),top+dp(15),p);
+        p.setTextSize(sp(10));p.setColor(Color.rgb(173,184,204));
+        c.drawText(name,left+dp(24),top+dp(15),p);
+        p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(21));p.setColor(accent);
+        c.drawText(String.valueOf(count),left+width-dp(8),top+height-dp(6),p);
+        p.setFakeBoldText(false);
+    }
+    @Override protected void onDraw(Canvas c){
+        super.onDraw(c);
+        float w=getWidth(),h=getHeight(),pad=dp(11);
+        if(w<dp(250)||h<dp(146))return;
+        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(18,24,35));
+        c.drawRoundRect(new RectF(0,0,w,h),dp(13),dp(13),p);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(.8f));p.setColor(Color.rgb(47,64,86));
+        c.drawRoundRect(new RectF(0,0,w,h),dp(13),dp(13),p);p.setStyle(Paint.Style.FILL);
+        float rightLeft=w*.52f,rightWidth=w-rightLeft-pad,halfLimit=rightLeft-pad*2;
+        p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);
+        p.setTextSize(sp(17));p.setColor(Color.rgb(209,217,255));
+        c.drawText(label,pad,dp(22),p);
+        p.setTextSize(sp(10));p.setColor(Color.rgb(117,145,180));
+        c.drawText("◆  누적손익",pad,dp(37),p);
+        String pnl=compact(total);fit(pnl,halfLimit,32,13);
+        p.setTextAlign(Paint.Align.LEFT);p.setFakeBoldText(true);p.setColor(pnlColor(total));
+        c.drawText(pnl,pad,dp(66),p);p.setFakeBoldText(false);
+        amountTile(c,"●","실현",realized,rightLeft,dp(5),rightWidth,dp(37),Color.rgb(79,210,247));
+        amountTile(c,"◇","평가",unrealized,rightLeft,dp(45),rightWidth,dp(37),Color.rgb(175,156,255));
+        float gaugeGap=dp(14),gaugeWidth=(w-pad*2-gaugeGap)/2f;
+        progress(c,"◉  승률",win,pad,dp(94),gaugeWidth,Color.rgb(93,150,255));
+        progress(c,"◎  목표",target,pad+gaugeWidth+gaugeGap,dp(94),gaugeWidth,Color.rgb(68,224,182));
+        float stageTop=dp(119),stageHeight=h-stageTop-dp(6);
+        float gap=dp(5),stepWidth=(w-2*pad-3*gap)/4f;
+        String[] icons={"◷","↘","◆","↗"},names={"대기","매수","보유","매도"};
+        int[] counts={pending,bought,holding,sold};
+        int[] accent={Color.rgb(255,196,102),Color.rgb(95,154,253),
+                      Color.rgb(177,152,255),Color.rgb(74,224,180)};
+        for(int i=0;i<4;i++)
+            step(c,pad+i*(stepWidth+gap),stageTop,stepWidth,stageHeight,
+                 icons[i],names[i],counts[i],accent[i]);
+    }
+
 }
