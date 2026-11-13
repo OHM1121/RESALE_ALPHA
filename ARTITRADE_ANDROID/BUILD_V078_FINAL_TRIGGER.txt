@@ -11,3 +11,4 @@ ARTITRADE v0.7.23 final rerun: 12sp chart typography (corrected CI), OLED UI, or
 2026-11-13 v0.7.23 OLED PREMIUM second-pass: black theme and dialog, 12sp minimum labels, compact 2-column TF and score matrix, tactile 85/155ms ripple, original GMO paper research parity x5, updated UI tests.
 v0.7.24: Korean BUY/SELL reasons, exact KST fill timestamps, append-only real+virtual observations, full untruncated all-source research ZIP. Run all Android tests.
 v0.7.24 FINAL reason parity: validated original MA recovery/second/third exits, CLOSE target/breakeven/deadline; GMO original sell purpose & timestamp in research details; rerun full APK CI and signature tests.
+v0.7.24 FINAL: real target HIT requires first actual SELL in AT/MA/coin and GMO; frozen EXE sell reasons and KST; full untruncated original research ZIP, synthetic 3205 rows, append-only journal; run all tests, signed APK.
