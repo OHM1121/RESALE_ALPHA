@@ -1702,10 +1702,15 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void addKpi(LinearLayout row,String label,String value){
-        LinearLayout c=card();c.setGravity(Gravity.CENTER_VERTICAL);
-        TextView a=text(label,12);a.setTextColor(Color.rgb(142,152,173));c.addView(a,new LinearLayout.LayoutParams(-1,dp(22)));
-        TextView b=text(value,24);b.setTypeface(null,Typeface.BOLD);autoSingle(b,16,24);b.setTextColor(Color.rgb(240,242,248));c.addView(b,new LinearLayout.LayoutParams(-1,dp(38)));
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(82),1);if(row.getChildCount()>0)p.setMargins(dp(8),0,0,0);row.addView(c,p);
+        LinearLayout tile=card();tile.setGravity(Gravity.CENTER_VERTICAL);
+        TextView caption=text(label,10);caption.setTextColor(Color.rgb(150,165,190));
+        tile.addView(caption,new LinearLayout.LayoutParams(-1,dp(17)));
+        TextView number=text(value,24);number.setTypeface(null,Typeface.BOLD);
+        autoSingle(number,15,24);number.setTextColor(Color.rgb(241,248,255));
+        tile.addView(number,new LinearLayout.LayoutParams(-1,dp(32)));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(66),1);
+        if(row.getChildCount()>0)lp.setMargins(dp(6),0,0,0);
+        row.addView(tile,lp);
     }
 
     private double usefulNumber(JSONObject r,String... fields){
@@ -1992,7 +1997,7 @@ public final class UnifiedVisualActivity extends Activity {
             addKpi(sourceKpis,"후보 원본",sourceCount<0?"—":String.valueOf(sourceCount));
             addKpi(sourceKpis,"관련 원장 행",String.valueOf(evidenceRows));
             addKpi(sourceKpis,"화면 게시",String.valueOf(loaded));
-            LinearLayout.LayoutParams auditLp=new LinearLayout.LayoutParams(-1,dp(82));
+            LinearLayout.LayoutParams auditLp=new LinearLayout.LayoutParams(-1,dp(68));
             auditLp.setMargins(0,dp(4),0,dp(8));
             content.addView(sourceKpis,auditLp);
             final String detail=evidenceDetail.toString();
@@ -2013,46 +2018,70 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout actualCard=card();DonutMetricView actual=new DonutMetricView(this);
         actual.setMetric("실제 목표도달률",actualRate,pct(actualRate));
-        actualCard.addView(actual,new LinearLayout.LayoutParams(-1,dp(122)));
+        actualCard.addView(actual,new LinearLayout.LayoutParams(-1,dp(99)));
         TextView a=text(tally.actualHit+"/"+(tally.actualHit+tally.actualMiss)+
             "  · 대기 "+tally.actualPending,12);
         a.setGravity(Gravity.CENTER);actualCard.addView(a,new LinearLayout.LayoutParams(-1,dp(24)));
-        summary.addView(actualCard,new LinearLayout.LayoutParams(0,dp(154),1));
+        summary.addView(actualCard,new LinearLayout.LayoutParams(0,dp(131),1));
         LinearLayout virtualCard=card();DonutMetricView v=new DonutMetricView(this);
         v.setMetric("가상 목표도달률",virtualRate,pct(virtualRate));
-        virtualCard.addView(v,new LinearLayout.LayoutParams(-1,dp(122)));
+        virtualCard.addView(v,new LinearLayout.LayoutParams(-1,dp(99)));
         TextView vCounts=text(tally.virtualHit+"/"+(tally.virtualHit+tally.virtualMiss)+
             "  · 대기 "+tally.virtualPending,12);
         vCounts.setGravity(Gravity.CENTER);
         virtualCard.addView(vCounts,new LinearLayout.LayoutParams(-1,dp(24)));
         LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(0,dp(154),1);
         vp.setMargins(dp(8),0,0,0);summary.addView(virtualCard,vp);
-        content.addView(summary,new LinearLayout.LayoutParams(-1,dp(154)));
+        content.addView(summary,new LinearLayout.LayoutParams(-1,dp(131)));
 
         LinearLayout kpis=new LinearLayout(this);kpis.setOrientation(LinearLayout.HORIZONTAL);
         addKpi(kpis,"전체 신호",String.valueOf(tally.signals));
         addKpi(kpis,"실제",String.valueOf(tally.actualCount));
         addKpi(kpis,"가상",String.valueOf(tally.virtualEntered));
         addKpi(kpis,"미진입",String.valueOf(tally.virtualNotEntered));
-        LinearLayout.LayoutParams klp=new LinearLayout.LayoutParams(-1,dp(82));
+        LinearLayout.LayoutParams klp=new LinearLayout.LayoutParams(-1,dp(68));
         klp.setMargins(0,dp(7),0,0);content.addView(kpis,klp);
 
         TextView section=text("시간봉 × 점수대  |  실제 / 가상 목표도달률",17);
         section.setTypeface(null,Typeface.BOLD);
         section.setTextColor(Color.rgb(207,226,247));
-        section.setPadding(dp(2),dp(16),dp(2),dp(7));content.addView(section);
+        section.setPadding(dp(2),dp(9),dp(2),dp(5));content.addView(section);
 
         String[] frames=StrategyDashboardScope.showFrameCharts(scope)
             ?new String[]{"5m","30m","60m","day"}:new String[]{scope};
+        boolean matrixColumns=getResources().getConfiguration().screenWidthDp>=720;
+        LinearLayout matrixPair=null;
+        int matrixInRow=0,maxRowHeight=0;
         for(String tf:frames){
             if(!combined&&HistorySelection.frame(filter).length()>0
                 &&!HistorySelection.frame(filter).equals(tf))continue;
             String label="gmo".equals(tf)?"수급매매":"close".equals(tf)?"종가베팅":tfLabel(tf);
             ResearchScoreMatrixView matrix=new ResearchScoreMatrixView(this);
             matrix.setGrid(grid,tf,label);
-            int height=grid.cell(tf,ResearchScoreGrid.NO_SCORE).signals>0?265:234;
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(height));
-            lp.setMargins(0,dp(6),0,0);content.addView(matrix,lp);
+            int height=grid.cell(tf,ResearchScoreGrid.NO_SCORE).signals>0?246:218;
+            matrix.setContentDescription(label+" 점수대별 실제·가상 목표도달률");
+            if(!matrixColumns){
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(height));
+                lp.setMargins(0,dp(5),0,0);content.addView(matrix,lp);
+                continue;
+            }
+            if(matrixPair==null||matrixInRow==2){
+                matrixPair=new LinearLayout(this);
+                matrixPair.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams pairParams=new LinearLayout.LayoutParams(-1,dp(height));
+                pairParams.setMargins(0,dp(5),0,0);
+                content.addView(matrixPair,pairParams);
+                matrixInRow=0;maxRowHeight=height;
+            }
+            LinearLayout.LayoutParams itemParams=new LinearLayout.LayoutParams(0,-1,1);
+            if(matrixInRow>0)itemParams.setMargins(dp(6),0,0,0);
+            matrixPair.addView(matrix,itemParams);
+            matrixInRow++;
+            if(height>maxRowHeight){
+                maxRowHeight=height;
+                LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)matrixPair.getLayoutParams();
+                params.height=dp(height);matrixPair.setLayoutParams(params);
+            }
         }
         TextView note=text("분모 = 확정(HIT + MISS) · 관측중/가상 미진입 제외 · 기록 없음 = —",10);
         note.setTextColor(Color.rgb(150,170,195));
