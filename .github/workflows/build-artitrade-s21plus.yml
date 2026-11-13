@@ -176,7 +176,7 @@ jobs:
           service=(root/'UnifiedTradingService.java').read_text()
           assert 'PC_IMPORT_CHECKPOINT_INCOMPLETE' in import_code
           assert 'importOnlyMissingResearch(previous,imported)' in import_code
-          assert 'if(target.exists()||previousFiles.has(rel))' in import_code
+          assert 'if(previousFiles.has(rel))' in import_code and 'if(target.exists())' in import_code
           assert 'PHONE_LEDGER_VERIFY_FAILED' in import_code
           assert 'pc_import_locked",true' in import_code
           assert import_code.index('if(!imported.isEmpty()){') < import_code.index('hub.migrationStatus()',import_code.index('JSONObject importIfReady(){'))
