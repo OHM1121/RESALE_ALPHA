@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 import zipfile
+from contextlib import closing
 from pathlib import Path
 
 MODULE=Path(__file__).with_name("artitrade_ledger_migrator.py")
@@ -21,12 +22,12 @@ class CompleteResearchImportTest(unittest.TestCase):
                         "AT_CLOSE_PAPER.sqlite3","PROJECTGMO_V1.0_research.sqlite3"):
                 path=stock/rel;path.parent.mkdir(parents=True,exist_ok=True)
                 import sqlite3
-                with sqlite3.connect(path) as db:
+                with closing(sqlite3.connect(path)) as db:
                     db.execute("CREATE TABLE candidate_events(id INTEGER)")
             for rel in ("upbit_paper.sqlite3","MA_ENGINE_V1/upbit_paper.sqlite3"):
                 path=coin/rel;path.parent.mkdir(parents=True,exist_ok=True)
                 import sqlite3
-                with sqlite3.connect(path) as db:db.execute("CREATE TABLE candidate_events(id INTEGER)")
+                with closing(sqlite3.connect(path)) as db:db.execute("CREATE TABLE candidate_events(id INTEGER)")
             (stock/"PROJECTGMO_V1.0_account_state.json").write_text(
                 '{"positions":{},"fills":[],"orders":{}}')
             (stock/"research_history.jsonl").write_text('{"signal_id":123}\n')
@@ -53,7 +54,7 @@ class CompleteResearchImportTest(unittest.TestCase):
                         self.assertIn("stock/PROJECTGMO_V1.0_account_state.json",contents)
                         self.assertIn("stock/PROJECTGMO_V1.0_research.sqlite3",contents)
                         self.assertNotIn("stock/credentials.dpapi.json",contents)
-                    self.assertEqual(manifest["files"]["stock/research_history.jsonl"]["size"],18)
+                    self.assertEqual(manifest["files"]["stock/research_history.jsonl"]["size"],(stock/"research_history.jsonl").stat().st_size)
                 finally:
                     import shutil
                     shutil.rmtree(archive.parent,ignore_errors=True)
