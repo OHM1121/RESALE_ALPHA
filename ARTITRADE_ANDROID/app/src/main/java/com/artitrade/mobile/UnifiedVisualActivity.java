@@ -2018,69 +2018,214 @@ public final class UnifiedVisualActivity extends Activity {
         content.addView(navigation,new LinearLayout.LayoutParams(-1,-2));
     }
 
+    /** Exactly comparable numbers; never use a reference candle as BUY cost. */
+    private double positionBuyPrice(JSONObject r){
+        return usefulNumber(r,"entry_price","entry","avg_buy_price","buy_price");
+    }
+    private double positionMark(JSONObject r){
+        return usefulNumber(r,"last_price","mark","current_price","market_price");
+    }
+    private double tradePnL(JSONObject r,String kind){
+        if("positions".equals(kind)){
+            double value=usefulNumber(r,"net_pnl","unrealized_pnl","paper_pnl","pnl");
+            if(finite(value))return value;
+            double entry=positionBuyPrice(r),mark=positionMark(r);
+            double qty=usefulNumber(r,"qty","quantity","holding_qty");
+            return finite(entry)&&entry>0&&finite(mark)&&mark>0&&finite(qty)&&qty>0
+                ?(mark-entry)*qty:Double.NaN;
+        }
+        if("executions".equals(kind)&&"매도".equals(tradeSideOf(r)))
+            return usefulNumber(r,"net_profit","net_realized","net_pnl","profit");
+        return Double.NaN;
+    }
+    private double tradeReturnPct(JSONObject r,String kind,double profit){
+        if("positions".equals(kind)){
+            double entry=positionBuyPrice(r),mark=positionMark(r);
+            double qty=usefulNumber(r,"qty","quantity","holding_qty");
+            if(finite(profit)&&finite(entry)&&entry>0&&finite(qty)&&qty>0)
+                return profit/(entry*qty)*100d;
+            return finite(entry)&&entry>0&&finite(mark)&&mark>0
+                ?(mark/entry-1d)*100d:Double.NaN;
+        }
+        if("executions".equals(kind)&&"매도".equals(tradeSideOf(r))){
+            double measured=usefulNumber(r,"realized_pct");
+            if(finite(measured))return measured;
+            double bought=usefulNumber(r,"buy_amount");
+            if(finite(bought)&&bought>0&&finite(profit))return profit/bought*100d;
+        }
+        return Double.NaN;
+    }
+    private String signedPct(double value){
+        return !finite(value)?"—":(value>0?"+":"")+number(value)+"%";
+    }
+    /** Two-level cards: a 10sp key followed by a 16sp value, not dense
+     * label/value sentences spread across the entire panel.
+     */
+    private void tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
+        LinearLayout tile=new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setPadding(dp(9),dp(5),dp(7),dp(5));
+        tile.setBackground(bg(Color.rgb(18,24,33),Color.rgb(39,52,69),10));
+        TextView key=text(label,11);
+        key.setTextColor(Color.rgb(151,172,195));
+        tile.addView(key,new LinearLayout.LayoutParams(-1,dp(18)));
+        TextView amount=text(value,16);
+        amount.setTypeface(null,Typeface.BOLD);
+        amount.setTextColor(highlight?Color.rgb(227,239,252):Color.rgb(205,219,236));
+        amount.setSingleLine(true);
+        autoSingle(amount,13,16);
+        tile.addView(amount,new LinearLayout.LayoutParams(-1,dp(24)));
+        LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(54),1);
+        if(row.getChildCount()>0)cell.setMargins(dp(5),0,0,0);
+        row.addView(tile,cell);
+    }
+    private TextView tradeStage(String value,int backgroundColor,int foreground){
+        TextView chip=text(value,16);
+        chip.setTypeface(null,Typeface.BOLD);
+        chip.setGravity(Gravity.CENTER);
+        chip.setTextColor(foreground);
+        chip.setBackground(bg(backgroundColor,backgroundColor,12));
+        return chip;
+    }
+
     private void renderList(String title,JSONArray a,String kind){
         boolean marketWide="positions".equals(kind)||"pending".equals(kind)||
             "executions".equals(kind);
         java.util.List<HistoryRow> history=marketWide?selectedHistory(kind):null;
         int total=marketWide?history.size():a.length();
-        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
-        if(marketWide)header.addView(historyFilterButton(),new LinearLayout.LayoutParams(dp(116),dp(42)));
-        TextView h=text(title+" · "+total+"건",18);h.setTypeface(null,Typeface.BOLD);
+        LinearLayout header=new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        if(marketWide)header.addView(historyFilterButton(),
+            new LinearLayout.LayoutParams(dp(116),dp(42)));
+        TextView h=text(title+" · "+total+"건",18);
+        h.setTypeface(null,Typeface.BOLD);
         header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
         if("positions".equals(kind)){
-            Button policyButton=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});policyButton.setTextSize(13);
+            Button policyButton=button("정책이력",false,()->{
+                page="policyHistory";persistNavigation();render();
+            });
+            policyButton.setTextSize(13);
             header.addView(policyButton,new LinearLayout.LayoutParams(dp(92),dp(39)));
         }
         content.addView(header,new LinearLayout.LayoutParams(-1,dp(45)));
-        if(total==0){empty(uiSnapshot.totals.isEmpty()?"원장 화면 사전로딩 중":"선택한 목록에 기록 없음");return;}
+        if(total==0){
+            empty(uiSnapshot.totals.isEmpty()?"원장 화면 사전로딩 중":"선택한 목록에 기록 없음");
+            return;
+        }
         int first=historyStart(kind,total),last=HistoryPager.end(first,total);
         addHistoryPager(kind,total);
         for(int i=first;i<last;i++){
             HistoryRow item=marketWide?history.get(i):null;
             JSONObject r=marketWide?item.row:a.optJSONObject(i);
             if(r==null)continue;
-            LinearLayout c=card();
-            LinearLayout topRow=new LinearLayout(this);topRow.setOrientation(LinearLayout.HORIZONTAL);topRow.setGravity(Gravity.CENTER_VERTICAL);
-            String tagged=marketWide?nameOf(r)+" · "+HistorySelection.strategyTag(item.source,item.frame):nameOf(r)+" · "+HistorySelection.strategyTag(strategy,timeFrameOf(r));
-            TextView n=text(tagged,15);n.setTypeface(null,Typeface.BOLD);n.setMaxLines(1);
-            bindSymbolFourTap(n,r,market);
-            topRow.addView(n,new LinearLayout.LayoutParams(0,dp(29),1));
-            double profit=usefulNumber(r,"net_pnl","unrealized_pnl","paper_pnl","net_profit","net_realized","pnl");
-            if(!"pending".equals(kind)&&finite(profit)){
-                TextView p=text(money(profit),14);p.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-                paintProfit(p,profit);topRow.addView(p,new LinearLayout.LayoutParams(-2,dp(29)));
-            }
-            c.addView(topRow);
-            String originStrategy=marketWide?item.source:strategy;
-            String timeCaption="executions".equals(kind)
-                ?tradeSideOf(r)+" 체결시각":"positions".equals(kind)
-                    ?"매수 체결시각":"pending".equals(kind)?"주문 접수시각":
-                    refLabel(originStrategy);
-            String timeValue="executions".equals(kind)||"positions".equals(kind)||"pending".equals(kind)
-                ?fillTimeOf(r,kind,originStrategy)
-                :timeOf(r,originStrategy);
-            TextView when=text(timeCaption+" · "+timeValue,13);
-            when.setTextColor(PremiumUi.MUTED);c.addView(when);
-            LinearLayout firstRow=new LinearLayout(this);firstRow.setOrientation(LinearLayout.HORIZONTAL);
-            addGridCell(firstRow,cellValue(r,kind,"a"));addGridCell(firstRow,cellValue(r,kind,"b"));c.addView(firstRow);
-            LinearLayout secondRow=new LinearLayout(this);secondRow.setOrientation(LinearLayout.HORIZONTAL);
-            addGridCell(secondRow,cellValue(r,kind,"c"));addGridCell(secondRow,cellValue(r,kind,"d"));c.addView(secondRow);
+            String source=marketWide?item.source:strategy;
+            double price=positionBuyPrice(r);
+            double current=positionMark(r);
+            double qty=usefulNumber(r,"qty","quantity","holding_qty");
+            double profit=tradePnL(r,kind);
+            double rate=tradeReturnPct(r,kind,profit);
+            String side="executions".equals(kind)?tradeSideOf(r):
+                "pending".equals(kind)?"대기":"보유";
+            boolean isSell="매도".equals(side),isBuy="매수".equals(side);
+            int chipBg=isSell?Color.rgb(79,34,46):
+                isBuy?Color.rgb(28,72,67):
+                "positions".equals(kind)?Color.rgb(37,55,88):Color.rgb(68,59,34);
+            int chipText=isSell?Color.rgb(255,174,188):
+                isBuy?Color.rgb(118,245,208):
+                "positions".equals(kind)?Color.rgb(154,199,255):Color.rgb(255,215,137);
+            LinearLayout panel=card();
+            panel.setPadding(dp(12),dp(10),dp(12),dp(10));
+            LinearLayout top=new LinearLayout(this);
+            top.setOrientation(LinearLayout.HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            TextView badge=tradeStage(side,chipBg,chipText);
+            top.addView(badge,new LinearLayout.LayoutParams(dp(64),dp(36)));
+            TextView symbol=text(nameOf(r)+" · "+
+                HistorySelection.strategyTag(source,marketWide?item.frame:timeFrameOf(r)),16);
+            symbol.setTypeface(null,Typeface.BOLD);
+            symbol.setSingleLine(true);
+            bindSymbolFourTap(symbol,r,market);
+            LinearLayout.LayoutParams sym=new LinearLayout.LayoutParams(0,dp(36),1);
+            sym.setMargins(dp(8),0,dp(8),0);
+            top.addView(symbol,sym);
+            String value=finite(profit)?money(profit)+(finite(rate)?" ("+signedPct(rate)+")":""):
+                finite(rate)?signedPct(rate):"—";
+            TextView net=text(value,19);
+            net.setTypeface(null,Typeface.BOLD);
+            net.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            autoSingle(net,16,19);
+            if(finite(profit))paintProfit(net,profit);
+            else if(finite(rate))paintProfit(net,rate);
+            else net.setTextColor(PremiumUi.MUTED);
+            top.addView(net,new LinearLayout.LayoutParams(-2,dp(38)));
+            panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
+
+            LinearLayout figures=new LinearLayout(this);
+            figures.setOrientation(LinearLayout.HORIZONTAL);
+            figures.setPadding(0,dp(7),0,dp(3));
             if("positions".equals(kind)){
-                TextView scenario=text(scenarioSummary(r),12);scenario.setTextColor(Color.rgb(93,218,183));
-                scenario.setPadding(dp(2),dp(5),0,dp(4));c.addView(scenario);
-                LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
-                Button sell=button("강제매도",false,()->showManualSellInfo(r));sell.setTextSize(12);
-                actions.addView(sell,new LinearLayout.LayoutParams(0,dp(39),1));
-                Button policy=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});policy.setTextSize(12);
-                LinearLayout.LayoutParams pl=new LinearLayout.LayoutParams(0,dp(39),1);pl.setMargins(dp(6),0,0,0);actions.addView(policy,pl);c.addView(actions);
+                tradeMetricTile(figures,"매수가",finite(price)?money(price):"—",true);
+                tradeMetricTile(figures,"현재가",finite(current)&&current>0?money(current):"미수신",true);
+                tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
+                tradeMetricTile(figures,"1차 목표",formatMaybeMoney(r,"first_target","target","target_price"),false);
+            }else if("pending".equals(kind)){
+                tradeMetricTile(figures,"점수",formatMaybeNumber(r,"score","signal_score"),true);
+                tradeMetricTile(figures,"매수대기",formatMaybeMoney(r,"limit_price","entry_price","price"),true);
+                tradeMetricTile(figures,"목표가",formatMaybeMoney(r,"first_target","target","target_price"),false);
+                tradeMetricTile(figures,"상태",r.optString("status",r.optString("state","확인 중")),false);
+            }else if(isSell){
+                double buyPerShare=usefulNumber(r,"buy_price","entry_price");
+                tradeMetricTile(figures,"매수가",finite(buyPerShare)?money(buyPerShare):"미기록",true);
+                tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
+                tradeMetricTile(figures,"매도가",formatMaybeMoney(r,"price","fill_price"),false);
+                tradeMetricTile(figures,"매도수량",formatMaybeNumber(r,"qty","fill_qty"),false);
+            }else{
+                tradeMetricTile(figures,"매수가",formatMaybeMoney(r,"price","fill_price"),true);
+                tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
+                tradeMetricTile(figures,"매수수량",formatMaybeNumber(r,"qty","fill_qty"),false);
+                tradeMetricTile(figures,"수수료",formatMaybeMoney(r,"fees","fee"),false);
+            }
+            panel.addView(figures,new LinearLayout.LayoutParams(-1,dp(64)));
+            // A diverging geometric bar is an exact two-value comparison.
+            // It does not pretend the app knows the intervening price path.
+            if(("positions".equals(kind)||isSell)&&finite(rate)){
+                TradeGeometryView pathView=new TradeGeometryView(this,rate,true);
+                panel.addView(pathView,new LinearLayout.LayoutParams(-1,dp(24)));
+            }
+            String time=fillTimeOf(r,kind,source);
+            TextView when=text("executions".equals(kind)?"체결  "+time:
+                "positions".equals(kind)?"매수  "+time:"접수  "+time,12);
+            when.setTextColor(Color.rgb(151,175,198));
+            when.setPadding(dp(2),dp(3),0,0);
+            panel.addView(when);
+            if("positions".equals(kind)){
+                TextView scenario=text(scenarioSummary(r),12);
+                scenario.setTextColor(Color.rgb(127,208,184));
+                scenario.setPadding(dp(2),dp(4),0,dp(2));
+                panel.addView(scenario);
+                LinearLayout actions=new LinearLayout(this);
+                actions.setOrientation(LinearLayout.HORIZONTAL);
+                Button sell=button("강제매도",false,()->showManualSellInfo(r));
+                sell.setTextSize(12);
+                actions.addView(sell,new LinearLayout.LayoutParams(0,dp(35),1));
+                Button policy=button("정책이력",false,()->{
+                    page="policyHistory";persistNavigation();render();
+                });
+                policy.setTextSize(12);
+                LinearLayout.LayoutParams pl=new LinearLayout.LayoutParams(0,dp(35),1);
+                pl.setMargins(dp(6),0,0,0);
+                actions.addView(policy,pl);
+                panel.addView(actions);
             }
             String action="executions".equals(kind)?tradeSideOf(r):
                 "positions".equals(kind)||"pending".equals(kind)?"매수":"판단";
-            TextView why=text(action+" 원인 · "+tradeReasonOf(r,action),13);
-            why.setTextColor(PremiumUi.TEXT);
-            why.setMaxLines(3);
-            why.setPadding(dp(2),dp(6),dp(2),dp(3));c.addView(why);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(5));content.addView(c,lp);
+            TextView why=text(tradeReasonOf(r,action),12);
+            why.setTextColor(Color.rgb(181,202,221));
+            why.setMaxLines(2);
+            why.setPadding(dp(2),dp(5),0,dp(2));
+            panel.addView(why);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+            lp.setMargins(0,0,0,dp(6));content.addView(panel,lp);
         }
         addHistoryPager(kind,total);
     }
