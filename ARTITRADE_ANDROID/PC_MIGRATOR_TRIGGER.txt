@@ -1,1 +1,1 @@
-Build fixed ARTITRADE PC migrator v2 FIX4: archive only manifest SQLite DBs, no -shm/-wal.
+ARTITRADE PC migrator V3 full EXE storage/research/GMO data, credential-excluded SQLite snapshots; 2026-11-13.
