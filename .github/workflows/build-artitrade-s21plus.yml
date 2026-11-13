@@ -239,8 +239,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.24-RESEARCH-KST'" in s
-          assert "versionCode 35" in s
+          assert "versionName '0.7.25-UI-LEDGER-VERIFY'" in s
+          assert "versionCode 36" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -299,6 +299,7 @@ jobs:
             java -cp "$TEST_DIR" "com.artitrade.mobile.$klass"
           done
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_coin_ui_mapping.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_ma_sqlite_ui_parity.py' -v
           python3 - <<'PY'
           from pathlib import Path
           root=Path('ARTITRADE_ANDROID/app/src/main')
@@ -386,6 +387,14 @@ jobs:
           assert 'sqlite3.Connection.backup' in (root/'python/android_ledger_backup.py').read_text()
           assert 'verify_phone_backup' in Path('ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py').read_text()
           assert 'from android_research_audit import capture' in source
+          ui=(root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'missingNestedBucket(localBucket,k[3])' in ui
+          assert 'mergeMissingNested(local,remote,key)' in ui
+          assert 'hubGapChanged' in ui
+          assert 'if(!meaningfulLocalRecords){' not in ui
+          assert 'raw.equals("not_filled")' in ui
+          assert '"fill_time","trade_time"' in ui
+          print('PER_STRATEGY_LEDGER_AND_RESEARCH_FALLBACK_SOURCE_CHECK_OK')
           exporter=(root/'python/android_ledger_backup.py').read_text()
           assert 'def _source_catalog(' in exporter and '"report_files":{}' in exporter
           assert 'original_records_not_truncated' in exporter
@@ -449,8 +458,8 @@ jobs:
           grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'TimeframeAccountFlowView' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.24 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.24 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.25 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.25 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '실제 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '가상 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
