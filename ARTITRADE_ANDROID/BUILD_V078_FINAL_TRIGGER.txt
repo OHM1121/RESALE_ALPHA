@@ -1,1 +1,1 @@
-v0.7.17 follow-up trigger: match history prefetch/pagination test to filtered ledger view.
+ARTITRADE v0.7.17 compilation fix: policy button variable no longer collides with history list.

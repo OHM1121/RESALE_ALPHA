@@ -1691,8 +1691,8 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text(title+" · "+total+"건",18);h.setTypeface(null,Typeface.BOLD);
         header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
         if("positions".equals(kind)){
-            Button history=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});history.setTextSize(11);
-            header.addView(history,new LinearLayout.LayoutParams(dp(92),dp(39)));
+            Button policyButton=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});policyButton.setTextSize(11);
+            header.addView(policyButton,new LinearLayout.LayoutParams(dp(92),dp(39)));
         }
         content.addView(header,new LinearLayout.LayoutParams(-1,dp(45)));
         if(total==0){empty(uiSnapshot.totals.isEmpty()?"원장 화면 사전로딩 중":"선택한 목록에 기록 없음");return;}
