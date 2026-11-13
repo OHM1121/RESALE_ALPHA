@@ -175,9 +175,11 @@ jobs:
           import_code=(root/'LegacyLedgerMigration.java').read_text()
           service=(root/'UnifiedTradingService.java').read_text()
           assert 'PC_IMPORT_CHECKPOINT_INCOMPLETE' in import_code
+          assert 'importOnlyMissingResearch(previous,imported)' in import_code
+          assert 'if(target.exists()||previousFiles.has(rel))' in import_code
           assert 'PHONE_LEDGER_VERIFY_FAILED' in import_code
           assert 'pc_import_locked",true' in import_code
-          assert import_code.index('if(!imported.isEmpty()){') < import_code.index('hub.migrationStatus()')
+          assert import_code.index('if(!imported.isEmpty()){') < import_code.index('hub.migrationStatus()',import_code.index('JSONObject importIfReady(){'))
           assert import_code.index('putString("imported_sha256",sha)') < import_code.index('migrationAck(session,sha)')
           assert service.index('if(!installed.isEmpty())return;') < service.index('hub.migrationStatus()')
           print('PHONE_LEDGER_FIRST_IMPORT_LOCK_CHECK_OK')
@@ -235,8 +237,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.19-FULL-LEDGER-GMO'" in s
-          assert "versionCode 30" in s
+          assert "versionName '0.7.20-FULL-RESEARCH-SUPPLEMENT'" in s
+          assert "versionCode 31" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
