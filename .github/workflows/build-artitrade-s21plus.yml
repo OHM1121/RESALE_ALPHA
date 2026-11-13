@@ -121,6 +121,13 @@ jobs:
           assert 'successful*100L' in service
           assert '전체 '+ '' in screen and '실패 ' in screen
           assert 'PC 원장 적용 · 실제 데이터 재검증' in screen
+          assert 'stock/close/AT_CLOSE_PAPER.sqlite3' in migration
+          assert 'backupWithWal' in migration and 'removeStaleWal' in migration
+          assert 'repairLegacyClosePath()' in migration
+          assert 'verifyInstalled(manifest,true)' in migration
+          assert 'verifyInstalled(manifest,false)' in migration
+          assert 'PC_LEDGER_NOT_VISIBLE' in migration
+          assert 'by_strategy' in screen
           print('RESTORE_LIFECYCLE_STATIC_CHECKS_OK')
           PY
       - name: Validate dashboard JavaScript

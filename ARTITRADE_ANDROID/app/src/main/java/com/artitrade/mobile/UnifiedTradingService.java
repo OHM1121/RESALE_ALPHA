@@ -176,6 +176,8 @@ public final class UnifiedTradingService extends Service {
         if(!migrationRestarting.compareAndSet(false,true))return;
         try{
             strategy.stop();
+            // Allow queued CLOSE/MA/coin database writers to release their handles.
+            try{Thread.sleep(450L);}catch(InterruptedException e){Thread.currentThread().interrupt();}
             launchWithMigration();
         }catch(Throwable e){crashes.add("strategy_restart",e);}
         finally{migrationRestarting.set(false);}

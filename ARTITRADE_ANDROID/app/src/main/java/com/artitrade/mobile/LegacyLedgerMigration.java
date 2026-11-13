@@ -48,6 +48,43 @@ final class LegacyLedgerMigration {
     private SharedPreferences prefs(){return context.getSharedPreferences(PREF,Context.MODE_PRIVATE);}
     private SharedPreferences progressPrefs(){return context.getSharedPreferences("artitrade_pc_ledger_import_progress_v078",Context.MODE_PRIVATE);}
     private File runtimeRoot(){return new File(context.getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");}
+    // PC ZIP name is AT_CLOSE; the embedded phone strategy actually opens stock/close.
+    private File deployedFile(String rel){
+        return new File(runtimeRoot(),"stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3".equals(rel)
+            ?"stock/close/AT_CLOSE_PAPER.sqlite3":rel);
+    }
+    private static void backupWithWal(File db,File backup)throws Exception{
+        copy(db,backup);
+        for(String ext:new String[]{"-wal","-shm"}){
+            File side=new File(db.getAbsolutePath()+ext);
+            if(side.isFile())copy(side,new File(backup.getAbsolutePath()+ext));
+        }
+    }
+    private static void removeStaleWal(File db)throws Exception{
+        for(String ext:new String[]{"-wal","-shm"}){
+            File side=new File(db.getAbsolutePath()+ext);
+            if(side.exists()&&!side.delete())throw new IOException("SQLite WAL still in use: "+side);
+        }
+    }
+    private static long historyCount(File db){
+        return count(db,"positions")+count(db,"executions")+count(db,"signals")
+            +count(db,"candidates")+count(db,"research_candidates");
+    }
+    // Fix old app installs which kept CLOSE DB where the phone strategy never looked.
+    private void repairLegacyClosePath()throws Exception{
+        File old=new File(runtimeRoot(),"stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3");
+        if(!old.isFile())return;
+        File target=deployedFile("stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3");
+        if(target.isFile()&&historyCount(target)>0)
+            throw new IOException("CLOSE_LEDGER_CONFLICT: old and new paths both contain trades; keep both");
+        File parent=target.getParentFile();
+        if(!parent.isDirectory()&&!parent.mkdirs())throw new IOException("Cannot create CLOSE ledger folder");
+        if(target.isFile()){
+            backupWithWal(target,new File(parent,"AT_CLOSE_PAPER.sqlite3.pre_close_repair_"+System.currentTimeMillis()));
+            removeStaleWal(target);
+        }
+        java.nio.file.Files.move(old.toPath(),target.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
     private void progress(String stage,String detail,long done,long total,boolean complete,String error){
         int percent=total>0?(int)Math.max(0,Math.min(100,(done*100L)/total)):(complete?100:0);
         progressPrefs().edit()
@@ -165,8 +202,14 @@ final class LegacyLedgerMigration {
         long bytes=0;File root=runtimeRoot();
         for(String rel:ALLOWED){
             if("manifest.json".equals(rel))continue;
-            File f=new File(root,rel);
-            if(f.isFile())bytes+=f.length();
+            File f=deployedFile(rel);
+            if(f.isFile()){
+                bytes+=f.length();
+                for(String ext:new String[]{"-wal","-shm"}){
+                    File side=new File(f.getAbsolutePath()+ext);
+                    if(side.isFile())bytes+=side.length();
+                }
+            }
         }
         return bytes;
     }
@@ -179,13 +222,14 @@ final class LegacyLedgerMigration {
         for(String rel:ALLOWED){
             if("manifest.json".equals(rel))continue;
             File source=new File(staging,rel);if(!source.isFile())continue;
-            File target=new File(root,rel);
+            File target=deployedFile(rel);
             File parent=target.getParentFile();
             if(parent!=null&&!parent.isDirectory()&&!parent.mkdirs())
                 throw new IOException("Cannot create restored ledger directory: "+parent);
             if(target.isFile()){
                 File backup=new File(target.getParentFile(),target.getName()+".pre_pc_import_"+stamp);
-                copy(target,backup);
+                backupWithWal(target,backup);
+                removeStaleWal(target);
             }
             // Same-app cache and runtime files share the filesystem. A verified
             // atomic rename avoids a second full raw-DB copy during migration.
@@ -216,7 +260,7 @@ final class LegacyLedgerMigration {
             if(n.contains(part))return true;
         return false;
     }
-    private JSONObject verifyInstalled(JSONObject manifest)throws Exception{
+    private JSONObject verifyInstalled(JSONObject manifest,boolean exactSnapshot)throws Exception{
         if(manifest==null||!SCHEMA.equals(manifest.optString("schema")))
             throw new SecurityException("Restored PC manifest is unavailable");
         JSONObject files=manifest.optJSONObject("files");
@@ -229,10 +273,12 @@ final class LegacyLedgerMigration {
             if(!ALLOWED.contains(rel)||"manifest.json".equals(rel))
                 throw new SecurityException("Invalid PC ledger path: "+rel);
             JSONObject expected=files.optJSONObject(rel);
-            File target=new File(runtimeRoot(),rel);
-            if(expected==null||!target.isFile()||target.length()!=expected.optLong("size",-1)
-                ||!sha256(target).equalsIgnoreCase(expected.optString("sha256")))
-                throw new IOException("Restored PC ledger missing or mismatched: "+rel);
+            File target=deployedFile(rel);
+            if(expected==null||!target.isFile())throw new IOException("PC ledger missing: "+rel);
+            // A running SQLite engine can modify a valid DB and checkpoint its WAL.
+            if(exactSnapshot&&(target.length()!=expected.optLong("size",-1)
+                ||!sha256(target).equalsIgnoreCase(expected.optString("sha256"))))
+                throw new IOException("PC ledger install SHA mismatch: "+rel);
             verified++;
             JSONObject counts=expected.optJSONObject("counts");
             if(counts==null)continue;
@@ -245,14 +291,16 @@ final class LegacyLedgerMigration {
                 sourceRows+=want;
                 if(rel.endsWith(".sqlite3")&&table.matches("[A-Za-z0-9_]+")){
                     long got=count(target,table);
-                    if(want!=got)throw new IOException("PC history count mismatch: "+rel+"/"+table+
-                        " expected="+want+" actual="+got);
+                    if((exactSnapshot&&want!=got)||(!exactSnapshot&&want>0&&got==0))
+                        throw new IOException("PC history unreadable: "+rel+"/"+table+
+                            " source="+want+" phone="+got);
                     verifiedRows+=got;checkedTables++;
                 }else verifiedRows+=want; // Non-SQLite GMO state is protected by its full-file SHA-256.
             }
         }
         return obj("files_verified",verified,"source_rows",sourceRows,
-            "verified_rows",verifiedRows,"checked_tables",checkedTables);
+            "verified_rows",verifiedRows,"checked_tables",checkedTables,
+            "verification_phase",exactSnapshot?"BEFORE_ENGINE":"AFTER_ENGINE");
     }
     private static long runtimeRows(Object node){
         if(!(node instanceof JSONObject))return 0;
@@ -267,6 +315,59 @@ final class LegacyLedgerMigration {
         }
         return total;
     }
+    private static String keyForFile(String rel){
+        if(rel.startsWith("coin/base/"))return "coin/general";
+        if(rel.startsWith("coin/ma/"))return "coin/ma";
+        if(rel.contains("STOCK_MA_ENGINE_V1"))return "stock/ma";
+        if(rel.contains("AT_CLOSE"))return "stock/close";
+        if(rel.contains("PROJECTGMO"))return "stock/gmo";
+        return "stock/at";
+    }
+    private static JSONObject runtimeSegment(JSONObject records,String market,String name){
+        JSONObject marketRecord=records==null?null:records.optJSONObject(market);
+        String rootStrategy="stock".equals(market)
+            ?("close".equals(name)?"cw":"at"):name;
+        JSONObject root=marketRecord==null?null:marketRecord.optJSONObject(rootStrategy);
+        if(root==null)return new JSONObject();
+        JSONObject ledger=root.optJSONObject("ledger"),research=root.optJSONObject("research");
+        if("stock".equals(market)&&("ma".equals(name)||"gmo".equals(name))){
+            ledger=ledger==null?null:ledger.optJSONObject("ma".equals(name)?"ma_subledger":"gmo");
+            research=research==null?null:research.optJSONObject(name);
+        }
+        return obj("ledger",ledger==null?new JSONObject():ledger,
+            "research",research==null?new JSONObject():research);
+    }
+    private JSONObject strategyCounts(JSONObject manifest,JSONObject records)throws Exception{
+        JSONObject files=manifest.optJSONObject("files"),report=new JSONObject();
+        if(files==null)throw new IOException("Missing source history manifest");
+        Iterator<String> names=files.keys();
+        while(names.hasNext()){
+            String rel=names.next();JSONObject entry=files.optJSONObject(rel);
+            JSONObject counts=entry==null?null:entry.optJSONObject("counts");
+            if(counts==null)continue;
+            String strategy=keyForFile(rel);
+            JSONObject row=report.optJSONObject(strategy);
+            if(row==null){row=obj("pc_rows",0L);report.put(strategy,row);}
+            long from=row.optLong("pc_rows",0L);
+            Iterator<String> tables=counts.keys();
+            while(tables.hasNext()){
+                String t=tables.next();
+                if(historyTable(t))from+=Math.max(0L,counts.optLong(t,0L));
+            }
+            row.put("pc_rows",from);
+        }
+        for(String key:new String[]{"stock/at","stock/ma","stock/close","stock/gmo",
+                "coin/general","coin/ma"}){
+            JSONObject row=report.optJSONObject(key);if(row==null)continue;
+            String[] parts=key.split("/");
+            long rows=runtimeRows(runtimeSegment(records,parts[0],parts[1]));
+            row.put("runtime_rows",rows);
+            if(row.optLong("pc_rows",0L)>0L&&rows==0L)
+                throw new IOException("PC_LEDGER_NOT_VISIBLE: "+key+" (source="+
+                    row.optLong("pc_rows")+" runtime=0)");
+        }
+        return report;
+    }
     JSONObject finishRuntimeVerification(JSONObject installResult,JSONObject engineResult,JSONObject records){
         String initial=installResult==null?"":installResult.optString("status","");
         if(!"FILES_INSTALLED".equals(initial)&&!"LOCAL_FILES_PRESENT".equals(initial))
@@ -276,7 +377,8 @@ final class LegacyLedgerMigration {
                 throw new IllegalStateException("PYTHON_STRATEGY_START_FAILED: "+
                     (engineResult==null?"missing result":engineResult.toString()));
             JSONObject manifest=installResult.optJSONObject("manifest");
-            JSONObject verification=verifyInstalled(manifest);
+            JSONObject verification=verifyInstalled(manifest,false);
+            verification.put("by_strategy",strategyCounts(manifest,records));
             long sourceRows=verification.optLong("source_rows",0L);
             long visibleRows=runtimeRows(records);
             verification.put("runtime_rows",visibleRows);
@@ -320,11 +422,14 @@ final class LegacyLedgerMigration {
             JSONObject status=hub.migrationStatus();
             String imported=prefs().getString("imported_sha256","");
             JSONObject previous=storedManifest();
+            SharedPreferences live=context.getSharedPreferences("unified_live_orders",Context.MODE_PRIVATE);
+            boolean armed=live.getBoolean("live_stock",false)||live.getBoolean("live_coin",false);
+            if(!armed&&!phoneHasRealBrokerFills())repairLegacyClosePath();
             boolean ready=status.optBoolean("ok")&&status.optBoolean("ready")
                 &&status.optBoolean("archive_exists",false);
             if(!ready){
                 if(!imported.isEmpty()&&previous!=null){
-                    JSONObject verification=verifyInstalled(previous);
+                    JSONObject verification=verifyInstalled(previous,false);
                     progress("VERIFY_RUNTIME","설치된 PC 원장 전략엔진 조회 검사",0,1,false,"");
                     return obj("ok",true,"status","LOCAL_FILES_PRESENT","sha256",imported,
                         "manifest",previous,"verification",verification);
@@ -333,8 +438,7 @@ final class LegacyLedgerMigration {
                 return obj("ok",true,"status","NO_PC_ARCHIVE");
             }
             String session=status.optString("session"),sha=status.optString("archive_sha256");
-            SharedPreferences live=context.getSharedPreferences("unified_live_orders",Context.MODE_PRIVATE);
-            if(live.getBoolean("live_stock",false)||live.getBoolean("live_coin",false)){
+            if(armed){
                 JSONObject blocked=obj("ok",false,"status","LIVE_TRADING_ACTIVE",
                     "message","Disable live stock and coin orders before installing PC ledger files");
                 progress("BLOCKED","실거래 활성화 · PC 원장 덮어쓰기 차단",0,1,false,"LIVE_TRADING_ACTIVE");
@@ -342,7 +446,7 @@ final class LegacyLedgerMigration {
             }
             if(!sha.isEmpty()&&sha.equalsIgnoreCase(imported)&&previous!=null){
                 try{
-                    JSONObject verification=verifyInstalled(previous);
+                    JSONObject verification=verifyInstalled(previous,false);
                     progress("VERIFY_RUNTIME","기존 PC DB 재조회 · 원장 반영 확인",0,1,false,"");
                     return obj("ok",true,"status","LOCAL_FILES_PRESENT","sha256",sha,
                         "session",session,"manifest",previous,"verification",verification);
@@ -396,7 +500,7 @@ final class LegacyLedgerMigration {
             JSONObject manifest=extract(archive,staging);
             progress("INSTALL","기존 PC EXE 원장을 폰 전략 DB로 승계",0,1,false,"");
             install(staging,sha);
-            JSONObject verification=verifyInstalled(manifest);
+            JSONObject verification=verifyInstalled(manifest,true);
             deleteTree(staging);archive.delete();
             JSONObject result=obj("ok",true,"status","FILES_INSTALLED",
                 "sha256",sha,"session",session,"manifest",manifest,"verification",verification);

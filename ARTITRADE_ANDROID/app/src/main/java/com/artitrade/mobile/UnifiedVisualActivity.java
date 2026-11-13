@@ -438,6 +438,17 @@ public final class UnifiedVisualActivity extends Activity {
                     verification.optInt("files_verified",0)+"개 · 엔진 반영 "+
                     verification.optLong("runtime_rows",0)+"건",11);
                 counts.setTextColor(Color.rgb(162,181,209));counts.setPadding(dp(2),0,0,dp(5));tools.addView(counts);
+                JSONObject strategyCounts=verification.optJSONObject("by_strategy");
+                if(strategyCounts!=null){
+                    for(String k:new String[]{"stock/at","stock/ma","stock/close","stock/gmo","coin/general","coin/ma"}){
+                        JSONObject row=strategyCounts.optJSONObject(k);if(row==null)continue;
+                        TextView detail=text(k+" · PC "+row.optLong("pc_rows",0)+"건 / 엔진 "+
+                            row.optLong("runtime_rows",0)+"건",10);
+                        detail.setTextColor(row.optLong("pc_rows",0)>0&&row.optLong("runtime_rows",0)==0
+                            ?Color.rgb(255,143,158):Color.rgb(160,183,210));
+                        tools.addView(detail);
+                    }
+                }
             }
             String importError=migState.optString("message","");
             if(!importError.isEmpty()){
