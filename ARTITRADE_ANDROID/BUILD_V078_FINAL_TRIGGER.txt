@@ -20,3 +20,4 @@ v0.7.26: Android15 real-install emulator evidence, missing MA/GMO nested fallbac
 v0.7.27 2026-11-14: repair PC research SQL, independent per-strategy collection, preserve GMO historical PC PAPER fills/holdings and P&L, signed CI regression.
 v0.7.27 CI test assertion synchronization (OLED suite) 2026-11-14.
 v0.7.28 2026-11-14: original EXE candidate/unselected followups, all-market net PnL and buy cost, screen-off Wi-Fi hold, geometric view, regression/signed APK.
+v0.7.28 2026-11-14 CI rerun after isolated MA test helper dependency fix.
