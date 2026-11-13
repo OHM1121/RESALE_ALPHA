@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.net.wifi.WifiManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -39,6 +40,7 @@ public final class UnifiedTradingService extends Service {
     private volatile long lastAutomaticMigrationAt=0L;
     private Thread monitor;
     private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
     private long stockEpoch=0,coinEpoch=0;
     private String clientId;
     private StrategyRuntimeBridge strategy;
@@ -56,7 +58,17 @@ public final class UnifiedTradingService extends Service {
             getSharedPreferences("unified_runtime",MODE_PRIVATE).edit().putString("client_id",clientId).apply();
         }
         PowerManager pm=(PowerManager)getSystemService(Context.POWER_SERVICE);
-        wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"ARTITRADE:PhoneMainV070");
+        if(pm!=null){
+            wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"ARTITRADE:PhoneMainV070");
+            wakeLock.setReferenceCounted(false);
+        }
+        // A CPU PARTIAL_WAKE_LOCK does not ensure screen-off Wi-Fi delivery.
+        WifiManager wm=(WifiManager)getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if(wm!=null){
+            wifiLock=wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "ARTITRADE:PhoneTradingWifi");
+            wifiLock.setReferenceCounted(false);
+        }
     }
 
     @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -103,6 +115,10 @@ public final class UnifiedTradingService extends Service {
             }
             if(running.compareAndSet(false,true)){
                 if(wakeLock!=null&&!wakeLock.isHeld())wakeLock.acquire();
+                if(wifiLock!=null&&!wifiLock.isHeld()){
+                    try{wifiLock.acquire();}
+                    catch(SecurityException e){crashes.add("wifi_lock_permission",e);}
+                }
                 // Never initialize broker/network work on Android's main thread.
                 new Thread(()->safeStartStrategy(),"artitrade-v070-python-start").start();
                 monitor=new Thread(this::monitorLoop,"artitrade-v070-monitor");
@@ -228,6 +244,14 @@ public final class UnifiedTradingService extends Service {
                 crashes.add("mserver_monitor",e);
             }
             try{
+                // Heartbeat comes from the service thread even when Activity
+                // is paused, invisible, or the display has gone to sleep.
+                long heartbeat=System.currentTimeMillis();
+                getSharedPreferences("artitrade_background_health_v1",MODE_PRIVATE).edit()
+                    .putLong("last_heartbeat_ms",heartbeat)
+                    .putBoolean("cpu_lock",wakeLock!=null&&wakeLock.isHeld())
+                    .putBoolean("wifi_lock",wifiLock!=null&&wifiLock.isHeld())
+                    .putBoolean("service_running",running.get()).apply();
                 JSONObject p=strategy.snapshot();
                 try{p.put("operation",strategy.operationSnapshot());}catch(Throwable ignored){}
                 getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).edit()
@@ -489,7 +513,11 @@ public final class UnifiedTradingService extends Service {
         running.set(false);
         try{if(strategy!=null)strategy.stop();}catch(Throwable e){if(crashes!=null)crashes.add("service_stop_strategy",e);}
         if(monitor!=null)monitor.interrupt();
+        if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();
         if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();
+        getSharedPreferences("artitrade_background_health_v1",MODE_PRIVATE).edit()
+            .putBoolean("service_running",false).putBoolean("wifi_lock",false)
+            .putBoolean("cpu_lock",false).apply();
     }
     @Override public void onDestroy(){stopSafely();super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}

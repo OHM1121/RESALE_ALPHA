@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import hashlib, hmac, json, uuid, time
 import threading
+import math
 from collections import Counter
 from urllib.parse import urlencode
 import android_live_bridge as _core
@@ -332,8 +333,10 @@ def _close_full(self):
         FROM signals s WHERE s.decision='BUY' AND substr(s.ts,1,10)=?
           AND (s.entry_result IS NULL OR s.entry_result NOT LIKE 'BOUGHT %')
         ORDER BY s.id DESC LIMIT 500""",(day,))
+    pos_by_id={str(p.get('id')):p for p in all_positions}
     for e in executions:
         e['at']=e.get('ts');e['net_profit']=e.get('net_realized');e['strategy']='CLOSE'
+        _attach_fill_cost(e,pos_by_id.get(str(e.get('position_id'))))
     realized=sum(float(x.get('realized') or 0) for x in wallets)
     unreal=sum((float(x.get('last_price') or 0)-float(x.get('entry_price') or 0))*float(x.get('qty') or 0) for x in positions)
     win_rate=_closed_position_win_rate(all_positions,executions)
@@ -403,6 +406,7 @@ def _stock_at_v19_full(self, base):
             e['at']=e.get('ts');e['strategy']=e.get('tf') or 'AT'
             net=_sell_net_stock(e,posmap.get(int(e.get('position_id') or 0),{}))
             if net is not None:e['net_profit']=net
+            _attach_fill_cost(e,posmap.get(int(e.get('position_id') or 0),{}))
         performance={}
         accounts=[]
         total_real=0.0;total_hold=0.0
@@ -512,6 +516,9 @@ def _stock_ma_full(self):
         for field in ('entry_at','entry_date','candidate_id','first_sold','recovery'):
             if item.get(field) in (None,'') and original.get(field) not in (None,''):
                 item[field]=original[field]
+        if item.get('entry_price') in (None,''):
+            original_entry=_first_existing(item.get('entry'),original.get('entry'))
+            if original_entry is not None:item['entry_price']=original_entry
     pending_by_id={str(row.get('id')):row for row in _core._db_rows(
         db,"SELECT id,created_at,ref_ts,features FROM candidates ORDER BY id DESC LIMIT 10000")}
     for item in snap.get('pending') or []:
@@ -522,6 +529,7 @@ def _stock_ma_full(self):
         # keep the original Korean quote/expiry diagnostic rather than invent one.
     for x in full_exec:
         x['at']=x.get('ts');x['strategy']='MA'
+        _attach_fill_cost(x,full_by_id.get(str(x.get('position_id'))))
     realized=sum(float((perf.get(tf) or {}).get('realized_won') or 0) for tf in _FRAMES)
     holding=sum(float((perf.get(tf) or {}).get('holding_won') or 0) for tf in _FRAMES)
     accounts=[]
@@ -546,6 +554,56 @@ def _stock_ma_full(self):
                 'pending_count':len(snap.get('pending') or [])})
     out['win_rate']=_closed_position_win_rate(all_positions,full_exec)
     return out
+
+def _attach_fill_cost(execution,position=None):
+    """Show recorded EXE position cost beside its paper/real SELL fill.
+
+    A candidate price, reference candle or observed high cannot be used as
+    an executed purchase price. Only actual entry/position ledger values count.
+    The original EXE net-profit field remains authoritative after fees/taxes.
+    """
+    if not isinstance(execution,dict):
+        return execution
+    position=position if isinstance(position,dict) else {}
+    side=str(execution.get('side') or '').upper()
+    try:
+        qty=float(execution.get('qty') or 0)
+        sell_price=float(execution.get('price') or 0)
+    except (TypeError,ValueError,OverflowError):
+        return execution
+    if not math.isfinite(qty) or qty<=0:
+        return execution
+    if side=='BUY' and sell_price>0 and math.isfinite(sell_price):
+        execution.setdefault('buy_price',sell_price)
+        execution.setdefault('buy_amount',round(qty*sell_price,4))
+        return execution
+    if side!='SELL':
+        return execution
+    entry=_first_existing(position.get('entry_price'),position.get('entry'),
+                          position.get('avg_buy_price'))
+    if entry is None:
+        return execution
+    try:entry=float(entry)
+    except (TypeError,ValueError,OverflowError):return execution
+    if not math.isfinite(entry) or entry<=0:
+        return execution
+    cost=entry*qty
+    if not math.isfinite(cost) or cost<=0:
+        return execution
+    execution['buy_price']=entry
+    execution['buy_amount']=round(cost,4)
+    execution['cost_basis_origin']='EXE_POSITION_FILL'
+    pnl=_first_existing(execution.get('net_profit'),execution.get('net_realized'),
+                        execution.get('net_pnl'))
+    if pnl is not None:
+        try:
+            profit=float(pnl)
+            if math.isfinite(profit):
+                execution['realized_pct']=round(profit/cost*100.0,4)
+        except (TypeError,ValueError,OverflowError):
+            pass
+    return execution
+
 
 def _first_existing(*values):
     """Use actual stored/quoted values only; never invent prices or reference candles."""
@@ -640,8 +698,10 @@ def _coin_full(ledger):
         x['ref_ts']=_first_existing(x.get('ref_ts'),x.get('ref_at'),
             x.get('reference_ts'),x.get('reference_at'))
         x['strategy']=x.get('tf')
+    all_by_id={str(x.get('id')):x for x in all_positions}
     for e in executions:
         e['net_profit']=e.get('net_pnl');e['strategy']=e.get('tf')
+        _attach_fill_cost(e,all_by_id.get(str(e.get('position_id'))))
     realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
     holding=sum(float(x.get('unrealized_pnl') or 0) for x in accounts)
     win_rate=_closed_position_win_rate(all_positions,executions)
@@ -820,6 +880,24 @@ def _gmo_original_record(root):
                 'net_profit':f.get('net_profit') if kind=='SELL' else None,
                 'fees':f.get('fees',f.get('fee')),'tax':f.get('tax'),
                 'reason':f.get('purpose')})
+
+    # The GMO original JSON carries buy and sell fills separately. Link only
+    # traceable per-symbol purchase prices; never equate an unfilled order
+    # or a research opening price with a realized cost basis.
+    buy_prices={}
+    for fill in buys:
+        if not isinstance(fill,dict):continue
+        code=str(fill.get('code') or '')
+        if code and fill.get('price') is not None:
+            try:buy_prices.setdefault(code,set()).add(float(fill['price']))
+            except (TypeError,ValueError):pass
+    for e in executions:
+        code=str(e.get('code') or '')
+        if str(e.get('side') or '').upper()=='SELL' and len(buy_prices.get(code,set()))==1:
+            unique_price=next(iter(buy_prices[code]))
+            _attach_fill_cost(e,{'entry_price':unique_price})
+        elif str(e.get('side') or '').upper()=='BUY':
+            _attach_fill_cost(e)
     executions.sort(key=lambda x:str(x.get('ts') or ''),reverse=True)
     # Use exactly the EXE's original 15-session evidence and paper-fill
     # attribution. A candle HIGH is not a broker/paper SELL execution.
