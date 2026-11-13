@@ -181,7 +181,9 @@ jobs:
           assert 'pc_import_locked",true' in import_code
           assert import_code.index('if(!imported.isEmpty()){') < import_code.index('hub.migrationStatus()',import_code.index('JSONObject importIfReady(){'))
           assert import_code.index('putString("imported_sha256",sha)') < import_code.index('migrationAck(session,sha)')
-          assert service.index('if(!installed.isEmpty())return;') < service.index('hub.migrationStatus()')
+          assert 'long retryAfter=5L*60L*1000L;' in service
+          assert 'installed.isEmpty()?' in service
+          assert 'importOnlyMissingResearch(previous,imported)' in import_code
           print('PHONE_LEDGER_FIRST_IMPORT_LOCK_CHECK_OK')
           PY
       - name: Verify v0.7.13 non-destructive ledger recovery, CLOSE views and MA pending diagnostics
@@ -237,8 +239,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.21-VISUAL-KRW'" in s
-          assert "versionCode 32" in s
+          assert "versionName '0.7.22-LEDGER-SAFETY'" in s
+          assert "versionCode 33" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -344,6 +346,27 @@ jobs:
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/WonFormat.java \
             ARTITRADE_ANDROID/ui_tests/WonFormatTest.java
           java -cp /tmp/artitrade-krw-test com.artitrade.mobile.WonFormatTest
+          javac -d /tmp/artitrade-krw-test \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/MigrationJournalIO.java \
+            ARTITRADE_ANDROID/ui_tests/MigrationJournalIOTest.java
+          java -cp /tmp/artitrade-krw-test com.artitrade.mobile.MigrationJournalIOTest
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          sync=(root/'java/com/artitrade/mobile/SyncStore.java').read_text()
+          importer=(root/'java/com/artitrade/mobile/LegacyLedgerMigration.java').read_text()
+          source=(root/'python/android_runtime_v078.py').read_text()
+          assert 'MigrationJournalIO.replace(' in sync
+          assert 'recoverCommittedArchive(readMigrationMeta())' in sync
+          assert 'migrationUpload().isFile()' in sync and '"resumed",true' in sync
+          assert 'if(!extracted.contains("manifest.json")' in importer
+          assert 'migration manifest ZIP member count mismatch' in importer
+          assert 'PC_RESEARCH_FILE_CONFLICT' in importer
+          assert 'hub.migrationAck(session,incoming)' in importer
+          assert 'from d_gmo_score_research_paper import research_rows' in source
+          assert 'paper_first_target_filled' in source
+          print('MIGRATION_INTEGRITY_AND_EXE_RESEARCH_POLICY_OK')
+          PY
           python3 - <<'PY'
           from pathlib import Path
           ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
