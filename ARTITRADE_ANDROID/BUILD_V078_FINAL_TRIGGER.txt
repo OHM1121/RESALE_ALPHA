@@ -8,3 +8,4 @@ Ledger safety CI retry: reflect split no-overwrite guard assertions; 2026-11-13.
 
 ARTITRADE v0.7.23 OLED PREMIUM: restored GitHub connection; signed Android build, dark native UI, button ripple/press, font layout tests, five repeated frozen PC GMO parity checks, 2026-11-13.
 ARTITRADE v0.7.23 final rerun: 12sp chart typography (corrected CI), OLED UI, original EXE GMO research parity 5x, 2026-11-13.
+2026-11-13 v0.7.23 OLED PREMIUM second-pass: black theme and dialog, 12sp minimum labels, compact 2-column TF and score matrix, tactile 85/155ms ripple, original GMO paper research parity x5, updated UI tests.
