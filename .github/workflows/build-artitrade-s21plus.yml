@@ -156,7 +156,7 @@ jobs:
           assert 'trackOperationDraft(seedEdit,key+".seed")' in ui
           assert 'trackOperationDraft(maxEdit,key+".max_positions")' in ui
           assert 'clearSavedOperationDrafts(market)' in ui
-          assert 'new LinearLayout.LayoutParams(-1,dp(165))' in ui
+          assert 'new LinearLayout.LayoutParams(-1,dp(172))' in ui and 'new LinearLayout.LayoutParams(0,dp(172),1)' in ui
           assert 'amountTile(c,"●","실현"' in visuals and 'amountTile(c,"◇","평가"' in visuals
           assert 'showKiwoomFeedDiagnosis' in ui
           assert 'stockFeed.optInt("subscribed",0)' in service
@@ -239,8 +239,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.22-LEDGER-SAFETY'" in s
-          assert "versionCode 33" in s
+          assert "versionName '0.7.23-OLED-PREMIUM'" in s
+          assert "versionCode 34" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -341,6 +341,12 @@ jobs:
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_source_audit.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_gmo_original_migration.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_premium_ui_layout.py' -v
+          # Re-run the frozen EXE/Android GMO parity fixtures repeatedly, not just
+          # one single pass. This tests data-display logic, not a live broker.
+          for attempt in 1 2 3 4 5; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_gmo_original_migration.py' -q
+          done
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_android_ledger_backup.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_resume.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_phone_backup_verify.py' -v
@@ -388,6 +394,9 @@ jobs:
           print('DENSE_ICON_FIRST_FULL_KRW_UI_OK')
           PY
           python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_full_research.py' -v
+          grep -F 'PremiumUi.tapMotion' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'static final int BG=Color.BLACK' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/PremiumUi.java
+          grep -F 'RippleDrawable' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/PremiumUi.java
           grep -F 'bindSymbolFourTap' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'https://finance.naver.com/item/main.naver?code=' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'https://upbit.com/exchange?code=CRIX.UPBIT.' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
@@ -424,8 +433,8 @@ jobs:
           grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'TimeframeAccountFlowView' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.21 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.21 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.23 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.23 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '실제 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '가상 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
