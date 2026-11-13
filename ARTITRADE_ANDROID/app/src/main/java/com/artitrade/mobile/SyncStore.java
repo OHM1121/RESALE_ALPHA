@@ -245,12 +245,9 @@ final class SyncStore extends SQLiteOpenHelper {
         }catch(Exception e){throw new IllegalStateException("Cannot read migration metadata",e);}
     }
     private void writeMigrationMeta(JSONObject meta){
-        File target=migrationMeta(),tmp=new File(target.getParentFile(),"meta.json.tmp");
-        try(FileOutputStream out=new FileOutputStream(tmp,false)){
-            out.write(meta.toString().getBytes(StandardCharsets.UTF_8));out.flush();out.getFD().sync();
-        }catch(Exception e){throw new IllegalStateException("Cannot write migration metadata",e);}
-        if(target.exists()&&!target.delete())throw new IllegalStateException("Cannot replace migration metadata");
-        if(!tmp.renameTo(target))throw new IllegalStateException("Cannot commit migration metadata");
+        try{
+            MigrationJournalIO.replace(migrationMeta(),meta.toString().getBytes(StandardCharsets.UTF_8));
+        }catch(Exception e){throw new IllegalStateException("Cannot replace migration journal atomically",e);}
     }
     private static void deleteTree(File f){
         if(f==null||!f.exists())return;
@@ -258,6 +255,31 @@ final class SyncStore extends SQLiteOpenHelper {
         if(!f.delete()&&f.exists())throw new IllegalStateException("Cannot clear migration staging");
     }
     private File migrationUpload(){return new File(migrationDir(),"pc_ledger_upload.tmp");}
+    /**
+     * Crash recovery after archive rename but before journal ready=true persisted.
+     * A matching complete archive is retained and made readable, never deleted.
+     */
+    private JSONObject recoverCommittedArchive(JSONObject meta){
+        File archive=migrationArchive();
+        if(meta==null||meta.length()==0||meta.optBoolean("ready",false)||!archive.isFile())
+            return meta;
+        long expected=meta.optLong("total_bytes",-1);
+        int received=meta.optInt("received",-1),chunks=meta.optInt("total_chunks",0);
+        String expectedSha=meta.optString("archive_sha256","");
+        if(expected<=0||chunks<1||received!=chunks||archive.length()!=expected||
+            !expectedSha.matches("[0-9a-fA-F]{64}"))return meta;
+        try{
+            if(!sha256File(archive).equalsIgnoreCase(expectedSha))
+                throw new SecurityException("Previously committed PC archive digest mismatch");
+            meta.put("ready",true)
+                .put("read_chunk_bytes",MIGRATION_READ_CHUNK)
+                .put("read_chunks",(int)((expected+MIGRATION_READ_CHUNK-1)/MIGRATION_READ_CHUNK))
+                .put("recovered_after_restart",true)
+                .put("committed_at",System.currentTimeMillis());
+            writeMigrationMeta(meta);
+        }catch(Exception e){throw new IllegalStateException("Cannot recover committed PC archive",e);}
+        return meta;
+    }
     synchronized JSONObject migrationBegin(String session,int totalChunks,long totalBytes,String archiveSha,JSONObject source){
         int chunkBytes=source==null?300000:source.optInt("chunk_bytes",300000);
         long requiredParts=chunkBytes>0?(totalBytes+(long)chunkBytes-1)/chunkBytes:0L;
@@ -266,11 +288,27 @@ final class SyncStore extends SQLiteOpenHelper {
            requiredParts!=totalChunks||archiveSha==null||!archiveSha.matches("[0-9a-fA-F]{64}"))
             return obj("ok",false,"error","invalid_migration_manifest","max_bytes",MIGRATION_MAX_BYTES,
                 "max_chunks",MIGRATION_MAX_CHUNKS);
-        // Never erase a fully received archive that the phone has not imported.
-        JSONObject existing=readMigrationMeta();
-        if(existing.optBoolean("ready",false)&&migrationArchive().isFile())
+        // A complete ZIP is never discarded, even when a prior process died
+        // between atomic file rename and the metadata commit.
+        JSONObject existing=recoverCommittedArchive(readMigrationMeta());
+        if(migrationArchive().isFile())
             return obj("ok",false,"error","previous_migration_pending",
-                "message","Phone must consume pending migration before a new upload.");
+                "message","Phone must verify/acknowledge its already received archive.");
+        // Resume the *same bytes* after an interrupted upload; don't erase them.
+        if(!existing.optBoolean("ready",false)&&migrationUpload().isFile()&&
+            validSession(existing.optString("session",""))&&
+            archiveSha.equalsIgnoreCase(existing.optString("archive_sha256",""))&&
+            existing.optLong("total_bytes",-1)==totalBytes&&
+            existing.optInt("total_chunks",-1)==totalChunks&&
+            existing.optInt("chunk_bytes",-1)==chunkBytes){
+            int received=existing.optInt("received",0);
+            long durable=(long)Math.max(0,received)*chunkBytes;
+            if(received>=0&&received<=totalChunks&&migrationUpload().length()>=
+                Math.min(durable,totalBytes))
+                return obj("ok",true,"session",existing.optString("session"),
+                    "total_chunks",totalChunks,"chunk_bytes",chunkBytes,
+                    "received",received,"resumed",true);
+        }
         File dir=migrationDir();
         long free=new android.os.StatFs(dir.getAbsolutePath()).getAvailableBytes();
         if(free<totalBytes+MIN_FREE_AFTER_UPLOAD)
@@ -328,7 +366,7 @@ final class SyncStore extends SQLiteOpenHelper {
         return obj("ok",true,"received",index+1,"total_chunks",total);
     }
     synchronized JSONObject migrationCommit(String session){
-        JSONObject meta=readMigrationMeta();
+        JSONObject meta=recoverCommittedArchive(readMigrationMeta());
         if(!validSession(session)||!session.equals(meta.optString("session")))
             return obj("ok",false,"error","invalid_migration_session");
         if(meta.optBoolean("ready")&&migrationArchive().isFile())
@@ -361,8 +399,9 @@ final class SyncStore extends SQLiteOpenHelper {
             "total_bytes",bytes,"read_chunks",readChunks);
     }
     synchronized JSONObject migrationStatus(){
-        JSONObject meta=readMigrationMeta();
-        if(meta.length()==0)return obj("ok",true,"ready",false,"exists",false);
+        JSONObject meta=recoverCommittedArchive(readMigrationMeta());
+        if(meta.length()==0)return obj("ok",true,"ready",false,"exists",false,
+            "archive_exists",migrationArchive().isFile());
         try{meta.put("ok",true).put("exists",true).put("archive_exists",migrationArchive().isFile());}
         catch(Exception e){throw new IllegalStateException(e);}
         return meta;
@@ -386,10 +425,11 @@ final class SyncStore extends SQLiteOpenHelper {
         if(!session.equals(meta.optString("session"))||!archiveSha.equalsIgnoreCase(meta.optString("archive_sha256")))
             return obj("ok",false,"error","invalid_migration_ack");
         File archive=migrationArchive();boolean deleted=!archive.exists()||archive.delete();
+        if(!deleted)return obj("ok",false,"error","archive_delete_failed","consumed",false);
         try{meta.put("acknowledged_at",System.currentTimeMillis()).put("consumed",true).put("ready",false);}
         catch(Exception e){throw new IllegalStateException(e);}
         writeMigrationMeta(meta);
-        return obj("ok",deleted,"consumed",true);
+        return obj("ok",true,"consumed",true);
     }
 
     synchronized JSONObject clearExpired(String market){
