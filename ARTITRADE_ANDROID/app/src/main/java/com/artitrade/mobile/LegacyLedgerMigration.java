@@ -194,6 +194,8 @@ final class LegacyLedgerMigration {
         deleteTree(staging);if(!staging.mkdirs()&&!staging.isDirectory())throw new IOException("staging unavailable");
         JSONObject manifest=null;String root=staging.getCanonicalPath()+File.separator;
         int entriesSeen=0;
+        java.util.HashSet<String> extracted=new java.util.HashSet<>();
+        long expandedActual=0L;
         try(ZipInputStream zin=new ZipInputStream(new BufferedInputStream(new FileInputStream(archive)))){
             ZipEntry e;byte[] buf=new byte[65536];
             while((e=zin.getNextEntry())!=null){
@@ -204,11 +206,20 @@ final class LegacyLedgerMigration {
                     // Ignore the transient sidecar of a known SQLite snapshot.
                     zin.closeEntry();continue;
                 }
-                if(!allowedDataPath(name))throw new SecurityException("unexpected migration entry: "+name);
+                if(!allowedDataPath(name)||!extracted.add(name))
+                    throw new SecurityException("unexpected/duplicate migration entry: "+name);
                 File out=new File(staging,name);String canonical=out.getCanonicalPath();
                 if(!canonical.startsWith(root))throw new SecurityException("invalid migration path");
                 File parent=out.getParentFile();if(parent!=null&&!parent.exists()&&!parent.mkdirs())throw new IOException("cannot create staging parent");
-                try(FileOutputStream fos=new FileOutputStream(out,false)){int n;while((n=zin.read(buf))!=-1)fos.write(buf,0,n);}
+                try(FileOutputStream fos=new FileOutputStream(out,false)){
+                    int n;
+                    while((n=zin.read(buf))!=-1){
+                        if(expandedActual>MAX_EXPANDED_DATA-n)
+                            throw new SecurityException("ZIP decompressed beyond permitted bytes");
+                        fos.write(buf,0,n);expandedActual+=n;
+                    }
+                    fos.flush();fos.getFD().sync();
+                }
                 if("manifest.json".equals(name)){
                     try(FileInputStream min=new FileInputStream(out)){
                         ByteArrayOutputStream m=new ByteArrayOutputStream();int n;while((n=min.read(buf))!=-1)m.write(buf,0,n);
@@ -221,11 +232,17 @@ final class LegacyLedgerMigration {
         if(manifest==null||!SCHEMA.equals(manifest.optString("schema")))
             throw new SecurityException("migration manifest mismatch");
         JSONObject files=manifest.optJSONObject("files");
-        if(files==null||files.length()>2000)throw new SecurityException("migration file hashes missing/too many");
+        if(files==null||files.length()==0||files.length()>2000)
+            throw new SecurityException("migration file hashes missing/too many");
+        // Every ZIP member must be hashed in the source manifest. Reject silent
+        // installation of extra CSV/JSON/SQLite files that are not in its ledger.
+        if(!extracted.contains("manifest.json")||extracted.size()!=files.length()+1)
+            throw new SecurityException("migration manifest ZIP member count mismatch");
         java.util.Iterator<String> names=files.keys();
         while(names.hasNext()){
             String name=names.next();
-            if(!allowedDataPath(name)||"manifest.json".equals(name))throw new SecurityException("invalid manifest entry");
+            if(!allowedDataPath(name)||"manifest.json".equals(name)||!extracted.contains(name))
+                throw new SecurityException("invalid or absent manifest member: "+name);
             JSONObject entry=files.optJSONObject(name);
             File saved=new File(staging,name);
             if(entry==null||!saved.isFile()||entry.optLong("size",-1)!=saved.length()||
