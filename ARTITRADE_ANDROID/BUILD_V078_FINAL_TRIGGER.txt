@@ -1,5 +1,5 @@
-ARTITRADE v0.7.14 safe side-by-side recovery build
-Build branch: artitrade-phone-main-v070-live-orders-20261112
-Original installed APK preserved: com.artitrade.unified.s21dex
-New recovery APK: com.artitrade.unified.s21dex.recovery
-Expected CI signing: same certificate as cached $HOME/.android/debug.keystore
+ARTITRADE v0.7.15 PC transfer fix
+Trigger this Android build once. No USB or phone-side old-ledger backup is required.
+Original package: com.artitrade.unified.s21dex (uninstall old debug-signed version before install).
+PC EXE main DB files are the source of truth; no phone-only history retained.
+ZIP transient -wal/-shm entries from old PC migrator accepted but never imported.

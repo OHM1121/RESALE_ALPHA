@@ -395,9 +395,13 @@ def build_archive(progress=lambda msg: None) -> tuple[Path, dict]:
         archive = work / "ARTITRADE_PC_LEDGER_MIGRATION.zip"
         progress("승계 ZIP 생성 중")
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
-            for p in sorted(stage.rglob("*")):
-                if p.is_file():
-                    z.write(p, p.relative_to(stage).as_posix())
+            # Never include SQLite backup sidecars (-wal/-shm/-journal).
+            # The manifest enumerates only consistent completed snapshot DBs.
+            for member in sorted(("manifest.json", *manifest["files"].keys())):
+                source = stage / member
+                if not source.is_file():
+                    raise FileNotFoundError("Missing migration member: " + member)
+                z.write(source, member)
         archive_size = archive.stat().st_size
         if archive_size > MAX_ARCHIVE:
             raise ValueError("승계 ZIP이 4GB 안전 한도를 초과함. 대용량 파일 분할이 추가로 필요합니다.")

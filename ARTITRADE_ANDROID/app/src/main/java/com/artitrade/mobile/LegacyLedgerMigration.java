@@ -40,6 +40,19 @@ final class LegacyLedgerMigration {
         "coin/ma/upbit_paper.sqlite3"
     ));
 
+    // Older PC migration EXEs accidentally included SQLite backup sidecars in ZIP.
+    // The backup API already produced a complete main DB; these transient files
+    // MUST NEVER be installed, but must not prevent first-import recovery.
+    private static boolean isSnapshotSidecar(String name){
+        for(String suffix:new String[]{"-shm","-wal","-journal"}){
+            if(name.endsWith(suffix)){
+                String base=name.substring(0,name.length()-suffix.length());
+                return base.endsWith(".sqlite3")&&ALLOWED.contains(base);
+            }
+        }
+        return false;
+    }
+
     private final Context context;
     private final RuntimeCrashStore crashes;
     LegacyLedgerMigration(Context c,RuntimeCrashStore crashes){
@@ -159,6 +172,10 @@ final class LegacyLedgerMigration {
             while((e=zin.getNextEntry())!=null){
                 String name=e.getName().replace('\\','/');
                 if(e.isDirectory()){zin.closeEntry();continue;}
+                if(isSnapshotSidecar(name)){
+                    // Ignore the transient sidecar of a known SQLite snapshot.
+                    zin.closeEntry();continue;
+                }
                 if(!ALLOWED.contains(name))throw new SecurityException("unexpected migration entry: "+name);
                 File out=new File(staging,name);String canonical=out.getCanonicalPath();
                 if(!canonical.startsWith(root))throw new SecurityException("invalid migration path");
@@ -197,7 +214,7 @@ final class LegacyLedgerMigration {
                 ZipEntry e=entries.nextElement();
                 if(e.isDirectory())continue;
                 String name=e.getName().replace('\\','/');
-                if(!ALLOWED.contains(name)||!seen.add(name))
+                if(!(ALLOWED.contains(name)||isSnapshotSidecar(name))||!seen.add(name))
                     throw new SecurityException("Unexpected or duplicate archive entry: "+name);
                 long size=e.getSize();
                 if(size<0||total>MAX_EXPANDED_DATA-size)
