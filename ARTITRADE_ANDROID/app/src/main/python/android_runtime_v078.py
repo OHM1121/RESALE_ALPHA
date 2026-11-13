@@ -384,9 +384,16 @@ def _close_research(root):
     signals=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,entry_result,feature_json,reason_json FROM signals ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     by_signal={int(x.get('signal_id') or 0):x for x in positions if x.get('signal_id') is not None}
+    followups=_core._db_rows(db,"SELECT source_signal_id,source_candidate_id,horizon,return_pct,mfe_pct,mae_pct,status,observed_price,observed_ts FROM research_followups ORDER BY id DESC LIMIT 16000")
+    by_signal_followup={};by_candidate_followup={}
+    for f in followups:
+        sid=f.get('source_signal_id');cid=f.get('source_candidate_id')
+        if sid is not None:by_signal_followup.setdefault(int(sid),f)
+        if cid is not None:by_candidate_followup.setdefault(int(cid),f)
     items=[]
     for x in signals:
         p=by_signal.get(int(x.get('id') or 0));bought=p is not None
+        follow=by_signal_followup.get(int(x.get('id') or 0),{})
         outcome='PENDING';closed=False
         if p:
             closed=str(p.get('status') or '').upper()=='CLOSED'
@@ -394,10 +401,41 @@ def _close_research(root):
         items.append({'at':x.get('at'),'strategy':'CLOSE','code':x.get('code'),'name':x.get('name'),
             'score':None,'bought':bought,'entry_observed':bought,'closed':closed,'outcome':outcome,
             'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
-            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_NOT_REPLAYED',
-            'reason':x.get('reason_json') or x.get('entry_result') or x.get('decision')})
+            'entry_status':'ACTUAL_FILLED' if bought else 'UNSELECTED',
+            'unselected':not bought,'unselected_reason':x.get('entry_result') if not bought else None,
+             'decision':x.get('decision'),'followup_horizon':follow.get('horizon'),
+             'followup_status':follow.get('status'),
+             'observed_return_pct':follow.get('return_pct'),
+             'observed_mfe_pct':follow.get('mfe_pct'),
+             'observed_mae_pct':follow.get('mae_pct'),
+             'observed_price':follow.get('observed_price'),
+             'observed_at':follow.get('observed_ts'),
+             'reason':x.get('reason_json') or x.get('entry_result') or x.get('decision')})
     score_rows=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,near_signal,feature_json,reason_json FROM research_candidates ORDER BY id DESC LIMIT 3000")
-    return _research_record(items,score_rows)
+    # The EXE separately saves rejected and near-qualifying CLOSE candidates.
+    # Their forward prices are research evidence, never simulated fills.
+    sig_keys={(str(r.get('strategy')),str(r.get('code')),str(r.get('at'))) for r in signals}
+    for x in score_rows:
+        key=(str(x.get('strategy')),str(x.get('code')),str(x.get('at')))
+        if key in sig_keys:continue
+        follow=by_candidate_followup.get(int(x.get('id') or 0),{})
+        items.append({'at':x.get('at'),'strategy':'CLOSE','code':x.get('code'),
+            'name':x.get('name'),'score':None,'bought':False,
+            'entry_observed':False,'outcome':'PENDING','target_hit':None,
+            'entry_status':'RESEARCH_UNSELECTED','unselected':True,
+            'unselected_reason':x.get('reason_json') or x.get('decision'),
+            'near_signal':bool(x.get('near_signal')),
+            'decision':x.get('decision'),
+            'followup_horizon':follow.get('horizon'),
+            'followup_status':follow.get('status'),
+            'observed_return_pct':follow.get('return_pct'),
+            'observed_mfe_pct':follow.get('mfe_pct'),
+            'observed_mae_pct':follow.get('mae_pct'),
+            'observed_price':follow.get('observed_price'),
+            'observed_at':follow.get('observed_ts'),
+            'reason':x.get('reason_json') or x.get('decision')})
+    items.sort(key=lambda item:str(item.get('at') or ''),reverse=True)
+    return _research_record(items[:3000],score_rows)
 
 
 def _stock_at_v19_full(self, base):
@@ -780,7 +818,8 @@ def _research_history(self, out):
         'MA':('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
               ('positions','executions','research')),
         'CLOSE':('stock/close/AT_CLOSE_PAPER.sqlite3','signals',
-                 ('research_candidates','positions','executions')),
+                 ('research_candidates','research_followups','research_bars',
+                   'research_scan_skips','research_api_events','positions','executions')),
         'COIN_BASE':('coin/base/upbit_paper.sqlite3','candidates',
                      ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
                       'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
