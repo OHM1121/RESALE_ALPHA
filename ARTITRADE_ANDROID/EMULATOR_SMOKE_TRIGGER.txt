@@ -2,3 +2,4 @@ First real Android 15 on-GitHub emulator boot/navigation/6-strategy-synthetic-le
 Rerun 2: restore test-keystore, verify per-bucket and nested MA/GMO fallback, install x86_64 APK in real Android 15 emulator.
 Third pass: Android 15 real APK navigation succeeded; isolate data fixture using emulator-only disabled-service manifest rather than restricted PM command, preserve ARM64 shipped behavior.
 Fourth pass: real APK explicitly named, then offline fixture APK; no ambiguous wildcard while capturing full six-strategy screen data evidence.
+Fifth pass: normal APK installs and five main tabs pass; test fixture APK installs; replace Android 15 run-as sh -c with direct mkdir+tee XML injection.
