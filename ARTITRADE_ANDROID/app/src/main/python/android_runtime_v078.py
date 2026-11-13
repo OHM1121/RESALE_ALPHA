@@ -235,11 +235,16 @@ def _stock_at_research(root):
     decisions={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
         "SELECT signal_id,decision_at_evaluation,reason_at_evaluation,origin_10_rank,"
         "diverse_11_rank FROM candidate_cohort_decisions")}
+    forward={int(r.get('signal_id') or 0):r for r in _core._db_rows(db,
+        "SELECT signal_id,minute_count,unobserved_session_minutes,last_close,"
+        "min_price,max_price,first_limit_touch_ts,first_target_after_touch_ts,"
+        "observation_basis,last_ts FROM candidate_forward")}
     items=[]
     for x in candidates:
         key=(str(x.get('tf')),str(x.get('code')),str(x.get('ref_ts')))
         decision=decisions.get(int(x.get('signal_id') or 0),{})
         p=actual.get(key);sh=shadows.get(int(x.get('signal_id') or 0))
+        trail=forward.get(int(x.get('signal_id') or 0),{})
         bought=p is not None;entry_observed=bought or bool(sh and sh.get('entry_ts'))
         outcome='PENDING';closed=False
         if bought:
@@ -255,8 +260,20 @@ def _stock_at_research(root):
             'name':x.get('name'),'ref_ts':x.get('ref_ts'),'score':x.get('score'),
             'bought':bought,'entry_observed':entry_observed,'closed':closed,'outcome':outcome,
             'target_hit': True if outcome=='HIT' else False if outcome=='MISS' else None,
-            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_SHADOW' if entry_observed else 'VIRTUAL_NOT_ENTERED',
-            'signal_id':x.get('signal_id'),
+            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_SHADOW' if entry_observed else 'UNSELECTED',
+            'unselected':not bought,
+             'unselected_reason':decision.get('reason_at_evaluation') if not bought else None,
+             'limit_price':x.get('limit_price'),'first_target':x.get('first_target'),
+             'observation_minutes':trail.get('minute_count',0),
+             'missing_observation_minutes':trail.get('unobserved_session_minutes',0),
+             'observed_last_price':trail.get('last_close'),
+             'observed_max_price':trail.get('max_price'),
+             'observed_min_price':trail.get('min_price'),
+             'first_observed_limit_touch':trail.get('first_limit_touch_ts'),
+             'first_observed_target_after_touch':trail.get('first_target_after_touch_ts'),
+             'observation_provenance':trail.get('observation_basis'),
+             'last_observed_at':trail.get('last_ts'),
+             'signal_id':x.get('signal_id'),
             'decision':decision.get('decision_at_evaluation'),
             'origin_rank':decision.get('origin_10_rank'),
             'diverse_rank':decision.get('diverse_11_rank'),
