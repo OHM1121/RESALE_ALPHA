@@ -113,7 +113,7 @@ jobs:
           service=(j/'UnifiedTradingService.java').read_text()
           screen=(j/'UnifiedVisualActivity.java').read_text()
           assert 'finishRuntimeVerification' in migration and 'runtimeRows(records)' in migration
-          assert 'JSONObject verification=verifyInstalled(manifest);' in migration
+          assert 'JSONObject verification=verifyInstalled(manifest,false);' in migration
           assert 'migrationAck(session,sha)' in migration and 'ACK is intentionally delayed' in migration
           assert 'File parent=target.getParentFile();' in migration
           assert 'checkPendingPCArchive(hub)' in service
@@ -128,6 +128,15 @@ jobs:
           assert 'verifyInstalled(manifest,false)' in migration
           assert 'PC_LEDGER_NOT_VISIBLE' in migration
           assert 'by_strategy' in screen
+          # The ZIP embedded in the real strategy APK is the source of truth for CLOSE DB placement.
+          from io import BytesIO
+          import base64,zipfile
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          zipped=base64.b64decode(b''.join((p/f'part_{i:02d}.txt').read_bytes() for i in range(22)))
+          with zipfile.ZipFile(BytesIO(zipped)) as core:
+              bridge=core.read('android_live_bridge.py').decode('utf-8')
+          assert "self.close_store=AtCloseStore(stock_root/'close')" in bridge
+          assert 'stock/close/AT_CLOSE_PAPER.sqlite3' in migration
           print('RESTORE_LIFECYCLE_STATIC_CHECKS_OK')
           PY
       - name: Validate dashboard JavaScript
