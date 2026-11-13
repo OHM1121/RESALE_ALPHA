@@ -1536,19 +1536,19 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text(strategyName(market,strategy),20);
         title.setTypeface(null,Typeface.BOLD);
         headline.addView(title,new LinearLayout.LayoutParams(0,dp(29),1));
-        TextView source=text("◉ 실제 계좌",11);
+        TextView source=text("● 실제 계좌",12);
         source.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
         source.setTextColor(Color.rgb(132,177,213));
         headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
-        content.addView(headline,new LinearLayout.LayoutParams(-1,dp(31)));
+        content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
 
         String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"업비트 · KRW TOP35";
-        content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(49)));
+        content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(46)));
 
         // A single performance strip on landscape; no stacked 167dp+142dp panels.
         final boolean wide=getResources().getConfiguration().screenWidthDp>=680;
         LinearLayout pnl=card();
-        TextView pl=text("◆  "+strategyName(market,strategy)+" · 누적손익",12);
+        TextView pl=text("◆  누적손익",13);
         pl.setTextColor(Color.rgb(160,180,213));
         pnl.addView(pl,new LinearLayout.LayoutParams(-1,dp(22)));
         TextView totalValue=text(WonFormat.signed(selected.total),37);
@@ -1593,18 +1593,22 @@ public final class UnifiedVisualActivity extends Activity {
 
         // Counts double as direct navigation; the entire card is a touch target.
         LinearLayout activity=new LinearLayout(this);activity.setOrientation(LinearLayout.HORIZONTAL);
-        addDashboardKpi(activity,"◆","보유",selected.positions.length(),"positions");
-        addDashboardKpi(activity,"◷","대기",selected.pending.length(),"pending");
-        addDashboardKpi(activity,"↘","매수",selected.flowBought,"executions");
-        addDashboardKpi(activity,"↗","매도",selected.flowSold,"executions");
+        addDashboardKpi(activity,"positions","보유",selected.positions.length(),"positions");
+        addDashboardKpi(activity,"pending","대기",selected.pending.length(),"pending");
+        addDashboardKpi(activity,"buy","매수",selected.flowBought,"executions");
+        addDashboardKpi(activity,"sell","매도",selected.flowSold,"executions");
         LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(65));
         ap.setMargins(0,dp(7),0,0);content.addView(activity,ap);
 
         if(StrategyDashboardScope.showFrameCharts(strategy)){
-            TextView sec=text("▤  "+strategyName(market,strategy)+" · 시간봉별 계좌",16);
-            sec.setTypeface(null,Typeface.BOLD);
-            sec.setTextColor(Color.rgb(213,228,245));sec.setPadding(dp(2),dp(10),0,dp(4));
+            TextView sec=text("시간봉별 성과",17);
+            sec.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+            sec.setTextColor(PremiumUi.TEXT);
+            sec.setPadding(dp(2),dp(10),0,dp(5));
             content.addView(sec);
+            boolean sideBySide=getResources().getConfiguration().screenWidthDp>=720;
+            LinearLayout pair=null;
+            int pairCount=0;
             for(String tf:new String[]{"5m","30m","60m","day"}){
                 Stats q=statsTf(market,strategy,tf);
                 TimeframeAccountFlowView flow=new TimeframeAccountFlowView(this);
@@ -1615,9 +1619,23 @@ public final class UnifiedVisualActivity extends Activity {
                     ", 승률 "+pct(q.win)+", 목표도달률 "+pct(q.target)+
                     ", 대기 "+q.flowPending+", 매수 "+q.flowBought+
                     ", 보유 "+q.flowHolding+", 매도 "+q.flowSold);
-                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(165));
-                if(!"5m".equals(tf))fp.setMargins(0,dp(6),0,0);
-                content.addView(flow,fp);
+                if(!sideBySide){
+                    LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(162));
+                    if(!"5m".equals(tf))fp.setMargins(0,dp(6),0,0);
+                    content.addView(flow,fp);
+                    continue;
+                }
+                if(pairCount==0){
+                    pair=new LinearLayout(this);
+                    pair.setOrientation(LinearLayout.HORIZONTAL);
+                    LinearLayout.LayoutParams pairParams=new LinearLayout.LayoutParams(-1,dp(162));
+                    pairParams.setMargins(0,dp(6),0,0);
+                    content.addView(pair,pairParams);
+                }
+                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(162),1);
+                if(pairCount>0)fp.setMargins(dp(7),0,0,0);
+                pair.addView(flow,fp);
+                pairCount=(pairCount+1)%2;
             }
         }
 
@@ -1634,22 +1652,30 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void addDashboardKpi(LinearLayout row,String glyph,String label,int value,String destination){
-        LinearLayout tile=card();tile.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout tile=card();
+        tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(Gravity.CENTER_VERTICAL);
-        TextView icon=text(glyph,19);icon.setGravity(Gravity.CENTER);
-        icon.setTextColor(Color.rgb(126,173,241));
-        tile.addView(icon,new LinearLayout.LayoutParams(dp(26),dp(42)));
+        tile.setPadding(dp(6),dp(6),dp(5),dp(6));
+        tile.setBackground(PremiumUi.rounded(this,PremiumUi.SURFACE,PremiumUi.LINE,12));
+        int shade="pending".equals(glyph)?PremiumUi.WAIT:
+            "sell".equals(glyph)?PremiumUi.PROFIT:accent();
+        PremiumIconView mark=new PremiumIconView(this,glyph,shade);
+        tile.addView(mark,new LinearLayout.LayoutParams(dp(25),dp(34)));
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.VERTICAL);
-        TextView count=text(String.valueOf(value),24);count.setTypeface(null,Typeface.BOLD);
-        count.setTextColor(Color.rgb(238,247,255));
-        summary.addView(count,new LinearLayout.LayoutParams(-1,dp(30)));
-        TextView caption=text(label,10);caption.setTextColor(Color.rgb(150,164,188));
-        summary.addView(caption,new LinearLayout.LayoutParams(-1,dp(13)));
-        tile.addView(summary,new LinearLayout.LayoutParams(0,dp(45),1));
+        TextView count=text(String.valueOf(value),24);
+        count.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        count.setTextColor(PremiumUi.TEXT);
+        autoSingle(count,17,24);
+        summary.addView(count,new LinearLayout.LayoutParams(-1,dp(29)));
+        TextView caption=text(label,12);
+        caption.setTextColor(PremiumUi.MUTED);
+        summary.addView(caption,new LinearLayout.LayoutParams(-1,dp(19)));
+        tile.addView(summary,new LinearLayout.LayoutParams(0,dp(48),1));
         tile.setContentDescription(label+" "+value+"건, 목록 열기");
         tile.setOnClickListener(v->{page=destination;persistNavigation();showShell();});
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(65),1);
-        if(row.getChildCount()>0)lp.setMargins(dp(6),0,0,0);
+        PremiumUi.tapMotion(tile);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(64),1);
+        if(row.getChildCount()>0)lp.setMargins(dp(5),0,0,0);
         row.addView(tile,lp);
     }
 
@@ -1688,11 +1714,11 @@ public final class UnifiedVisualActivity extends Activity {
                                       double amount,int accent){
         LinearLayout tile=new LinearLayout(this);tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(9),dp(5),dp(7),dp(3));
-        tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,10));
+        tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,11));
         LinearLayout labelRow=new LinearLayout(this);labelRow.setOrientation(LinearLayout.HORIZONTAL);
         TextView icon=text(glyph,12);icon.setTextColor(accent);
         labelRow.addView(icon,new LinearLayout.LayoutParams(dp(19),dp(17)));
-        TextView caption=text(label,11);caption.setTextColor(Color.rgb(169,186,211));
+        TextView caption=text(label,12);caption.setTextColor(PremiumUi.MUTED);
         labelRow.addView(caption,new LinearLayout.LayoutParams(-1,dp(17)));
         tile.addView(labelRow);
         TextView value=text(WonFormat.signed(amount),21);
@@ -1719,7 +1745,7 @@ public final class UnifiedVisualActivity extends Activity {
             String stage=feed.optString("stage",""),reason=feed.optString("detail","");
             if(!stage.isEmpty())d=stage+(reason.isEmpty()?"":" · "+reason);
         }
-        TextView x=text((on?"실시간 수신":"시세 대기")+(n>0?" · 등록 "+n+"종목":"")+(d.isEmpty()?"":" · "+d),11);
+        TextView x=text((on?"실시간 수신":"시세 대기")+(n>0?" · 등록 "+n+"종목":"")+(d.isEmpty()?"":" · "+d),12);
         int feedColor=on?Color.rgb(62,224,181):
             HistorySelection.semantic(d)==-1?Color.rgb(255,119,133):
             Color.rgb(255,194,91);
@@ -1839,7 +1865,7 @@ public final class UnifiedVisualActivity extends Activity {
         return finite(value)?money(value):"미기록";
     }
     private void addGridCell(LinearLayout parent,String value){
-        TextView t=text(value,12);
+        TextView t=text(value,13);
         int standard=Color.rgb(202,215,234);
         if(value.startsWith("순손익 ")||value.startsWith("현재 손익률 ")){
             double v=Double.NaN;
@@ -1847,7 +1873,7 @@ public final class UnifiedVisualActivity extends Activity {
             t.setTextColor(Double.isNaN(v)?standard:v<0?Color.rgb(255,119,133):
                 v>0?Color.rgb(62,224,181):Color.rgb(255,194,91));
         }else t.setTextColor(colorByStatus(value,standard));
-        t.setPadding(dp(2),dp(5),dp(2),dp(5));t.setMaxLines(2);
+        t.setPadding(dp(2),dp(4),dp(2),dp(4));t.setMaxLines(2);
         parent.addView(t,new LinearLayout.LayoutParams(0,-2,1));
     }
     private int historyStart(String kind,int total){
@@ -1866,7 +1892,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout navigation=new LinearLayout(this);
         navigation.setOrientation(LinearLayout.HORIZONTAL);
         navigation.setGravity(Gravity.CENTER_VERTICAL);
-        navigation.setPadding(0,dp(7),0,dp(10));
+        navigation.setPadding(0,dp(4),0,dp(5));
         TextView count=text((start+1)+"~"+end+" / "+total+"건",12);
         count.setTextColor(Color.rgb(156,177,204));
         navigation.addView(count,new LinearLayout.LayoutParams(0,dp(42),1));
@@ -1896,7 +1922,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text(title+" · "+total+"건",18);h.setTypeface(null,Typeface.BOLD);
         header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
         if("positions".equals(kind)){
-            Button policyButton=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});policyButton.setTextSize(11);
+            Button policyButton=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});policyButton.setTextSize(13);
             header.addView(policyButton,new LinearLayout.LayoutParams(dp(92),dp(39)));
         }
         content.addView(header,new LinearLayout.LayoutParams(-1,dp(45)));
@@ -2141,7 +2167,7 @@ public final class UnifiedVisualActivity extends Activity {
         h.setTypeface(null,Typeface.BOLD);
         head.addView(h,new LinearLayout.LayoutParams(0,dp(42),1));
         Button export=button("현재 ZIP",false,()->exportResearch(st));
-        export.setTextSize(11);head.addView(export,new LinearLayout.LayoutParams(dp(92),dp(38)));
+        export.setTextSize(13);head.addView(export,new LinearLayout.LayoutParams(dp(92),dp(38)));
         content.addView(head,new LinearLayout.LayoutParams(-1,dp(44)));
 
         String loadStatus=rs.optString("load_status","확인 전");
@@ -2180,6 +2206,7 @@ public final class UnifiedVisualActivity extends Activity {
                 .setTitle("PC 승계 원본 연구·체결 증거 테이블")
                 .setMessage(detail+"\n※ 원본 테이블 행수이며 화면에 모두 게시됐다는 뜻이 아님")
                 .setPositiveButton("확인",null).show());
+            PremiumUi.tapMotion(sourceKpis);
         }
         if(shortRead||"ERROR".equals(loadStatus)){
             String msg="ERROR".equals(loadStatus)?"원장 조회 오류: "+rs.optString("load_error","")+
@@ -2205,7 +2232,7 @@ public final class UnifiedVisualActivity extends Activity {
             "  · 대기 "+tally.virtualPending,12);
         vCounts.setGravity(Gravity.CENTER);
         virtualCard.addView(vCounts,new LinearLayout.LayoutParams(-1,dp(21)));
-        LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(0,dp(154),1);
+        LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(0,dp(131),1);
         vp.setMargins(dp(8),0,0,0);summary.addView(virtualCard,vp);
         content.addView(summary,new LinearLayout.LayoutParams(-1,dp(131)));
 
@@ -2258,13 +2285,13 @@ public final class UnifiedVisualActivity extends Activity {
                 params.height=dp(height);matrixPair.setLayoutParams(params);
             }
         }
-        TextView note=text("분모 = 확정(HIT + MISS) · 관측중/가상 미진입 제외 · 기록 없음 = —",10);
+        TextView note=text("확정 기록만 집계 · 관측 중/미진입 제외 · 자료 없음 —",12);
         note.setTextColor(Color.rgb(150,170,195));
         note.setPadding(dp(3),dp(7),dp(3),dp(4));content.addView(note);
 
-        TextView recent=text("개별 연구·매수매도 판단 근거  · "+entries.size()+"건",16);
+        TextView recent=text("개별 연구 판단 근거 · "+entries.size()+"건",16);
         recent.setTypeface(null,Typeface.BOLD);
-        recent.setPadding(dp(2),dp(12),dp(2),dp(7));content.addView(recent);
+        recent.setPadding(dp(2),dp(9),dp(2),dp(5));content.addView(recent);
         if(entries.isEmpty()){
             empty("이 전략의 연구기록 없음 · 원본 건수와 로딩상태 확인");
             return;
@@ -2675,6 +2702,7 @@ public final class UnifiedVisualActivity extends Activity {
                 openSymbolInBrowser(row,rowMarket);
             }
         });
+        PremiumUi.tapMotion(name);
     }
 
     private void openSymbolInBrowser(JSONObject row,String rowMarket){
