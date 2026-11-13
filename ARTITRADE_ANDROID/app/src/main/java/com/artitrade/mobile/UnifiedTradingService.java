@@ -29,9 +29,13 @@ public final class UnifiedTradingService extends Service {
     static final String SET_LIVE="com.artitrade.mobile.SET_LIVE";
     static final String APPLY_OPERATION="com.artitrade.mobile.APPLY_OPERATION";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
+    static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
     private final AtomicBoolean running=new AtomicBoolean(false);
+    private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
+    private volatile long lastMigrationPoll=0L;
+    private volatile String lastAutomaticMigrationSha="";
     private Thread monitor;
     private PowerManager.WakeLock wakeLock;
     private long stockEpoch=0,coinEpoch=0;
@@ -75,6 +79,22 @@ public final class UnifiedTradingService extends Service {
             if(intent!=null&&RESTART_FEEDS.equals(intent.getAction())){
                 new Thread(()->safeRestartStrategy(),"artitrade-v074-restart").start();
             }
+            if(intent!=null&&APPLY_PC_MIGRATION.equals(intent.getAction())&&running.get()){
+                new Thread(()->{
+                    if(liveOrdersArmed()){
+                        getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
+                            .putString("result",new JSONObject().toString()).apply();
+                        crashes.add("pc_migration_live_blocked",
+                            new IllegalStateException("LIVE_TRADING_ACTIVE: disable live orders before PC DB restore"));
+                        return;
+                    }
+                    safeRestartStrategy();
+                },"artitrade-pc-ledger-apply").start();
+            }
+            if(intent!=null&&START.equals(intent.getAction())&&running.get()){
+                new Thread(()->checkPendingPCArchive(new LocalHubClient(this)),
+                    "artitrade-pc-ledger-app-reopen").start();
+            }
             if(intent!=null&&APPLY_OPERATION.equals(intent.getAction())){
                 final String raw=intent.getStringExtra("settings");
                 if(raw!=null)getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).edit().putString("settings",raw).apply();
@@ -96,17 +116,49 @@ public final class UnifiedTradingService extends Service {
         }
     }
 
+    private boolean liveOrdersArmed(){
+        return strategy.liveEnabled("stock")||strategy.liveEnabled("coin");
+    }
+    private void saveMigrationResult(JSONObject result){
+        getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
+            .putString("result",result.toString()).putLong("at",System.currentTimeMillis()).apply();
+        if(!result.optBoolean("ok",true)&&!"PHONE_HAS_REAL_FILLS".equals(result.optString("status")))
+            crashes.add("pc_ledger_migration_reply",new IllegalStateException(result.toString()));
+    }
+    private void launchWithMigration(){
+        LegacyLedgerMigration importer=new LegacyLedgerMigration(this,crashes);
+        JSONObject migration=importer.importIfReady();
+        JSONObject started=strategy.start();
+        if(!started.optBoolean("ok",true))
+            crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
+        JSONObject records=strategy.hubRecords();
+        JSONObject verified=importer.finishRuntimeVerification(migration,started,records);
+        saveMigrationResult(verified);
+        applyPendingOperation();
+    }
     private void safeStartStrategy(){
+        if(!migrationRestarting.compareAndSet(false,true))return;
+        try{launchWithMigration();}
+        catch(Throwable e){crashes.add("strategy_start_thread",e);}
+        finally{migrationRestarting.set(false);}
+    }
+    private void checkPendingPCArchive(LocalHubClient hub){
+        if(!strategy.isStarted()||migrationRestarting.get())return;
+        long now=System.currentTimeMillis();
+        if(now-lastMigrationPoll<15000L)return;
+        lastMigrationPoll=now;
         try{
-            JSONObject migration=new LegacyLedgerMigration(this,crashes).importIfReady();
-            getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
-                .putString("result",migration.toString()).putLong("at",System.currentTimeMillis()).apply();
-            if(!migration.optBoolean("ok",true)&&!"PHONE_HAS_TRADES".equals(migration.optString("status")))
-                crashes.add("pc_ledger_migration_reply",new IllegalStateException(migration.toString()));
-            JSONObject s=strategy.start();
-            if(!s.optBoolean("ok",true))crashes.add("strategy_start_reply",new IllegalStateException(s.toString()));
-            applyPendingOperation();
-        }catch(Throwable e){crashes.add("strategy_start_thread",e);}
+            JSONObject st=hub.migrationStatus();
+            if(!st.optBoolean("ok",false)||!st.optBoolean("ready",false)
+                ||!st.optBoolean("archive_exists",false))return;
+            String sha=st.optString("archive_sha256","");
+            String installed=getSharedPreferences("artitrade_pc_ledger_import_v1",MODE_PRIVATE)
+                .getString("imported_sha256","");
+            if(sha.isEmpty()||sha.equalsIgnoreCase(installed)
+                ||sha.equalsIgnoreCase(lastAutomaticMigrationSha)||liveOrdersArmed())return;
+            lastAutomaticMigrationSha=sha;
+            new Thread(this::safeRestartStrategy,"artitrade-pc-ledger-auto-apply").start();
+        }catch(Throwable e){crashes.add("pc_ledger_auto_check",e);}
     }
     private void applyPendingOperation(){
         try{
@@ -121,15 +173,12 @@ public final class UnifiedTradingService extends Service {
         }catch(Throwable e){crashes.add("operation_apply_pending",e);}
     }
     private void safeRestartStrategy(){
+        if(!migrationRestarting.compareAndSet(false,true))return;
         try{
             strategy.stop();
-            JSONObject migration=new LegacyLedgerMigration(this,crashes).importIfReady();
-            getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
-                .putString("result",migration.toString()).putLong("at",System.currentTimeMillis()).apply();
-            JSONObject started=strategy.start();
-            if(!started.optBoolean("ok",true))crashes.add("strategy_restart_reply",new IllegalStateException(started.toString()));
-            applyPendingOperation();
+            launchWithMigration();
         }catch(Throwable e){crashes.add("strategy_restart",e);}
+        finally{migrationRestarting.set(false);}
     }
 
     private void monitorLoop(){
@@ -147,6 +196,7 @@ public final class UnifiedTradingService extends Service {
                 if(lastMserverAuthOk){
                     stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
                     coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
+                    checkPendingPCArchive(hub);
                 }
             }catch(Throwable e){
                 lastMserverAuthOk=false;
@@ -236,10 +286,12 @@ public final class UnifiedTradingService extends Service {
     }
 
     private void mserverSyncProgress(String stage,String current,int done,int total,int failed,long started){
-        int percent=total>0?(int)Math.max(0,Math.min(100,(done*100L)/total)):0;
+        int successful=Math.max(0,done-failed);
+        int percent=total>0?(int)Math.max(0,Math.min(100,(successful*100L)/total)):0;
         getSharedPreferences("artitrade_mserver_sync_v078",MODE_PRIVATE).edit()
             .putString("stage",stage==null?"":stage).putString("current",current==null?"":current)
-            .putInt("done",done).putInt("total",total).putInt("failed",failed).putInt("percent",percent)
+            .putInt("done",done).putInt("processed",done).putInt("successful",successful)
+            .putInt("total",total).putInt("failed",failed).putInt("percent",percent)
             .putLong("started_at",started).putLong("updated_at",System.currentTimeMillis())
             .putBoolean("complete","COMPLETE".equals(stage)&&failed==0).apply();
     }

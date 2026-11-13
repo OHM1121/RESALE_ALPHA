@@ -103,6 +103,26 @@ jobs:
           grep -F "stock/PROJECTGMO_V1.0" ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
           python3 -m py_compile ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
           grep -F "ARTITRADE_PC_LEDGER_MIGRATION_V1" ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py
+      - name: Verify PC restore lifecycle and publishing audit safeguards
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          j=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile')
+          migration=(j/'LegacyLedgerMigration.java').read_text()
+          service=(j/'UnifiedTradingService.java').read_text()
+          screen=(j/'UnifiedVisualActivity.java').read_text()
+          assert 'finishRuntimeVerification' in migration and 'runtimeRows(records)' in migration
+          assert migration.index('verifyInstalled(manifest)') < migration.index('FILES_INSTALLED')
+          assert 'migrationAck(session,sha)' in migration and 'do not mark import successful' in migration
+          assert 'File parent=target.getParentFile();' in migration
+          assert 'checkPendingPCArchive(hub)' in service
+          assert 'APPLY_PC_MIGRATION' in service and 'migrationRestarting' in service
+          assert 'successful*100L' in service
+          assert '전체 '+ '' in screen and '실패 ' in screen
+          assert 'PC 원장 적용 · 실제 데이터 재검증' in screen
+          print('RESTORE_LIFECYCLE_STATIC_CHECKS_OK')
+          PY
       - name: Validate dashboard JavaScript
         shell: bash
         run: |

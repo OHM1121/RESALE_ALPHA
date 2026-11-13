@@ -98,7 +98,7 @@ final class LegacyLedgerMigration {
             c=SQLiteDatabase.openDatabase(journal.getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
             q=c.rawQuery("SELECT COUNT(*) FROM live_orders WHERE status='FILLED'",null);
             return q.moveToFirst()&&q.getLong(0)>0;
-        }catch(Exception ignored){return false;}
+        }catch(Exception ignored){return true;} // Unknown live-fill journal state must block replacement.
         finally{if(q!=null)q.close();if(c!=null)c.close();}
     }
     private JSONObject extract(File archive,File staging)throws Exception{
@@ -180,6 +180,9 @@ final class LegacyLedgerMigration {
             if("manifest.json".equals(rel))continue;
             File source=new File(staging,rel);if(!source.isFile())continue;
             File target=new File(root,rel);
+            File parent=target.getParentFile();
+            if(parent!=null&&!parent.isDirectory()&&!parent.mkdirs())
+                throw new IOException("Cannot create restored ledger directory: "+parent);
             if(target.isFile()){
                 File backup=new File(target.getParentFile(),target.getName()+".pre_pc_import_"+stamp);
                 copy(target,backup);
@@ -195,7 +198,119 @@ final class LegacyLedgerMigration {
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         }
-        prefs().edit().putString("imported_sha256",sha).putLong("imported_at",System.currentTimeMillis()).commit();
+        // Do not mark import successful here: the Python strategy must read the installed DBs first.
+    }
+
+    private JSONObject storedManifest(){
+        try{
+            String saved=prefs().getString("verified_manifest","");
+            if(!saved.isEmpty())return new JSONObject(saved);
+            JSONObject previous=new JSONObject(prefs().getString("last_status","{}"));
+            return previous.optJSONObject("manifest");
+        }catch(Exception ignored){return null;}
+    }
+    private static boolean historyTable(String name){
+        String n=name.toLowerCase(Locale.ROOT);
+        for(String part:new String[]{"position","execution","order","candidate","signal","shadow",
+                "research","event","trade","fill","history","restoration"})
+            if(n.contains(part))return true;
+        return false;
+    }
+    private JSONObject verifyInstalled(JSONObject manifest)throws Exception{
+        if(manifest==null||!SCHEMA.equals(manifest.optString("schema")))
+            throw new SecurityException("Restored PC manifest is unavailable");
+        JSONObject files=manifest.optJSONObject("files");
+        if(files==null||files.length()==0)throw new SecurityException("PC manifest has no database files");
+        int verified=0,checkedTables=0;
+        long sourceRows=0,verifiedRows=0;
+        Iterator<String> names=files.keys();
+        while(names.hasNext()){
+            String rel=names.next();
+            if(!ALLOWED.contains(rel)||"manifest.json".equals(rel))
+                throw new SecurityException("Invalid PC ledger path: "+rel);
+            JSONObject expected=files.optJSONObject(rel);
+            File target=new File(runtimeRoot(),rel);
+            if(expected==null||!target.isFile()||target.length()!=expected.optLong("size",-1)
+                ||!sha256(target).equalsIgnoreCase(expected.optString("sha256")))
+                throw new IOException("Restored PC ledger missing or mismatched: "+rel);
+            verified++;
+            JSONObject counts=expected.optJSONObject("counts");
+            if(counts==null)continue;
+            Iterator<String> tables=counts.keys();
+            while(tables.hasNext()){
+                String table=tables.next();
+                if(!historyTable(table))continue;
+                long want=counts.optLong(table,-1);
+                if(want<0)continue;
+                sourceRows+=want;
+                if(rel.endsWith(".sqlite3")&&table.matches("[A-Za-z0-9_]+")){
+                    long got=count(target,table);
+                    if(want!=got)throw new IOException("PC history count mismatch: "+rel+"/"+table+
+                        " expected="+want+" actual="+got);
+                    verifiedRows+=got;checkedTables++;
+                }else verifiedRows+=want; // Non-SQLite GMO state is protected by its full-file SHA-256.
+            }
+        }
+        return obj("files_verified",verified,"source_rows",sourceRows,
+            "verified_rows",verifiedRows,"checked_tables",checkedTables);
+    }
+    private static long runtimeRows(Object node){
+        if(!(node instanceof JSONObject))return 0;
+        JSONObject data=(JSONObject)node;long total=0;
+        Iterator<String> keys=data.keys();
+        while(keys.hasNext()){
+            String key=keys.next();Object value=data.opt(key);
+            if(value instanceof JSONObject)total+=runtimeRows(value);
+            else if(value instanceof JSONArray&&Arrays.asList("positions","pending","executions",
+                "items","candidate_rows","score_items","restorations","signals","research_candidates").contains(key))
+                total+=((JSONArray)value).length();
+        }
+        return total;
+    }
+    JSONObject finishRuntimeVerification(JSONObject installResult,JSONObject engineResult,JSONObject records){
+        String initial=installResult==null?"":installResult.optString("status","");
+        if(!"FILES_INSTALLED".equals(initial)&&!"LOCAL_FILES_PRESENT".equals(initial))
+            return installResult==null?obj("ok",false,"status","IMPORT_RESULT_MISSING"):installResult;
+        try{
+            if(engineResult==null||!engineResult.optBoolean("ok",true))
+                throw new IllegalStateException("PYTHON_STRATEGY_START_FAILED: "+
+                    (engineResult==null?"missing result":engineResult.toString()));
+            JSONObject manifest=installResult.optJSONObject("manifest");
+            JSONObject verification=verifyInstalled(manifest);
+            long sourceRows=verification.optLong("source_rows",0L);
+            long visibleRows=runtimeRows(records);
+            verification.put("runtime_rows",visibleRows);
+            if(sourceRows>0&&visibleRows==0)
+                throw new IllegalStateException("RUNTIME_RECORDS_EMPTY: source="+sourceRows+
+                    " rows but strategy output has no positions/pending/executions/research; PC archive retained");
+            if(sourceRows==0&&visibleRows==0)
+                throw new IllegalStateException("PC_SOURCE_EMPTY: PC ledger contains no historical trading or research rows");
+            String session=installResult.optString("session","");
+            String sha=installResult.optString("sha256","");
+            if(!session.isEmpty()){
+                JSONObject ack=new LocalHubClient(context).migrationAck(session,sha);
+                if(!ack.optBoolean("ok",false))throw new IOException("MSERVER_MIGRATION_ACK_FAILED: "+ack);
+            }
+            if(!prefs().edit().putString("imported_sha256",sha)
+                .putLong("imported_at",System.currentTimeMillis())
+                .putString("verified_manifest",manifest.toString()).commit())
+                throw new IOException("Cannot persist verified import checkpoint");
+            JSONObject result=obj("ok",true,
+                "status","FILES_INSTALLED".equals(initial)?"IMPORTED":"ALREADY_IMPORTED",
+                "sha256",sha,"manifest",manifest,"verification",verification);
+            prefs().edit().putString("last_status",result.toString()).commit();
+            progress("COMPLETE","PC 원장 복원 및 전략엔진 반영 확인 · "+visibleRows+"건",1,1,true,"");
+            return result;
+        }catch(Throwable e){
+            crashes.add("pc_ledger_runtime_verify",e);
+            JSONObject failed=obj("ok",false,"status","RUNTIME_VERIFY_FAILED",
+                "type",e.getClass().getSimpleName(),"message",String.valueOf(e.getMessage()),
+                "sha256",installResult.optString("sha256",""),
+                "manifest",installResult.optJSONObject("manifest"));
+            prefs().edit().putString("last_status",failed.toString()).commit();
+            progress("FAILED","PC 파일 복원 후 전략엔진 검증 실패",0,1,false,String.valueOf(e.getMessage()));
+            return failed;
+        }
     }
 
     JSONObject importIfReady(){
@@ -203,15 +318,31 @@ final class LegacyLedgerMigration {
             progress("CHECK","MSERVER 승계자료 확인",0,1,false,"");
             LocalHubClient hub=new LocalHubClient(context);
             JSONObject status=hub.migrationStatus();
-            if(!status.optBoolean("ok")||!status.optBoolean("ready")||!status.optBoolean("archive_exists",false)){
+            String imported=prefs().getString("imported_sha256","");
+            JSONObject previous=storedManifest();
+            boolean ready=status.optBoolean("ok")&&status.optBoolean("ready")
+                &&status.optBoolean("archive_exists",false);
+            if(!ready){
+                if(!imported.isEmpty()&&previous!=null){
+                    JSONObject verification=verifyInstalled(previous);
+                    progress("VERIFY_RUNTIME","설치된 PC 원장 전략엔진 조회 검사",0,1,false,"");
+                    return obj("ok",true,"status","LOCAL_FILES_PRESENT","sha256",imported,
+                        "manifest",previous,"verification",verification);
+                }
                 progress("WAITING","PC EXE 원장 승계자료 대기",0,1,false,"");
                 return obj("ok",true,"status","NO_PC_ARCHIVE");
             }
             String session=status.optString("session"),sha=status.optString("archive_sha256");
-            if(sha.equalsIgnoreCase(prefs().getString("imported_sha256",""))){
-                try{hub.migrationAck(session,sha);}catch(Exception ignored){}
-                progress("COMPLETE","기존 PC EXE 원장 승계 완료",1,1,true,"");
-                return obj("ok",true,"status","ALREADY_IMPORTED","sha256",sha);
+            if(!sha.isEmpty()&&sha.equalsIgnoreCase(imported)&&previous!=null){
+                try{
+                    JSONObject verification=verifyInstalled(previous);
+                    progress("VERIFY_RUNTIME","기존 PC DB 재조회 · 원장 반영 확인",0,1,false,"");
+                    return obj("ok",true,"status","LOCAL_FILES_PRESENT","sha256",sha,
+                        "session",session,"manifest",previous,"verification",verification);
+                }catch(Exception invalid){
+                    crashes.add("pc_previous_ledger_invalid",invalid);
+                    // The server still has the archive: reinstall instead of claiming success.
+                }
             }
             if(phoneHasRealBrokerFills()){
                 JSONObject blocked=obj("ok",false,"status","PHONE_HAS_REAL_FILLS",
@@ -258,11 +389,13 @@ final class LegacyLedgerMigration {
             JSONObject manifest=extract(archive,staging);
             progress("INSTALL","기존 PC EXE 원장을 폰 전략 DB로 승계",0,1,false,"");
             install(staging,sha);
+            JSONObject verification=verifyInstalled(manifest);
             deleteTree(staging);archive.delete();
-            JSONObject ack=hub.migrationAck(session,sha);
-            JSONObject result=obj("ok",true,"status","IMPORTED","sha256",sha,"manifest",manifest,"ack",ack);
+            JSONObject result=obj("ok",true,"status","FILES_INSTALLED",
+                "sha256",sha,"session",session,"manifest",manifest,"verification",verification);
             prefs().edit().putString("last_status",result.toString()).commit();
-            progress("COMPLETE","기존 PC EXE 원장 승계 완료",1,1,true,"");
+            progress("VERIFY_RUNTIME","PC DB 설치 확인 · 전략엔진 데이터 반영 검사 중",0,1,false,"");
+            // ACK is intentionally delayed until the running strategy reports real history.
             return result;
         }catch(Throwable e){
             crashes.add("pc_ledger_migration",e);

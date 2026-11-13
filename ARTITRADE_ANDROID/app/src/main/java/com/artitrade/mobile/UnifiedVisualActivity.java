@@ -389,6 +389,15 @@ public final class UnifiedVisualActivity extends Activity {
             TextView ae=text("인증/연결: "+authError+(authHttp>0?" · HTTP "+authHttp:""),10);ae.setTextColor(Color.rgb(210,151,161));ae.setPadding(dp(2),0,dp(2),dp(5));tools.addView(ae);
         }
         addProgressBlock(tools,"① 폰 기준원장 → MSERVER 게시",syncProgress,Color.rgb(0,196,164));
+        if(syncProgress!=null&&syncProgress.optInt("total",0)>0){
+            int processed=syncProgress.optInt("processed",syncProgress.optInt("done",0));
+            int successful=syncProgress.optInt("successful",Math.max(0,processed-syncProgress.optInt("failed",0)));
+            int all=syncProgress.optInt("total",0);
+            TextView audit=text("전체 "+all+"건 · 처리 "+processed+"건 · 성공 "+successful+
+                "건 · 실패 "+syncProgress.optInt("failed",0)+"건",11);
+            audit.setTextColor(syncProgress.optInt("failed",0)>0?Color.rgb(255,153,164):Color.rgb(168,186,209));
+            audit.setPadding(dp(2),0,0,dp(8));tools.addView(audit);
+        }
         if(failed>0&&hubPub!=null){
             String detail=hubPub.optString("last_error","");
             String where=hubPub.optString("last_market","")+"/"+hubPub.optString("last_strategy","")+"/"+hubPub.optString("last_bucket","");
@@ -413,14 +422,28 @@ public final class UnifiedVisualActivity extends Activity {
 
         if(migState!=null&&migState.length()>0){
             String ms=migState.optString("status","");
-            String mt="IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms)?"기존 PC EXE 원장 승계 완료":
+            String mt="IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms)?"기존 PC EXE 원장 복원·엔진 반영 확인":
+                "FILES_INSTALLED".equals(ms)||"LOCAL_FILES_PRESENT".equals(ms)?"PC DB 설치됨 · 엔진 반영 확인 중":
                 "PHONE_HAS_REAL_FILLS".equals(ms)?"실제 브로커 체결 존재 · 자동 원장교체 차단":
+                "RUNTIME_VERIFY_FAILED".equals(ms)?"PC DB 존재하나 전략엔진 반영 실패":
                 "IMPORT_FAILED".equals(ms)?"기존 PC EXE 원장 승계 실패":
                 "NO_PC_ARCHIVE".equals(ms)?"기존 PC EXE 원장 승계자료 대기":"기존 PC EXE 원장: "+ms;
             TextView mv=text(mt,11);
             mv.setTextColor(("IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms))?Color.rgb(86,214,170):
                 ("PHONE_HAS_REAL_FILLS".equals(ms)||"IMPORT_FAILED".equals(ms))?Color.rgb(255,119,133):Color.rgb(147,160,185));
             mv.setPadding(dp(2),dp(3),dp(2),dp(7));tools.addView(mv);
+            JSONObject verification=migState.optJSONObject("verification");
+            if(verification!=null){
+                TextView counts=text("원본 기록 "+verification.optLong("source_rows",0)+"건 · 검증된 DB/파일 "+
+                    verification.optInt("files_verified",0)+"개 · 엔진 반영 "+
+                    verification.optLong("runtime_rows",0)+"건",11);
+                counts.setTextColor(Color.rgb(162,181,209));counts.setPadding(dp(2),0,0,dp(5));tools.addView(counts);
+            }
+            String importError=migState.optString("message","");
+            if(!importError.isEmpty()){
+                TextView issue=text("복원 검증: "+importError,10);
+                issue.setTextColor(Color.rgb(255,153,164));issue.setPadding(dp(2),0,0,dp(8));tools.addView(issue);
+            }
         }
         TextView explain=text("※ 'MSERVER 게시 완료'와 'PC 과거원장 승계 완료'는 서로 다른 상태임.",10);
         explain.setTextColor(Color.rgb(255,194,91));explain.setPadding(dp(2),0,dp(2),dp(7));tools.addView(explain);
@@ -430,6 +453,8 @@ public final class UnifiedVisualActivity extends Activity {
             TextView pst=text(ps,11);pst.setTextColor(pairState.optBoolean("saved",false)?Color.rgb(86,214,170):Color.rgb(255,176,92));pst.setPadding(dp(2),0,dp(2),dp(8));tools.addView(pst);
         }
         tools.addView(button("MSERVER 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
+        LinearLayout.LayoutParams importLp=new LinearLayout.LayoutParams(-1,dp(43));importLp.setMargins(0,dp(7),0,0);
+        tools.addView(button("PC 원장 적용 · 실제 데이터 재검증",true,this::requestPcMigrationApply),importLp);
         LinearLayout.LayoutParams retryLp=new LinearLayout.LayoutParams(-1,dp(43));retryLp.setMargins(0,dp(7),0,0);
         tools.addView(button("원장 다시 게시 · 연결 재확인",true,this::requestLedgerRepublish),retryLp);
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
@@ -538,7 +563,8 @@ public final class UnifiedVisualActivity extends Activity {
                     android.content.SharedPreferences sp=getSharedPreferences("artitrade_mserver_sync_v078",MODE_PRIVATE);
                     packet.put("mserver_sync",new JSONObject()
                         .put("stage",sp.getString("stage","")).put("current",sp.getString("current",""))
-                        .put("done",sp.getInt("done",0)).put("total",sp.getInt("total",0))
+                        .put("done",sp.getInt("done",0)).put("processed",sp.getInt("processed",0))
+                        .put("successful",sp.getInt("successful",0)).put("total",sp.getInt("total",0))
                         .put("failed",sp.getInt("failed",0)).put("percent",sp.getInt("percent",0))
                         .put("started_at",sp.getLong("started_at",0L)).put("updated_at",sp.getLong("updated_at",0L))
                         .put("complete",sp.getBoolean("complete",false)));
@@ -1618,6 +1644,26 @@ public final class UnifiedVisualActivity extends Activity {
         return "원장 게시 중 예외 발생 · 진단 코드 확인";
     }
 
+    private void requestPcMigrationApply(){
+        JSONObject live=copyCache().optJSONObject("live_orders");
+        if(live!=null&&(live.optBoolean("stock",false)||live.optBoolean("coin",false))){
+            new AlertDialog.Builder(this).setTitle("PC 원장 자동복원 차단")
+                .setMessage("실거래 주문이 켜져 있습니다. 주문이 완전히 종료되고 실거래를 OFF로 전환한 뒤 PC 원장을 검증하십시오. 실제 체결이 남은 기기의 자동 덮어쓰기는 별도로 차단됩니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("기존 PC 원장 재적용 · 검증")
+            .setMessage("전략엔진을 안전하게 재시작하고 MSERVER의 PC 승계자료 또는 기기에 설치된 원장을 확인합니다. 매수·매도 주문 실행 기능을 새로 활성화하지 않습니다.")
+            .setNegativeButton("취소",null)
+            .setPositiveButton("원장 검증 시작",(d,w)->{
+                try{
+                    Intent intent=new Intent(this,UnifiedTradingService.class);
+                    intent.setAction(UnifiedTradingService.APPLY_PC_MIGRATION);
+                    if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
+                    main.postDelayed(()->refresh(false),1500);
+                }catch(Throwable e){new RuntimeCrashStore(this).add("pc_migration_apply_ui",e);}
+            }).show();
+    }
     private void requestLedgerRepublish(){
         try{
             Intent intent=new Intent(this,UnifiedTradingService.class);
