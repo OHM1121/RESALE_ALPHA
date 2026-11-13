@@ -256,6 +256,12 @@ def fixtures():
             tree=choose("코인",tree)
         elif market=="주식" and contains(tree,"업비트"):
             tree=choose("주식",tree)
+        # Android 15's system status bar previously intercepted coin-tab taps:
+        # the test was still showing the AT stock account when reading coin rows.
+        if market=="코인" and not contains(tree,"업비트"):
+            raise AssertionError("COIN_SWITCH_NOT_APPLIED: Android status bar overlaps coin market tab")
+        if market=="주식" and contains(tree,"업비트"):
+            raise AssertionError("STOCK_SWITCH_NOT_APPLIED: Android status bar overlaps market tab")
         tree=choose(strategy,tree)
         tree=choose("보유종목",tree)
         check_screen(label+"_positions",[label+"_보유"])
