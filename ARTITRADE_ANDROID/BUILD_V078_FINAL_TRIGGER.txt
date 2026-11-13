@@ -1,1 +1,1 @@
-ARTITRADE v0.7.17 compilation fix: policy button variable no longer collides with history list.
+ARTITRADE v0.7.18 RED regression: isolated strategy ledger histories/trends and fault tolerant PC research loader.

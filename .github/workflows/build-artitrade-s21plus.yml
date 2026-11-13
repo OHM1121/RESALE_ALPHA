@@ -319,6 +319,20 @@ jobs:
           assert all(checks.values())
           print('ARTITRADE_V0717_REGRESSION_OK')
           PY
+      - name: Verify isolated strategy dashboards and PC research score matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="$(mktemp -d)"
+          javac -d "$DIR" \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyDashboardScope.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchScoreGrid.java \
+            ARTITRADE_ANDROID/ui_tests/StrategyDashboardScopeTest.java \
+            ARTITRADE_ANDROID/ui_tests/ResearchScoreGridTest.java
+          java -cp "$DIR" com.artitrade.mobile.StrategyDashboardScopeTest
+          java -cp "$DIR" com.artitrade.mobile.ResearchScoreGridTest
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
       - name: Build stock, coin, unified and MSERVER APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleUnifiedDebug :app:assembleHubDebug --stacktrace
