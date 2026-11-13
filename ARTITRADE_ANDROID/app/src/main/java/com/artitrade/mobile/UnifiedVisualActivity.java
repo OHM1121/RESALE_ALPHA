@@ -121,6 +121,9 @@ public final class UnifiedVisualActivity extends Activity {
     // History is never truncated; only the visible Android Views are paged.
     private String historyContext="";
     private int historyOffset=0;
+    private String lastTappedSymbol="";
+    private int consecutiveSymbolTaps=0;
+    private long lastSymbolTapMs=0L;
     private float swipeX=Float.NaN;
     private View drawerOverlay;
     private static final long DRAWER_PROGRESS_REFRESH_MS=750L;
@@ -1775,6 +1778,7 @@ public final class UnifiedVisualActivity extends Activity {
             LinearLayout topRow=new LinearLayout(this);topRow.setOrientation(LinearLayout.HORIZONTAL);topRow.setGravity(Gravity.CENTER_VERTICAL);
             String tagged=marketWide?nameOf(r)+" · "+HistorySelection.strategyTag(item.source,item.frame):nameOf(r)+" · "+HistorySelection.strategyTag(strategy,timeFrameOf(r));
             TextView n=text(tagged,15);n.setTypeface(null,Typeface.BOLD);n.setMaxLines(1);
+            bindSymbolFourTap(n,r,market);
             topRow.addView(n,new LinearLayout.LayoutParams(0,dp(29),1));
             double profit=usefulNumber(r,"net_pnl","unrealized_pnl","paper_pnl","net_profit","net_realized","pnl");
             if(!"pending".equals(kind)&&finite(profit)){
@@ -2017,6 +2021,7 @@ public final class UnifiedVisualActivity extends Activity {
             LinearLayout title=new LinearLayout(this);title.setOrientation(LinearLayout.HORIZONTAL);
             TextView symbol=text(nameOf(row)+" · "+HistorySelection.strategyTag(item.source,item.frame),14);
             symbol.setTypeface(null,Typeface.BOLD);
+            bindSymbolFourTap(symbol,row,market);
             title.addView(symbol,new LinearLayout.LayoutParams(0,dp(26),1));
             double sc=num(row,"score","original_score","gmo_score_at_signal");
             TextView score=text(finite(sc)?number(sc):"—",19);
@@ -2057,7 +2062,7 @@ public final class UnifiedVisualActivity extends Activity {
         for(int i=first;i<last;i++){
             JSONObject r=items.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
             LinearLayout hr=new LinearLayout(this);hr.setOrientation(LinearLayout.HORIZONTAL);
-            TextView n=text(nameOf(r),16);n.setTypeface(null,Typeface.BOLD);hr.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
+            TextView n=text(nameOf(r),16);n.setTypeface(null,Typeface.BOLD);bindSymbolFourTap(n,r,market);hr.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
             double sc=num(r,"score","diverse_11_score","gmo_score_at_signal");TextView sv=text(finite(sc)?number(sc)+"점":"점수 미기록",15);sv.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);sv.setTextColor(Color.rgb(255,201,94));hr.addView(sv,new LinearLayout.LayoutParams(dp(110),dp(28)));c.addView(hr);
             String dec=r.optString("decision",r.optString("status",r.optString("verdict","판정 미기록")));
             TextView d=text("판정: "+dec+" · "+refLabel()+" "+timeOf(r),12);d.setTextColor(Color.rgb(153,175,201));c.addView(d);
@@ -2397,6 +2402,47 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String refLabel(){return refLabel(strategy);}
+
+    /** Four rapid taps on a symbol name; never triggers any trading action. */
+    private void bindSymbolFourTap(TextView name,JSONObject row,String rowMarket){
+        name.setOnClickListener(v->{
+            String key=rowMarket+":"+row.optString("code",row.optString("market","")).trim();
+            long now=android.os.SystemClock.uptimeMillis();
+            if(key.equals(lastTappedSymbol)&&now-lastSymbolTapMs<=850L)
+                consecutiveSymbolTaps++;
+            else consecutiveSymbolTaps=1;
+            lastTappedSymbol=key;lastSymbolTapMs=now;
+            if(consecutiveSymbolTaps==4){
+                consecutiveSymbolTaps=0;
+                openSymbolInBrowser(row,rowMarket);
+            }
+        });
+    }
+
+    private void openSymbolInBrowser(JSONObject row,String rowMarket){
+        String raw=row.optString("code",row.optString("market","")).trim().toUpperCase(Locale.ROOT);
+        final String url;
+        if("stock".equals(rowMarket)){
+            // Only Korean six-digit stock codes may be opened at Naver Finance.
+            if(!raw.matches("[0-9]{6}"))return;
+            url="https://finance.naver.com/item/main.naver?code="+raw;
+        }else{
+            String pair=raw;
+            if(pair.startsWith("CRIX.UPBIT."))pair=pair.substring("CRIX.UPBIT.".length());
+            if(!pair.matches("(KRW|BTC|USDT)-[A-Z0-9]{2,20}"))return;
+            url="https://upbit.com/exchange?code=CRIX.UPBIT."+pair;
+        }
+        Intent browser=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+        browser.addCategory(Intent.CATEGORY_BROWSABLE);
+        browser.setPackage("com.android.chrome");
+        try{startActivity(browser);}
+        catch(android.content.ActivityNotFoundException chromeMissing){
+            browser.setPackage(null);
+            try{startActivity(browser);}catch(Exception e){
+                new RuntimeCrashStore(this).add("symbol_browser_open",e);
+            }
+        }
+    }
 
     private String nameOf(JSONObject r){
         String[] keys={"name","korean_name","symbol","ticker","code","market"};String x="";
