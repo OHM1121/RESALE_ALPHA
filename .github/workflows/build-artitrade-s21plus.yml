@@ -149,7 +149,7 @@ jobs:
           visuals=(src/'java/com/artitrade/mobile/ArtitradeVisualViews.java').read_text()
           service=(src/'java/com/artitrade/mobile/UnifiedTradingService.java').read_text()
           py=(src/'python/android_runtime_v078.py').read_text()
-          assert 'strategy=item[0];showShell();' in ui
+          assert 'strategy=item[0];persistNavigation();showShell();' in ui
           assert 'strategy=item[0];page="home"' not in ui
           assert 'if(!"operation".equals(page)' in ui and 'ledgerChanged||"home".equals(page)' in ui
           assert 'artitrade_operation_drafts_v1' in ui

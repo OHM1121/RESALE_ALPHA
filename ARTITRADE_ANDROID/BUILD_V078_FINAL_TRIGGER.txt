@@ -1,6 +1,1 @@
-ARTITRADE UNIFIED v0.7.17 RELEASE TRIGGER
-Source branch: artitrade-phone-main-v070-live-orders-20261112
-Package: com.artitrade.unified.s21dex
-Includes all-account history filters, source tags, dated amount-axis PnL trends,
-non-destructive coin price/reference mapping, GMO migration diagnostics,
-navigation restoration and semantic colors. Existing phone PC-origin ledgers preserved.
+ARTITRADE v0.7.17 trigger: update tab-navigation assertion for persisted page/strategy; recheck Android build.
