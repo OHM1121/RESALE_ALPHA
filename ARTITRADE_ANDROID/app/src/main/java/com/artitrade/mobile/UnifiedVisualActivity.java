@@ -319,12 +319,12 @@ public final class UnifiedVisualActivity extends Activity {
         boolean active=key.equals(page);
         int accent="stock".equals(market)?Color.rgb(77,124,254):Color.rgb(0,196,164);
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(4),dp(3),dp(4),dp(3));
+        box.setPadding(dp(4),dp(2),dp(4),dp(2));
         if(active)box.setBackground(bg(Color.argb(46,Color.red(accent),Color.green(accent),Color.blue(accent)),accent,13));
         TextView i=text(icon,19);i.setGravity(Gravity.CENTER);i.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
-        i.setTextColor(active?accent:Color.rgb(106,115,137));box.addView(i,new LinearLayout.LayoutParams(-1,dp(25)));
+        i.setTextColor(active?accent:Color.rgb(106,115,137));box.addView(i,new LinearLayout.LayoutParams(-1,dp(23)));
         TextView l=text(label,11);l.setGravity(Gravity.CENTER);l.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
-        l.setTextColor(active?Color.WHITE:Color.rgb(118,127,148));box.addView(l,new LinearLayout.LayoutParams(-1,dp(18)));
+        l.setTextColor(active?Color.WHITE:Color.rgb(118,127,148));box.addView(l,new LinearLayout.LayoutParams(-1,dp(16)));
         box.setOnClickListener(v->{page=key;persistNavigation();showShell();});return box;
     }
 
@@ -357,7 +357,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(9,11,17));
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
 
-        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(14),dp(7),dp(10),dp(5));
+        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(12),dp(3),dp(8),dp(3));
         LinearLayout brandBox=new LinearLayout(this);brandBox.setOrientation(LinearLayout.VERTICAL);brandBox.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout brandLine=new LinearLayout(this);brandLine.setOrientation(LinearLayout.HORIZONTAL);brandLine.setGravity(Gravity.CENTER_VERTICAL);
         TextView brand=text("ARTITRADE",18);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.09f);brandLine.addView(brand);
@@ -382,7 +382,7 @@ public final class UnifiedVisualActivity extends Activity {
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
 
         HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);sh.setFillViewport(true);
-        strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(13),dp(5),dp(13),dp(5));
+        strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(11),dp(3),dp(11),dp(3));
         sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(40)));
         buildStrategyBar();
 
@@ -402,11 +402,11 @@ public final class UnifiedVisualActivity extends Activity {
 
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         LinearLayout bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.HORIZONTAL);bottom.setGravity(Gravity.CENTER);bottom.setPadding(dp(6),dp(3),dp(6),dp(3));bottom.setBackgroundColor(Color.rgb(13,15,22));
-        bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("positions","◆","보유종목"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("pending","◌","매수대기"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("executions","↔","체결이력"),new LinearLayout.LayoutParams(0,dp(48),1));
-        bottom.addView(bottomNavItem("research","◎","연구자료"),new LinearLayout.LayoutParams(0,dp(48),1));
+        bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(44),1));
+        bottom.addView(bottomNavItem("positions","◆","보유종목"),new LinearLayout.LayoutParams(0,dp(44),1));
+        bottom.addView(bottomNavItem("pending","◌","매수대기"),new LinearLayout.LayoutParams(0,dp(44),1));
+        bottom.addView(bottomNavItem("executions","↔","체결이력"),new LinearLayout.LayoutParams(0,dp(44),1));
+        bottom.addView(bottomNavItem("research","◎","연구자료"),new LinearLayout.LayoutParams(0,dp(44),1));
         shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(51)));
 
         updateClock();
@@ -2018,18 +2018,18 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout actualCard=card();DonutMetricView actual=new DonutMetricView(this);
         actual.setMetric("실제 목표도달률",actualRate,pct(actualRate));
-        actualCard.addView(actual,new LinearLayout.LayoutParams(-1,dp(99)));
+        actualCard.addView(actual,new LinearLayout.LayoutParams(-1,dp(93)));
         TextView a=text(tally.actualHit+"/"+(tally.actualHit+tally.actualMiss)+
             "  · 대기 "+tally.actualPending,12);
-        a.setGravity(Gravity.CENTER);actualCard.addView(a,new LinearLayout.LayoutParams(-1,dp(24)));
+        a.setGravity(Gravity.CENTER);actualCard.addView(a,new LinearLayout.LayoutParams(-1,dp(21)));
         summary.addView(actualCard,new LinearLayout.LayoutParams(0,dp(131),1));
         LinearLayout virtualCard=card();DonutMetricView v=new DonutMetricView(this);
         v.setMetric("가상 목표도달률",virtualRate,pct(virtualRate));
-        virtualCard.addView(v,new LinearLayout.LayoutParams(-1,dp(99)));
+        virtualCard.addView(v,new LinearLayout.LayoutParams(-1,dp(93)));
         TextView vCounts=text(tally.virtualHit+"/"+(tally.virtualHit+tally.virtualMiss)+
             "  · 대기 "+tally.virtualPending,12);
         vCounts.setGravity(Gravity.CENTER);
-        virtualCard.addView(vCounts,new LinearLayout.LayoutParams(-1,dp(24)));
+        virtualCard.addView(vCounts,new LinearLayout.LayoutParams(-1,dp(21)));
         LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(0,dp(154),1);
         vp.setMargins(dp(8),0,0,0);summary.addView(virtualCard,vp);
         content.addView(summary,new LinearLayout.LayoutParams(-1,dp(131)));
