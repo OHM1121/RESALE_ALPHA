@@ -392,7 +392,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        return "stock".equals(market)?"v0.7.25 · 주식":"v0.7.25 · 코인";
+        return "stock".equals(market)?"v0.7.26 · 주식":"v0.7.26 · 코인";
     }
 
     private void showShell(){
