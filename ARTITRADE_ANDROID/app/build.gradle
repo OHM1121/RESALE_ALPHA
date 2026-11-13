@@ -12,7 +12,7 @@ android {
         targetSdk 35
         versionCode 26
         versionName '0.4.1-SWIPE-KST-EVENTDATE'
-        manifestPlaceholders = [launcherActivity: ".MainActivity"]
+        manifestPlaceholders = [launcherActivity: ".MainActivity", emulatorServiceEnabled: "true"]
         ndk {
             // User-facing Samsung APK remains arm64-only. GitHub emulator
             // smoke builds exactly the same Java/Python code for x86_64.
@@ -51,7 +51,8 @@ android {
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
-            manifestPlaceholders = [launcherActivity: ".UnifiedVisualActivity"]
+            manifestPlaceholders = [launcherActivity: ".UnifiedVisualActivity",
+                emulatorServiceEnabled: System.getenv('ARTITRADE_EMULATOR_FIXTURE') == '1' ? "false" : "true"]
         }
     }
     signingConfigs {
