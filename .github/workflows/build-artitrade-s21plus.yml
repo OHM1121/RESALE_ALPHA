@@ -236,7 +236,7 @@ jobs:
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
           assert "versionName '0.7.19-FULL-LEDGER-GMO'" in s
-          assert "versionCode 29" in s
+          assert "versionCode 30" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -251,7 +251,7 @@ jobs:
           pc=Path('ARTITRADE_ANDROID/pc_tools/artitrade_ledger_migrator.py').read_text()
           assert 'private static boolean isSnapshotSidecar(String name)' in migration
           assert 'if(isSnapshotSidecar(name)){' in migration
-          assert 'ALLOWED.contains(name)||isSnapshotSidecar(name)' in migration
+          assert 'allowedDataPath(name)||isSnapshotSidecar(name)' in migration
           assert 'for member in sorted(("manifest.json", *manifest["files"].keys())):' in pc
           assert 'stage.rglob("*")' not in pc
           print('LEGACY_SIDECAR_RECOVERY_AND_STRICT_PC_ZIP_OK')
