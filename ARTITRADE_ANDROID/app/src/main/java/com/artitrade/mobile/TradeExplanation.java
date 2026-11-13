@@ -109,8 +109,11 @@ final class TradeExplanation {
                 DateTimeFormatter.ofPattern("yyyyMMddHHmm")).atZone(naiveUtc?ZoneOffset.UTC:KST)
                 .withZoneSameInstant(KST))+" KST";
         }catch(Exception ignored){}
-        try{return OUT.format(Instant.parse(s).atZone(KST))+" KST";}catch(Exception ignored){}
-        try{return OUT.format(OffsetDateTime.parse(s).atZoneSameInstant(KST))+" KST";}catch(Exception ignored){}
+        String explicit=s.replace(' ','T');
+        if(explicit.endsWith("TUTC"))explicit=explicit.substring(0,explicit.length()-4)+"Z";
+        if(explicit.endsWith("TKST"))explicit=explicit.substring(0,explicit.length()-4)+"+09:00";
+        try{return OUT.format(Instant.parse(explicit).atZone(KST))+" KST";}catch(Exception ignored){}
+        try{return OUT.format(OffsetDateTime.parse(explicit).atZoneSameInstant(KST))+" KST";}catch(Exception ignored){}
         String local=s.replace('T',' ');
         for(String pattern:new String[]{"yyyy-MM-dd HH:mm:ss.SSSSSS","yyyy-MM-dd HH:mm:ss.SSS",
             "yyyy-MM-dd HH:mm:ss","yyyy-MM-dd HH:mm",
