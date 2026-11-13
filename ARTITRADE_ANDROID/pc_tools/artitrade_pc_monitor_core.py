@@ -233,7 +233,7 @@ class ReadOnlyHubClient:
         self.revisions = {}
         self.metas = {}
 
-    def fetch(self) -> dict:
+    def fetch(self, progress: Callable | None = None) -> dict:
         state = self.requester("GET", "/v1/status", None)
         if not state.get("ok", False):
             raise ConnectionError("MSERVER 인증 또는 상태 조회 실패: " + str(state.get("error", "UNKNOWN")))
@@ -241,7 +241,8 @@ class ReadOnlyHubClient:
         updated_cache = dict(self.cache)
         updated_revisions = dict(self.revisions)
         updated_metas = dict(self.metas)
-        for market, strategy, bucket in record_definitions():
+        members = list(record_definitions())
+        for index, (market, strategy, bucket) in enumerate(members, 1):
             key = (market, strategy, bucket)
             args = {"market": market, "strategy": strategy, "bucket": bucket}
             try:
@@ -266,6 +267,10 @@ class ReadOnlyHubClient:
                 updated_revisions[key] = int(reply.get("revision", rev))
             except Exception as exc:
                 warnings.append(f"{market}/{strategy}/{bucket}: {type(exc).__name__} {str(exc)[:95]}")
+            finally:
+                if progress:
+                    try: progress(index, len(members), "/".join(key))
+                    except Exception: pass
         self.cache = updated_cache
         self.revisions = updated_revisions
         self.metas = updated_metas
@@ -277,3 +282,64 @@ class ReadOnlyHubClient:
             "fetched_at": time.time(),
             "source": "PHONE_MSERVER_READ_ONLY",
         }
+
+
+def automatic_preload(
+    saved_url: str, token: str, discover: Callable,
+    client_factory: Callable | None = None,
+    existing_client: ReadOnlyHubClient | None = None,
+    progress: Callable | None = None,
+    verify_discovered: Callable | None = None,
+) -> tuple[ReadOnlyHubClient, dict, str]:
+    """Automatically load authoritative MSERVER data on PC EXE startup.
+
+    Try the previously authenticated phone immediately. If its Tailscale address
+    changed, discover exactly one Android peer and verify the unauthenticated
+    MSERVER health identity before ever sending a bearer token to the new IP.
+    """
+    credential = (token or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", credential):
+        raise ValueError("PAIRING_REQUIRED: MSERVER 인증 토큰 최초 1회 입력 필요")
+    factory = client_factory or ReadOnlyHubClient
+    health = verify_discovered or (
+        lambda url: http_get(url, "", "GET", "/health"))
+    failures = []
+    tried = set()
+
+    def read_endpoint(url: str, new_peer: bool):
+        normalized = validate_hub_url(url)
+        if normalized in tried:
+            raise ConnectionError("Same MSERVER endpoint already tried")
+        tried.add(normalized)
+        if new_peer:
+            # A Tailscale Android address by itself is not an MSERVER identity.
+            hello = health(normalized)
+            if not isinstance(hello, dict) or not hello.get("ok") or hello.get("name") != "ARTITRADE MSERVER":
+                raise ConnectionError("Unverified Tailscale device; pairing token not sent")
+        current = (existing_client if existing_client is not None
+                   and existing_client.base == normalized
+                   and existing_client.token == credential
+                   else factory(normalized, credential))
+        data = current.fetch(progress=progress)
+        if not isinstance(data, dict) or not data.get("connected"):
+            raise ConnectionError("MSERVER did not return a connected snapshot")
+        return current, data, normalized
+
+    if saved_url:
+        try:
+            return read_endpoint(saved_url, False)
+        except Exception as exc:
+            failures.append(f"저장된 MSERVER 접속 실패: {type(exc).__name__}: {str(exc)[:100]}")
+    try:
+        detected = discover() or ""
+    except Exception as exc:
+        failures.append(f"Tailscale 자동 탐색 실패: {type(exc).__name__}")
+        detected = ""
+    if detected:
+        try:
+            return read_endpoint(detected, True)
+        except Exception as exc:
+            failures.append(f"탐색된 MSERVER 접속 실패: {type(exc).__name__}: {str(exc)[:100]}")
+    if not failures:
+        failures.append("Tailscale에서 휴대폰 MSERVER를 발견하지 못함")
+    raise ConnectionError(" · ".join(failures))

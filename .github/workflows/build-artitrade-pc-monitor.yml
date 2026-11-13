@@ -18,9 +18,13 @@ jobs:
       - name: Validate stock and coin research, no-order API and phone revisions
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           python -m py_compile ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor_core.py ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor.py
+          if ($LASTEXITCODE -ne 0) { throw 'PYTHON_COMPILE_FAILED' }
           python -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p test_pc_monitor_core.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'PC_MONITOR_CORE_TEST_FAILED' }
           python -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p test_pc_monitor_autopreload.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUTO_PRELOAD_TEST_FAILED' }
           @'
           from pathlib import Path
           from ast import parse, walk, Import, ImportFrom
@@ -41,21 +45,49 @@ jobs:
           assert 'ReadOnlyHubClient' in app
           assert 'summarize_research' in app
           assert '10초마다 자동' in app
+          assert 'self.root.after(0, self.startup)' in app
+          assert 'automatic_preload(' in app
+          assert 'def preload_progress_worker(' in app
+          assert 'self.token.trace_add(' in app
+          assert 'save_settings(resolved, token, self.remember.get())' in app
           assert 'buy(' not in app and 'sell(' not in app
           print("PC_MONITOR_READ_ONLY_AND_RESEARCH_CHECKS_PASS")
           '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'AUTOMATIC_STARTUP_STATIC_CHECK_FAILED' }
+      - name: Windows DPAPI pairing persistence regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          from pathlib import Path
+          import os,sys,tempfile
+          sys.path.insert(0,"ARTITRADE_ANDROID/pc_tools")
+          import artitrade_pc_monitor as app
+          with tempfile.TemporaryDirectory() as td:
+              app.CFG=Path(td)/"pairing.json"
+              url="http://100.84.3.9:8765"
+              token="f"*64
+              app.save_settings(url,token,True)
+              raw=app.CFG.read_text(encoding="utf8")
+              assert token not in raw, "Bearer token must never be stored as plaintext"
+              loaded=app.load_settings()
+              assert loaded["token"]==token, "Saved DPAPI token must load without reentry"
+              assert loaded["url"]==url
+          print("DPAPI_PAIRING_ROUNDTRIP_PASS")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'DPAPI_PAIRING_REGRESSION_FAILED' }
       - name: Install Windows EXE builder
         shell: pwsh
         run: python -m pip install --disable-pip-version-check pyinstaller==6.16.0
       - name: Build standalone EXE without any trading engine
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113 --paths ARTITRADE_ANDROID/pc_tools ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor.py
-          if (!(Test-Path "dist/ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113.exe")) { throw "Read-only EXE not produced" }
-          Get-FileHash "dist/ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113.exe" -Algorithm SHA256 | Format-List
+          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_PC_MSERVER_AUTOPRELOAD_v1.1_20261113 --paths ARTITRADE_ANDROID/pc_tools ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor.py
+          if (!(Test-Path "dist/ARTITRADE_PC_MSERVER_AUTOPRELOAD_v1.1_20261113.exe")) { throw "Read-only EXE not produced" }
+          Get-FileHash "dist/ARTITRADE_PC_MSERVER_AUTOPRELOAD_v1.1_20261113.exe" -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113
-          path: dist/ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113.exe
+          name: ARTITRADE_PC_MSERVER_AUTOPRELOAD_v1.1_20261113
+          path: dist/ARTITRADE_PC_MSERVER_AUTOPRELOAD_v1.1_20261113.exe
           if-no-files-found: error
           retention-days: 14

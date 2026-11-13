@@ -1,1 +1,1 @@
-TDD RED: automatic_preload absent, tests must fail before code is added.
+Auto-preload v1.1: begin MSERVER fetch immediately at EXE startup, verify Tailscale peer, preserve encrypted pairing, Windows DPAPI regression.

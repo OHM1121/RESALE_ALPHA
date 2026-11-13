@@ -11,6 +11,7 @@ import base64
 import ctypes
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -18,13 +19,13 @@ import time
 import tkinter as tk
 from ctypes import wintypes
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 from artitrade_pc_monitor_core import (
     LABELS, MARKETS, ReadOnlyHubClient, BAND_NAMES, FRAMES,
     bool_value, event_time, flatten_items, normalize_frame, outcome_of,
     research_rows, score_band, summarize_research, time_from_row,
-    validate_hub_url,
+    validate_hub_url, automatic_preload,
 )
 
 TITLE = "ARTITRADE PC | 모바일 원장 모니터 (거래 기능 없음)"
@@ -150,7 +151,7 @@ class MonitorWindow:
         self.visible_offset = {}
         self.auto = tk.BooleanVar(value=True)
         self.remember = tk.BooleanVar(value=True)
-        self.status = tk.StringVar(value="연결 전 · 휴대폰 MSERVER의 최신 원장을 조회합니다")
+        self.status = tk.StringVar(value="사전로딩 시작 · 휴대폰 MSERVER 연결 준비 중")
         self.page_info = tk.StringVar(value="")
         self.url = tk.StringVar()
         self.token = tk.StringVar()
@@ -161,10 +162,14 @@ class MonitorWindow:
         self.setup_style()
         saved = load_settings()
         self.url.set(saved.get("url", ""))
-        self.token.set(saved.get("token", os.environ.get("ARTITRADE_HUB_TOKEN", "")))
+        self.token.set(saved.get("token") or os.environ.get("ARTITRADE_HUB_TOKEN", ""))
+        self.url.set(saved.get("url") or os.environ.get("ARTITRADE_HUB_URL", ""))
+        self.first_pair_prompt = False
+        self.connection_visible = False
+        self.token.trace_add("write", self.token_changed)
         self.setup_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
-        self.root.after(250, self.startup)
+        self.root.after(0, self.startup)
         self.root.after(REFRESH_SECONDS * 1000, self.automatic_refresh)
 
     def setup_style(self):
@@ -207,14 +212,19 @@ class MonitorWindow:
                   background=BG, font=("Malgun Gothic", 10, "bold")).pack(side="right", padx=6)
         toolbar = ttk.Frame(outer)
         toolbar.pack(fill="x", pady=(0, 8))
-        ttk.Label(toolbar, text="휴대폰 Tailscale", style="Muted.TLabel").pack(side="left")
-        ttk.Entry(toolbar, textvariable=self.url, width=28).pack(side="left", padx=(8, 13))
-        ttk.Label(toolbar, text="MSERVER 토큰", style="Muted.TLabel").pack(side="left")
-        ttk.Entry(toolbar, textvariable=self.token, show="●", width=24).pack(side="left", padx=(8, 12))
-        ttk.Button(toolbar, text="최신 원장 조회", command=self.refresh).pack(side="left", padx=4)
+        ttk.Label(toolbar, text="실행 즉시 자동 사전로딩 · Tailscale → MSERVER → 주식·코인 원장",
+                  style="Good.TLabel").pack(side="left", padx=(2, 14))
+        ttk.Button(toolbar, text="지금 갱신", command=self.refresh).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="연결 설정", command=self.toggle_connection_settings).pack(side="left", padx=4)
         ttk.Checkbutton(toolbar, text="10초마다 자동", variable=self.auto).pack(side="left", padx=8)
-        ttk.Checkbutton(toolbar, text="토큰 암호화 저장", variable=self.remember).pack(side="left")
-        ttk.Label(outer, textvariable=self.status, style="Muted.TLabel").pack(fill="x", pady=(0, 7))
+        self.connection_frame = ttk.Frame(outer)
+        ttk.Label(self.connection_frame, text="휴대폰 Tailscale", style="Muted.TLabel").pack(side="left")
+        ttk.Entry(self.connection_frame, textvariable=self.url, width=28).pack(side="left", padx=(8, 13))
+        ttk.Label(self.connection_frame, text="MSERVER 최초 페어링 토큰", style="Muted.TLabel").pack(side="left")
+        ttk.Entry(self.connection_frame, textvariable=self.token, show="●", width=24).pack(side="left", padx=(8, 12))
+        ttk.Checkbutton(self.connection_frame, text="인증정보 암호화 저장", variable=self.remember).pack(side="left")
+        self.status_label = ttk.Label(outer, textvariable=self.status, style="Muted.TLabel")
+        self.status_label.pack(fill="x", pady=(0, 7))
         tabs = ttk.Notebook(outer)
         tabs.pack(fill="both", expand=True)
         self.tabs = {}
@@ -357,72 +367,128 @@ class MonitorWindow:
         self.visible_offset[name] = max(0, self.visible_offset.get(name, 0) + direction * PAGE_SIZE)
         self.render()
 
+    def toggle_connection_settings(self):
+        self.show_connection_settings(not self.connection_visible)
+
+    def show_connection_settings(self, visible: bool):
+        if visible == self.connection_visible: return
+        if visible:
+            self.connection_frame.pack(fill="x", before=self.status_label, pady=(0, 8))
+        else:
+            self.connection_frame.pack_forget()
+        self.connection_visible = visible
+
+    def token_changed(self, *_):
+        # Pasting a full pairing token triggers the preload automatically.
+        # The user never has to click '조회' after the first pairing.
+        if self.closed or self.syncing: return
+        if re.fullmatch(r"[0-9a-fA-F]{64}", self.token.get().strip()):
+            self.root.after(25, lambda:self.start_preload(silent=True))
+
     def startup(self):
-        if not self.url.get():
-            self.status.set("Tailscale 연결 주소를 입력하거나 자동 탐지 중")
-            threading.Thread(target=self.discover_worker, daemon=True).start()
-        elif self.token.get():
-            self.refresh()
+        # The first screen is already constructed; all network and JSON loading
+        # happens on a worker so Windows tabs remain responsive.
+        self.start_preload(silent=True)
 
-    def discover_worker(self):
-        detected = guess_tailscale_ip()
-        if detected and not self.closed:
-            self.root.after(0, lambda: self.set_detected(detected))
+    def request_first_pairing(self):
+        if self.first_pair_prompt or self.closed: return
+        self.first_pair_prompt = True
+        self.show_connection_settings(True)
+        self.status.set("최초 1회: MSERVER 페어링 토큰 입력 필요 · 이후 실행부터 자동 사전로딩")
+        self.root.after(100, self.prompt_token_once)
 
-    def set_detected(self, url):
-        if not self.url.get():
-            self.url.set(url)
-            self.status.set("Tailscale 휴대폰 후보 발견 · 토큰을 입력한 뒤 최신 원장 조회")
-        if self.token.get():
-            self.refresh()
+    def prompt_token_once(self):
+        if self.closed or re.fullmatch(r"[0-9a-fA-F]{64}", self.token.get().strip()): return
+        raw = simpledialog.askstring(
+            "ARTITRADE 첫 연결 · 최초 1회",
+            "휴대폰 MSERVER의 페어링 토큰(64자리)을 한 번 입력하면\n"
+            "Windows 암호화 저장 후 다음부터 자동 연결합니다.",
+            parent=self.root, show="●")
+        if raw is None:
+            self.status.set("페어링 정보가 없어 사전로딩 대기 · 연결 설정에 토큰 입력")
+            return
+        token = raw.strip()
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", token):
+            self.status.set("토큰 형식 오류 · MSERVER의 64자리 토큰을 연결 설정에 붙여넣으면 자동 시작")
+            return
+        self.token.set(token)
+        self.start_preload(silent=True)
 
     def automatic_refresh(self):
         if self.closed: return
-        if self.auto.get() and self.url.get() and self.token.get():
-            self.refresh(silent=True)
+        if self.auto.get() and re.fullmatch(r"[0-9a-fA-F]{64}", self.token.get().strip()):
+            self.start_preload(silent=True)
         self.root.after(REFRESH_SECONDS * 1000, self.automatic_refresh)
 
     def refresh(self, silent=False):
+        # Optional retry action, never required for normal startup.
+        self.start_preload(silent=silent)
+
+    def start_preload(self, silent=False):
         if self.closed or self.syncing: return
-        try:
-            base = validate_hub_url(self.url.get())
-            token = self.token.get().strip()
-            # URL/token changed => discard current revision cache; never mix phones.
-            if self.client is None or self.client.base != base or self.client.token != token:
-                self.client = ReadOnlyHubClient(base, token)
-            save_settings(base, token, self.remember.get())
-        except Exception as exc:
-            self.status.set("연결 입력 확인: " + str(exc))
-            if not silent: messagebox.showerror("MSERVER 연결값 확인", str(exc))
+        token = self.token.get().strip()
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", token):
+            self.request_first_pairing()
             return
+        saved_url = self.url.get().strip()
+        existing = self.client
         self.syncing = True
-        self.status.set("MSERVER에서 최신 원장 revision 조회 중 (PC 매매엔진은 실행되지 않음)")
-        worker = threading.Thread(target=self.sync_worker, daemon=True, name="artitrade-pc-ro-fetch")
-        worker.start()
+        self.status.set("사전로딩 · Tailscale/MSERVER 확인 → 최신 원장 자동 수신 중")
+        threading.Thread(
+            target=self.preload_worker,
+            args=(saved_url, token, existing),
+            daemon=True, name="artitrade-pc-automatic-ledger-preload").start()
 
-    def sync_worker(self):
+    def preload_worker(self, url, token, prior):
         try:
-            result = self.client.fetch()
+            client, snapshot, resolved = automatic_preload(
+                url, token, guess_tailscale_ip,
+                existing_client=prior,
+                progress=self.preload_progress_worker)
             if not self.closed:
-                self.root.after(0, lambda x=result:self.sync_complete(x))
+                self.root.after(0, lambda c=client, x=snapshot, b=resolved, k=token:
+                    self.preload_complete(c, x, b, k))
         except Exception as exc:
-            msg = f"{type(exc).__name__}: {str(exc)[:300]}"
+            message = f"{type(exc).__name__}: {str(exc)[:220]}"
             if not self.closed:
-                self.root.after(0, lambda x=msg:self.sync_failed(x))
+                self.root.after(0, lambda v=message:self.preload_failed(v))
 
-    def sync_complete(self, payload):
+    def preload_progress_worker(self, done, total, key):
+        if not self.closed:
+            self.root.after(0, lambda d=done, t=total, k=key:
+                self.status.set(f"사전로딩 · MSERVER 원장 {d}/{t}개 수신/검증 · {k}"))
+
+    def preload_complete(self, client, snapshot, resolved, token):
+        if self.closed: return
+        self.client = client
+        self.snapshot = snapshot
         self.syncing = False
-        self.snapshot = payload
-        message = "MSERVER 연결 정상 · 최신 모바일 원장 반영 · "+time.strftime("%H:%M:%S")
-        if payload.get("warnings"):
-            message += f" · 부분 조회 실패 {len(payload['warnings'])}건 (진단 탭 확인)"
-        self.status.set(message)
+        self.url.set(resolved)
+        # Only remember credentials after an authenticated successful GET.
+        # DPAPI errors must never lead to plaintext fallback storage.
+        try:
+            save_settings(resolved, token, self.remember.get())
+        except Exception as exc:
+            self.status.set("원장 수신 성공 · 암호화 설정 저장 실패: "+type(exc).__name__)
+        else:
+            warning_count = len(snapshot.get("warnings") or [])
+            count = len(snapshot.get("records") or {})
+            status = f"사전로딩 완료 · MSERVER 원장 {count}개 · "+time.strftime("%H:%M:%S")
+            if warning_count:
+                status += f" · 일부 조회 오류 {warning_count}건 (진단 탭 확인)"
+            self.status.set(status)
+        self.show_connection_settings(False)
         self.render()
 
-    def sync_failed(self, msg):
+    def preload_failed(self, message):
+        if self.closed: return
         self.syncing = False
-        self.status.set("연결 실패 · 이전 조회 화면 유지 · " + msg)
-        self.render()
+        self.status.set("자동 사전로딩 실패 · 10초 후 재시도 · "+message)
+        # Do not erase prior displayed data, or claim stale data is current.
+        if self.snapshot:
+            self.dash_info.set("MSERVER 재연결 실패 · 직전 조회 원장 표시 중 · 실시간 아님")
+        else:
+            self.show_connection_settings(True)
 
     def render(self):
         if not self.snapshot: return
@@ -581,8 +647,11 @@ class MonitorWindow:
 
     def close(self):
         self.closed = True
-        try: save_settings(self.url.get(), self.token.get().strip(), self.remember.get())
-        except Exception: pass
+        # Never persist unauthenticated credentials or overwrite a verified pairing
+        # with a mistyped address/token during shutdown.
+        if self.client is not None and self.snapshot is not None:
+            try: save_settings(self.client.base, self.client.token, self.remember.get())
+            except Exception: pass
         self.root.destroy()
 
 def main():
