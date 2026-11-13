@@ -39,12 +39,17 @@ final class ResearchScoreMatrixView extends View {
         int miss=actual?q.actualMiss:q.virtualMiss;
         int pending=actual?q.actualPending:q.virtualPending;
         String pct=Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.0f%%",value);
+        String detail=hit+"/"+(hit+miss)+(pending>0?" · "+pending:"");
+        float available=right-left-dp(8);
+        p.setTextSize(sp(11));float countWidth=p.measureText(detail);
+        p.setTextSize(sp(14));float pctWidth=p.measureText(pct);
+        boolean stacked=pctWidth+countWidth>available;
         int accent=shade(value);
-        line(c,pct,left+dp(3),baseline,14,accent,Paint.Align.LEFT,true);
-        line(c,hit+"/"+(hit+miss)+(pending>0?" · "+pending:""),right-dp(2),baseline,
-            9,Color.rgb(148,163,187),Paint.Align.RIGHT,false);
-        float top=baseline+dp(4),height=dp(5);
-        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(47,63,82));
+        line(c,pct,left+dp(3),stacked?baseline-dp(3):baseline,14,accent,Paint.Align.LEFT,true);
+        line(c,detail,right-dp(2),stacked?baseline+dp(9):baseline,
+            11,PremiumUi.MUTED,Paint.Align.RIGHT,false);
+        float top=baseline+dp(stacked?13:5),height=dp(stacked?3:5);
+        p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.LINE);
         c.drawRoundRect(new RectF(left,top,right,top+height),dp(3),dp(3),p);
         if(!Double.isNaN(value)&&value>0){
             p.setColor(accent);
@@ -55,31 +60,31 @@ final class ResearchScoreMatrixView extends View {
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);
         float w=getWidth(),h=getHeight(),pad=dp(10);
-        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(19,26,38));
+        p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.SURFACE);
         c.drawRoundRect(new RectF(0,0,w,h),dp(14),dp(14),p);
-        p.setStyle(Paint.Style.STROKE);p.setColor(Color.rgb(52,68,90));p.setStrokeWidth(dp(.7f));
+        p.setStyle(Paint.Style.STROKE);p.setColor(PremiumUi.LINE);p.setStrokeWidth(dp(.7f));
         c.drawRoundRect(new RectF(0,0,w,h),dp(14),dp(14),p);
         if(w<dp(190))return;
         ResearchScoreGrid.Cell total=grid.totals();
         line(c,title,pad,dp(24),15,Color.rgb(227,239,255),Paint.Align.LEFT,true);
         line(c,grid.any(frame)?"N="+countFrame(frame):"N=0",w-pad,dp(24),
-            11,Color.rgb(162,181,205),Paint.Align.RIGHT,false);
+            12,PremiumUi.MUTED,Paint.Align.RIGHT,false);
         float scoreRight=pad+dp(66);
         float gap=dp(9);
         float colW=(w-scoreRight-pad-gap*2)/2f;
         float actualX=scoreRight+gap,virtualX=actualX+colW+gap;
-        line(c,"점수",pad,dp(48),11,Color.rgb(161,177,202),Paint.Align.LEFT,false);
-        line(c,"실제",actualX+dp(2),dp(48),11,Color.rgb(168,199,236),Paint.Align.LEFT,false);
-        line(c,"가상",virtualX+dp(2),dp(48),11,Color.rgb(154,212,189),Paint.Align.LEFT,false);
+        line(c,"점수",pad,dp(48),12,PremiumUi.MUTED,Paint.Align.LEFT,false);
+        line(c,"실제",actualX+dp(2),dp(48),12,Color.rgb(168,199,236),Paint.Align.LEFT,false);
+        line(c,"가상",virtualX+dp(2),dp(48),12,Color.rgb(154,212,189),Paint.Align.LEFT,false);
         int rows=grid.any(frame)&&grid.cell(frame,ResearchScoreGrid.NO_SCORE).signals>0?6:5;
         float rowH=(h-dp(58)-pad)/rows;
         for(int i=0;i<rows;i++){
             float y=dp(59)+i*rowH,mid=y+rowH*.48f;
             String band=ResearchScoreGrid.BANDS[i];
             ResearchScoreGrid.Cell cell=grid.cell(frame,band);
-            if(i%2==0){p.setColor(Color.rgb(26,36,51));p.setStyle(Paint.Style.FILL);
+            if(i%2==0){p.setColor(PremiumUi.SURFACE_HIGH);p.setStyle(Paint.Style.FILL);
                 c.drawRoundRect(new RectF(pad-dp(2),y,w-pad+dp(2),y+rowH-dp(1)),dp(5),dp(5),p);}
-            line(c,band.equals(ResearchScoreGrid.NO_SCORE)?"—":band,pad,mid+dp(3),12,
+            line(c,band.equals(ResearchScoreGrid.NO_SCORE)?"—":band,pad,mid+dp(3),13,
                 Color.rgb(186,201,226),Paint.Align.LEFT,true);
             rate(c,cell,true,actualX,actualX+colW,mid);
             rate(c,cell,false,virtualX,virtualX+colW,mid);
