@@ -112,6 +112,10 @@ public final class UnifiedVisualActivity extends Activity {
     private String cachedLocalRaw;
     private JSONObject cachedLocalParsed=new JSONObject();
     private boolean cachedLocalMeaningful;
+    // One strategy having live rows must not suppress fallback for other
+    // missing strategies. Poll only source-specific gaps and never replace local truth.
+    private long lastHubGapPollMs=0L;
+    private JSONObject cachedHubGapRecords=new JSONObject();
     private FrameLayout root;
     private LinearLayout content;
     private LinearLayout strategyBar;
@@ -863,13 +867,47 @@ public final class UnifiedVisualActivity extends Activity {
                     packet.put("local_records",localRecords);
                     packet.put("local_records_at",lp.getLong("updated_at",0L));
                 }catch(Exception e){packet.put("local_records",new JSONObject());}
-                if(!meaningfulLocalRecords){
-                    for(String[] k:RECORDS){
-                        try{records.put(k[3],client.record(k[0],k[1],k[2]));}
-                        catch(Exception e){records.put(k[3],new JSONObject().put("ok",false));}
+                // v0.7.25: source-by-source gap recovery. The old global flag
+                // hid MA/CLOSE/GMO or coin data whenever AT had any records.
+                // Keep phone-created records authoritative, and fetch MSERVER only
+                // for a *missing bucket*, not for an entire market.
+                long now=android.os.SystemClock.elapsedRealtime();
+                boolean hubResponding=packet.optJSONObject("status")!=null
+                    &&packet.optJSONObject("status").optBoolean("ok",false);
+                boolean pollGaps=hubResponding&&now-lastHubGapPollMs>=25_000L;
+                if(pollGaps)lastHubGapPollMs=now;
+                boolean anyHub=false;
+                for(String[] k:RECORDS){
+                    JSONObject marketTree=localRecords.optJSONObject(k[0]);
+                    JSONObject strategyTree=marketTree==null?null:marketTree.optJSONObject(k[1]);
+                    JSONObject localBucket=strategyTree==null?null:strategyTree.optJSONObject(k[2]);
+                    if(meaningfulRecord(localBucket))continue;
+                    JSONObject response=cachedHubGapRecords.optJSONObject(k[3]);
+                    if(pollGaps){
+                        try{
+                            JSONObject fresh=client.record(k[0],k[1],k[2]);
+                            JSONObject data=fresh.optJSONObject("data");
+                            if(meaningfulRecord(data)){
+                                cachedHubGapRecords.put(k[3],fresh);
+                                response=fresh;
+                            }else if(fresh.optBoolean("ok",false)){
+                                // Confirmed empty data must replace stale cache.
+                                cachedHubGapRecords.remove(k[3]);
+                                response=fresh;
+                            }
+                        }catch(Exception e){
+                            new RuntimeCrashStore(this).add("hub_gap_"+k[3],e);
+                        }
                     }
-                    packet.put("using_hub_fallback",true);
-                }else packet.put("using_hub_fallback",false);
+                    if(response!=null&&meaningfulRecord(response.optJSONObject("data"))){
+                        records.put(k[3],response);
+                        anyHub=true;
+                    }
+                }
+                packet.put("using_hub_fallback",anyHub);
+                packet.put("hub_gap_refresh_available",hubResponding);
+                packet.put("hub_gap_status",anyHub?"MISSING_BUCKETS_FROM_MSERVER":
+                    hubResponding?"LOCAL_OR_EMPTY":"MSERVER_OFFLINE");
                 try{
                     android.content.SharedPreferences sp=getSharedPreferences("artitrade_mserver_sync_v078",MODE_PRIVATE);
                     packet.put("mserver_sync",new JSONObject()
@@ -921,7 +959,11 @@ public final class UnifiedVisualActivity extends Activity {
             Map<String,Stats> preparedFrames=new HashMap<>();
             // Preload summaries for every strategy in the worker, before a tab can draw them.
             // No stock/coin order, SQLite write or strategy state is changed here.
-            if(reusedLocalRecords&&meaningfulLocalRecords&&!previous.totals.isEmpty()){
+            JSONObject previousHub=previous.packet.optJSONObject("records");
+            boolean hubGapChanged=!(records.toString().equals(
+                previousHub==null?"{}":previousHub.toString()));
+            if(reusedLocalRecords&&meaningfulLocalRecords&&!hubGapChanged
+                &&!previous.totals.isEmpty()){
                 preparedTotals=previous.totals;
                 preparedFrames=previous.frames;
             }else{
@@ -1496,9 +1538,20 @@ public final class UnifiedVisualActivity extends Activity {
 
     private boolean bool(JSONObject r,String... keys){
         for(String k:keys)if(r.has(k)&&!r.isNull(k)){
-            Object v=r.opt(k);if(v instanceof Boolean)return (Boolean)v;
-            String s=String.valueOf(v).toLowerCase(Locale.ROOT);if("1".equals(s)||s.contains("true")||s.contains("yes")||s.contains("fill")||s.contains("완료"))return true;
-        }return false;
+            Object v=r.opt(k);
+            if(v instanceof Boolean)return (Boolean)v;
+            String raw=String.valueOf(v).trim().toLowerCase(Locale.ROOT);
+            // 'NOT_FILLED', 'UNFILLED', 'NO_FILL' and 'FALSE' are negative,
+            // never actual BUY fills. Do not reclassify virtual research rows.
+            if(raw.equals("1")||raw.equals("true")||raw.equals("yes")||
+               raw.equals("filled")||raw.equals("completed")||
+               raw.equals("매수완료")||raw.equals("체결완료"))return true;
+            if(raw.equals("0")||raw.equals("false")||raw.equals("no")||
+               raw.equals("not_filled")||raw.equals("unfilled")||
+               raw.equals("no_fill")||raw.equals("pending")||
+               raw.equals("미체결")||raw.equals("미매수"))return false;
+        }
+        return false;
     }
 
     private Boolean target(JSONObject r){
