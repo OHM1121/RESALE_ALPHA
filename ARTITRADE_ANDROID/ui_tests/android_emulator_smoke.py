@@ -219,9 +219,15 @@ def real_boot():
     verify_no_fatal("real_boot")
 
 def fixtures():
-    # Disable the live service ONLY for this synthetic-data rendering pass.
-    # The actual shipped APK is never modified; no real funds/keys are stored.
-    print(adb("shell","pm","disable",PACKAGE+"/"+SERVICE,timeout=20),flush=True)
+    # Replace the same-package emulator APK with a test-ONLY manifest that
+    # has the trading service disabled. This avoids privileged 'pm disable'
+    # (forbidden to the shell on Android 15) and prevents the paper engine
+    # from overwriting synthetic local-record fixtures.
+    fixture_apk=Path("downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_FIXTURE_x86_64.apk")
+    if not fixture_apk.is_file():
+        raise AssertionError("Missing offline fixture variant, not safe to seed UI data")
+    adb("shell","am","force-stop",PACKAGE)
+    print(adb("install","-r",str(fixture_apk),timeout=180),flush=True)
     adb("shell","am","force-stop",PACKAGE)
     put_pref("artitrade_local_records_v075",{
         "records":json.dumps(fixture(),ensure_ascii=False,separators=(",",":")),
@@ -231,7 +237,7 @@ def fixtures():
         "coin_filter_v2":"current"})
     tree=start_app("fixture_boot")
     # Load source data asynchronously before checking the first strategy.
-    time.sleep(1.2)
+    time.sleep(7.0)
     configurations=[
         ("주식","기준봉","AT_삼성전자"),
         ("주식","MA","MA_SK하이닉스"),
