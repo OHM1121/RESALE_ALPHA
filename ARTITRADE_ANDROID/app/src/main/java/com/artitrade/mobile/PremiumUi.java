@@ -134,14 +134,6 @@ final class PremiumIconView extends View {
                 raw.drawCircle(12,12,9,p);
                 stroke(raw,12,6.5f,12,12,16.5f,15);
                 break;
-            case "buy":
-                stroke(raw,4,18,10,12,14,15,20,7);
-                stroke(raw,15,7,20,7,20,12);
-                break;
-            case "sell":
-                stroke(raw,4,6,10,12,14,9,20,17);
-                stroke(raw,15,17,20,17,20,12);
-                break;
             case "executions":
                 stroke(raw,4,7,19,7,15,3);
                 stroke(raw,19,7,15,11);
