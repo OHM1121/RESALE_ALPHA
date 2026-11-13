@@ -29,6 +29,7 @@
                 android:value="Owner-operated private phone synchronization server for PC and Android trading data."/>
         </service>
         <service android:name=".UnifiedTradingService"
+            android:enabled="${emulatorServiceEnabled}"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
