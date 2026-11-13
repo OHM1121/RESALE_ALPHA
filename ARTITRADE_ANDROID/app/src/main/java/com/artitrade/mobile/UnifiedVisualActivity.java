@@ -198,10 +198,10 @@ public final class UnifiedVisualActivity extends Activity {
         super.onCreate(state);
         restoreNavigation(state);
         try{
-            getWindow().setStatusBarColor(Color.rgb(7,16,28));
-            getWindow().setNavigationBarColor(Color.rgb(7,16,28));
+            getWindow().setStatusBarColor(PremiumUi.BG);
+            getWindow().setNavigationBarColor(PremiumUi.BG);
             root=new FrameLayout(this);
-            root.setBackgroundColor(Color.rgb(7,16,28));
+            root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
             showBoot();
             // Guarantee a native first frame before any server/Python/broker work.
@@ -261,8 +261,8 @@ public final class UnifiedVisualActivity extends Activity {
     private TextView text(String value,int sp){
         TextView t=new TextView(this);
         t.setText(value);
-        t.setTextSize(sp);
-        t.setTextColor(colorByStatus(value,Color.rgb(240,247,255)));
+        t.setTextSize(Math.max(12,sp));
+        t.setTextColor(colorByStatus(value,PremiumUi.TEXT));
         t.setGravity(Gravity.CENTER_VERTICAL);
         t.setIncludeFontPadding(false);
         t.setLineSpacing(dp(2),1.0f);
@@ -281,60 +281,89 @@ public final class UnifiedVisualActivity extends Activity {
         return d;
     }
 
+    private int accent(){return "stock".equals(market)?PremiumUi.STOCK:PremiumUi.COIN;}
+
     private Button button(String label,boolean active,Runnable action){
         Button b=new Button(this);
         b.setAllCaps(false);
         b.setText(label);
-        b.setTextSize(11);
-        b.setTypeface(null,Typeface.BOLD);
-        b.setTextColor(active?Color.WHITE:Color.rgb(203,210,228));
-        b.setBackground(bg(active?Color.rgb(105,91,232):Color.rgb(22,25,36),
-            active?Color.rgb(129,116,248):Color.rgb(48,52,69),11));
+        b.setTextSize(13);
+        b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        b.setTextColor(active?PremiumUi.BG:PremiumUi.TEXT);
+        b.setBackground(PremiumUi.rounded(this,
+            active?accent():PremiumUi.SURFACE_HIGH,
+            active?accent():PremiumUi.LINE,12));
         b.setPadding(dp(10),0,dp(10),0);
         b.setMinHeight(0);b.setMinimumHeight(0);
         b.setOnClickListener(v->action.run());
+        PremiumUi.tapMotion(b);
         return b;
     }
 
     private LinearLayout card(){
         LinearLayout c=new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(9),dp(7),dp(9),dp(7));
-        c.setBackground(bg(Color.rgb(18,21,31),Color.rgb(42,48,66),16));
+        c.setPadding(dp(10),dp(8),dp(10),dp(8));
+        c.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,13));
         return c;
     }
 
     private TextView segmentItem(String label,boolean active,Runnable action){
-        TextView t=text(label,13);t.setGravity(Gravity.CENTER);t.setTypeface(null,Typeface.BOLD);
-        t.setTextColor(active?Color.WHITE:Color.rgb(137,146,166));
-        t.setBackground(bg(active?Color.rgb(92,78,220):Color.TRANSPARENT,0,14));
-        t.setOnClickListener(v->action.run());return t;
+        TextView t=text(label,13);
+        t.setGravity(Gravity.CENTER);
+        t.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        t.setTextColor(active?accent():PremiumUi.MUTED);
+        t.setBackground(PremiumUi.rounded(this,
+            active?PremiumUi.SURFACE_HIGH:Color.TRANSPARENT,
+            active?accent():Color.TRANSPARENT,11));
+        t.setOnClickListener(v->action.run());
+        PremiumUi.tapMotion(t);
+        return t;
     }
 
     private TextView strategyTab(String label,boolean active,Runnable action){
-        TextView t=text(label,14);t.setGravity(Gravity.CENTER);t.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
-        t.setTextColor(active?Color.rgb(194,185,255):Color.rgb(133,142,163));
-        if(active)t.setBackground(bg(Color.rgb(27,24,46),Color.rgb(92,78,220),12));
-        else t.setBackgroundColor(Color.TRANSPARENT);
-        t.setOnClickListener(v->action.run());return t;
+        TextView t=text(label,14);
+        t.setGravity(Gravity.CENTER);
+        t.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        t.setTextColor(active?accent():PremiumUi.MUTED);
+        t.setBackground(PremiumUi.rounded(this,
+            active?PremiumUi.SURFACE_HIGH:Color.TRANSPARENT,
+            active?accent():Color.TRANSPARENT,11));
+        t.setOnClickListener(v->action.run());
+        PremiumUi.tapMotion(t);
+        return t;
     }
 
-    private TextView iconAction(String glyph,Runnable action){
-        TextView t=text(glyph,20);t.setGravity(Gravity.CENTER);t.setTextColor(Color.rgb(211,217,232));
-        t.setBackground(bg(Color.rgb(21,24,34),Color.rgb(48,52,68),19));t.setOnClickListener(v->action.run());return t;
+    private View iconAction(String glyph,Runnable action){
+        PremiumIconView v=new PremiumIconView(this,
+            "☰".equals(glyph)?"settings":"×".equals(glyph)?"close":"refresh",
+            PremiumUi.TEXT);
+        v.setBackground(PremiumUi.rounded(this,PremiumUi.SURFACE,PremiumUi.LINE,12));
+        v.setContentDescription("☰".equals(glyph)?"설정 열기":"×".equals(glyph)?"닫기":"새로고침");
+        v.setOnClickListener(x->action.run());
+        PremiumUi.tapMotion(v);
+        return v;
     }
 
-    private LinearLayout bottomNavItem(String key,String icon,String label){
+    private LinearLayout bottomNavItem(String key,String unusedGlyph,String label){
         boolean active=key.equals(page);
-        int accent="stock".equals(market)?Color.rgb(77,124,254):Color.rgb(0,196,164);
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(4),dp(2),dp(4),dp(2));
-        if(active)box.setBackground(bg(Color.argb(46,Color.red(accent),Color.green(accent),Color.blue(accent)),accent,13));
-        TextView i=text(icon,19);i.setGravity(Gravity.CENTER);i.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
-        i.setTextColor(active?accent:Color.rgb(106,115,137));box.addView(i,new LinearLayout.LayoutParams(-1,dp(23)));
-        TextView l=text(label,11);l.setGravity(Gravity.CENTER);l.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
-        l.setTextColor(active?Color.WHITE:Color.rgb(118,127,148));box.addView(l,new LinearLayout.LayoutParams(-1,dp(16)));
-        box.setOnClickListener(v->{page=key;persistNavigation();showShell();});return box;
+        int color=active?accent():PremiumUi.MUTED;
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(3),dp(2),dp(3),dp(2));
+        box.setBackground(PremiumUi.rounded(this,
+            active?PremiumUi.SURFACE_HIGH:Color.TRANSPARENT,
+            active?accent():Color.TRANSPARENT,11));
+        PremiumIconView glyph=new PremiumIconView(this,key,color);
+        box.addView(glyph,new LinearLayout.LayoutParams(-1,dp(24)));
+        TextView caption=text(label,12);caption.setGravity(Gravity.CENTER);
+        caption.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        caption.setTextColor(active?PremiumUi.TEXT:PremiumUi.MUTED);
+        box.addView(caption,new LinearLayout.LayoutParams(-1,dp(18)));
+        box.setContentDescription(label+(active?" · 현재 화면":" · 탭하여 이동"));
+        box.setOnClickListener(v->{page=key;persistNavigation();showShell();});
+        PremiumUi.tapMotion(box);
+        return box;
     }
 
     private View divider(){
@@ -346,7 +375,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout p=new LinearLayout(this);
         p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);
         p.setPadding(dp(32),dp(24),dp(32),dp(24));
-        p.setBackgroundColor(Color.rgb(7,16,28));
+        p.setBackgroundColor(PremiumUi.BG);
         TextView brand=text("ARTITRADE",28);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.12f);p.addView(brand);
         TextView sub=text("S21+ PHONE MAIN · NATIVE SAFEBOOT",12);sub.setTextColor(Color.rgb(139,164,194));sub.setPadding(0,dp(8),0,dp(18));p.addView(sub);
         ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(true);
@@ -356,37 +385,66 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        return "stock".equals(market)?"v0.7.21 · 주식":"v0.7.21 · 코인";
+        return "stock".equals(market)?"v0.7.23 · 주식":"v0.7.23 · 코인";
     }
 
     private void showShell(){
         root.removeAllViews();
         drawerOverlay=null;
         stopDrawerProgressTicker();
-        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(9,11,17));
+        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(PremiumUi.BG);
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
 
-        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(12),dp(3),dp(8),dp(3));
-        LinearLayout brandBox=new LinearLayout(this);brandBox.setOrientation(LinearLayout.VERTICAL);brandBox.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout brandLine=new LinearLayout(this);brandLine.setOrientation(LinearLayout.HORIZONTAL);brandLine.setGravity(Gravity.CENTER_VERTICAL);
-        TextView brand=text("ARTITRADE",18);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.09f);brandLine.addView(brand);
-        TextView ver=text("  ·  "+marketVersionLabel(),10);ver.setTypeface(null,Typeface.BOLD);ver.setTextColor("stock".equals(market)?Color.rgb(96,145,255):Color.rgb(0,205,171));
-        brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(25)));brandBox.addView(brandLine,new LinearLayout.LayoutParams(-1,dp(25)));
-        statusText=text("데이터 확인 중",10);statusText.setTextColor(Color.rgb(138,147,167));brandBox.addView(statusText,new LinearLayout.LayoutParams(-1,dp(17)));
-        top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(43),1));
+        final boolean wideHeader=getResources().getConfiguration().screenWidthDp>=720;
+        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(10),dp(3),dp(7),dp(3));
+        LinearLayout brandBox=new LinearLayout(this);
+        brandBox.setOrientation(LinearLayout.VERTICAL);brandBox.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout brandLine=new LinearLayout(this);brandLine.setOrientation(LinearLayout.HORIZONTAL);
+        brandLine.setGravity(Gravity.CENTER_VERTICAL);
+        TextView brand=text("ARTITRADE",18);
+        brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        brand.setLetterSpacing(.065f);
+        brandLine.addView(brand);
+        if(wideHeader){
+            TextView ver=text("  ·  "+marketVersionLabel(),12);
+            ver.setTextColor(accent());
+            brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(26)));
+        }
+        brandBox.addView(brandLine,new LinearLayout.LayoutParams(-1,dp(26)));
+        statusText=text("● 연결 확인 중",12);
+        statusText.setSingleLine(true);
+        statusText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        statusText.setTextColor(PremiumUi.MUTED);
+        brandBox.addView(statusText,new LinearLayout.LayoutParams(-1,dp(19)));
+        top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(46),1));
 
-        LinearLayout marketSwitch=new LinearLayout(this);marketSwitch.setOrientation(LinearLayout.HORIZONTAL);marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
-        marketSwitch.setBackground(bg(Color.rgb(20,23,33),Color.rgb(42,47,63),18));
-        // Keep the bottom navigation context across both markets (e.g. positions -> positions).
-        TextView stock=segmentItem("주식","stock".equals(market),()->{if(!"stock".equals(market)){market="stock";strategy="at";resetHistoryFilter();}persistNavigation();showShell();});
-        TextView coin=segmentItem("코인","coin".equals(market),()->{if(!"coin".equals(market)){market="coin";strategy="general";resetHistoryFilter();}persistNavigation();showShell();});
-        marketSwitch.addView(stock,new LinearLayout.LayoutParams(dp(58),dp(30)));
-        marketSwitch.addView(coin,new LinearLayout.LayoutParams(dp(58),dp(30)));
-        top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(122),dp(36)));
+        LinearLayout marketSwitch=new LinearLayout(this);
+        marketSwitch.setOrientation(LinearLayout.HORIZONTAL);
+        marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
+        marketSwitch.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,14));
+        TextView stock=segmentItem("주식","stock".equals(market),()->{
+            if(!"stock".equals(market)){market="stock";strategy="at";resetHistoryFilter();}
+            persistNavigation();showShell();
+        });
+        TextView coin=segmentItem("코인","coin".equals(market),()->{
+            if(!"coin".equals(market)){market="coin";strategy="general";resetHistoryFilter();}
+            persistNavigation();showShell();
+        });
+        marketSwitch.addView(stock,new LinearLayout.LayoutParams(dp(49),dp(33)));
+        marketSwitch.addView(coin,new LinearLayout.LayoutParams(dp(49),dp(33)));
+        top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(104),dp(39)));
 
-        clockText=text("",10);clockText.setTextColor(Color.rgb(116,126,148));clockText.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(dp(86),dp(34));tp.setMargins(dp(7),0,dp(4),0);top.addView(clockText,tp);
-        top.addView(iconAction("☰",this::openSettingsDrawer),new LinearLayout.LayoutParams(dp(38),dp(38)));
+        clockText=text("",12);
+        clockText.setTextColor(PremiumUi.MUTED);
+        clockText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams clockLp=new LinearLayout.LayoutParams(
+            dp(wideHeader?115:59),dp(38));
+        clockLp.setMargins(dp(6),0,dp(4),0);
+        top.addView(clockText,clockLp);
+        top.addView(iconAction("☰",this::openSettingsDrawer),
+            new LinearLayout.LayoutParams(dp(43),dp(43)));
         shell.addView(top,new LinearLayout.LayoutParams(-1,dp(51)));
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
 
@@ -395,7 +453,7 @@ public final class UnifiedVisualActivity extends Activity {
         sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(40)));
         buildStrategyBar();
 
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(9,11,17));
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(PremiumUi.BG);
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(7),dp(5),dp(7),dp(8));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
@@ -410,16 +468,17 @@ public final class UnifiedVisualActivity extends Activity {
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
 
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
-        LinearLayout bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.HORIZONTAL);bottom.setGravity(Gravity.CENTER);bottom.setPadding(dp(6),dp(3),dp(6),dp(3));bottom.setBackgroundColor(Color.rgb(13,15,22));
+        LinearLayout bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.HORIZONTAL);bottom.setGravity(Gravity.CENTER);bottom.setPadding(dp(6),dp(3),dp(6),dp(3));bottom.setBackgroundColor(PremiumUi.BG);
         bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(44),1));
         bottom.addView(bottomNavItem("positions","◆","보유종목"),new LinearLayout.LayoutParams(0,dp(44),1));
         bottom.addView(bottomNavItem("pending","◌","매수대기"),new LinearLayout.LayoutParams(0,dp(44),1));
         bottom.addView(bottomNavItem("executions","↔","체결이력"),new LinearLayout.LayoutParams(0,dp(44),1));
         bottom.addView(bottomNavItem("research","◎","연구자료"),new LinearLayout.LayoutParams(0,dp(44),1));
-        shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(51)));
+        shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(54)));
 
         updateClock();
         render();
+        PremiumUi.reveal(content);
     }
 
     private String etaText(JSONObject p){
@@ -512,7 +571,7 @@ public final class UnifiedVisualActivity extends Activity {
         overlay.addView(dim,new FrameLayout.LayoutParams(-1,-1));
 
         int width=Math.min(dp(380),(int)(getResources().getDisplayMetrics().widthPixels*.88f));
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(10,22,38));
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(PremiumUi.BG);
         LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(18),dp(18),dp(18),dp(22));scroll.addView(panel,new ScrollView.LayoutParams(-1,-2));
         LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=text(("stock".equals(market)?"주식":"코인")+" 설정",21);title.setTypeface(null,Typeface.BOLD);head.addView(title,new LinearLayout.LayoutParams(0,dp(42),1));
@@ -926,8 +985,10 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void updateClock(){
         if(clockText==null)return;
-        SimpleDateFormat f=new SimpleDateFormat("MM-dd HH:mm:ss",Locale.KOREA);f.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
-        clockText.setText(f.format(new Date())+" KST");
+        boolean wide=getResources().getConfiguration().screenWidthDp>=720;
+        SimpleDateFormat f=new SimpleDateFormat(wide?"MM/dd HH:mm":"HH:mm",Locale.KOREA);
+        f.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
+        clockText.setText(f.format(new Date()));
     }
 
     private int countPreparedRows(Map<String,Stats> totals){
@@ -1627,7 +1688,7 @@ public final class UnifiedVisualActivity extends Activity {
                                       double amount,int accent){
         LinearLayout tile=new LinearLayout(this);tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(9),dp(5),dp(7),dp(3));
-        tile.setBackground(bg(Color.rgb(23,34,49),Color.rgb(45,63,85),10));
+        tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,10));
         LinearLayout labelRow=new LinearLayout(this);labelRow.setOrientation(LinearLayout.HORIZONTAL);
         TextView icon=text(glyph,12);icon.setTextColor(accent);
         labelRow.addView(icon,new LinearLayout.LayoutParams(dp(19),dp(17)));
@@ -1646,7 +1707,7 @@ public final class UnifiedVisualActivity extends Activity {
 
     private View feedCard(String m,String title){
         LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.HORIZONTAL);c.setGravity(Gravity.CENTER_VERTICAL);c.setPadding(dp(13),0,dp(13),0);
-        c.setBackground(bg(Color.rgb(15,18,27),Color.rgb(38,43,58),14));
+        c.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,14));
         JSONObject rt=copyCache().optJSONObject("realtime");JSONObject r=rt==null?null:rt.optJSONObject(m);boolean on=r!=null&&r.optBoolean("connected",false);
         TextView dot=text("●",10);dot.setTextColor(on?Color.rgb(86,214,170):Color.rgb(255,176,92));c.addView(dot,new LinearLayout.LayoutParams(dp(20),dp(34)));
         LinearLayout copy=new LinearLayout(this);copy.setOrientation(LinearLayout.VERTICAL);copy.setGravity(Gravity.CENTER_VERTICAL);
@@ -2418,7 +2479,7 @@ public final class UnifiedVisualActivity extends Activity {
         EditText e=new EditText(this);e.setText(value);e.setHint(hint);e.setSingleLine(true);
         e.setTextSize(15);e.setTextColor(Color.WHITE);e.setHintTextColor(Color.rgb(111,121,143));
         e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        e.setBackground(bg(Color.rgb(13,16,24),Color.rgb(49,54,72),10));
+        e.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,10));
         e.setPadding(dp(10),0,dp(10),0);return e;
     }
 
@@ -2871,8 +2932,8 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void showFatal(Throwable e){
-        if(root==null){root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(7,16,28));try{setContentView(root);}catch(Throwable ignored){}}
-        root.removeAllViews();LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);p.setPadding(dp(28),dp(20),dp(28),dp(20));p.setBackgroundColor(Color.rgb(7,16,28));
+        if(root==null){root=new FrameLayout(this);root.setBackgroundColor(PremiumUi.BG);try{setContentView(root);}catch(Throwable ignored){}}
+        root.removeAllViews();LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);p.setPadding(dp(28),dp(20),dp(28),dp(20));p.setBackgroundColor(PremiumUi.BG);
         TextView h=text("ARTITRADE 네이티브 안전모드",22);h.setTypeface(null,Typeface.BOLD);p.addView(h);TextView d=text(e==null?"알 수 없는 오류":e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),11);d.setTextColor(Color.rgb(255,145,155));d.setPadding(0,dp(10),0,dp(10));p.addView(d);p.addView(button("화면 다시 구성",true,()->{try{showShell();refresh(false);}catch(Throwable x){}}),new LinearLayout.LayoutParams(dp(240),dp(44)));root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
