@@ -25,6 +25,7 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -62,17 +63,40 @@ public final class UnifiedVisualActivity extends Activity {
     private final ExecutorService io=Executors.newFixedThreadPool(6);
     // A refresh builds a new immutable-for-read snapshot on a worker thread.
     // Never stringify and reparse the entire imported PC ledger on the UI thread.
+    private static final class HistoryRow {
+        final JSONObject row;
+        final String source;
+        final String frame;
+        final long at;
+        HistoryRow(JSONObject row,String source,String frame,long at){
+            this.row=row;this.source=source;this.frame=frame;this.at=at;
+        }
+    }
     private static final class UiSnapshot {
         final JSONObject packet;
         final Map<String,Stats> totals;
         final Map<String,Stats> frames;
-        UiSnapshot(JSONObject packet,Map<String,Stats> totals,Map<String,Stats> frames){
+        final Map<String,java.util.List<HistoryRow>> histories;
+        final Map<String,RealizedTrend.Series> trends;
+        final long preloadMs;
+        final int preloadRows;
+        final boolean reused;
+        UiSnapshot(JSONObject packet,Map<String,Stats> totals,Map<String,Stats> frames,
+                   Map<String,java.util.List<HistoryRow>> histories,
+                   Map<String,RealizedTrend.Series> trends,long preloadMs,int preloadRows,
+                   boolean reused){
             this.packet=packet;
             this.totals=java.util.Collections.unmodifiableMap(totals);
             this.frames=java.util.Collections.unmodifiableMap(frames);
+            this.histories=java.util.Collections.unmodifiableMap(histories);
+            this.trends=java.util.Collections.unmodifiableMap(trends);
+            this.preloadMs=preloadMs;
+            this.preloadRows=preloadRows;
+            this.reused=reused;
         }
     }
-    private volatile UiSnapshot uiSnapshot=new UiSnapshot(new JSONObject(),new HashMap<>(),new HashMap<>());
+    private volatile UiSnapshot uiSnapshot=new UiSnapshot(new JSONObject(),new HashMap<>(),
+        new HashMap<>(),new HashMap<>(),new HashMap<>(),0L,0,false);
     // Worker-only parsed record reuse. The service publishes a fresh JSON string
     // frequently, even when all historical records are unchanged.
     private String cachedLocalRaw;
@@ -89,6 +113,7 @@ public final class UnifiedVisualActivity extends Activity {
     private String market="stock";
     private String strategy="at";
     private String page="home";
+    private String historyFilterStock="all",historyFilterCoin="all";
     // History is never truncated; only the visible Android Views are paged.
     private String historyContext="";
     private int historyOffset=0;
@@ -155,6 +180,7 @@ public final class UnifiedVisualActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
+        restoreNavigation(state);
         try{
             getWindow().setStatusBarColor(Color.rgb(7,16,28));
             getWindow().setNavigationBarColor(Color.rgb(7,16,28));
@@ -180,13 +206,46 @@ public final class UnifiedVisualActivity extends Activity {
         }
     }
 
+    private void restoreNavigation(Bundle saved){
+        android.content.SharedPreferences prefs=getSharedPreferences("artitrade_ui_navigation_v1",MODE_PRIVATE);
+        market=saved==null?prefs.getString("market","stock"):saved.getString("market",prefs.getString("market","stock"));
+        strategy=saved==null?prefs.getString("strategy","at"):saved.getString("strategy",prefs.getString("strategy","at"));
+        page=saved==null?prefs.getString("page","home"):saved.getString("page",prefs.getString("page","home"));
+        historyFilterStock=prefs.getString("stock_filter","all");
+        historyFilterCoin=prefs.getString("coin_filter","all");
+        if(!"stock".equals(market)&&!"coin".equals(market))market="stock";
+        boolean validStrategy=false;
+        for(String[] item:strategyList(market))if(item[0].equals(strategy))validStrategy=true;
+        if(!validStrategy)strategy="stock".equals(market)?"at":"general";
+        java.util.HashSet<String> validPages=new java.util.HashSet<>(
+            java.util.Arrays.asList("home","positions","pending","executions",
+                "research","operation","scores","errors","policyHistory","more"));
+        if(!validPages.contains(page))page="home";
+    }
+
+    private void persistNavigation(){
+        getSharedPreferences("artitrade_ui_navigation_v1",MODE_PRIVATE).edit()
+            .putString("market",market).putString("strategy",strategy).putString("page",page)
+            .putString("stock_filter",historyFilterStock)
+            .putString("coin_filter",historyFilterCoin)
+            .apply();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state){
+        state.putString("market",market);
+        state.putString("strategy",strategy);
+        state.putString("page",page);
+        persistNavigation();
+        super.onSaveInstanceState(state);
+    }
+
     private int dp(float v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
 
     private TextView text(String value,int sp){
         TextView t=new TextView(this);
         t.setText(value);
         t.setTextSize(sp);
-        t.setTextColor(Color.rgb(240,247,255));
+        t.setTextColor(colorByStatus(value,Color.rgb(240,247,255)));
         t.setGravity(Gravity.CENTER_VERTICAL);
         t.setIncludeFontPadding(false);
         t.setLineSpacing(dp(2),1.0f);
@@ -258,7 +317,7 @@ public final class UnifiedVisualActivity extends Activity {
         i.setTextColor(active?accent:Color.rgb(106,115,137));box.addView(i,new LinearLayout.LayoutParams(-1,dp(25)));
         TextView l=text(label,11);l.setGravity(Gravity.CENTER);l.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
         l.setTextColor(active?Color.WHITE:Color.rgb(118,127,148));box.addView(l,new LinearLayout.LayoutParams(-1,dp(18)));
-        box.setOnClickListener(v->{page=key;showShell();});return box;
+        box.setOnClickListener(v->{page=key;persistNavigation();showShell();});return box;
     }
 
     private View divider(){
@@ -302,8 +361,8 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout marketSwitch=new LinearLayout(this);marketSwitch.setOrientation(LinearLayout.HORIZONTAL);marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
         marketSwitch.setBackground(bg(Color.rgb(20,23,33),Color.rgb(42,47,63),18));
         // Keep the bottom navigation context across both markets (e.g. positions -> positions).
-        TextView stock=segmentItem("주식","stock".equals(market),()->{if(!"stock".equals(market)){market="stock";strategy="at";}showShell();});
-        TextView coin=segmentItem("코인","coin".equals(market),()->{if(!"coin".equals(market)){market="coin";strategy="general";}showShell();});
+        TextView stock=segmentItem("주식","stock".equals(market),()->{if(!"stock".equals(market)){market="stock";strategy="at";}persistNavigation();showShell();});
+        TextView coin=segmentItem("코인","coin".equals(market),()->{if(!"coin".equals(market)){market="coin";strategy="general";}persistNavigation();showShell();});
         marketSwitch.addView(stock,new LinearLayout.LayoutParams(dp(58),dp(30)));
         marketSwitch.addView(coin,new LinearLayout.LayoutParams(dp(58),dp(30)));
         top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(122),dp(36)));
@@ -510,6 +569,18 @@ public final class UnifiedVisualActivity extends Activity {
             he.setMaxLines(6);tools.addView(he);
         }
 
+        UiSnapshot readyState=uiSnapshot;
+        TextView preloadNote=text("화면 사전로딩: "+
+            (readyState.reused?"기존 결과 재사용":"전략별 집계")+
+            " · "+readyState.preloadMs+"ms · 화면용 기록 "+readyState.preloadRows+
+            "건 · 전략 "+readyState.totals.size()+"개",10);
+        preloadNote.setTextColor(readyState.preloadRows>0?Color.rgb(62,224,181):
+            Color.rgb(255,194,91));
+        preloadNote.setPadding(dp(2),dp(6),dp(2),dp(6));
+        tools.addView(preloadNote);
+        TextView preloadExplain=text("※ 이 시간은 화면 표시자료 준비시간이며 PC SQLite 전체 검증시간이 아님",9);
+        preloadExplain.setTextColor(Color.rgb(141,159,183));tools.addView(preloadExplain);
+
         JSONObject migState=snapshot.optJSONObject("pc_ledger_migration");
         drawerImportProgress=addProgressBlock(tools,"② 기존 PC EXE 원장 → S21+ 승계",importProgress,Color.rgb(77,124,254));
 
@@ -561,6 +632,30 @@ public final class UnifiedVisualActivity extends Activity {
                 TextView issue=text("복원 검증: "+importError,10);
                 issue.setTextColor(Color.rgb(255,153,164));issue.setPadding(dp(2),0,0,dp(8));tools.addView(issue);
             }
+        }
+        if("stock".equals(market)){
+            JSONObject gmo=ledger(snapshot,"stock","gmo");
+            JSONObject gmoDiagnostic=gmo.optJSONObject("load_diagnostic");
+            long pcGmoRows=0,engineGmoRows=0;
+            JSONObject mv=migState==null?null:migState.optJSONObject("verification");
+            JSONObject byStrategy=mv==null?null:mv.optJSONObject("by_strategy");
+            JSONObject gmoVerify=byStrategy==null?null:byStrategy.optJSONObject("stock/gmo");
+            if(gmoVerify!=null){
+                pcGmoRows=gmoVerify.optLong("pc_rows",0);
+                engineGmoRows=gmoVerify.optLong("runtime_rows",0);
+            }
+            Stats localGmo=uiSnapshot.totals.get("stock/gmo");
+            int shown=localGmo==null?0:localGmo.positions.length()+
+                localGmo.executions.length()+localGmo.research.length();
+            String phase=gmoDiagnostic==null?"":gmoDiagnostic.optString("stage","");
+            String gmoMessage="PC 수급매매 승계 확인: 원본 "+pcGmoRows+
+                "건 · 검증된 엔진 "+engineGmoRows+"건 · 화면 "+shown+"건"+
+                (phase.isEmpty()?"":" · "+phase);
+            TextView gm=text(gmoMessage,11);
+            gm.setTextColor(pcGmoRows>0&&shown==0?Color.rgb(255,119,133):
+                shown>0?Color.rgb(62,224,181):Color.rgb(255,194,91));
+            gm.setPadding(dp(2),dp(7),dp(2),dp(7));
+            tools.addView(gm);
         }
         TextView explain=text("※ 'MSERVER 게시 완료'와 'PC 과거원장 승계 완료'는 서로 다른 상태임.",10);
         explain.setTextColor(Color.rgb(255,194,91));explain.setPadding(dp(2),0,dp(2),dp(7));tools.addView(explain);
@@ -623,7 +718,7 @@ public final class UnifiedVisualActivity extends Activity {
         String[][] list=strategyList(market);
         for(String[] item:list){
             boolean active=item[0].equals(strategy);
-            TextView tab=strategyTab(item[1],active,()->{strategy=item[0];showShell();});
+            TextView tab=strategyTab(item[1],active,()->{strategy=item[0];persistNavigation();showShell();});
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1);
             if(strategyBar.getChildCount()>0)lp.setMargins(dp(4),0,0,0);
             strategyBar.addView(tab,lp);
@@ -633,7 +728,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void switchStrategy(int delta){
         String[] a="stock".equals(market)?new String[]{"at","ma","close","gmo"}:new String[]{"general","ma"};
         int idx=0;for(int i=0;i<a.length;i++)if(a[i].equals(strategy))idx=i;
-        int n=idx+delta;if(n<0||n>=a.length)return;strategy=a[n];showShell();
+        int n=idx+delta;if(n<0||n>=a.length)return;strategy=a[n];persistNavigation();showShell();
     }
 
     private void refresh(boolean first){
@@ -737,6 +832,7 @@ public final class UnifiedVisualActivity extends Activity {
                 }catch(Exception e){packet.put("mserver_auth",new JSONObject());}
                 packet.put("records",records);packet.put("loaded_at",System.currentTimeMillis());
             }catch(Exception e){try{packet.put("refresh_error",e.getClass().getSimpleName()+": "+e.getMessage());}catch(Exception ignored){}}
+            long preloadStart=android.os.SystemClock.elapsedRealtime();
             UiSnapshot previous=uiSnapshot;
             Map<String,Stats> preparedTotals=new HashMap<>();
             Map<String,Stats> preparedFrames=new HashMap<>();
@@ -766,7 +862,14 @@ public final class UnifiedVisualActivity extends Activity {
                 }
             }
             boolean ledgerChanged=preparedTotals!=previous.totals;
-            uiSnapshot=new UiSnapshot(packet,preparedTotals,preparedFrames);
+            Map<String,java.util.List<HistoryRow>> histories=ledgerChanged
+                ?prepareHistories(preparedTotals):previous.histories;
+            Map<String,RealizedTrend.Series> trends=ledgerChanged
+                ?prepareTrends(preparedTotals):previous.trends;
+            int rows=ledgerChanged?countPreparedRows(preparedTotals):previous.preloadRows;
+            long preloadMs=android.os.SystemClock.elapsedRealtime()-preloadStart;
+            uiSnapshot=new UiSnapshot(packet,preparedTotals,preparedFrames,histories,
+                trends,preloadMs,rows,!ledgerChanged);
             refreshRunning=false;
             // Home has live feed indicators; historical pages need not recreate
             // hundreds of views when the ledger version has not changed.
@@ -802,6 +905,145 @@ public final class UnifiedVisualActivity extends Activity {
         if(clockText==null)return;
         SimpleDateFormat f=new SimpleDateFormat("MM-dd HH:mm:ss",Locale.KOREA);f.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
         clockText.setText(f.format(new Date())+" KST");
+    }
+
+    private int countPreparedRows(Map<String,Stats> totals){
+        int sum=0;
+        for(Stats x:totals.values())sum+=x.positions.length()+x.executions.length()+x.research.length();
+        return sum;
+    }
+
+    private static Object firstValue(JSONObject row,String... fields){
+        if(row==null)return null;
+        for(String key:fields){
+            Object v=row.opt(key);
+            if(v!=null&&v!=JSONObject.NULL&&!String.valueOf(v).trim().isEmpty()
+                &&!"null".equalsIgnoreCase(String.valueOf(v)))return v;
+        }
+        return null;
+    }
+
+    private static String timeFrameOf(JSONObject row){
+        Object raw=firstValue(row,"tf","timeframe","frame","account_frame","strategy_tf");
+        return HistorySelection.frame(raw==null?"":String.valueOf(raw));
+    }
+
+    private static long rowTimestamp(JSONObject row){
+        Object ts=firstValue(row,"filled_at","executed_at","exit_at","sold_at",
+            "closed_at","at","ts","timestamp","created_at","buy_at","entry_at",
+            "ref_ts","ref_at","reference_ts","event_date","gmo_event_date","event_day");
+        return RealizedTrend.time(ts);
+    }
+
+    private Map<String,java.util.List<HistoryRow>> prepareHistories(Map<String,Stats> totals){
+        Map<String,java.util.List<HistoryRow>> buckets=new HashMap<>();
+        for(Map.Entry<String,Stats> source:totals.entrySet()){
+            String[] parts=source.getKey().split("/");
+            if(parts.length!=2)continue;
+            String m=parts[0],s=parts[1];Stats st=source.getValue();
+            for(String kind:new String[]{"positions","executions","research"}){
+                JSONArray data="positions".equals(kind)?st.positions:
+                    "executions".equals(kind)?st.executions:st.research;
+                for(int i=0;i<data.length();i++){
+                    JSONObject row=data.optJSONObject(i);if(row==null)continue;
+                    String frame=timeFrameOf(row);
+                    HistoryRow item=new HistoryRow(row,s,frame,rowTimestamp(row));
+                    buckets.computeIfAbsent(m+"/"+kind+"/all",k->new java.util.ArrayList<>()).add(item);
+                    String filter="gmo".equals(s)||"close".equals(s)?s:frame;
+                    if(!filter.isEmpty())
+                        buckets.computeIfAbsent(m+"/"+kind+"/"+filter,
+                            k->new java.util.ArrayList<>()).add(item);
+                }
+            }
+        }
+        for(java.util.List<HistoryRow> group:buckets.values()){
+            group.sort((a,b)->Long.compare(b.at,a.at));
+        }
+        return buckets;
+    }
+
+    private Map<String,RealizedTrend.Series> prepareTrends(Map<String,Stats> totals){
+        Map<String,RealizedTrend.Series> ready=new HashMap<>();
+        for(String m:new String[]{"stock","coin"}){
+            Map<String,java.util.List<RealizedTrend.Event>> grouped=new HashMap<>();
+            for(String f:new String[]{"all","5m","30m","60m","day"})
+                grouped.put(f,new java.util.ArrayList<>());
+            String[] strategies="stock".equals(m)
+                ?new String[]{"at","ma","gmo","close"}:new String[]{"general","ma"};
+            for(String s:strategies){
+                Stats st=totals.get(m+"/"+s);if(st==null)continue;
+                JSONArray executions=st.executions;
+                for(int i=0;i<executions.length();i++){
+                    JSONObject row=executions.optJSONObject(i);if(row==null)continue;
+                    String side=row.optString("side",row.optString("type",""))
+                        .toUpperCase(Locale.ROOT);
+                    if(!(side.contains("SELL")||side.contains("매도")))continue;
+                    double pnl=Double.NaN;
+                    for(String field:new String[]{"net_profit","net_realized","net_pnl","pnl","profit"}){
+                        Object value=row.opt(field);
+                        if(value==null||value==JSONObject.NULL)continue;
+                        try{pnl=Double.parseDouble(String.valueOf(value).replace(",",""));break;}
+                        catch(Exception ignored){}
+                    }
+                    long at=rowTimestamp(row);
+                    if(at<=0||Double.isNaN(pnl)||Double.isInfinite(pnl))continue;
+                    RealizedTrend.Event event=new RealizedTrend.Event(at,pnl);
+                    grouped.get("all").add(event);
+                    String tf=timeFrameOf(row);
+                    if(!"gmo".equals(s)&&!"close".equals(s)&&grouped.containsKey(tf))
+                        grouped.get(tf).add(event);
+                }
+            }
+            for(Map.Entry<String,java.util.List<RealizedTrend.Event>> group:grouped.entrySet())
+                ready.put(m+"/"+group.getKey(),RealizedTrend.cumulative(group.getValue(),100));
+        }
+        return ready;
+    }
+
+    private String activeHistoryFilter(){
+        return "stock".equals(market)?historyFilterStock:historyFilterCoin;
+    }
+
+    private java.util.List<HistoryRow> selectedHistory(String kind){
+        java.util.List<HistoryRow> selected=uiSnapshot.histories.get(
+            market+"/"+kind+"/"+activeHistoryFilter());
+        return selected==null?java.util.Collections.emptyList():selected;
+    }
+
+    private void showHistoryFilterMenu(Button anchor){
+        PopupMenu menu=new PopupMenu(this,anchor);
+        String[] filters="stock".equals(market)
+            ?new String[]{"all","5m","30m","60m","day","gmo","close"}
+            :new String[]{"all","5m","30m","60m","day"};
+        for(String choice:filters){
+            android.view.MenuItem item=menu.getMenu().add(HistorySelection.filterLabel(choice));
+            item.setCheckable(true);item.setChecked(choice.equals(activeHistoryFilter()));
+            item.setOnMenuItemClickListener(selected->{
+                if("stock".equals(market))historyFilterStock=choice;
+                else historyFilterCoin=choice;
+                historyContext="";historyOffset=0;
+                persistNavigation();render();
+                return true;
+            });
+        }
+        menu.show();
+    }
+
+    private Button historyFilterButton(){
+        Button selection=button("목록 ▾ "+HistorySelection.filterLabel(activeHistoryFilter()),
+            false,()->{});
+        selection.setOnClickListener(v->showHistoryFilterMenu(selection));
+        selection.setTextSize(11);
+        return selection;
+    }
+
+    private int colorByStatus(String status,int normal){
+        switch(HistorySelection.semantic(status)){
+            case -1:return Color.rgb(255,119,133);
+            case 1:return Color.rgb(255,194,91);
+            case 2:return Color.rgb(62,224,181);
+            default:return normal;
+        }
     }
 
     private JSONObject copyCache(){
@@ -1168,6 +1410,17 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderHome(){
         Stats selected=stats(market,strategy);
+        if("stock".equals(market)&&"gmo".equals(strategy)&&
+           selected.positions.length()+selected.executions.length()+selected.research.length()==0){
+            JSONObject diag=ledger(market,strategy).optJSONObject("load_diagnostic");
+            String detail=diag==null?"수급매매 엔진에 표시할 원장이 없음":
+                diag.optString("stage","수급 원장 확인 필요");
+            TextView warn=text("수급매매 원장 확인 필요 · "+detail+
+                " · 왼쪽 설정에서 PC 원본/엔진 건수 확인",12);
+            warn.setTextColor(Color.rgb(255,119,133));
+            warn.setPadding(dp(5),dp(6),dp(5),dp(6));
+            content.addView(warn);
+        }
         TextView title=text(strategyName(market,strategy)+" 대시보드",22);title.setTypeface(null,Typeface.BOLD);content.addView(title);
         TextView sub=text(("stock".equals(market)?"주식":"코인")+" · 실제 계좌 원장 / 실제 체결 기준 성과",13);
         sub.setTextColor(Color.rgb(138,147,167));sub.setPadding(0,dp(3),0,dp(10));content.addView(sub);
@@ -1213,11 +1466,42 @@ public final class UnifiedVisualActivity extends Activity {
             }
         }
 
-        TextView trendTitle=text("실제 실현손익 추세",18);trendTitle.setTypeface(null,Typeface.BOLD);trendTitle.setTextColor(Color.rgb(220,224,235));trendTitle.setPadding(0,dp(18),0,dp(8));content.addView(trendTitle);
-        LinearLayout trendCard=card();PnlSparklineView trend=new PnlSparklineView(this);
-        trend.setValues(trendValues(selected.executions),strategyName(market,strategy)+" · 누적 실현손익");
-        trendCard.addView(trend,new LinearLayout.LayoutParams(-1,dp(150)));
-        content.addView(trendCard,new LinearLayout.LayoutParams(-1,dp(170)));
+        TextView trendTitle=text("실현손익 추세",18);trendTitle.setTypeface(null,Typeface.BOLD);
+        trendTitle.setTextColor(Color.rgb(220,224,235));
+        trendTitle.setPadding(0,dp(18),0,dp(8));content.addView(trendTitle);
+        // Market-wide combined P/L includes AT, MA, CLOSE and GMO (when present).
+        // Each timeframe combines every applicable account; never double-count inside a series.
+        addTrendCard("all","전 계좌 통합 추세",null);
+        addTrendCard("5m","5분봉", "30m");
+        addTrendCard("60m","1시간봉","day");
+    }
+
+    private LinearLayout chartView(String frame,String label){
+        LinearLayout panel=card();
+        PnlSparklineView chart=new PnlSparklineView(this);
+        RealizedTrend.Series series=uiSnapshot.trends.get(market+"/"+frame);
+        if(series==null)series=new RealizedTrend.Series(new long[0],new double[0]);
+        chart.setSeries(series,label);
+        panel.addView(chart,new LinearLayout.LayoutParams(-1,dp(160)));
+        return panel;
+    }
+
+    private void addTrendCard(String frame,String label,String pairedFrame){
+        if(pairedFrame==null){
+            LinearLayout full=chartView(frame,label);
+            LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,dp(182));
+            params.setMargins(0,dp(8),0,0);
+            content.addView(full,params);
+            return;
+        }
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+        row.addView(chartView(frame,label),new LinearLayout.LayoutParams(0,dp(182),1));
+        LinearLayout.LayoutParams second=new LinearLayout.LayoutParams(0,dp(182),1);
+        second.setMargins(dp(7),0,0,0);
+        row.addView(chartView(pairedFrame,tfLabel(pairedFrame)),second);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,dp(182));
+        params.setMargins(0,dp(8),0,0);
+        content.addView(row,params);
     }
 
     private View feedCard(String m,String title){
@@ -1235,9 +1519,13 @@ public final class UnifiedVisualActivity extends Activity {
             if(!stage.isEmpty())d=stage+(reason.isEmpty()?"":" · "+reason);
         }
         TextView x=text((on?"실시간 수신":"시세 대기")+(n>0?" · 등록 "+n+"종목":"")+(d.isEmpty()?"":" · "+d),11);
-        x.setMaxLines(2);x.setTextColor(Color.rgb(120,130,151));copy.addView(x);
+        int feedColor=on?Color.rgb(62,224,181):
+            HistorySelection.semantic(d)==-1?Color.rgb(255,119,133):
+            Color.rgb(255,194,91);
+        dot.setTextColor(feedColor);
+        x.setMaxLines(2);x.setTextColor(feedColor);copy.addView(x);
         c.addView(copy,new LinearLayout.LayoutParams(0,dp(42),1));
-        TextView badge=text(on?"LIVE":"WAIT",11);badge.setGravity(Gravity.CENTER);badge.setTypeface(null,Typeface.BOLD);badge.setTextColor(on?Color.rgb(86,214,170):Color.rgb(255,176,92));badge.setBackground(bg(Color.rgb(22,26,36),Color.rgb(48,54,70),10));c.addView(badge,new LinearLayout.LayoutParams(dp(54),dp(28)));
+        TextView badge=text(on?"LIVE":"WAIT",11);badge.setGravity(Gravity.CENTER);badge.setTypeface(null,Typeface.BOLD);badge.setTextColor(feedColor);badge.setBackground(bg(Color.rgb(22,26,36),Color.rgb(48,54,70),10));c.addView(badge,new LinearLayout.LayoutParams(dp(54),dp(28)));
         if("stock".equals(m))c.setOnClickListener(v->showKiwoomFeedDiagnosis());
         return c;
     }
@@ -1275,7 +1563,14 @@ public final class UnifiedVisualActivity extends Activity {
     private void addMini(LinearLayout row,String label,String value){
         LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setGravity(Gravity.CENTER_VERTICAL);
         TextView a=text(label,12);a.setTextColor(Color.rgb(142,152,173));c.addView(a,new LinearLayout.LayoutParams(-1,dp(22)));
-        TextView b=text(value,19);b.setTypeface(null,Typeface.BOLD);autoSingle(b,14,19);b.setTextColor(Color.rgb(235,238,246));c.addView(b,new LinearLayout.LayoutParams(-1,dp(30)));
+        TextView b=text(value,19);b.setTypeface(null,Typeface.BOLD);autoSingle(b,14,19);
+        int baseline=Color.rgb(235,238,246);
+        if(label.contains("손익")||label.contains("수익")){
+            b.setTextColor(value.startsWith("-")||value.startsWith("−")?
+                Color.rgb(255,119,133):value.startsWith("+")?
+                Color.rgb(62,224,181):Color.rgb(255,194,91));
+        }else b.setTextColor(colorByStatus(value,baseline));
+        c.addView(b,new LinearLayout.LayoutParams(-1,dp(30)));
         row.addView(c,new LinearLayout.LayoutParams(0,dp(54),1));
     }
 
@@ -1308,7 +1603,9 @@ public final class UnifiedVisualActivity extends Activity {
             switch(key){
                 case "a":return "보유 "+number(usefulNumber(r,"qty","quantity","holding_qty"));
                 case "b":return "매수가 "+formatMaybeMoney(r,"entry_price","avg_buy_price","buy_price");
-                case "c":return "현재가 "+formatMaybeMoney(r,"last_price","current_price","market_price");
+                case "c":
+                    double last=num(r,"last_price","mark","current_price","market_price","price");
+                    return finite(last)?"현재가 "+money(last):"현재가 시세 미수신";
                 default:return "1차 목표 "+formatMaybeMoney(r,"first_target","target","target_price");
             }
         }
@@ -1336,12 +1633,21 @@ public final class UnifiedVisualActivity extends Activity {
         return finite(value)?money(value):"미기록";
     }
     private void addGridCell(LinearLayout parent,String value){
-        TextView t=text(value,12);t.setTextColor(Color.rgb(202,215,234));
+        TextView t=text(value,12);
+        int standard=Color.rgb(202,215,234);
+        if(value.startsWith("순손익 ")||value.startsWith("현재 손익률 ")){
+            double v=Double.NaN;
+            try{v=Double.parseDouble(value.replaceAll("[^0-9.\\-]",""));}catch(Exception ignored){}
+            t.setTextColor(Double.isNaN(v)?standard:v<0?Color.rgb(255,119,133):
+                v>0?Color.rgb(62,224,181):Color.rgb(255,194,91));
+        }else t.setTextColor(colorByStatus(value,standard));
         t.setPadding(dp(2),dp(5),dp(2),dp(5));t.setMaxLines(2);
         parent.addView(t,new LinearLayout.LayoutParams(0,-2,1));
     }
     private int historyStart(String kind,int total){
-        String key=market+"/"+strategy+"/"+kind;
+        String key=market+"/"+kind+"/"+("positions".equals(kind)||
+            "executions".equals(kind)||"research".equals(kind)?
+            activeHistoryFilter():strategy);
         if(!key.equals(historyContext)){
             historyContext=key;
             historyOffset=0;
@@ -1377,22 +1683,29 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderList(String title,JSONArray a,String kind){
+        boolean marketWide="positions".equals(kind)||"executions".equals(kind);
+        java.util.List<HistoryRow> history=marketWide?selectedHistory(kind):null;
+        int total=marketWide?history.size():a.length();
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView h=text(title+" · "+a.length()+"건",20);h.setTypeface(null,Typeface.BOLD);
+        if(marketWide)header.addView(historyFilterButton(),new LinearLayout.LayoutParams(dp(116),dp(42)));
+        TextView h=text(title+" · "+total+"건",18);h.setTypeface(null,Typeface.BOLD);
         header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
         if("positions".equals(kind)){
-            Button history=button("정책이력",false,()->{page="policyHistory";render();});history.setTextSize(11);
+            Button history=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});history.setTextSize(11);
             header.addView(history,new LinearLayout.LayoutParams(dp(92),dp(39)));
         }
         content.addView(header,new LinearLayout.LayoutParams(-1,dp(45)));
-        if(a.length()==0){empty("기록 없음 · 실제 계좌 원장 기준");return;}
-        int first=historyStart(kind,a.length()),last=HistoryPager.end(first,a.length());
-        addHistoryPager(kind,a.length());
+        if(total==0){empty(uiSnapshot.totals.isEmpty()?"원장 화면 사전로딩 중":"선택한 목록에 기록 없음");return;}
+        int first=historyStart(kind,total),last=HistoryPager.end(first,total);
+        addHistoryPager(kind,total);
         for(int i=first;i<last;i++){
-            JSONObject r=a.optJSONObject(i);if(r==null)continue;
+            HistoryRow item=marketWide?history.get(i):null;
+            JSONObject r=marketWide?item.row:a.optJSONObject(i);
+            if(r==null)continue;
             LinearLayout c=card();
             LinearLayout topRow=new LinearLayout(this);topRow.setOrientation(LinearLayout.HORIZONTAL);topRow.setGravity(Gravity.CENTER_VERTICAL);
-            TextView n=text(nameOf(r),17);n.setTypeface(null,Typeface.BOLD);n.setMaxLines(1);
+            String tagged=marketWide?nameOf(r)+" · "+HistorySelection.strategyTag(item.source,item.frame):nameOf(r)+" · "+HistorySelection.frameLabel(timeFrameOf(r));
+            TextView n=text(tagged,15);n.setTypeface(null,Typeface.BOLD);n.setMaxLines(1);
             topRow.addView(n,new LinearLayout.LayoutParams(0,dp(29),1));
             double profit=usefulNumber(r,"net_pnl","unrealized_pnl","paper_pnl","net_profit","net_realized","pnl");
             if(!"pending".equals(kind)&&finite(profit)){
@@ -1400,7 +1713,8 @@ public final class UnifiedVisualActivity extends Activity {
                 paintProfit(p,profit);topRow.addView(p,new LinearLayout.LayoutParams(-2,dp(29)));
             }
             c.addView(topRow);
-            TextView when=text(refLabel()+" "+timeOf(r),11);
+            TextView when=text((marketWide?refLabel(item.source):refLabel())+" "+
+                (marketWide?timeOf(r,item.source):timeOf(r)),11);
             when.setTextColor(Color.rgb(139,163,192));c.addView(when);
             LinearLayout firstRow=new LinearLayout(this);firstRow.setOrientation(LinearLayout.HORIZONTAL);
             addGridCell(firstRow,cellValue(r,kind,"a"));addGridCell(firstRow,cellValue(r,kind,"b"));c.addView(firstRow);
@@ -1412,14 +1726,14 @@ public final class UnifiedVisualActivity extends Activity {
                 LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
                 Button sell=button("강제매도",false,()->showManualSellInfo(r));sell.setTextSize(12);
                 actions.addView(sell,new LinearLayout.LayoutParams(0,dp(39),1));
-                Button policy=button("정책이력",false,()->{page="policyHistory";render();});policy.setTextSize(12);
+                Button policy=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});policy.setTextSize(12);
                 LinearLayout.LayoutParams pl=new LinearLayout.LayoutParams(0,dp(39),1);pl.setMargins(dp(6),0,0,0);actions.addView(policy,pl);c.addView(actions);
             }
             TextView why=text("근거 · "+reasonOf(r),11);why.setTextColor(Color.rgb(151,176,202));why.setMaxLines(3);
             why.setPadding(dp(2),dp(5),dp(2),0);c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(5));content.addView(c,lp);
         }
-        addHistoryPager(kind,a.length());
+        addHistoryPager(kind,total);
     }
     private void showManualSellInfo(JSONObject position){
         String identity=nameOf(position);
@@ -1503,10 +1817,12 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderResearch(){
         Stats st=stats(market,strategy);
+        java.util.List<HistoryRow> filteredResearch=selectedHistory("research");
         JSONObject rs=research(market,strategy);
 
         LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView h=text(strategyName(market,strategy)+" 연구자료",22);h.setTypeface(null,Typeface.BOLD);head.addView(h,new LinearLayout.LayoutParams(0,dp(44),1));
+        head.addView(historyFilterButton(),new LinearLayout.LayoutParams(dp(116),dp(42)));
+        TextView h=text("연구자료 · "+filteredResearch.size()+"건",19);h.setTypeface(null,Typeface.BOLD);head.addView(h,new LinearLayout.LayoutParams(0,dp(44),1));
         Button export=button("전체 연구 ZIP",true,()->exportResearch(st));export.setTextSize(12);head.addView(export,new LinearLayout.LayoutParams(dp(112),dp(40)));
         content.addView(head,new LinearLayout.LayoutParams(-1,dp(44)));
         TextView sub=text("실제 매수 결과와 미매수 후보의 가상진입 연구를 분리 · 대시보드 성과에는 가상연구 미포함",13);
@@ -1551,14 +1867,16 @@ public final class UnifiedVisualActivity extends Activity {
         }
 
         TextView hist=text("최근 연구 기록",17);hist.setTypeface(null,Typeface.BOLD);hist.setTextColor(Color.rgb(157,181,208));hist.setPadding(0,dp(13),0,dp(6));content.addView(hist);
-        if(st.research.length()==0){empty("연구이력 없음");return;}
-        int first=historyStart("research",st.research.length());
-        int last=HistoryPager.end(first,st.research.length());
-        addHistoryPager("research",st.research.length());
+        if(filteredResearch.isEmpty()){empty("선택한 연구이력 없음");return;}
+        int first=historyStart("research",filteredResearch.size());
+        int last=HistoryPager.end(first,filteredResearch.size());
+        addHistoryPager("research",filteredResearch.size());
         for(int i=first;i<last;i++){
-            JSONObject r=st.research.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
+            HistoryRow item=filteredResearch.get(i);
+            JSONObject r=item.row;if(r==null)continue;LinearLayout c=card();
             LinearLayout rowHead=new LinearLayout(this);rowHead.setOrientation(LinearLayout.HORIZONTAL);
-            TextView n=text(nameOf(r),17);n.setTypeface(null,Typeface.BOLD);rowHead.addView(n,new LinearLayout.LayoutParams(0,dp(30),1));
+            TextView n=text(nameOf(r)+" · "+HistorySelection.strategyTag(item.source,item.frame),14);
+            n.setTypeface(null,Typeface.BOLD);rowHead.addView(n,new LinearLayout.LayoutParams(0,dp(30),1));
             String badge=r.optBoolean("bought",false)?"실제매수":"가상연구";
             TextView b=text(badge,11);b.setGravity(Gravity.CENTER);b.setTypeface(null,Typeface.BOLD);
             b.setTextColor(r.optBoolean("bought",false)?Color.rgb(96,145,255):Color.rgb(0,205,171));
@@ -1568,11 +1886,11 @@ public final class UnifiedVisualActivity extends Activity {
             String outcome=r.optString("outcome","");
             if(outcome.isEmpty()){Boolean h2=target(r);outcome=h2==null?"PENDING":h2?"HIT":"MISS";}
             String verdict="HIT".equals(outcome)?"목표 도달":"MISS".equals(outcome)?"미도달":"관측 중";
-            TextView v=text(verdict+" · "+refLabel()+" "+timeOf(r),12);v.setTextColor("HIT".equals(outcome)?Color.rgb(62,224,181):"MISS".equals(outcome)?Color.rgb(255,145,155):Color.rgb(156,179,205));c.addView(v);
+            TextView v=text(verdict+" · "+refLabel(item.source)+" "+timeOf(r,item.source),12);v.setTextColor("HIT".equals(outcome)?Color.rgb(62,224,181):"MISS".equals(outcome)?Color.rgb(255,145,155):Color.rgb(156,179,205));c.addView(v);
             TextView why=text("근거: "+reasonOf(r),13);why.setTextColor(Color.rgb(176,197,220));why.setPadding(0,dp(3),0,0);c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
-        addHistoryPager("research",st.research.length());
+        addHistoryPager("research",filteredResearch.size());
     }
 
     private void renderScores(){
@@ -1888,7 +2206,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(9),0,0);dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(44),1);offp.setMargins(dp(8),0,0,0);dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);ctrl.addView(dr);
         TextView lt=text("실거래 자동주문",17);lt.setTypeface(null,Typeface.BOLD);lt.setPadding(0,dp(14),0,0);ctrl.addView(lt);
         LinearLayout lr=new LinearLayout(this);lr.setOrientation(LinearLayout.HORIZONTAL);lr.setPadding(0,dp(9),0,0);lr.addView(button("실거래 ON",armed,()->setLive(true)),new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams of=new LinearLayout.LayoutParams(0,dp(44),1);of.setMargins(dp(8),0,0,0);lr.addView(button("실거래 OFF",!armed,()->setLive(false)),of);ctrl.addView(lr);
-        TextView hint=text(armed?"실거래 ON · 최신 EXE 전략 신호가 실제 주문으로 연결됨":"실거래 OFF · 시세/전략은 계속 실행, 실제 주문만 차단",12);hint.setTextColor(Color.rgb(141,151,174));hint.setPadding(0,dp(9),0,0);ctrl.addView(hint);
+        TextView hint=text(armed?"실거래 ON · 최신 EXE 전략 신호가 실제 주문으로 연결됨":"실거래 OFF · 시세/전략은 계속 실행, 실제 주문만 차단",12);hint.setTextColor(armed?Color.rgb(62,224,181):Color.rgb(255,194,91));hint.setPadding(0,dp(9),0,0);ctrl.addView(hint);
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(12),0,0);content.addView(ctrl,cp);
     }
 
@@ -1906,7 +2224,30 @@ public final class UnifiedVisualActivity extends Activity {
         if("ma".equals(s))return "MA";if("close".equals(s))return "종가베팅";if("gmo".equals(s))return "수급매매";return "기준봉";
     }
 
-    private String refLabel(){return "gmo".equals(strategy)?"사건일":"close".equals(strategy)?"매수시각":"기준시각";}
+    private String refLabel(String forStrategy){
+        return "gmo".equals(forStrategy)?"사건일":
+            "close".equals(forStrategy)?"매수시각":"기준시각";
+    }
+
+    private String timeOf(JSONObject row,String forStrategy){
+        String[] keys="gmo".equals(forStrategy)
+            ?new String[]{"event_date","gmo_event_date","event_day","at","ts"}
+            :"close".equals(forStrategy)
+                ?new String[]{"buy_at","entry_at","entry_ts","buy_ts","first_buy_at","at","ts"}
+                :new String[]{"ref_ts","ref_at","reference_ts","reference_at",
+                    "base_candle_time","bar_at","selected_ref_at","signal_at",
+                    "entry_at","buy_at","created_at","at","ts"};
+        for(String key:keys){
+            Object v=row.opt(key);
+            if(v!=null&&v!=JSONObject.NULL&&!String.valueOf(v).isEmpty()){
+                String formatted=formatKst(v);
+                if(!"미기록".equals(formatted))return formatted;
+            }
+        }
+        return "미기록";
+    }
+
+    private String refLabel(){return refLabel(strategy);}
 
     private String nameOf(JSONObject r){
         String[] keys={"name","korean_name","symbol","ticker","code","market"};String x="";
@@ -1921,15 +2262,17 @@ public final class UnifiedVisualActivity extends Activity {
 
     private String reasonOf(JSONObject r){String[] k={"reason","entry_reason","exit_reason","buy_reason","sell_reason","decision","cause","signal_reason"};for(String x:k){String v=r.optString(x,"").trim();if(!v.isEmpty())return v.length()>120?v.substring(0,120):v;}return "근거 미기록";}
 
-    private String timeOf(JSONObject r){
-        String[] keys="gmo".equals(strategy)?new String[]{"event_date","gmo_event_date","event_day"}:"close".equals(strategy)?new String[]{"buy_at","entry_at","entry_ts","buy_ts","first_buy_at"}:new String[]{"ref_ts","reference_ts","reference_at","selected_ref_at","bar_at","base_candle_time","signal_at","at","ts"};
-        for(String k:keys)if(r.has(k)&&!r.isNull(k))return formatKst(r.opt(k));return "미기록";
-    }
+    private String timeOf(JSONObject r){return timeOf(r,strategy);}
 
     private String formatKst(Object v){
-        if(v==null||v==JSONObject.NULL)return "미기록";String raw=String.valueOf(v).trim();if(raw.isEmpty())return "미기록";
-        try{long n=Long.parseLong(raw.replace(".0",""));if(raw.length()==10)n*=1000;SimpleDateFormat f=new SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.KOREA);f.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));return f.format(new Date(n));}catch(Exception ignored){}
-        try{Instant i=raw.endsWith("Z")?Instant.parse(raw):OffsetDateTime.parse(raw).toInstant();return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul")).format(i);}catch(Exception ignored){}
+        if(v==null||v==JSONObject.NULL)return "미기록";
+        String raw=String.valueOf(v).trim();if(raw.isEmpty())return "미기록";
+        long time=RealizedTrend.time(raw);
+        if(time>0){
+            SimpleDateFormat f=new SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.KOREA);
+            f.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
+            return f.format(new Date(time));
+        }
         return raw.length()>19?raw.substring(0,19).replace('T',' '):raw.replace('T',' ');
     }
 
@@ -2142,6 +2485,6 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     @Override protected void onResume(){super.onResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
-    @Override protected void onPause(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
+    @Override protected void onPause(){persistNavigation();main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
     @Override protected void onDestroy(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);io.shutdownNow();super.onDestroy();}
 }

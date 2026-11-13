@@ -526,6 +526,56 @@ def _stock_ma_full(self):
     out['win_rate']=_closed_position_win_rate(all_positions,full_exec)
     return out
 
+def _first_existing(*values):
+    """Use actual stored/quoted values only; never invent prices or reference candles."""
+    for value in values:
+        if value is not None and value != '' and str(value).lower() not in ('none','null','nan','0','0.0'):
+            return value
+    return None
+
+
+def _normalize_coin_holdings(positions, history):
+    """Join compact frame snapshots with read-only DB rows without rewriting the ledger.
+
+    The old UI adaptation assigned entry_price=x.get('entry'), overwriting a
+    legitimate pre-existing entry_price with None when the snapshot schema differed.
+    """
+    by_id={str(row['id']):row for row in history if row.get('id') is not None}
+    by_key={}
+    for row in history:
+        if str(row.get('status') or '').upper() not in ('OPEN','HOLD','HOLDING'):
+            continue
+        tf=str(row.get('tf') or '')
+        symbol=str(_first_existing(row.get('symbol'),row.get('market'),row.get('code'),row.get('ticker')) or '')
+        if symbol:
+            by_key.setdefault((tf,symbol),[]).append(row)
+    result=[]
+    for raw in positions:
+        if not isinstance(raw,dict):continue
+        row=dict(raw)
+        db=by_id.get(str(row.get('id'))) if row.get('id') is not None else None
+        if db is None:
+            tf=str(row.get('tf') or '')
+            symbol=str(_first_existing(row.get('symbol'),row.get('market'),row.get('code'),row.get('ticker')) or '')
+            matches=by_key.get((tf,symbol),[])
+            if len(matches)==1:db=matches[0]
+        db=db or {}
+        ref=_first_existing(row.get('ref_ts'),row.get('ref_at'),row.get('reference_ts'),
+            row.get('reference_at'),row.get('base_candle_time'),row.get('ref_time'),
+            db.get('ref_ts'),db.get('ref_at'),db.get('reference_ts'),db.get('reference_at'))
+        entry=_first_existing(row.get('entry_price'),row.get('entry'),row.get('avg_buy_price'),
+            row.get('buy_price'),row.get('avg_entry'),db.get('entry_price'),
+            db.get('entry'),db.get('avg_buy_price'),db.get('buy_price'))
+        mark=_first_existing(row.get('last_price'),row.get('mark'),row.get('current_price'),
+            row.get('market_price'),row.get('mark_price'),db.get('last_price'),
+            db.get('mark'),db.get('current_price'))
+        if ref is not None:row['ref_ts']=ref
+        if entry is not None:row['entry_price']=entry
+        if mark is not None:row['last_price']=mark
+        result.append(row)
+    return result
+
+
 def _coin_full(ledger):
     snap=ledger.snapshot() or {}
     positions=[];accounts=[];performance={}
@@ -551,10 +601,19 @@ def _coin_full(ledger):
             accounts.append({'tf':tf,'cash':frame.get('cash',0),'seed':frame.get('seed',2_000_000),
                 'realized_pnl':round(realized),'unrealized_pnl':round(holding),
                 'max_positions':frame.get('max_positions',4)})
-    for x in positions:
-        x['ref_ts']=x.get('ref_at');x['entry_price']=x.get('entry');x['last_price']=x.get('mark')
+    positions=_normalize_coin_holdings(positions,all_positions)
+    if not positions:
+        # Startup may not have populated the frame snapshot yet. Show only
+        # truly OPEN rows from imported SQLite, marked as historical holdings.
+        fallback=[dict(x) for x in all_positions
+                  if str(x.get('status') or '').upper()=='OPEN'
+                  and str(x.get('qty') or '0') not in ('','0','0.0')]
+        positions=_normalize_coin_holdings(fallback,all_positions)
+        for x in positions:x['ledger_fallback']=True
     for x in pending:
-        x['ref_ts']=x.get('ref_at');x['strategy']=x.get('tf')
+        x['ref_ts']=_first_existing(x.get('ref_ts'),x.get('ref_at'),
+            x.get('reference_ts'),x.get('reference_at'))
+        x['strategy']=x.get('tf')
     for e in executions:
         e['net_profit']=e.get('net_pnl');e['strategy']=e.get('tf')
     realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
@@ -655,6 +714,21 @@ def _hub_records_v078(self):
             gr['actual_rate_pct']=gr['actual_summary']['rate_pct']
             gr['insights']=research.get('insights') or []
             stock.setdefault('research',{})['gmo']=gr
+        else:
+            # Do not report an empty GMO screen as a successful PC ledger load.
+            # Read-only source-file diagnostics distinguish absent data from
+            # a strategy engine which has not initialized its account state.
+            gmo_root=Path(self.root)/'stock'
+            present=[name for name in ('PROJECTGMO_V1.0_research.sqlite3',
+                'PROJECTGMO_V1.0_account_state.json') if (gmo_root/name).is_file()]
+            stock=out.setdefault('stock',{}).setdefault('at',{})
+            stock.setdefault('ledger',{}).setdefault('gmo',{})
+            stock['ledger']['gmo']['load_diagnostic']={
+                'stage':'ENGINE_NOT_READY' if present else 'PC_SOURCE_NOT_PRESENT',
+                'files_present':present,'files_expected':2,
+                'message':'GMO original file present but its runtime is not ready'
+                          if present else 'No GMO original files located in phone root'
+            }
     except Exception as exc:
         self._err('hub_records_v078',exc)
     return json.dumps(out,ensure_ascii=False,default=str)

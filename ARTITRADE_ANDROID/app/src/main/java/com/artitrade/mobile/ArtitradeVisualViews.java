@@ -63,20 +63,106 @@ final class HorizontalStrategyBarsView extends View {
 
 final class PnlSparklineView extends View {
     private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
-    private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
     private double[] values=new double[0];
-    private String label="누적 실현손익 추세";
+    private long[] timestamps=new long[0];
+    private String label="";
     PnlSparklineView(Context c){super(c);}
-    void setValues(double[] v,String label){values=v==null?new double[0]:v;this.label=label==null?"":label;invalidate();}
+    private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
+
+    void setSeries(RealizedTrend.Series series,String label){
+        values=series==null?new double[0]:series.values;
+        timestamps=series==null?new long[0]:series.timestamps;
+        this.label=label==null?"":label;
+        invalidate();
+    }
+    void setValues(double[] value,String label){
+        values=value==null?new double[0]:value;
+        timestamps=new long[0];
+        this.label=label==null?"":label;
+        invalidate();
+    }
+    private String compactMoney(double v){
+        if(Double.isNaN(v)||Double.isInfinite(v))return "—";
+        double abs=Math.abs(v);
+        if(abs>=100000000)return String.format(Locale.KOREA,"%.1f억",v/100000000d);
+        if(abs>=10000)return String.format(Locale.KOREA,"%.1f만",v/10000d);
+        return String.format(Locale.KOREA,"%.0f",v);
+    }
+    private String tickDate(long ts){
+        if(ts<=0)return "날짜 없음";
+        java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("MM.dd",Locale.KOREA);
+        f.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Seoul"));
+        return f.format(new java.util.Date(ts));
+    }
+    private float pointX(int index,int count,float left,float right){
+        if(count<=1)return left+(right-left)*.5f;
+        if(timestamps.length==count){
+            long first=timestamps[0],last=timestamps[count-1];
+            if(last>first)return left+(right-left)*
+                (float)((timestamps[index]-first)/(double)(last-first));
+        }
+        return left+(right-left)*index/(count-1f);
+    }
+    private void drawXAxisLabels(Canvas c,float left,float right,float bottom){
+        p.setStyle(Paint.Style.FILL);
+        p.setTextSize(sp(9));p.setColor(Color.rgb(146,160,184));
+        p.setTextAlign(Paint.Align.LEFT);
+        String first=timestamps.length>0?tickDate(timestamps[0]):"날짜";
+        c.drawText(first,left,bottom+sp(16),p);
+        if(timestamps.length>1){
+            p.setTextAlign(Paint.Align.RIGHT);
+            c.drawText(tickDate(timestamps[timestamps.length-1]),right,bottom+sp(16),p);
+        }
+    }
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);
-        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(14));p.setColor(Color.rgb(151,160,181));c.drawText(label,sp(6),sp(16),p);
-        if(values.length<2){p.setColor(Color.rgb(116,126,148));p.setTextSize(sp(14));c.drawText("체결 데이터 축적 중",sp(6),getHeight()/2f,p);return;}
-        double min=values[0],max=values[0];for(double v:values){min=Math.min(min,v);max=Math.max(max,v);}if(max==min){max+=1;min-=1;}
-        float l=sp(6),r=getWidth()-sp(6),t=sp(30),b=getHeight()-sp(10);
-        if(min<=0&&max>=0){float zy=(float)(b-(0-min)/(max-min)*(b-t));p.setColor(Color.rgb(45,64,88));p.setStrokeWidth(1);c.drawLine(l,zy,r,zy,p);}
-        Path path=new Path();for(int i=0;i<values.length;i++){float x=l+(r-l)*i/(values.length-1f);float y=(float)(b-(values[i]-min)/(max-min)*(b-t));if(i==0)path.moveTo(x,y);else path.lineTo(x,y);}
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setColor(values[values.length-1]>=0?Color.rgb(62,224,181):Color.rgb(255,119,133));c.drawPath(path,p);p.setStyle(Paint.Style.FILL);
+        final float w=getWidth(),h=getHeight();
+        if(w<=0||h<=0)return;
+        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(sp(12));p.setColor(Color.rgb(215,226,239));
+        c.drawText(label,sp(4),sp(15),p);
+        float left=sp(w<sp(260)?44:55),right=w-sp(7),top=sp(36),bottom=h-sp(24);
+        if(right<=left||bottom<=top)return;
+        p.setTextSize(sp(9));p.setColor(Color.rgb(123,139,165));p.setTextAlign(Paint.Align.LEFT);
+        c.drawText("금액(원)",sp(3),sp(28),p);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.7f));p.setColor(Color.rgb(54,67,88));
+        c.drawLine(left,top,left,bottom,p);
+        c.drawLine(left,bottom,right,bottom,p);
+        p.setStyle(Paint.Style.FILL);
+        if(values.length==0){
+            p.setTextSize(sp(11));p.setColor(Color.rgb(255,194,91));
+            c.drawText("실현손익 체결기록 없음",left+sp(3),top+(bottom-top)/2f,p);
+            drawXAxisLabels(c,left,right,bottom);
+            return;
+        }
+        double min=Math.min(values[0],0d),max=Math.max(values[0],0d);
+        for(double v:values){min=Math.min(min,v);max=Math.max(max,v);}
+        if(max<=min){max=min+1;min-=1;}
+        for(int k=0;k<3;k++){
+            double tick=min+(max-min)*k/2.0;
+            float y=(float)(bottom-(tick-min)/(max-min)*(bottom-top));
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.5f));p.setColor(Color.rgb(36,49,69));
+            c.drawLine(left,y,right,y,p);
+            p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.RIGHT);
+            p.setTextSize(sp(8.2f));p.setColor(Color.rgb(143,159,181));
+            c.drawText(compactMoney(tick),left-sp(3),y+sp(3),p);
+        }
+        int n=values.length;
+        Path curve=new Path();
+        for(int i=0;i<n;i++){
+            float x=pointX(i,n,left,right);
+            float y=(float)(bottom-(values[i]-min)/(max-min)*(bottom-top));
+            if(i==0)curve.moveTo(x,y);else curve.lineTo(x,y);
+        }
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(2.3f));
+        p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+        p.setColor(values[n-1]<0?Color.rgb(255,119,133):
+            values[n-1]>0?Color.rgb(62,224,181):Color.rgb(255,194,91));
+        c.drawPath(curve,p);
+        float x=pointX(n-1,n,left,right);
+        float y=(float)(bottom-(values[n-1]-min)/(max-min)*(bottom-top));
+        p.setStyle(Paint.Style.FILL);c.drawCircle(x,y,sp(3),p);
+        drawXAxisLabels(c,left,right,bottom);
     }
 }
 
