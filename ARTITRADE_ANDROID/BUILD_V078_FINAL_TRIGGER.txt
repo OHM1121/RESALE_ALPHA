@@ -18,3 +18,4 @@ v0.7.25: on-emulator boot and UI fixture coverage, per-bucket MSERVER ledger gap
 v0.7.26: Android15 real-install emulator evidence, missing MA/GMO nested fallback, restored coin/MA/GMO fill timestamps, original MA no-reason schema, source-specific remote gap poll, OLED status/navigation inset protection.
 
 v0.7.27 2026-11-14: repair PC research SQL, independent per-strategy collection, preserve GMO historical PC PAPER fills/holdings and P&L, signed CI regression.
+v0.7.27 CI test assertion synchronization (OLED suite) 2026-11-14.
