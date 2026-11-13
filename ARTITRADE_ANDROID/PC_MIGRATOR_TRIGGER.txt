@@ -1,2 +1,3 @@
 ARTITRADE PC migrator V3 full EXE storage/research/GMO data, credential-excluded SQLite snapshots; 2026-11-13.
 Windows QA retry: close SQLite test handles and compare actual file byte length.
+V4 2026-11-13: resumable ACK-safe PC transfer, exported-phone ZIP SHA-256 verification, 12 lost ACK regression cycles.
