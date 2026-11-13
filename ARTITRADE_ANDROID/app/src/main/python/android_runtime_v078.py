@@ -5,6 +5,7 @@ GMO service into the same Kiwoom 0B/0D stream before the live-order adapter
 patches the GMO paper-fill transition.
 """
 from pathlib import Path
+import sqlite3
 import hashlib, hmac, json, uuid, time
 from urllib.parse import urlencode
 import android_live_bridge as _core
@@ -235,9 +236,13 @@ def _stock_at_research(root):
     target_fills={int(x.get('signal_id') or 0) for x in _core._db_rows(db,
         "SELECT DISTINCT signal_id FROM stock_shadow_fills WHERE reason='FIRST_TARGET_40PCT'")}
     actual={(str(x.get('tf')),str(x.get('code')),str(x.get('ref_ts'))):x for x in positions}
+    decisions={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
+        "SELECT signal_id,decision_at_evaluation,reason_at_evaluation,origin_10_rank,"
+        "diverse_11_rank FROM candidate_cohort_decisions")}
     items=[]
     for x in candidates:
         key=(str(x.get('tf')),str(x.get('code')),str(x.get('ref_ts')))
+        decision=decisions.get(int(x.get('signal_id') or 0),{})
         p=actual.get(key);sh=shadows.get(int(x.get('signal_id') or 0))
         bought=p is not None;entry_observed=bought or bool(sh and sh.get('entry_ts'))
         outcome='PENDING';closed=False
@@ -254,7 +259,11 @@ def _stock_at_research(root):
             'bought':bought,'entry_observed':entry_observed,'closed':closed,'outcome':outcome,
             'target_hit': True if outcome=='HIT' else False if outcome=='MISS' else None,
             'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_SHADOW' if entry_observed else 'VIRTUAL_NOT_ENTERED',
-            'reason':outcome})
+            'signal_id':x.get('signal_id'),
+            'decision':decision.get('decision_at_evaluation'),
+            'origin_rank':decision.get('origin_10_rank'),
+            'diverse_rank':decision.get('diverse_11_rank'),
+            'reason':decision.get('reason_at_evaluation') or '선정 근거 원본 별도 저장'})
     return _research_record(items,candidates)
 
 
@@ -276,7 +285,9 @@ def _stock_ma_research(root):
         items.append({'at':x.get('at'),'tf':x.get('tf'),'strategy':'MA','code':x.get('code'),'name':x.get('name'),
             'ref_ts':x.get('ref_ts'),'score':x.get('score'),'bought':bought,'entry_observed':bought,
             'closed':closed,'outcome':outcome,'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
-            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_NOT_REPLAYED','reason':x.get('status')})
+            'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_NOT_REPLAYED',
+            'candidate_id':x.get('id'),'decision':x.get('status'),
+            'reason':x.get('status') or '판단 근거 별도 저장'})
     return _research_record(items,candidates)
 
 
@@ -626,15 +637,85 @@ def _coin_full(ledger):
             'total_pnl':round(realized+holding),'win_rate':win_rate,
             'positions_count':len(positions),'pending_count':len(pending)}
 
-def _research_history(self, out):
+def _research_source_audit(db,primary,evidence):
+    """Read-only original SQLite count audit, independent of the 3000-row UI window.
+
+    A missing DB or table is never reported as 'zero researched candidates'.
+    All evidence tables remain stored in the original imported database.
+    """
+    db=Path(db)
+    if not db.is_file():
+        return {'source_total':-1,'source_status':'DB_MISSING','evidence_counts':{}}
     try:
-        out.setdefault('stock',{}).setdefault('at',{})['research']=_stock_at_research(self.root)
-        out['stock']['at']['research']['ma']=_stock_ma_research(self.root)
-        out.setdefault('stock',{}).setdefault('cw',{})['research']=_close_research(self.root)
-        out.setdefault('coin',{}).setdefault('general',{})['research']=_coin_research(self.root,'base')
-        out.setdefault('coin',{}).setdefault('ma',{})['research']=_coin_research(self.root,'ma')
-    except Exception as exc:
-        self._err('research_history_v078',exc)
+        with sqlite3.connect(db.resolve().as_uri()+'?mode=ro',uri=True,timeout=4) as conn:
+            tables={r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            if primary not in tables:
+                return {'source_total':-1,'source_status':'TABLE_MISSING',
+                        'evidence_counts':{}}
+            total=int(conn.execute('SELECT COUNT(*) FROM "'+primary+'"').fetchone()[0])
+            counts={}
+            for name in evidence:
+                if name in tables:
+                    counts[name]=int(conn.execute('SELECT COUNT(*) FROM "'+name+'"').fetchone()[0])
+        return {'source_total':total,'source_status':'OK','evidence_counts':counts}
+    except (sqlite3.Error,OSError,ValueError) as exc:
+        return {'source_total':-1,'source_status':'READ_ERROR',
+                'source_error':type(exc).__name__,'evidence_counts':{}}
+
+
+def _research_history(self, out):
+    """Read every strategy independently: one legacy table failure must not mask other research.
+
+    No write to PC/phone SQLite. Results are scoped to the originating strategy
+    so the UI can distinguish a genuinely empty history from a failed load.
+    """
+    roots={
+        'AT':('stock/ARTITRADE_D.sqlite3','candidate_snapshots',
+              ('candidate_events','candidate_forward','candidate_milestones',
+               'candidate_cohort_decisions','candidate_research_health',
+               'stock_shadow_trials','stock_shadow_fills','signals','positions','executions')),
+        'MA':('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
+              ('positions','executions','candidate_decisions')),
+        'CLOSE':('stock/close/AT_CLOSE_PAPER.sqlite3','signals',
+                 ('research_candidates','positions','executions')),
+        'COIN_BASE':('coin/base/upbit_paper.sqlite3','candidates',
+                     ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
+                      'coin_shadow_fills','coin_shadow_book_path','positions','executions')),
+        'COIN_MA':('coin/ma/upbit_paper.sqlite3','candidates',
+                   ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
+                    'coin_shadow_fills','coin_shadow_book_path','positions','executions')),
+    }
+    def read(source, loader):
+        rel,primary,evidence=roots[source]
+        audit=_research_source_audit(Path(self.root)/rel,primary,evidence)
+        try:
+            result=loader()
+            if not isinstance(result,dict):
+                raise TypeError('research result is not a dict')
+            result.update(audit)
+            result['load_status']='OK' if audit['source_status']=='OK' else audit['source_status']
+            result['origin']='IMPORTED_PC_AND_PHONE'
+            result['loaded_items']=len(result.get('items') or [])
+            result['partial_window']=(
+                audit['source_total']>result['loaded_items'] if audit['source_total']>=0 else False)
+            return result
+        except Exception as exc:
+            self._err('research_history_v078_'+source,exc)
+            result={'schema':'phone-v078-research','origin':'IMPORTED_PC_AND_PHONE',
+                    'load_status':'ERROR','load_error':source,'loaded_items':0,
+                    'items':[],'score_items':[],'bands':[]}
+            result.update(audit)
+            return result
+    stock=out.setdefault('stock',{}).setdefault('at',{})
+    stock['research']=read('AT',lambda:_stock_at_research(self.root))
+    stock['research']['ma']=read('MA',lambda:_stock_ma_research(self.root))
+    out.setdefault('stock',{}).setdefault('cw',{})['research']=read(
+        'CLOSE',lambda:_close_research(self.root))
+    out.setdefault('coin',{}).setdefault('general',{})['research']=read(
+        'COIN_BASE',lambda:_coin_research(self.root,'base'))
+    out.setdefault('coin',{}).setdefault('ma',{})['research']=read(
+        'COIN_MA',lambda:_coin_research(self.root,'ma'))
     return out
 
 def _hub_records_v078(self):
@@ -704,6 +785,13 @@ def _hub_records_v078(self):
             stock=out.setdefault('stock',{}).setdefault('at',{})
             stock.setdefault('ledger',{})['gmo']=ledger
             gr=_research_record(items,items)
+            gmo_audit=_research_source_audit(Path(self.root)/'stock'/
+                'PROJECTGMO_V1.0_research.sqlite3','gmo_candidates',
+                ('gmo_events','gmo_fills','gmo_position_history'))
+            gr.update(gmo_audit)
+            gr['load_status']='OK' if gmo_audit['source_status']=='OK' else gmo_audit['source_status']
+            gr['loaded_items']=len(items)
+            gr['partial_window']=gmo_audit['source_total']>len(items) if gmo_audit['source_total']>=0 else False
             gr['actual_summary']={
                 'evaluated':int((research.get('bought') or {}).get('evaluated') or 0),
                 'hit':int((research.get('bought') or {}).get('touched') or 0),
@@ -729,6 +817,14 @@ def _hub_records_v078(self):
                 'message':'GMO original file present but its runtime is not ready'
                           if present else 'No GMO original files located in phone root'
             }
+            research=stock.setdefault('research',{})
+            if not isinstance(research.get('gmo'),dict):
+                state=_research_source_audit(Path(self.root)/'stock'/
+                    'PROJECTGMO_V1.0_research.sqlite3','gmo_candidates',
+                    ('gmo_events','gmo_fills','gmo_position_history'))
+                research['gmo']={'items':[],'score_items':[],'bands':[],
+                    'origin':'IMPORTED_PC_AND_PHONE','load_status':'ENGINE_NOT_READY',
+                    'loaded_items':0,**state}
     except Exception as exc:
         self._err('hub_records_v078',exc)
     return json.dumps(out,ensure_ascii=False,default=str)

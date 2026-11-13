@@ -34,6 +34,7 @@ final class HistorySelection {
         return prefix+frameLabel(tf);
     }
     static String filterLabel(String filter){
+        if("current".equals(filter))return "현재 전략";
         if("all".equals(filter))return "전체";
         if("gmo".equals(filter))return "수급매매";
         if("close".equals(filter))return "종가베팅";
