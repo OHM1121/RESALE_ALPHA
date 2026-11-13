@@ -113,13 +113,13 @@ class OriginalExeRecordParity(unittest.TestCase):
                     decision TEXT,entry_result TEXT,feature_json TEXT,reason_json TEXT);
                 CREATE TABLE research_candidates(id INTEGER,ts TEXT,strategy TEXT,code TEXT,
                     name TEXT,decision TEXT,near_signal INTEGER,feature_json TEXT,reason_json TEXT);
-                CREATE TABLE research_followups(source_signal_id INTEGER,
+                CREATE TABLE research_followups(id INTEGER PRIMARY KEY,source_signal_id INTEGER,
                     source_candidate_id INTEGER,horizon TEXT,return_pct REAL,
                     mfe_pct REAL,mae_pct REAL,status TEXT,observed_price INTEGER,observed_ts TEXT);
                 """)
                 c.execute("INSERT INTO research_candidates VALUES(1,'2026-11-14T15:00','CLOSE',"
                           "'009999','CLOSE TEST','REJECT',1,'{}','DELAYED_BOOK')")
-                c.execute("INSERT INTO research_followups VALUES(NULL,1,'1D',3.7,5.2,-2.1,"
+                c.execute("INSERT INTO research_followups VALUES(NULL,NULL,1,'1D',3.7,5.2,-2.1,"
                           "'DONE',1037,'2026-11-15T15:00')")
             item=ctx["_close_research"](tmp)["items"][0]
             self.assertEqual(item["entry_status"],"RESEARCH_UNSELECTED")
