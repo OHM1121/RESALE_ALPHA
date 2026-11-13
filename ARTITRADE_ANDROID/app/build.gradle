@@ -10,7 +10,7 @@ android {
         applicationId 'com.artitrade.mobile'
         minSdk 28
         targetSdk 35
-        versionCode 24
+        versionCode 25
         versionName '0.4.1-SWIPE-KST-EVENTDATE'
         manifestPlaceholders = [launcherActivity: ".MainActivity"]
         ndk { abiFilters 'arm64-v8a' }
@@ -38,15 +38,30 @@ android {
         }
         unified {
             dimension 'market'
-            versionName '0.7.13-LEDGER-RECOVERY'
-            applicationId 'com.artitrade.unified.s21dex'
+            versionName '0.7.14-SAFE-PARALLEL'
+            applicationId 'com.artitrade.unified.s21dex.recovery'
             buildConfigField 'String', 'MARKET', '"both"'
-            resValue 'string', 'app_name', 'ARTITRADE 통합'
+            resValue 'string', 'app_name', 'ARTITRADE 통합 복구'
             manifestPlaceholders = [launcherActivity: ".UnifiedVisualActivity"]
         }
     }
+    signingConfigs {
+        ciStable {
+            // GitHub Actions restores the keystore at this exact path before Gradle runs.
+            // Do not rely on Gradle's implicit debug key (it rotated every build).
+            storeFile file((System.getenv('HOME') ?: System.getProperty('user.home')) + '/.android/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
     buildTypes {
-        debug { minifyEnabled false }
+        debug {
+            minifyEnabled false
+            if (System.getenv('CI') == 'true') {
+                signingConfig signingConfigs.ciStable
+            }
+        }
         release { minifyEnabled false }
     }
     buildFeatures { buildConfig true }

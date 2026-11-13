@@ -228,6 +228,18 @@ jobs:
           node --check /tmp/artitrade_mobile_dashboard.js
           node --check /tmp/artitrade_unified_dashboard.js
 
+      - name: Check parallel package and explicit update signing
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
+          assert "applicationId 'com.artitrade.unified.s21dex.recovery'" in s
+          assert "versionName '0.7.14-SAFE-PARALLEL'" in s
+          assert "signingConfig signingConfigs.ciStable" in s
+          assert "storeFile file((System.getenv('HOME')" in s
+          print('PARALLEL_INSTALL_AND_SIGNING_CONFIG_OK')
+          PY
       - name: Build stock, coin, unified and MSERVER APKs
         working-directory: ARTITRADE_ANDROID
         run: gradle --no-daemon :app:assembleStockDebug :app:assembleCoinDebug :app:assembleUnifiedDebug :app:assembleHubDebug --stacktrace
@@ -239,7 +251,7 @@ jobs:
           test -f "$APK"
           "$AAPT" dump badging "$APK" | tee /tmp/unified_badging.txt
           grep -F "launchable-activity: name='com.artitrade.mobile.UnifiedVisualActivity'" /tmp/unified_badging.txt
-          grep -F "package: name='com.artitrade.unified.s21dex'" /tmp/unified_badging.txt
+          grep -F "package: name='com.artitrade.unified.s21dex.recovery'" /tmp/unified_badging.txt
           ! grep -q "android.webkit.WebView" ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '"대시보드"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'new String[]{"5m","30m","60m","day"}' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
@@ -288,6 +300,13 @@ jobs:
           APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           "$APKSIGNER" verify --print-certs "$APK" | tee ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/SIGNING_CERT_V078.txt
+          KEY_FP="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          APK_FP="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$KEY_FP" ] || [ -z "$APK_FP" ] || [ "$KEY_FP" != "$APK_FP" ]; then
+            echo "SIGNING_KEY_MISMATCH: stable=$KEY_FP actual=$APK_FP"
+            exit 1
+          fi
+          echo "SIGNING_KEY_OK=$APK_FP"
       - name: Create version-labeled APK files
         shell: bash
         run: |
