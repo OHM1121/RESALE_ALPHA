@@ -7,6 +7,7 @@ patches the GMO paper-fill transition.
 from pathlib import Path
 import sqlite3
 import hashlib, hmac, json, uuid, time
+import threading
 from urllib.parse import urlencode
 import android_live_bridge as _core
 import d_live as _stock_feed_core
@@ -845,7 +846,40 @@ def _gmo_original_record(root):
     return ledger,research
 
 
+def _capture_pc_research_evidence_async(self):
+    """Observe every source SQLite change off the UI/broker thread.
+
+    The EXE strategy DB remains the truth. This audit logs row versions without
+    changing any entry/exit rule or modifying an original research table.
+    """
+    now=time.monotonic()
+    if getattr(self,'_phone_evidence_capture_busy',False):
+        return
+    if now-float(getattr(self,'_phone_evidence_last_started',0) or 0)<90.0:
+        return
+    self._phone_evidence_capture_busy=True
+    self._phone_evidence_last_started=now
+    def work():
+        try:
+            from android_research_audit import capture
+            result=capture(self.root)
+            if result.get('source_errors'):
+                try:
+                    self._err('research_evidence_capture_partial',
+                        RuntimeError(str(result['source_errors'])[:500]))
+                except Exception:
+                    pass
+        except Exception as error:
+            try:self._err('research_evidence_capture',error)
+            except Exception:pass
+        finally:
+            self._phone_evidence_capture_busy=False
+    threading.Thread(target=work,daemon=True,
+        name='artitrade-research-evidence-audit').start()
+
+
 def _hub_records_v078(self):
+    _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
     try:
         out=json.loads(raw) if isinstance(raw,str) else raw
