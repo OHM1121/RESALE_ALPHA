@@ -392,7 +392,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        return "stock".equals(market)?"v0.7.26 · 주식":"v0.7.26 · 코인";
+        return "stock".equals(market)?"v0.7.27 · 주식":"v0.7.27 · 코인";
     }
 
     private void showShell(){
@@ -1243,16 +1243,35 @@ public final class UnifiedVisualActivity extends Activity {
     private boolean meaningfulRecord(JSONObject value){
         return value!=null&&meaningfulTree(value);
     }
-    private boolean missingNestedBucket(JSONObject local,String recordKey){
-        if(local==null)return true;
-        if("stockAtLedger".equals(recordKey))
-            return !local.has("ma_subledger")||!local.has("gmo");
-        if("stockAtResearch".equals(recordKey))
-            return !local.has("ma")||!local.has("gmo");
+    private boolean recoveryCandidate(JSONObject nested,String recordKey){
+        if(nested==null||nested.length()==0)return true;
+        if("stockAtResearch".equals(recordKey)){
+            JSONArray items=nested.optJSONArray("items");
+            if(items!=null&&items.length()>0)return false;
+            String status=nested.optString("load_status","");
+            return !("OK".equals(status)&&nested.optLong("source_total",0L)==0L);
+        }
+        if("stockAtLedger".equals(recordKey)){
+            JSONObject diagnostic=nested.optJSONObject("load_diagnostic");
+            String stage=diagnostic==null?"":diagnostic.optString("stage","");
+            return "PC_SOURCE_NOT_PRESENT".equals(stage)||
+                "ENGINE_NOT_READY".equals(stage);
+        }
         return false;
     }
-    /** Only supplement *absent* sub-strategies; never replace a live phone
-     * account, including a legitimate empty or zero-balance strategy.
+    private boolean missingNestedBucket(JSONObject local,String recordKey){
+        if(local==null)return true;
+        if("stockAtLedger".equals(recordKey)||"stockAtResearch".equals(recordKey)){
+            for(String nested:new String[]{"ma","gmo"}){
+                String field="stockAtLedger".equals(recordKey)&&"ma".equals(nested)
+                    ?"ma_subledger":nested;
+                if(recoveryCandidate(local.optJSONObject(field),recordKey))return true;
+            }
+        }
+        return false;
+    }
+    /** Supplement genuinely missing or failed nested buckets, but
+     * never overwrite a complete phone trading ledger with old PC data.
      */
     private JSONObject mergeMissingNested(JSONObject local,JSONObject remote,String recordKey){
         if(!meaningfulRecord(local))return remote;
@@ -1263,7 +1282,8 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject merged=new JSONObject(local.toString());
             for(String nested:keys){
                 JSONObject source=remote.optJSONObject(nested);
-                if(!merged.has(nested)&&meaningfulRecord(source))merged.put(nested,source);
+                if(recoveryCandidate(merged.optJSONObject(nested),recordKey)
+                    &&meaningfulRecord(source))merged.put(nested,source);
             }
             return merged;
         }catch(Exception ignored){return local;}
@@ -2306,6 +2326,12 @@ public final class UnifiedVisualActivity extends Activity {
         content.addView(head,new LinearLayout.LayoutParams(-1,dp(44)));
 
         String loadStatus=rs.optString("load_status","확인 전");
+        boolean researchReadFailed="ERROR".equals(loadStatus)||
+            "QUERY_RETURNED_ZERO".equals(loadStatus)||
+            "DB_MISSING".equals(loadStatus)||
+            "TABLE_MISSING".equals(loadStatus)||
+            "READ_ERROR".equals(loadStatus)||
+            "ACCOUNT_STATE_MISSING".equals(loadStatus);
         int loaded=rs.optInt("loaded_items",st.research.length());
         int sourceCount=rs.optInt("source_total",-1);
         int maxShown=loaded;
@@ -2314,7 +2340,7 @@ public final class UnifiedVisualActivity extends Activity {
             "  ·  원본 "+(sourceCount<0?"?":String.valueOf(sourceCount))+
             "  /  표시 "+entries.size()+"  ·  "+loadStatus;
         TextView origin=text(subtitle,11);
-        origin.setTextColor("ERROR".equals(loadStatus)||shortRead?Color.rgb(255,119,133):
+        origin.setTextColor(researchReadFailed||shortRead?Color.rgb(255,119,133):
             "OK".equals(loadStatus)?Color.rgb(62,224,181):Color.rgb(255,194,91));
         origin.setPadding(dp(2),dp(3),dp(2),dp(8));content.addView(origin);
         JSONObject sourceEvidence=rs.optJSONObject("evidence_counts");
@@ -2343,8 +2369,8 @@ public final class UnifiedVisualActivity extends Activity {
                 .setPositiveButton("확인",null).show());
             PremiumUi.tapMotion(sourceKpis);
         }
-        if(shortRead||"ERROR".equals(loadStatus)){
-            String msg="ERROR".equals(loadStatus)?"원장 조회 오류: "+rs.optString("load_error","")+
+        if(shortRead||researchReadFailed){
+            String msg=researchReadFailed?"PC 원장 조회/승계 확인 필요: "+loadStatus+" · "+rs.optString("load_error","")+
                 " · 다른 전략 리서치는 별도로 확인":
                 "전체 원본 중 일부만 화면에 게시됨 · PC 원본 DB/휴대폰 SQLite 전체 기록 검증 필요";
             TextView warn=text(msg,11);warn.setTextColor(Color.rgb(255,119,133));

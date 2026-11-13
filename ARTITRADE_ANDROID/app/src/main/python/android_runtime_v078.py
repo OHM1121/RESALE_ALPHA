@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import hashlib, hmac, json, uuid, time
 import threading
+from collections import Counter
 from urllib.parse import urlencode
 import android_live_bridge as _core
 import d_live as _stock_feed_core
@@ -286,7 +287,7 @@ def _stock_ma_research(root):
 
 def _coin_research(root,which):
     db=Path(root)/'coin'/which/'upbit_paper.sqlite3'
-    candidates=_core._db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,ref_at AS at,score,limit_price,target,reason,status FROM candidates ORDER BY id DESC LIMIT 3000")
+    candidates=_core._db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,created_at AS at,score,limit_price,target,reason FROM candidates ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions")
     actual={(str(x.get('tf')),str(x.get('market')),str(x.get('ref_at'))):x for x in positions if str(x.get('status') or '')!='RESET_B_V1'}
     shadows={int(x.get('candidate_id') or 0):x for x in _core._db_rows(db,
@@ -708,11 +709,17 @@ def _research_history(self, out):
             if not isinstance(result,dict):
                 raise TypeError('research result is not a dict')
             result.update(audit)
-            result['load_status']='OK' if audit['source_status']=='OK' else audit['source_status']
-            result['origin']='IMPORTED_PC_AND_PHONE'
             result['loaded_items']=len(result.get('items') or [])
             result['partial_window']=(
                 audit['source_total']>result['loaded_items'] if audit['source_total']>=0 else False)
+            status=audit['source_status']
+            if status=='OK' and audit['source_total']>0 and result['loaded_items']==0:
+                status='QUERY_RETURNED_ZERO'
+                result['load_error']='PC_SOURCE_ROWS_PRESENT_BUT_QUERY_EMPTY: '+source
+                self._err('research_history_query_empty_'+source,
+                          RuntimeError(result['load_error']))
+            result['load_status']=status
+            result['origin']='IMPORTED_PC_AND_PHONE'
             return result
         except Exception as exc:
             self._err('research_history_v078_'+source,exc)
@@ -741,20 +748,28 @@ def _gmo_original_record(root):
     root = Path(root) / 'stock'
     state_file = root / 'PROJECTGMO_V1.0_account_state.json'
     db = root / 'PROJECTGMO_V1.0_research.sqlite3'
-    if not state_file.is_file() or not db.is_file():
+    state_present=state_file.is_file()
+    db_present=db.is_file()
+    if not (state_present or db_present):
         return None
-    state = json.loads(state_file.read_text(encoding='utf-8'))
-    with sqlite3.connect(db.resolve().as_uri()+'?mode=ro', uri=True, timeout=4) as conn:
-        conn.row_factory = sqlite3.Row
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if 'gmo_candidates' not in tables:
-            raise ValueError("GMO candidate source table missing")
-        candidates = [dict(r) for r in conn.execute(
-            "SELECT * FROM gmo_candidates ORDER BY event_date DESC,code LIMIT 3000")]
-        full_count = conn.execute("SELECT COUNT(*) FROM gmo_candidates").fetchone()[0]
-        candles = [dict(r) for r in conn.execute(
-            "SELECT code,event_date,trade_date,day_index,high,final FROM gmo_daily_ohlc "
-            "WHERE day_index BETWEEN 1 AND 15")] if 'gmo_daily_ohlc' in tables else []
+    # Missing account JSON must not hide candidates; missing SQLite must not
+    # hide stored, verified PC PAPER holdings, fills and realized cash.
+    state=json.loads(state_file.read_text(encoding='utf-8')) if state_present else {}
+    candidates=[];candles=[];full_count=0
+    if db_present:
+        with sqlite3.connect(db.resolve().as_uri()+'?mode=ro',uri=True,timeout=4) as conn:
+            conn.row_factory=sqlite3.Row
+            tables={r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            if 'gmo_candidates' not in tables:
+                raise ValueError('GMO candidate source table missing')
+            candidates=[dict(r) for r in conn.execute(
+                "SELECT * FROM gmo_candidates ORDER BY event_date DESC,code LIMIT 3000")]
+            full_count=int(conn.execute("SELECT COUNT(*) FROM gmo_candidates").fetchone()[0])
+            if 'gmo_daily_ohlc' in tables:
+                candles=[dict(r) for r in conn.execute(
+                    "SELECT code,event_date,trade_date,day_index,high,final "
+                    "FROM gmo_daily_ohlc WHERE day_index BETWEEN 1 AND 15")]
     buys = state.get('buy_fills') or []
     sells = state.get('fills') or []
     positions = state.get('positions') or {}
@@ -859,13 +874,23 @@ def _gmo_original_record(root):
             'research_5pct_status':r.get('research_5pct_status'),
             'research_first_hit_day':r.get('first_5pct_research_hit_day')
         })
+    if not state_present:
+        # Without PAPER account JSON, entry, exit and profit cannot be proven.
+        for item in items:
+            item.update({'bought':False,'entry_observed':False,'outcome':'PENDING',
+                         'target_hit':None,'entry_status':'ACCOUNT_STATE_MISSING',
+                         'reason':'PC 매매상태 JSON 없음 · 성과 판정 보류'})
     research = _research_record(items,items)
     audit = _research_source_audit(db,'gmo_candidates',
         ('gmo_flow','gmo_daily_ohlc','gmo_minute_ohlc','gmo_scan',
          'gmo_open','gmo_issues','gmo_policy_restorations'))
     research.update(audit)
-    research.update({'load_status':audit['source_status'],'loaded_items':len(items),
-                     'partial_window':full_count>len(items),'origin':'IMPORTED_PC_GMO_ORIGINAL'})
+    research.update({'load_status':(audit['source_status'] if state_present else
+                        'ACCOUNT_STATE_MISSING'), 'loaded_items':len(items),
+                      'partial_window':full_count>len(items),
+                      'origin':'IMPORTED_PC_GMO_ORIGINAL',
+                      'account_state_present':state_present,
+                      'research_db_present':db_present})
     wallet={'tf':'gmo','strategy':'gmo','seed':(state.get('cfg') or {}).get('seed'),
             'cash':state.get('cash'),'realized_pnl':state.get('realized'),
             'unrealized_pnl':None}
@@ -874,8 +899,10 @@ def _gmo_original_record(root):
             'executions':executions,'realized_pnl':state.get('realized'),
             'unrealized_pnl':None,'positions_count':len(active),
             'pending_count':len(pending),'candidate_count':full_count,
-            'load_diagnostic':{'stage':'PC_ORIGINAL_LOADED','files_present':[
-                state_file.name,db.name]}}
+            'load_diagnostic':{'stage':('PC_ORIGINAL_LOADED' if state_present and db_present
+                else 'PC_ORIGINAL_PARTIAL'), 'files_present':[
+                x.name for x in (state_file,db) if x.is_file()],
+                'files_expected':2}}
     return ledger,research
 
 
@@ -911,6 +938,74 @@ def _capture_pc_research_evidence_async(self):
         name='artitrade-research-evidence-audit').start()
 
 
+def _gmo_fill_identity(row):
+    return tuple(str(row.get(k) if row.get(k) is not None else '')
+                 for k in ('side','code','ts','qty','price','reason'))
+
+
+def _merge_gmo_pc_evidence(live,original):
+    """Read-only UI backfill of verified PAPER data; never mutate trading state."""
+    if not isinstance(live,dict) or not live:
+        return original
+    if not isinstance(original,dict) or not original:
+        return live
+    merged=dict(live)
+    phone_exec=list(live.get('executions') or [])
+    pc_exec=list(original.get('executions') or [])
+    source_counts=Counter(_gmo_fill_identity(x) for x in pc_exec)
+    phone_counts=Counter(_gmo_fill_identity(x) for x in phone_exec)
+    phone_in_pc=all(n<=source_counts.get(k,0) for k,n in phone_counts.items())
+    remaining=Counter(phone_counts)
+    combined=list(phone_exec)
+    for record in pc_exec:
+        key=_gmo_fill_identity(record)
+        if remaining[key]>0:
+            remaining[key]-=1
+        else:
+            combined.append(dict(record,origin='IMPORTED_PC_GMO_ORIGINAL'))
+    combined.sort(key=lambda x:str(x.get('ts') or ''),reverse=True)
+    merged['executions']=combined
+    phone_pos=list(live.get('positions') or [])
+    pc_pos=list(original.get('positions') or [])
+    combined_pos=list(phone_pos)
+    known_codes={str(x.get('code') or '') for x in combined_pos}
+    # New phone-only fills could have closed PC holdings: don't resurrect them.
+    if phone_in_pc:
+        for position in pc_pos:
+            code=str(position.get('code') or '')
+            if code and code not in known_codes and float(position.get('qty') or 0)>0:
+                combined_pos.append(dict(position,origin='IMPORTED_PC_GMO_ORIGINAL'))
+                known_codes.add(code)
+    merged['positions']=combined_pos
+    merged['positions_count']=len(combined_pos)
+    merged['pending_count']=len(live.get('pending') or [])
+    pc_realized=original.get('realized_pnl')
+    pc_sells=sum(str(x.get('side') or '').upper()=='SELL' for x in pc_exec)
+    phone_sells=sum(str(x.get('side') or '').upper()=='SELL' for x in phone_exec)
+    if phone_in_pc and pc_sells>phone_sells and pc_realized is not None:
+        merged['realized_pnl']=pc_realized
+        accounts=list(live.get('accounts') or [])
+        merged['accounts']=([dict(x,realized_pnl=pc_realized) for x in accounts]
+                            if accounts else list(original.get('accounts') or []))
+        unreal=merged.get('unrealized_pnl')
+        merged['total_pnl']=(float(pc_realized)+float(unreal)
+                              if unreal is not None else None)
+    confirmed=[float(x.get('net_profit')) for x in combined
+               if str(x.get('side') or '').upper()=='SELL'
+               and x.get('net_profit') is not None]
+    if combined:
+        merged['win_rate']=(100.0*sum(x>0 for x in confirmed)/len(confirmed)
+                            if confirmed else None)
+    merged['load_diagnostic']={
+        'stage':'PC_HISTORICAL_EVIDENCE_MERGED_READONLY',
+        'phone_fills':len(phone_exec),'pc_fills':len(pc_exec),
+        'merged_fills':len(combined),'phone_fill_subset_of_pc':phone_in_pc,
+        'phone_positions':len(phone_pos),'pc_positions':len(pc_pos),
+        'merged_positions':len(combined_pos)}
+    merged['origin']='PHONE_WITH_IMPORTED_PC_HISTORY'
+    return merged
+
+
 def _hub_records_v078(self):
     _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
@@ -921,16 +1016,34 @@ def _hub_records_v078(self):
     try:
         stock_at=out.setdefault('stock',{}).setdefault('at',{})
         base=stock_at.setdefault('ledger',{})
-        stock_at['ledger']=_stock_at_v19_full(self,base)
-        ma=_stock_ma_full(self)
-        stock_at['ledger']['ma_subledger']=ma
-        stock_at['ledger']['ma']=ma
-        out.setdefault('stock',{}).setdefault('cw',{})['ledger']=_close_full(self)
+        try:
+            stock_at['ledger']=_stock_at_v19_full(self,base)
+        except Exception as exc:
+            self._err('stock_at_history_v078',exc)
+        try:
+            ma=_stock_ma_full(self)
+            stock_at['ledger']['ma_subledger']=ma
+            stock_at['ledger']['ma']=ma
+        except Exception as exc:
+            self._err('stock_ma_history_v078',exc)
+        try:
+            out.setdefault('stock',{}).setdefault('cw',{})['ledger']=_close_full(self)
+        except Exception as exc:
+            self._err('stock_close_history_v078',exc)
         if self.coin_runner:
-            out.setdefault('coin',{}).setdefault('general',{})['ledger']=_coin_full(self.coin_runner.ledger)
-            if getattr(self.coin_runner,'ma_ledger',None) is not None:
-                out.setdefault('coin',{}).setdefault('ma',{})['ledger']=_coin_full(self.coin_runner.ma_ledger)
-        _research_history(self,out)
+            try:
+                out.setdefault('coin',{}).setdefault('general',{})['ledger']=_coin_full(self.coin_runner.ledger)
+            except Exception as exc:
+                self._err('coin_general_history_v078',exc)
+            try:
+                if getattr(self.coin_runner,'ma_ledger',None) is not None:
+                    out.setdefault('coin',{}).setdefault('ma',{})['ledger']=_coin_full(self.coin_runner.ma_ledger)
+            except Exception as exc:
+                self._err('coin_ma_history_v078',exc)
+        try:
+            _research_history(self,out)
+        except Exception as exc:
+            self._err('research_history_all_v078',exc)
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
@@ -1007,9 +1120,7 @@ def _hub_records_v078(self):
                         stock['research']['gmo']=source_research
                         stock['ledger']['gmo']['actual_target']=source_research.get(
                             'actual_summary') or {}
-                        if not (ledger['positions'] or ledger['executions']):
-                            if (source_ledger['positions'] or source_ledger['executions']):
-                                stock['ledger']['gmo']=source_ledger
+                        stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
             except Exception as original_error:
                 self._err('gmo_original_research_parity',original_error)
         else:
@@ -1053,6 +1164,17 @@ def _hub_records_v078(self):
                     'loaded_items':0,**state}
     except Exception as exc:
         self._err('hub_records_v078',exc)
+        try:
+            restored=_gmo_original_record(self.root)
+            if restored is not None:
+                original_ledger,original_research=restored
+                stock=out.setdefault('stock',{}).setdefault('at',{})
+                ledger=stock.setdefault('ledger',{})
+                ledger['gmo']=_merge_gmo_pc_evidence(
+                    ledger.get('gmo') or {},original_ledger)
+                stock.setdefault('research',{})['gmo']=original_research
+        except Exception as recovery_error:
+            self._err('hub_records_gmo_last_resort',recovery_error)
     return json.dumps(out,ensure_ascii=False,default=str)
 
 def _stock_at_ledger_v19(self):
