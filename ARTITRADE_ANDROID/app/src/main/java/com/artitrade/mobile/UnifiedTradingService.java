@@ -148,14 +148,16 @@ public final class UnifiedTradingService extends Service {
         if(now-lastMigrationPoll<15000L)return;
         lastMigrationPoll=now;
         try{
+            String installed=getSharedPreferences("artitrade_pc_ledger_import_v1",MODE_PRIVATE)
+                .getString("imported_sha256","");
+            // Once a verified PC DB is active, all later paper and broker records
+            // belong to this phone. Never auto-import a different PC snapshot.
+            if(!installed.isEmpty())return;
             JSONObject st=hub.migrationStatus();
             if(!st.optBoolean("ok",false)||!st.optBoolean("ready",false)
                 ||!st.optBoolean("archive_exists",false))return;
             String sha=st.optString("archive_sha256","");
-            String installed=getSharedPreferences("artitrade_pc_ledger_import_v1",MODE_PRIVATE)
-                .getString("imported_sha256","");
-            if(sha.isEmpty()||sha.equalsIgnoreCase(installed)
-                ||sha.equalsIgnoreCase(lastAutomaticMigrationSha)||liveOrdersArmed())return;
+            if(sha.isEmpty()||sha.equalsIgnoreCase(lastAutomaticMigrationSha)||liveOrdersArmed())return;
             lastAutomaticMigrationSha=sha;
             new Thread(this::safeRestartStrategy,"artitrade-pc-ledger-auto-apply").start();
         }catch(Throwable e){crashes.add("pc_ledger_auto_check",e);}

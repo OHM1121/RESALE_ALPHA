@@ -389,17 +389,27 @@ final class LegacyLedgerMigration {
                 throw new IllegalStateException("PC_SOURCE_EMPTY: PC ledger contains no historical trading or research rows");
             String session=installResult.optString("session","");
             String sha=installResult.optString("sha256","");
-            if(!session.isEmpty()){
-                JSONObject ack=new LocalHubClient(context).migrationAck(session,sha);
-                if(!ack.optBoolean("ok",false))throw new IOException("MSERVER_MIGRATION_ACK_FAILED: "+ack);
-            }
+            // Durable, first-success-only checkpoint BEFORE consuming the server archive:
+            // a crash or ACK timeout must not cause phone trades to be replaced later.
             if(!prefs().edit().putString("imported_sha256",sha)
                 .putLong("imported_at",System.currentTimeMillis())
                 .putString("verified_manifest",manifest.toString()).commit())
                 throw new IOException("Cannot persist verified import checkpoint");
+            String ackWarning="";
+            if(!session.isEmpty()){
+                try{
+                    JSONObject ack=new LocalHubClient(context).migrationAck(session,sha);
+                    if(!ack.optBoolean("ok",false))ackWarning="MSERVER_ARCHIVE_ACK_PENDING: "+
+                        ack.optString("error","acknowledge_failed");
+                }catch(Exception e){
+                    ackWarning="MSERVER_ARCHIVE_ACK_PENDING: "+e.getClass().getSimpleName();
+                }
+            }
             JSONObject result=obj("ok",true,
                 "status","FILES_INSTALLED".equals(initial)?"IMPORTED":"ALREADY_IMPORTED",
-                "sha256",sha,"manifest",manifest,"verification",verification);
+                "sha256",sha,"manifest",manifest,"verification",verification,
+                "archive_cleanup",ackWarning.isEmpty()?"ACKED":"PENDING",
+                "archive_cleanup_warning",ackWarning);
             prefs().edit().putString("last_status",result.toString()).commit();
             progress("COMPLETE","PC 원장 복원 및 전략엔진 반영 확인 · "+visibleRows+"건",1,1,true,"");
             return result;
@@ -418,13 +428,38 @@ final class LegacyLedgerMigration {
     JSONObject importIfReady(){
         try{
             progress("CHECK","MSERVER 승계자료 확인",0,1,false,"");
-            LocalHubClient hub=new LocalHubClient(context);
-            JSONObject status=hub.migrationStatus();
             String imported=prefs().getString("imported_sha256","");
             JSONObject previous=storedManifest();
             SharedPreferences live=context.getSharedPreferences("unified_live_orders",Context.MODE_PRIVATE);
             boolean armed=live.getBoolean("live_stock",false)||live.getBoolean("live_coin",false);
             if(!armed&&!phoneHasRealBrokerFills())repairLegacyClosePath();
+            // Once PC history has been verified, it is now the PHONE's active DB.
+            // A new, different PC ZIP is NOT a merge; reinstalling it would erase
+            // later phone paper trades. Never overwrite on any subsequent startup.
+            // Check local history before contacting MSERVER so offline restarts work.
+            if(!imported.isEmpty()){
+                if(previous==null){
+                    JSONObject blocked=obj("ok",false,"status","PC_IMPORT_CHECKPOINT_INCOMPLETE",
+                        "message","Original PC import checkpoint exists but manifest is unavailable. Local DB retained; no automatic replacement.",
+                        "sha256",imported);
+                    progress("BLOCKED","기존 폰 원장 보존 · 원본 검증정보 확인 필요",0,1,false,"PC_IMPORT_CHECKPOINT_INCOMPLETE");
+                    return blocked;
+                }
+                try{
+                    JSONObject verification=verifyInstalled(previous,false);
+                    progress("VERIFY_RUNTIME","승계 완료 원장 재사용 · PC ZIP 재설치 금지",0,1,false,"");
+                    return obj("ok",true,"status","LOCAL_FILES_PRESENT","sha256",imported,
+                        "manifest",previous,"verification",verification,"pc_import_locked",true);
+                }catch(Exception e){
+                    JSONObject blocked=obj("ok",false,"status","PHONE_LEDGER_VERIFY_FAILED",
+                        "message","Phone ledger retained; manual reconciliation required: "+e.getClass().getSimpleName()+
+                            ": "+String.valueOf(e.getMessage()),"sha256",imported);
+                    progress("BLOCKED","기존 폰 원장 검증 실패 · 자동 덮어쓰기 차단",0,1,false,"PHONE_LEDGER_VERIFY_FAILED");
+                    return blocked;
+                }
+            }
+            LocalHubClient hub=new LocalHubClient(context);
+            JSONObject status=hub.migrationStatus();
             boolean ready=status.optBoolean("ok")&&status.optBoolean("ready")
                 &&status.optBoolean("archive_exists",false);
             if(!ready){

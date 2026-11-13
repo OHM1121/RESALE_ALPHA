@@ -166,6 +166,22 @@ jobs:
           assert '_phone_stock_progress' in py and 'ANDROID_KIWOOM_FEED_FATAL' in py
           print('TAB_DRAFT_FLOW_KIWOOM_DIAGNOSTIC_TEST_OK')
           PY
+      - name: Validate immutable first-PC-import checkpoint and phone continuation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile')
+          import_code=(root/'LegacyLedgerMigration.java').read_text()
+          service=(root/'UnifiedTradingService.java').read_text()
+          assert 'PC_IMPORT_CHECKPOINT_INCOMPLETE' in import_code
+          assert 'PHONE_LEDGER_VERIFY_FAILED' in import_code
+          assert 'pc_import_locked",true' in import_code
+          assert import_code.index('if(!imported.isEmpty()){') < import_code.index('hub.migrationStatus()')
+          assert import_code.index('putString("imported_sha256",sha)') < import_code.index('migrationAck(session,sha)')
+          assert service.index('if(!installed.isEmpty())return;') < service.index('hub.migrationStatus()')
+          print('PHONE_LEDGER_FIRST_IMPORT_LOCK_CHECK_OK')
+          PY
       - name: Validate dashboard JavaScript
         shell: bash
         run: |
