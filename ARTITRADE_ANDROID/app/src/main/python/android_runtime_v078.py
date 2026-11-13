@@ -823,6 +823,16 @@ def _gmo_original_record(root):
                            'VIRTUAL_OPEN_OBSERVED' if opener>0 else 'VIRTUAL_NOT_ENTERED'),
             'first_target_filled':r.get('paper_first_target_filled'),
             'paper_realized_net_won':r.get('paper_realized_net_won'),
+            'sell_reason':r.get('paper_last_exit_purpose') or None,
+            'sell_at':r.get('paper_last_exit_at') or None,
+            'paper_position_status':r.get('paper_position_status'),
+            'official_d1_open':r.get('official_d1_open'),
+            'score_base':r.get('score_base'),
+            'score_personal':r.get('score_personal'),
+            'score_volume':r.get('score_volume'),
+            'score_decline':r.get('score_decline'),
+            'highest_observed_high':r.get('highest_observed_high'),
+            'horizon_complete':r.get('horizon_complete'),
             'research_5pct_status':r.get('research_5pct_status'),
             'research_first_hit_day':r.get('first_5pct_research_hit_day')
         })
