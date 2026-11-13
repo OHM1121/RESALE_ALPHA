@@ -1,1 +1,1 @@
-Build ARTITRADE PC read-only viewer v1.0. No broker, no order engine, no paper trading. Source of truth: mobile MSERVER.
+TDD RED: automatic_preload absent, tests must fail before code is added.

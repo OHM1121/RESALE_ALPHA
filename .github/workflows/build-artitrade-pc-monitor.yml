@@ -20,6 +20,7 @@ jobs:
         run: |
           python -m py_compile ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor_core.py ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor.py
           python -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p test_pc_monitor_core.py -v
+          python -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p test_pc_monitor_autopreload.py -v
           @'
           from pathlib import Path
           from ast import parse, walk, Import, ImportFrom
