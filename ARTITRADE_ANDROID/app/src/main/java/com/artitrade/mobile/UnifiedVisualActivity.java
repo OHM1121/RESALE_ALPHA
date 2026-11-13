@@ -13,6 +13,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -74,6 +76,9 @@ public final class UnifiedVisualActivity extends Activity {
     private float swipeX=Float.NaN;
     private View drawerOverlay;
     private final Map<String,EditText[]> operationFields=new HashMap<>();
+    // Unsaved drafts are isolated from the live strategy settings. Only Save applies them.
+    private final Map<String,String> operationDraftValues=new HashMap<>();
+    private boolean operationDraftLoaded=false;
     private static final int REQUEST_EXPORT_RESEARCH=7711;
     private byte[] pendingResearchExport;
     private static final long REFRESH_MS=3500L;
@@ -256,8 +261,9 @@ public final class UnifiedVisualActivity extends Activity {
 
         LinearLayout marketSwitch=new LinearLayout(this);marketSwitch.setOrientation(LinearLayout.HORIZONTAL);marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
         marketSwitch.setBackground(bg(Color.rgb(20,23,33),Color.rgb(42,47,63),18));
-        TextView stock=segmentItem("주식","stock".equals(market),()->{market="stock";strategy="at";page="home";showShell();});
-        TextView coin=segmentItem("코인","coin".equals(market),()->{market="coin";strategy="general";page="home";showShell();});
+        // Keep the bottom navigation context across both markets (e.g. positions -> positions).
+        TextView stock=segmentItem("주식","stock".equals(market),()->{if(!"stock".equals(market)){market="stock";strategy="at";}showShell();});
+        TextView coin=segmentItem("코인","coin".equals(market),()->{if(!"coin".equals(market)){market="coin";strategy="general";}showShell();});
         marketSwitch.addView(stock,new LinearLayout.LayoutParams(dp(58),dp(30)));
         marketSwitch.addView(coin,new LinearLayout.LayoutParams(dp(58),dp(30)));
         top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(122),dp(36)));
@@ -514,7 +520,7 @@ public final class UnifiedVisualActivity extends Activity {
         String[][] list=strategyList(market);
         for(String[] item:list){
             boolean active=item[0].equals(strategy);
-            TextView tab=strategyTab(item[1],active,()->{strategy=item[0];page="home";showShell();});
+            TextView tab=strategyTab(item[1],active,()->{strategy=item[0];showShell();});
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1);
             if(strategyBar.getChildCount()>0)lp.setMargins(dp(4),0,0,0);
             strategyBar.addView(tab,lp);
@@ -617,7 +623,9 @@ public final class UnifiedVisualActivity extends Activity {
             }catch(Exception e){try{packet.put("refresh_error",e.getClass().getSimpleName()+": "+e.getMessage());}catch(Exception ignored){}}
             synchronized(cacheLock){cache=packet;}
             refreshRunning=false;
-            main.post(()->{updateHeader();render();});
+            // Never destroy an actively edited operation form on each 3.5-second poll.
+            // Navigation explicitly calls showShell(), and all edits are separately drafted.
+            main.post(()->{updateHeader();if(!"operation".equals(page))render();});
         });
     }
 
@@ -1037,7 +1045,7 @@ public final class UnifiedVisualActivity extends Activity {
                 TimeframeAccountFlowView flow=new TimeframeAccountFlowView(this);
                 flow.setData(tfLabel(tf),q.total,q.realized,q.unrealized,q.win,q.target,
                     q.flowPending,q.flowBought,q.flowHolding,q.flowSold);
-                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(205));
+                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(180));
                 if(!"5m".equals(tf))fp.setMargins(0,dp(9),0,0);
                 content.addView(flow,fp);
             }
@@ -1058,12 +1066,50 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout copy=new LinearLayout(this);copy.setOrientation(LinearLayout.VERTICAL);copy.setGravity(Gravity.CENTER_VERTICAL);
         TextView t=text(title,13);t.setTypeface(null,Typeface.BOLD);t.setTextColor(Color.rgb(220,226,239));copy.addView(t);
         String d=r==null?"연결 확인 중":r.optString("detail","");int n=r==null?0:r.optInt("subscribed",0);
-        TextView x=text((on?"실시간 수신":"재연결 중")+(n>0?" · "+n+"종목":"")+(d.isEmpty()?"":" · "+d),11);x.setTextColor(Color.rgb(120,130,151));copy.addView(x);
+        JSONObject runtime=copyCache().optJSONObject("strategy_runtime");
+        JSONObject feed=runtime==null?null:runtime.optJSONObject("stock_feed");
+        if("stock".equals(m)&&!on&&feed!=null){
+            String stage=feed.optString("stage",""),reason=feed.optString("detail","");
+            if(!stage.isEmpty())d=stage+(reason.isEmpty()?"":" · "+reason);
+        }
+        TextView x=text((on?"실시간 수신":"시세 대기")+(n>0?" · 등록 "+n+"종목":"")+(d.isEmpty()?"":" · "+d),11);
+        x.setMaxLines(2);x.setTextColor(Color.rgb(120,130,151));copy.addView(x);
         c.addView(copy,new LinearLayout.LayoutParams(0,dp(42),1));
         TextView badge=text(on?"LIVE":"WAIT",11);badge.setGravity(Gravity.CENTER);badge.setTypeface(null,Typeface.BOLD);badge.setTextColor(on?Color.rgb(86,214,170):Color.rgb(255,176,92));badge.setBackground(bg(Color.rgb(22,26,36),Color.rgb(48,54,70),10));c.addView(badge,new LinearLayout.LayoutParams(dp(54),dp(28)));
+        if("stock".equals(m))c.setOnClickListener(v->showKiwoomFeedDiagnosis());
         return c;
     }
 
+    private void showKiwoomFeedDiagnosis(){
+        JSONObject all=copyCache(),engine=all.optJSONObject("strategy_runtime");
+        JSONObject stock=engine==null?null:engine.optJSONObject("stock");
+        JSONObject feed=engine==null?null:engine.optJSONObject("stock_feed");
+        JSONObject stages=feed==null?null:feed.optJSONObject("preload");
+        JSONObject transport=feed==null?null:feed.optJSONObject("transport");
+        JSONObject probes=all.optJSONObject("broker_probe");
+        JSONObject oauth=probes==null?null:probes.optJSONObject("kiwoom");
+        JSONObject auth=all.optJSONObject("broker_storage");
+        String credential=auth!=null&&auth.optBoolean("kiwoom_saved",false)?"키 저장됨":"키 미등록 / 복호화 실패";
+        String oauthState=oauth==null?"인증검사 미실시":
+            oauth.optBoolean("ok",false)?"REST 토큰 발급 성공":
+            "REST 인증 실패 · "+oauth.optString("message","응답 없음");
+        String msg="API 키: "+credential+"\n인증: "+oauthState+
+            "\n전략 상태: "+(stock==null?"전략엔진 준비":stock.optString("status","확인 중"))+
+            "\n진행 단계: "+(feed==null?"기록 없음":feed.optString("stage","없음"))+
+            "\n상세: "+(feed==null?"":feed.optString("detail",""))+
+            "\nWebSocket: "+(transport==null?"정보 없음":transport.optString("state","정보 없음"))+
+            (transport==null?"":" · "+transport.optString("reason",""))+
+            "\n구독 요청: "+(feed==null?0:feed.optInt("subscribed",0))+"종목";
+        if(stages!=null)msg+="\n사전 로딩: "+stages.optString("stage","")+
+            (stages.optBoolean("failed",false)?" · 실패":"")+
+            " · "+stages.optString("detail","");
+        new AlertDialog.Builder(this).setTitle("키움 실시간 WAIT 원인 진단")
+            .setMessage(msg)
+            .setNegativeButton("닫기",null)
+            .setNeutralButton("REST 인증검사",(d,w)->runBrokerProbe(false))
+            .setPositiveButton("시세 재연결",(d,w)->restartFeeds())
+            .show();
+    }
     private void addMini(LinearLayout row,String label,String value){
         LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setGravity(Gravity.CENTER_VERTICAL);
         TextView a=text(label,12);a.setTextColor(Color.rgb(142,152,173));c.addView(a,new LinearLayout.LayoutParams(-1,dp(22)));
@@ -1416,19 +1462,60 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private JSONObject operationSettings(){
+        // Latest explicitly saved UI values outrank a stale asynchronous engine snapshot.
+        try{
+            String raw=getSharedPreferences("unified_operation_v076",MODE_PRIVATE).getString("settings","");
+            if(!raw.isEmpty())return new JSONObject(raw);
+        }catch(Exception ignored){}
         try{
             JSONObject rt=copyCache().optJSONObject("strategy_runtime");
             JSONObject op=rt==null?null:rt.optJSONObject("operation");
             JSONObject settings=op==null?null:op.optJSONObject("settings");
             if(settings!=null&&settings.length()>0)return settings;
         }catch(Exception ignored){}
-        for(String pref:new String[]{"unified_operation_v076","unified_operation_v074"}){
-            try{
-                String raw=getSharedPreferences(pref,MODE_PRIVATE).getString("settings","");
-                if(!raw.isEmpty())return new JSONObject(raw);
-            }catch(Exception ignored){}
-        }
+        try{
+            String raw=getSharedPreferences("unified_operation_v074",MODE_PRIVATE).getString("settings","");
+            if(!raw.isEmpty())return new JSONObject(raw);
+        }catch(Exception ignored){}
         return defaultOperationSettings();
+    }
+    private void loadOperationDrafts(){
+        if(operationDraftLoaded)return;
+        operationDraftLoaded=true;
+        try{
+            String raw=getSharedPreferences("artitrade_operation_drafts_v1",MODE_PRIVATE).getString("values","{}");
+            JSONObject obj=new JSONObject(raw);
+            java.util.Iterator<String> it=obj.keys();
+            while(it.hasNext()){String k=it.next();operationDraftValues.put(k,obj.optString(k,""));}
+        }catch(Exception e){new RuntimeCrashStore(this).add("operation_draft_load",e);}
+    }
+    private void persistOperationDrafts(){
+        try{
+            JSONObject obj=new JSONObject();
+            for(Map.Entry<String,String> entry:operationDraftValues.entrySet())obj.put(entry.getKey(),entry.getValue());
+            getSharedPreferences("artitrade_operation_drafts_v1",MODE_PRIVATE).edit()
+                .putString("values",obj.toString()).apply();
+        }catch(Exception e){new RuntimeCrashStore(this).add("operation_draft_write",e);}
+    }
+    private String operationDraft(String key,String field,String fallback){
+        loadOperationDrafts();
+        String value=operationDraftValues.get(key+"."+field);
+        return value==null?fallback:value;
+    }
+    private void trackOperationDraft(EditText field,String key){
+        field.addTextChangedListener(new TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){}
+            @Override public void afterTextChanged(Editable text){
+                operationDraftValues.put(key,text.toString());
+                persistOperationDrafts();
+            }
+        });
+    }
+    private void clearSavedOperationDrafts(String selectedMarket){
+        loadOperationDrafts();
+        operationDraftValues.keySet().removeIf(key->key.startsWith(selectedMarket+"."));
+        persistOperationDrafts();
     }
 
     private JSONObject operationPair(JSONObject settings,String m,String stg,String tf){
@@ -1459,10 +1546,15 @@ public final class UnifiedVisualActivity extends Activity {
         TextView tfv=text(tfLabel(tf),18);tfv.setTypeface(null,Typeface.BOLD);tfv.setTextColor(Color.rgb(218,214,255));head.addView(tfv,new LinearLayout.LayoutParams(0,dp(28),1));
         TextView acct=text("독립계좌",10);acct.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);acct.setTextColor(Color.rgb(113,123,145));head.addView(acct,new LinearLayout.LayoutParams(dp(64),dp(28)));c.addView(head);
         TextView sl=text("운용시드",11);sl.setTextColor(Color.rgb(137,147,169));sl.setPadding(0,dp(5),0,dp(3));c.addView(sl);
-        EditText seedEdit=operationInput(String.valueOf(seed),"2,000,000");c.addView(seedEdit,new LinearLayout.LayoutParams(-1,dp(40)));
+        String key=m+"."+stg+"."+tf;
+        EditText seedEdit=operationInput(operationDraft(key,"seed",String.valueOf(seed)),"2,000,000");
+        trackOperationDraft(seedEdit,key+".seed");
+        c.addView(seedEdit,new LinearLayout.LayoutParams(-1,dp(40)));
         TextView ml=text("최대 보유종목",11);ml.setTextColor(Color.rgb(137,147,169));ml.setPadding(0,dp(6),0,dp(3));c.addView(ml);
-        EditText maxEdit=operationInput(String.valueOf(maxp),"4");c.addView(maxEdit,new LinearLayout.LayoutParams(-1,dp(40)));
-        operationFields.put(m+"."+stg+"."+tf,new EditText[]{seedEdit,maxEdit});
+        EditText maxEdit=operationInput(operationDraft(key,"max_positions",String.valueOf(maxp)),"4");
+        trackOperationDraft(maxEdit,key+".max_positions");
+        c.addView(maxEdit,new LinearLayout.LayoutParams(-1,dp(40)));
+        operationFields.put(key,new EditText[]{seedEdit,maxEdit});
         return c;
     }
 
@@ -1473,8 +1565,9 @@ public final class UnifiedVisualActivity extends Activity {
         TextView n=text(label,18);n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(230,232,242));c.addView(n,new LinearLayout.LayoutParams(-1,dp(30)));
         TextView scope=text("단일 전략 계좌",11);scope.setTextColor(Color.rgb(117,128,151));scope.setPadding(0,0,0,dp(7));c.addView(scope);
         LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout seedBox=new LinearLayout(this);seedBox.setOrientation(LinearLayout.VERTICAL);TextView sl=text("운용시드",11);sl.setTextColor(Color.rgb(137,147,169));seedBox.addView(sl,new LinearLayout.LayoutParams(-1,dp(23)));EditText seedEdit=operationInput(String.valueOf(seed),"2,000,000");seedBox.addView(seedEdit,new LinearLayout.LayoutParams(-1,dp(42)));row.addView(seedBox,new LinearLayout.LayoutParams(0,dp(68),2));
-        LinearLayout maxBox=new LinearLayout(this);maxBox.setOrientation(LinearLayout.VERTICAL);TextView ml=text("최대 보유",11);ml.setTextColor(Color.rgb(137,147,169));maxBox.addView(ml,new LinearLayout.LayoutParams(-1,dp(23)));EditText maxEdit=operationInput(String.valueOf(maxp),"4");maxBox.addView(maxEdit,new LinearLayout.LayoutParams(-1,dp(42)));LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(0,dp(68),1);mp.setMargins(dp(8),0,0,0);row.addView(maxBox,mp);
+        String key=m+"."+stg;
+        LinearLayout seedBox=new LinearLayout(this);seedBox.setOrientation(LinearLayout.VERTICAL);TextView sl=text("운용시드",11);sl.setTextColor(Color.rgb(137,147,169));seedBox.addView(sl,new LinearLayout.LayoutParams(-1,dp(23)));EditText seedEdit=operationInput(operationDraft(key,"seed",String.valueOf(seed)),"2,000,000");trackOperationDraft(seedEdit,key+".seed");seedBox.addView(seedEdit,new LinearLayout.LayoutParams(-1,dp(42)));row.addView(seedBox,new LinearLayout.LayoutParams(0,dp(68),2));
+        LinearLayout maxBox=new LinearLayout(this);maxBox.setOrientation(LinearLayout.VERTICAL);TextView ml=text("최대 보유",11);ml.setTextColor(Color.rgb(137,147,169));maxBox.addView(ml,new LinearLayout.LayoutParams(-1,dp(23)));EditText maxEdit=operationInput(operationDraft(key,"max_positions",String.valueOf(maxp)),"4");trackOperationDraft(maxEdit,key+".max_positions");maxBox.addView(maxEdit,new LinearLayout.LayoutParams(-1,dp(42)));LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(0,dp(68),1);mp.setMargins(dp(8),0,0,0);row.addView(maxBox,mp);
         c.addView(row);
         operationFields.put(m+"."+stg,new EditText[]{seedEdit,maxEdit});
         return c;
@@ -1531,9 +1624,13 @@ public final class UnifiedVisualActivity extends Activity {
                     marketObj.put(stg,new JSONObject().put("frames",frames));
                 }
             }
-            getSharedPreferences("unified_operation_v076",MODE_PRIVATE).edit().putString("settings",all.toString()).commit();
+            if(!getSharedPreferences("unified_operation_v076",MODE_PRIVATE).edit()
+                .putString("settings",all.toString()).commit())
+                throw new IllegalStateException("운용설정 로컬 저장 실패");
             Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.APPLY_OPERATION);i.putExtra("settings",all.toString());
             if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+            // Clear only the market whose validated settings were explicitly saved.
+            clearSavedOperationDrafts(market);
             main.postDelayed(()->refresh(false),1200);
         }catch(Exception e){
             new AlertDialog.Builder(this).setTitle("운용 설정 확인").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();

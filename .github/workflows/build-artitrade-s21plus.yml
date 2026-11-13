@@ -139,6 +139,32 @@ jobs:
           assert 'stock/close/AT_CLOSE_PAPER.sqlite3' in migration
           print('RESTORE_LIFECYCLE_STATIC_CHECKS_OK')
           PY
+      - name: Validate strategy tabs, unsaved operation drafts, compact metrics and Kiwoom WAIT diagnostics
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('ARTITRADE_ANDROID/app/src/main')
+          ui=(src/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          visuals=(src/'java/com/artitrade/mobile/ArtitradeVisualViews.java').read_text()
+          service=(src/'java/com/artitrade/mobile/UnifiedTradingService.java').read_text()
+          py=(src/'python/android_runtime_v078.py').read_text()
+          assert 'strategy=item[0];showShell();' in ui
+          assert 'strategy=item[0];page="home"' not in ui
+          assert 'if(!"operation".equals(page))render()' in ui
+          assert 'artitrade_operation_drafts_v1' in ui
+          assert 'trackOperationDraft(seedEdit,key+".seed")' in ui
+          assert 'trackOperationDraft(maxEdit,key+".max_positions")' in ui
+          assert 'clearSavedOperationDrafts(market)' in ui
+          assert 'new LinearLayout.LayoutParams(-1,dp(180))' in ui
+          assert 'originalStepH*(2f/3f)' in visuals
+          assert 'showKiwoomFeedDiagnosis' in ui
+          assert 'stockFeed.optInt("subscribed",0)' in service
+          assert 'stockFeed.optLong("last_frame_ms",0L)' in service
+          assert "status == '실시간 연결됨'" in py
+          assert '_phone_stock_progress' in py and 'ANDROID_KIWOOM_FEED_FATAL' in py
+          print('TAB_DRAFT_FLOW_KIWOOM_DIAGNOSTIC_TEST_OK')
+          PY
       - name: Validate dashboard JavaScript
         shell: bash
         run: |

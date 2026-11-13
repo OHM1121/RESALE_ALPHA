@@ -218,7 +218,11 @@ final class TimeframeAccountFlowView extends View {
         progress(c,"승률",win,pad,gaugeTop,gaugeW,Color.rgb(75,129,255));
         progress(c,"목표도달",target,pad+gaugeW+gaugeGap,gaugeTop,gaugeW,Color.rgb(0,202,167));
 
-        float stepTop=sp(111),gap=dp(8),stepW=(w-pad*2-gap*3)/4f,stepH=Math.max(dp(66),h-stepTop-dp(12));
+        // Preserve typography, but make each of the 4 transaction boxes about 2/3 as tall.
+        // The parent timeframe card is shortened too; this is not just reduced text spacing.
+        float stepTop=sp(111),gap=dp(8),stepW=(w-pad*2-gap*3)/4f;
+        float originalStepH=Math.max(dp(66),dp(205)-stepTop-dp(12));
+        float stepH=Math.max(dp(54),originalStepH*(2f/3f));
         int[] accents={Color.rgb(255,183,77),Color.rgb(75,129,255),Color.rgb(154,119,255),Color.rgb(0,202,167)};
         String[] names={"매수대기","매수완료","보유중","매도완료"};
         int[] counts={pending,bought,holding,sold};

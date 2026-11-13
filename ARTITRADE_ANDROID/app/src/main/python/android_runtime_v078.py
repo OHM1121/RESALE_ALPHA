@@ -5,9 +5,90 @@ GMO service into the same Kiwoom 0B/0D stream before the live-order adapter
 patches the GMO paper-fill transition.
 """
 from pathlib import Path
-import hashlib, hmac, json, uuid
+import hashlib, hmac, json, uuid, time
 from urllib.parse import urlencode
 import android_live_bridge as _core
+import d_live as _stock_feed_core
+
+# Preserve the original EXE state machines. Only observe the transport progress
+# which the Android bridge previously discarded, and surface fatal startup errors.
+_ORIGINAL_STOCK_PROGRESS = _core.Runtime._stock_progress
+_ORIGINAL_RUNTIME_SNAPSHOT = _core.Runtime.snapshot
+_ORIGINAL_STOCK_RUN = _stock_feed_core.LivePaperRunner.run
+
+def _phone_stock_progress(self, item):
+    if isinstance(item, dict) and item.get('stage'):
+        self._phone_stock_progress = {
+            'stage': str(item.get('stage') or '')[:110],
+            'detail': str(item.get('detail') or '')[:210],
+            'state': str(item.get('state') or '')[:25],
+            'done': int(item.get('done') or 0),
+            'total': int(item.get('total') or 0),
+            'updated_at_ms': int(time.time() * 1000),
+        }
+    return _ORIGINAL_STOCK_PROGRESS(self, item)
+
+async def _phone_guard_stock_run(self):
+    try:
+        return await _ORIGINAL_STOCK_RUN(self)
+    except Exception as exc:
+        # The Windows runner's bare background thread previously died silently:
+        # UI remained WAIT while neither the exception nor connection stage was visible.
+        msg = type(exc).__name__ + ': ' + str(exc)[:200]
+        try:
+            self._health('연결 끊김 - 재연결 대기', msg)
+            self._progress('키움 실시간 엔진 시작 오류', 0, 0, msg, state='failed')
+            from at_close_bridge import set_broker_transport
+            set_broker_transport('disconnected', msg[:120])
+        except Exception:
+            self.status = '키움 실시간 엔진 시작 오류'
+        try:
+            self.store.issue('ANDROID_KIWOOM_FEED_FATAL',
+                '키움 실시간 수신 엔진이 시작 중 예외로 종료됨',
+                details={'type': type(exc).__name__, 'message': str(exc)[:180]})
+        except Exception:
+            pass
+        return None
+
+def _phone_runtime_snapshot(self):
+    raw = _ORIGINAL_RUNTIME_SNAPSHOT(self)
+    try:
+        snapshot = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        runner = getattr(self, 'stock_runner', None)
+        status = str(getattr(runner, 'status', '전략엔진 준비')) if runner is not None else '전략엔진 준비'
+        stock = snapshot.get('stock') or {}
+        # "연결 끊김 - 재연결 대기" contains the Korean word 연결;
+        # substring matching used to report a dead stream as connected.
+        stock['connected'] = (status == '실시간 연결됨')
+        stock['status'] = status
+        snapshot['stock'] = stock
+        last = dict(getattr(self, '_phone_stock_progress', {}) or {})
+        try:
+            from at_close_bridge import broker_transport_snapshot
+            transport = broker_transport_snapshot()
+        except Exception:
+            transport = {}
+        try:
+            preload = runner.preload_gate.snapshot() if runner is not None else {}
+        except Exception:
+            preload = {}
+        snapshot['stock_feed'] = {
+            'stage': last.get('stage') or status,
+            'detail': last.get('detail') or (transport.get('reason') or ''),
+            'state': last.get('state') or 'waiting',
+            'updated_at_ms': last.get('updated_at_ms') or 0,
+            'subscribed': len(getattr(runner, 'subscriptions', []) or []) if runner else 0,
+            'last_frame_ms': int(float(getattr(runner, '_watch_feed_last_epoch', 0) or 0) * 1000) if runner else 0,
+            'transport': transport,
+            'preload': preload,
+        }
+        return json.dumps(snapshot, ensure_ascii=False, default=str)
+    except Exception:
+        return raw
+
+_core.Runtime._stock_progress = _phone_stock_progress
+_core.Runtime.snapshot = _phone_runtime_snapshot
+_stock_feed_core.LivePaperRunner.run = _phone_guard_stock_run
 
 _ORIG_PATCH_GMO = _core.Runtime._patch_gmo
 _ORIG_STOP = _core.Runtime.stop

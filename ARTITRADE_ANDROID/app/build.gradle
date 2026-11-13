@@ -10,7 +10,7 @@ android {
         applicationId 'com.artitrade.mobile'
         minSdk 28
         targetSdk 35
-        versionCode 22
+        versionCode 23
         versionName '0.4.1-SWIPE-KST-EVENTDATE'
         manifestPlaceholders = [launcherActivity: ".MainActivity"]
         ndk { abiFilters 'arm64-v8a' }
@@ -38,7 +38,7 @@ android {
         }
         unified {
             dimension 'market'
-            versionName '0.7.11-LARGE-LEDGER'
+            versionName '0.7.12-UI-DRAFT-FEED'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'

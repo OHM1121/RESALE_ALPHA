@@ -216,7 +216,14 @@ public final class UnifiedTradingService extends Service {
                 JSONObject st=p.optJSONObject("stock"),co=p.optJSONObject("coin");
                 boolean sc=st!=null&&st.optBoolean("connected");
                 boolean cc=co!=null&&co.optBoolean("connected");
-                live.set("stock",sc,sc?200:0,System.currentTimeMillis(),st==null?"전략엔진 준비":st.optString("status"));
+                JSONObject stockFeed=p.optJSONObject("stock_feed");
+                int realSubscriptions=stockFeed==null?0:stockFeed.optInt("subscribed",0);
+                long realLastFrame=stockFeed==null?0L:stockFeed.optLong("last_frame_ms",0L);
+                String stockDetail=st==null?"전략엔진 준비":st.optString("status","전략엔진 준비");
+                if(!sc&&stockFeed!=null&&!stockFeed.optString("stage","").isEmpty())
+                    stockDetail+=" · "+stockFeed.optString("stage","")+
+                        " · "+stockFeed.optString("detail","");
+                live.set("stock",sc,realSubscriptions,realLastFrame,stockDetail);
                 live.set("coin",cc,cc?35:0,System.currentTimeMillis(),co==null?"전략엔진 준비":co.optString("status"));
                 JSONObject enabled=p.optJSONObject("live_enabled");
                 // Python fail-closed order reconciliation can disarm a market internally.
