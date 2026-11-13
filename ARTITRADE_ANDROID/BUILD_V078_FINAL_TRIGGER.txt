@@ -4,3 +4,4 @@ ARTITRADE v0.7.20: additive missing-only PC research supplement on existing migr
 ARTITRADE v0.7.21 native UI: exact KRW (51,000원), compact icon-number cards, landscape dashboard and two-column research; 2026-11-13.
 v0.7.21 final layout QA: fit 51dp navigation and header, 131dp research donuts, preserve exact full won figures.
 v0.7.22 2026-11-13: atomic MSERVER journal, missing research supplement auto-ack, original GMO paper fill parity, full WAL-safe ledger export with reread validation.
+Ledger safety CI retry: reflect split no-overwrite guard assertions; 2026-11-13.
