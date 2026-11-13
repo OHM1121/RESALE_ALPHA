@@ -33,6 +33,12 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.OutputStream;
+import java.io.InputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.security.MessageDigest;
+import com.chaquo.python.Python;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -151,6 +157,9 @@ public final class UnifiedVisualActivity extends Activity {
     private final Map<String,String> operationDraftValues=new HashMap<>();
     private boolean operationDraftLoaded=false;
     private static final int REQUEST_EXPORT_RESEARCH=7711;
+    private static final int REQUEST_EXPORT_FULL_LEDGER=7712;
+    private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
+        new java.util.concurrent.atomic.AtomicBoolean(false);
     private byte[] pendingResearchExport;
     private static final long REFRESH_MS=3500L;
 
@@ -677,6 +686,10 @@ public final class UnifiedVisualActivity extends Activity {
         tools.addView(button("PC 원장 적용 · 실제 데이터 재검증",true,this::requestPcMigrationApply),importLp);
         LinearLayout.LayoutParams retryLp=new LinearLayout.LayoutParams(-1,dp(43));retryLp.setMargins(0,dp(7),0,0);
         tools.addView(button("원장 다시 게시 · 연결 재확인",true,this::requestLedgerRepublish),retryLp);
+        LinearLayout.LayoutParams backupLp=new LinearLayout.LayoutParams(-1,dp(43));
+        backupLp.setMargins(0,dp(7),0,0);
+        tools.addView(button("전체 원장 백업 · SQLite/수급/리서치",false,
+            this::requestFullLedgerBackup),backupLp);
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(40));rp.setMargins(0,dp(7),0,0);tools.addView(button("실시간 엔진 재연결",false,this::restartFeeds),rp);panel.addView(tools);
 
@@ -1899,6 +1912,102 @@ public final class UnifiedVisualActivity extends Activity {
         zip.write((text==null?"":text).getBytes(StandardCharsets.UTF_8));zip.closeEntry();
     }
 
+    /** User chooses a SAF file; no automatic email, upload or scheduled action. */
+    private void requestFullLedgerBackup(){
+        if(fullExportRunning.get()){
+            new AlertDialog.Builder(this).setTitle("원장 백업 진행 중")
+                .setMessage("동일한 원장을 중복 생성하지 않습니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        intent.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_FULL_LEDGER_"+stamp+".zip");
+        startActivityForResult(intent,REQUEST_EXPORT_FULL_LEDGER);
+    }
+
+    private static String hex(byte[] bytes){
+        StringBuilder b=new StringBuilder(bytes.length*2);
+        for(byte x:bytes)b.append(String.format(Locale.ROOT,"%02x",x&255));
+        return b.toString();
+    }
+
+    private void fullLedgerExportResult(boolean success,String message){
+        getSharedPreferences("artitrade_full_ledger_export_v1",MODE_PRIVATE).edit()
+            .putBoolean("ok",success).putString("message",message)
+            .putLong("at",System.currentTimeMillis()).apply();
+        main.post(()->{
+            if(isFinishing()||(Build.VERSION.SDK_INT>=17&&isDestroyed()))return;
+            new AlertDialog.Builder(this).setTitle(success?"전체 원장 백업 완료":"전체 원장 백업 실패")
+                .setMessage(message).setPositiveButton("확인",null).show();
+        });
+    }
+
+    private void exportFullLedgerToDocument(Uri target){
+        if(!fullExportRunning.compareAndSet(false,true))return;
+        new Thread(()->{
+            File archive=new File(getCacheDir(),"artitrade_full_ledger_"+System.nanoTime()+".zip");
+            try{
+                if(target==null||!"content".equals(target.getScheme()))
+                    throw new SecurityException("지원되는 Android 파일 저장 위치가 아닙니다.");
+                if(!Python.isStarted())
+                    throw new IllegalStateException("전략엔진 시작 후 전체 원장을 백업할 수 있습니다.");
+                File rootDir=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                String raw=Python.getInstance().getModule("android_ledger_backup")
+                    .callAttr("make_backup",rootDir.getAbsolutePath(),
+                        archive.getAbsolutePath()).toString();
+                JSONObject result=new JSONObject(raw);
+                if(!result.optBoolean("ok")||!archive.isFile()||
+                    result.optLong("bytes",-1)!=archive.length())
+                    throw new IOException("SQLite 원장 스냅샷 생성/크기 검사 실패");
+                String expected=result.optString("sha256","");
+                long length=0;
+                MessageDigest written=MessageDigest.getInstance("SHA-256");
+                try(InputStream in=new FileInputStream(archive);
+                    OutputStream out=getContentResolver().openOutputStream(target,"w")){
+                    if(out==null)throw new IOException("백업 저장 위치에 쓰기 불가");
+                    byte[] buf=new byte[1024*1024];int n;
+                    while((n=in.read(buf))!=-1){
+                        out.write(buf,0,n);written.update(buf,0,n);length+=n;
+                    }
+                    out.flush();
+                }
+                if(length!=archive.length()||!expected.equalsIgnoreCase(hex(written.digest())))
+                    throw new IOException("저장 중 원장 백업 크기 또는 SHA-256 불일치");
+                // Content providers can fail after a write appears complete.
+                // Read the picked destination back and verify every saved byte.
+                MessageDigest saved=MessageDigest.getInstance("SHA-256");
+                long confirmed=0;
+                try(InputStream verify=getContentResolver().openInputStream(target)){
+                    if(verify==null)throw new IOException("저장된 백업 재조회 불가");
+                    byte[] buf=new byte[1024*1024];int n;
+                    while((n=verify.read(buf))!=-1){saved.update(buf,0,n);confirmed+=n;}
+                }
+                if(confirmed!=length||!expected.equalsIgnoreCase(hex(saved.digest())))
+                    throw new IOException("선택한 저장 위치에서 백업 재검증 불일치");
+                fullLedgerExportResult(true,
+                    "원본 파일 "+result.optInt("file_count",0)+"개 (SQLite "+
+                    result.optInt("sqlite_count",0)+"개)\n"+
+                    "용량 "+String.format(Locale.KOREA,"%,d",confirmed)+"바이트\n"+
+                    "ZIP SHA-256 "+expected+"\n"+
+                    "거래·연구 데이터를 읽기 전용으로 백업하고 저장본을 다시 검증했습니다.");
+            }catch(Throwable e){
+                new RuntimeCrashStore(this).add("full_ledger_backup",e);
+                fullLedgerExportResult(false,
+                    "기존 원장 데이터는 변경되지 않았습니다.\n"+e.getClass().getSimpleName()+
+                    ": "+String.valueOf(e.getMessage()));
+            }finally{
+                if(archive.exists()&&!archive.delete())
+                    new RuntimeCrashStore(this).add("full_ledger_backup_cache_cleanup",
+                        new IOException("Temporary archive cleanup failed"));
+                fullExportRunning.set(false);
+            }
+        },"artitrade-full-ledger-export").start();
+    }
+
     private void exportResearch(Stats st){
         try{
             JSONObject rs=research(market,strategy),lg=ledger(market,strategy);
@@ -1932,6 +2041,11 @@ public final class UnifiedVisualActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==REQUEST_EXPORT_FULL_LEDGER){
+            if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null)
+                exportFullLedgerToDocument(data.getData());
+            return;
+        }
         if(requestCode!=REQUEST_EXPORT_RESEARCH)return;
         byte[] payload=pendingResearchExport;pendingResearchExport=null;
         if(resultCode!=RESULT_OK||payload==null||data==null)return;
