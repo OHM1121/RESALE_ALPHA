@@ -1,2 +1,3 @@
 First real Android 15 on-GitHub emulator boot/navigation/6-strategy-synthetic-ledger smoke for v0.7.25, with screenshot and crash evidence.
 Rerun 2: restore test-keystore, verify per-bucket and nested MA/GMO fallback, install x86_64 APK in real Android 15 emulator.
+Third pass: Android 15 real APK navigation succeeded; isolate data fixture using emulator-only disabled-service manifest rather than restricted PM command, preserve ARM64 shipped behavior.
