@@ -30,6 +30,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+      - name: Restore stable APK signing key for emulator build
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Create non-production signing key if cache is unavailable
+        run: |
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=ARTITRADE Emulator Test,O=ARTITRADE,C=KR" -keyalg RSA -keysize 2048 -validity 10000
+          fi
       - name: Enable KVM for Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
