@@ -1852,7 +1852,7 @@ public final class UnifiedVisualActivity extends Activity {
             }
         }
         switch(key){
-            case "a":return "구분 "+r.optString("side",r.optString("type","미기록"));
+            case "a":return "구분 "+tradeSideOf(r);
             case "b":return "체결가 "+formatMaybeMoney(r,"price","fill_price");
             case "c":return "체결량 "+formatMaybeNumber(r,"qty","quantity","fill_qty");
             default:return "순손익 "+formatMaybeMoney(r,"net_profit","net_realized","net_pnl","profit");
@@ -1947,9 +1947,16 @@ public final class UnifiedVisualActivity extends Activity {
                 paintProfit(p,profit);topRow.addView(p,new LinearLayout.LayoutParams(-2,dp(29)));
             }
             c.addView(topRow);
-            TextView when=text((marketWide?refLabel(item.source):refLabel())+" "+
-                (marketWide?timeOf(r,item.source):timeOf(r)),11);
-            when.setTextColor(Color.rgb(139,163,192));c.addView(when);
+            String originStrategy=marketWide?item.source:strategy;
+            String timeCaption="executions".equals(kind)
+                ?tradeSideOf(r)+" 체결시각":"positions".equals(kind)
+                    ?"매수 체결시각":"pending".equals(kind)?"주문 접수시각":
+                    refLabel(originStrategy);
+            String timeValue="executions".equals(kind)||"positions".equals(kind)||"pending".equals(kind)
+                ?fillTimeOf(r,kind,originStrategy)
+                :timeOf(r,originStrategy);
+            TextView when=text(timeCaption+" · "+timeValue,13);
+            when.setTextColor(PremiumUi.MUTED);c.addView(when);
             LinearLayout firstRow=new LinearLayout(this);firstRow.setOrientation(LinearLayout.HORIZONTAL);
             addGridCell(firstRow,cellValue(r,kind,"a"));addGridCell(firstRow,cellValue(r,kind,"b"));c.addView(firstRow);
             LinearLayout secondRow=new LinearLayout(this);secondRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1963,8 +1970,12 @@ public final class UnifiedVisualActivity extends Activity {
                 Button policy=button("정책이력",false,()->{page="policyHistory";persistNavigation();render();});policy.setTextSize(12);
                 LinearLayout.LayoutParams pl=new LinearLayout.LayoutParams(0,dp(39),1);pl.setMargins(dp(6),0,0,0);actions.addView(policy,pl);c.addView(actions);
             }
-            TextView why=text("근거 · "+reasonOf(r),11);why.setTextColor(Color.rgb(151,176,202));why.setMaxLines(3);
-            why.setPadding(dp(2),dp(5),dp(2),0);c.addView(why);
+            String action="executions".equals(kind)?tradeSideOf(r):
+                "positions".equals(kind)||"pending".equals(kind)?"매수":"판단";
+            TextView why=text(action+" 원인 · "+tradeReasonOf(r,action),13);
+            why.setTextColor(PremiumUi.TEXT);
+            why.setMaxLines(3);
+            why.setPadding(dp(2),dp(6),dp(2),dp(3));c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(5));content.addView(c,lp);
         }
         addHistoryPager(kind,total);
@@ -2670,6 +2681,61 @@ public final class UnifiedVisualActivity extends Activity {
             "close".equals(forStrategy)?"매수시각":"기준시각";
     }
 
+    private String tradeSideOf(JSONObject row){
+        String raw=row.optString("side",row.optString("type",row.optString("action","")));
+        return TradeExplanation.side(raw);
+    }
+    /** The execution fill timestamp must outrank reference-candle/event dates. */
+    private String fillTimeOf(JSONObject row,String kind,String originStrategy){
+        String[] keys="executions".equals(kind)?
+            new String[]{"filled_at","executed_at","fill_at","fill_time","executed_time",
+                "trade_time","trade_at","time","ts","at","sold_at","sell_at",
+                "buy_at","entry_at","created_at"}:
+            "positions".equals(kind)?
+                new String[]{"buy_filled_at","entry_filled_at","filled_at","buy_at","entry_at",
+                    "entry_ts","buy_ts","time","ts","created_at"}:
+                new String[]{"submitted_at","ordered_at","order_at","created_at","since_ts",
+                    "buy_at","at","ts"};
+        for(String key:keys){
+            Object v=row.opt(key);
+            if(v==null||v==JSONObject.NULL||String.valueOf(v).trim().isEmpty())continue;
+            boolean explicitlyUtc=key.toLowerCase(Locale.ROOT).contains("utc")||
+                "UTC".equalsIgnoreCase(row.optString("timestamp_timezone",""))||
+                "UTC".equalsIgnoreCase(row.optString("time_zone",""));
+            String formatted=TradeExplanation.kst(v,explicitlyUtc);
+            if(!formatted.startsWith("시각 형식")&&!formatted.startsWith("체결시각 미기록"))
+                return formatted;
+        }
+        return "체결시각 미기록";
+    }
+    /** A sell must show its SELL decision, not the first BUY reason on the position. */
+    private String tradeReasonOf(JSONObject row,String action){
+        final String[] keys;
+        if("매도".equals(action)){
+            keys=new String[]{"sell_reason","exit_reason","sell_cause","exit_cause",
+                "fill_reason","execution_reason","order_reason","reason",
+                "purpose","exit_signal","decision","cause"};
+        }else if("매수".equals(action)){
+            keys=new String[]{"buy_reason","entry_reason","buy_cause","entry_cause",
+                "fill_reason","execution_reason","order_reason","reason",
+                "purpose","signal_reason","decision","cause"};
+        }else{
+            keys=new String[]{"reason","decision","cause","signal_reason","purpose"};
+        }
+        for(String key:keys){
+            Object val=row.opt(key);
+            if(val==null||val==JSONObject.NULL)continue;
+            String raw=String.valueOf(val).trim();
+            if(raw.isEmpty()||"null".equalsIgnoreCase(raw))continue;
+            String normalized=TradeExplanation.shortReason(raw,action);
+            // A bare BUY signal cannot explain a later SELL execution.
+            if("매도".equals(action)&&normalized.contains("매수 기준 충족"))
+                continue;
+            return normalized;
+        }
+        return TradeExplanation.shortReason("",action);
+    }
+
     private String timeOf(JSONObject row,String forStrategy){
         String[] keys="gmo".equals(forStrategy)
             ?new String[]{"event_date","gmo_event_date","event_day","at","ts"}
@@ -2743,20 +2809,14 @@ public final class UnifiedVisualActivity extends Activity {
         switch(s){case "BTC":return "비트코인";case "ETH":return "이더리움";case "XRP":return "리플";case "SOL":return "솔라나";case "DOGE":return "도지코인";case "ADA":return "에이다";case "AVAX":return "아발란체";case "DOT":return "폴카닷";case "LINK":return "체인링크";case "TRX":return "트론";case "BCH":return "비트코인캐시";case "ETC":return "이더리움클래식";case "SUI":return "수이";default:return s;}
     }
 
-    private String reasonOf(JSONObject r){String[] k={"reason","entry_reason","exit_reason","buy_reason","sell_reason","decision","cause","signal_reason"};for(String x:k){String v=r.optString(x,"").trim();if(!v.isEmpty())return v.length()>120?v.substring(0,120):v;}return "근거 미기록";}
+    private String reasonOf(JSONObject r){return tradeReasonOf(r,"판단");}
 
     private String timeOf(JSONObject r){return timeOf(r,strategy);}
 
     private String formatKst(Object v){
-        if(v==null||v==JSONObject.NULL)return "미기록";
-        String raw=String.valueOf(v).trim();if(raw.isEmpty())return "미기록";
-        long time=RealizedTrend.time(raw);
-        if(time>0){
-            SimpleDateFormat f=new SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.KOREA);
-            f.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
-            return f.format(new Date(time));
-        }
-        return raw.length()>19?raw.substring(0,19).replace('T',' '):raw.replace('T',' ');
+        String text=TradeExplanation.kst(v,false);
+        return text.startsWith("시각 형식")||text.startsWith("체결시각 미기록")
+            ?"미기록":text;
     }
 
     private String number(double v){if(!finite(v))return "—";NumberFormat f=NumberFormat.getNumberInstance(Locale.KOREA);f.setMaximumFractionDigits(Math.abs(v)>=100?0:2);return f.format(v);}
