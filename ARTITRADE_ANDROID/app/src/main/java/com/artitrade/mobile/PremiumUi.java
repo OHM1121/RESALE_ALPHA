@@ -105,6 +105,10 @@ final class PremiumIconView extends View {
         p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         p.setColor(tint);
         switch(kind){
+            case "close":
+                stroke(raw,6,6,18,18);
+                stroke(raw,18,6,6,18);
+                break;
             case "home":
                 stroke(raw,3,11,12,3,21,11);
                 stroke(raw,5.5f,10,5.5f,21,18.5f,21,18.5f,10);
