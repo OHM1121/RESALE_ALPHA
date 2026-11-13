@@ -161,6 +161,7 @@ public final class UnifiedVisualActivity extends Activity {
     private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
         new java.util.concurrent.atomic.AtomicBoolean(false);
     private byte[] pendingResearchExport;
+    private String pendingResearchReports;
     private static final long REFRESH_MS=3500L;
 
     private final Runnable periodic=new Runnable(){
@@ -2035,18 +2036,26 @@ public final class UnifiedVisualActivity extends Activity {
         return b.toString();
     }
 
-    private void fullLedgerExportResult(boolean success,String message){
+    private void fullLedgerExportResult(boolean success,String message,boolean research){
         getSharedPreferences("artitrade_full_ledger_export_v1",MODE_PRIVATE).edit()
             .putBoolean("ok",success).putString("message",message)
             .putLong("at",System.currentTimeMillis()).apply();
         main.post(()->{
             if(isFinishing()||(Build.VERSION.SDK_INT>=17&&isDestroyed()))return;
-            new AlertDialog.Builder(this).setTitle(success?"전체 원장 백업 완료":"전체 원장 백업 실패")
+            String what=research?"연구자료 전체 추출":"전체 원장 백업";
+            new AlertDialog.Builder(this).setTitle(what+(success?" 완료":" 실패"))
                 .setMessage(message).setPositiveButton("확인",null).show();
         });
     }
+    private void fullLedgerExportResult(boolean success,String message){
+        fullLedgerExportResult(success,message,false);
+    }
 
     private void exportFullLedgerToDocument(Uri target){
+        exportFullLedgerToDocument(target,null);
+    }
+    private void exportFullLedgerToDocument(Uri target,String reportsJson){
+        final boolean research=reportsJson!=null;
         if(!fullExportRunning.compareAndSet(false,true))return;
         new Thread(()->{
             File archive=new File(getCacheDir(),"artitrade_full_ledger_"+System.nanoTime()+".zip");
@@ -2056,9 +2065,13 @@ public final class UnifiedVisualActivity extends Activity {
                 if(!Python.isStarted())
                     throw new IllegalStateException("전략엔진 시작 후 전체 원장을 백업할 수 있습니다.");
                 File rootDir=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
-                String raw=Python.getInstance().getModule("android_ledger_backup")
-                    .callAttr("make_backup",rootDir.getAbsolutePath(),
-                        archive.getAbsolutePath()).toString();
+                com.chaquo.python.PyObject backup=
+                    Python.getInstance().getModule("android_ledger_backup");
+                String raw=(reportsJson==null
+                    ?backup.callAttr("make_backup",rootDir.getAbsolutePath(),
+                        archive.getAbsolutePath())
+                    :backup.callAttr("make_backup",rootDir.getAbsolutePath(),
+                        archive.getAbsolutePath(),reportsJson)).toString();
                 JSONObject result=new JSONObject(raw);
                 if(!result.optBoolean("ok")||!archive.isFile()||
                     result.optLong("bytes",-1)!=archive.length())
@@ -2091,14 +2104,16 @@ public final class UnifiedVisualActivity extends Activity {
                 fullLedgerExportResult(true,
                     "원본 파일 "+result.optInt("file_count",0)+"개 (SQLite "+
                     result.optInt("sqlite_count",0)+"개)\n"+
+                    "읽기용 분석자료 "+result.optInt("report_count",0)+"개\n"+
                     "용량 "+String.format(Locale.KOREA,"%,d",confirmed)+"바이트\n"+
                     "ZIP SHA-256 "+expected+"\n"+
-                    "거래·연구 데이터를 읽기 전용으로 백업하고 저장본을 다시 검증했습니다.");
+                    "과거·현재 실제/가상매매 원본 SQLite 전체 및 저장본을 검증했습니다.",
+                    research);
             }catch(Throwable e){
-                new RuntimeCrashStore(this).add("full_ledger_backup",e);
+                new RuntimeCrashStore(this).add(research?"research_full_export":"full_ledger_backup",e);
                 fullLedgerExportResult(false,
                     "기존 원장 데이터는 변경되지 않았습니다.\n"+e.getClass().getSimpleName()+
-                    ": "+String.valueOf(e.getMessage()));
+                    ": "+String.valueOf(e.getMessage()),research);
             }finally{
                 if(archive.exists()&&!archive.delete())
                     new RuntimeCrashStore(this).add("full_ledger_backup_cache_cleanup",
@@ -2109,33 +2124,59 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void exportResearch(Stats st){
+        if(fullExportRunning.get()){
+            new AlertDialog.Builder(this).setTitle("백업 진행 중")
+                .setMessage("기존 백업이 끝난 뒤 다시 추출할 수 있습니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
         try{
-            JSONObject rs=research(market,strategy),lg=ledger(market,strategy);
-            JSONObject manifest=new JSONObject()
-                .put("schema","ARTITRADE_RESEARCH_BUNDLE_V078")
-                .put("market",market).put("strategy",strategy).put("strategy_name",strategyName(market,strategy))
-                .put("market_version",marketVersionLabel()).put("exported_at",System.currentTimeMillis())
-                .put("note","대시보드 실제계좌 성과와 연구용 가상진입 결과를 분리한 연구 번들");
-            ByteArrayOutputStream buf=new ByteArrayOutputStream();
-            try(ZipOutputStream zip=new ZipOutputStream(buf)){
-                zipPut(zip,"manifest.json",manifest.toString(2));
-                zipPut(zip,"research/research_record.json",rs.toString(2));
-                zipPut(zip,"research/items.json",String.valueOf(rs.optJSONArray("items")==null?new JSONArray():rs.optJSONArray("items")));
-                zipPut(zip,"research/score_items.json",String.valueOf(rs.optJSONArray("score_items")==null?new JSONArray():rs.optJSONArray("score_items")));
-                zipPut(zip,"ledger/account_snapshot.json",lg.toString(2));
-                JSONObject diag=new JSONObject().put("runtime",copyCache().optJSONArray("runtime_diagnostics"))
-                    .put("strategy_runtime",copyCache().optJSONObject("strategy_runtime"));
-                zipPut(zip,"diagnostics/runtime.json",diag.toString(2));
+            JSONObject rs=research(market,strategy);
+            JSONObject summary=new JSONObject()
+                .put("schema","ARTITRADE_RESEARCH_FULL_SOURCE_V079")
+                .put("market",market)
+                .put("strategy",strategy)
+                .put("strategy_name",strategyName(market,strategy))
+                .put("exported_at_kst",new SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss",Locale.KOREA).format(new Date())+" KST")
+                .put("source_total",rs.optInt("source_total",-1))
+                .put("displayed_preview_rows",rs.optInt("loaded_items",st.research.length()))
+                .put("preview_can_be_truncated",rs.optBoolean("partial_window",false))
+                .put("actual_research",rs.optJSONObject("actual_summary"))
+                .put("virtual_research",rs.optJSONObject("virtual_summary"))
+                .put("score_bands",rs.optJSONArray("bands"))
+                .put("evidence_table_counts",rs.optJSONObject("evidence_counts"))
+                .put("note","화면 일부 조회와 무관하게 stock/·coin/ 원본 SQLite 전체를 ZIP에 포함");
+            JSONObject reports=new JSONObject();
+            reports.put("analysis/research_summary.json",summary.toString(2));
+            String preview=rs.toString();
+            if(preview.getBytes(StandardCharsets.UTF_8).length<7*1024*1024){
+                reports.put("analysis/research_preview.json",preview);
             }
-            pendingResearchExport=buf.toByteArray();
-            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
+            reports.put("analysis/reason_guide_ko.txt",
+                "매수 원인: 원본 신호·점수·진입조건 기록을 기준으로 확인\n"+
+                "매도 원인: 원본 실제 체결의 reason / purpose / exit_reason 확인\n"+
+                "가상 연구: shadow / forward / milestone 등 별도 원본 테이블 확인\n"+
+                "체결시각: 원본의 UTC 시간대 정보가 있으면 한국시간(KST)으로 변환\n"+
+                "실제 매도가 없는 고가 접촉은 실제 매도 성공으로 처리하지 않음\n"+
+                "연구화면의 최근 표시건수와 ZIP의 전체 원본건수는 다를 수 있음\n");
+            pendingResearchReports=reports.toString();
+            pendingResearchExport=null; // Old preview-only in-memory ZIP is not full evidence.
+            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA)
+                .format(new Date());
             Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/zip");
-            i.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_"+market+"_"+strategy+"_RESEARCH_FULL_"+stamp+".zip");
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("application/zip");
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            i.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_"+market+"_"+strategy+
+                "_RESEARCH_ALL_ORIGINALS_"+stamp+".zip");
             startActivityForResult(i,REQUEST_EXPORT_RESEARCH);
         }catch(Exception e){
-            pendingResearchExport=null;
-            new AlertDialog.Builder(this).setTitle("연구자료 추출 실패").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
+            pendingResearchReports=null;
+            new AlertDialog.Builder(this).setTitle("연구자료 추출 실패")
+                .setMessage(String.valueOf(e.getMessage()))
+                .setPositiveButton("확인",null).show();
         }
     }
 
@@ -2147,18 +2188,13 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         if(requestCode!=REQUEST_EXPORT_RESEARCH)return;
-        byte[] payload=pendingResearchExport;pendingResearchExport=null;
-        if(resultCode!=RESULT_OK||payload==null||data==null)return;
-        Uri target=data.getData();if(target==null)return;
-        try(OutputStream out=getContentResolver().openOutputStream(target,"w")){
-            if(out==null)throw new IllegalStateException("저장 위치를 열 수 없습니다.");
-            out.write(payload);out.flush();
-            new AlertDialog.Builder(this).setTitle("연구자료 추출 완료")
-                .setMessage("연구요약·실제/가상 연구행·점수후보·계좌원장 스냅샷을 ZIP으로 저장했습니다.")
-                .setPositiveButton("확인",null).show();
-        }catch(Exception e){
-            new AlertDialog.Builder(this).setTitle("연구자료 저장 실패").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
-        }
+        String reports=pendingResearchReports;
+        pendingResearchReports=null;pendingResearchExport=null;
+        if(resultCode!=RESULT_OK||reports==null||data==null||data.getData()==null)
+            return;
+        // Stream and SHA-verify the entire EXE/phone SQLite history, not the
+        // current UI's limited 3,000-row research preview.
+        exportFullLedgerToDocument(data.getData(),reports);
     }
 
     private void renderResearch(){
