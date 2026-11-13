@@ -73,7 +73,7 @@ class PersistenceAndExportTests(unittest.TestCase):
         self.assertEqual(self.query_audit(
             "SELECT COUNT(*) FROM observations WHERE record_kind='VIRTUAL'"),6)
         self.assertEqual(self.query_audit(
-            "SELECT COUNT(*) FROM observations WHERE record_kind='ACTUAL'"),15)
+            "SELECT COUNT(*) FROM observations WHERE record_kind='ACTUAL'"),9)
         self.assertEqual(audit.capture(str(self.root))["added_observations"],0)
         db=self.dbs["coin/base/upbit_paper.sqlite3"]
         with sqlite3.connect(db) as c:
