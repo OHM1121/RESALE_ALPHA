@@ -151,7 +151,7 @@ jobs:
           py=(src/'python/android_runtime_v078.py').read_text()
           assert 'strategy=item[0];showShell();' in ui
           assert 'strategy=item[0];page="home"' not in ui
-          assert 'if(!"operation".equals(page))render()' in ui
+          assert 'if(!"operation".equals(page)' in ui and 'ledgerChanged||"home".equals(page)' in ui
           assert 'artitrade_operation_drafts_v1' in ui
           assert 'trackOperationDraft(seedEdit,key+".seed")' in ui
           assert 'trackOperationDraft(maxEdit,key+".max_positions")' in ui
@@ -235,7 +235,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.15-PC-TRANSFER-FIX'" in s
+          assert "versionName '0.7.16-LEDGER-UI-PERF'" in s
+          assert "versionCode 27" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -254,6 +255,29 @@ jobs:
           assert 'for member in sorted(("manifest.json", *manifest["files"].keys())):' in pc
           assert 'stage.rglob("*")' not in pc
           print('LEGACY_SIDECAR_RECOVERY_AND_STRICT_PC_ZIP_OK')
+          PY
+      - name: Verify preloaded ledger UI, preserved originals and bounded history views
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_OUT="$(mktemp -d)"
+          javac -d "$TEST_OUT" ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistoryPager.java ARTITRADE_ANDROID/ui_tests/HistoryPagerTest.java
+          java -cp "$TEST_OUT" com.artitrade.mobile.HistoryPagerTest
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path("ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java").read_text()
+          assert "new JSONObject(cache.toString())" not in src
+          assert "private volatile UiSnapshot uiSnapshot" in src
+          assert "calculateStats(packet,m,stg)" in src
+          assert "calculateStatsTf(packet,m,stg,tf,st)" in src
+          assert 'HistoryPager.end(first,a.length())' in src
+          assert 'addHistoryPager("research",st.research.length())' in src
+          assert 'addHistoryPager("scores",items.length())' in src
+          assert 'addHistoryPager("errors",all.length())' in src
+          assert 'DRAWER_PROGRESS_REFRESH_MS=750L' in src
+          assert "main.post(drawerProgressTicker)" in src
+          assert "stopDrawerProgressTicker()" in src
+          print("LEDGER_PRELOAD_PAGINATION_DRAWER_REGRESSION_OK")
           PY
       - name: Build stock, coin, unified and MSERVER APKs
         working-directory: ARTITRADE_ANDROID

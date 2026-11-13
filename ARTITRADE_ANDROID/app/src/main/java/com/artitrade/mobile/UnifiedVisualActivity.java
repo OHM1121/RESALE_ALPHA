@@ -60,21 +60,60 @@ import java.util.zip.ZipOutputStream;
 public final class UnifiedVisualActivity extends Activity {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService io=Executors.newFixedThreadPool(6);
-    private final Object cacheLock=new Object();
+    // A refresh builds a new immutable-for-read snapshot on a worker thread.
+    // Never stringify and reparse the entire imported PC ledger on the UI thread.
+    private static final class UiSnapshot {
+        final JSONObject packet;
+        final Map<String,Stats> totals;
+        final Map<String,Stats> frames;
+        UiSnapshot(JSONObject packet,Map<String,Stats> totals,Map<String,Stats> frames){
+            this.packet=packet;
+            this.totals=java.util.Collections.unmodifiableMap(totals);
+            this.frames=java.util.Collections.unmodifiableMap(frames);
+        }
+    }
+    private volatile UiSnapshot uiSnapshot=new UiSnapshot(new JSONObject(),new HashMap<>(),new HashMap<>());
+    // Worker-only parsed record reuse. The service publishes a fresh JSON string
+    // frequently, even when all historical records are unchanged.
+    private String cachedLocalRaw;
+    private JSONObject cachedLocalParsed=new JSONObject();
+    private boolean cachedLocalMeaningful;
     private FrameLayout root;
     private LinearLayout content;
     private LinearLayout strategyBar;
     private TextView statusText;
     private TextView clockText;
-    private JSONObject cache=new JSONObject();
     private volatile boolean refreshRunning=false;
     private volatile boolean runtimeStartIssued=false;
     private volatile boolean brokerProbeIssued=false;
     private String market="stock";
     private String strategy="at";
     private String page="home";
+    // History is never truncated; only the visible Android Views are paged.
+    private String historyContext="";
+    private int historyOffset=0;
     private float swipeX=Float.NaN;
     private View drawerOverlay;
+    private static final long DRAWER_PROGRESS_REFRESH_MS=750L;
+    private static final class DrawerProgressViews {
+        final TextView percent;
+        final ProgressBar bar;
+        final TextView detail;
+        DrawerProgressViews(TextView percent,ProgressBar bar,TextView detail){
+            this.percent=percent;this.bar=bar;this.detail=detail;
+        }
+    }
+    private DrawerProgressViews drawerPublishProgress;
+    private DrawerProgressViews drawerImportProgress;
+    // Refresh only the visible progress widgets, not the whole drawer or its scroll position.
+    // Import and publish progress are stored locally by the service after each completed unit.
+    private final Runnable drawerProgressTicker=new Runnable(){
+        @Override public void run(){
+            if(drawerOverlay==null)return;
+            refreshOpenDrawerProgress();
+            main.postDelayed(this,DRAWER_PROGRESS_REFRESH_MS);
+        }
+    };
     private final Map<String,EditText[]> operationFields=new HashMap<>();
     // Unsaved drafts are isolated from the live strategy settings. Only Save applies them.
     private final Map<String,String> operationDraftValues=new HashMap<>();
@@ -247,6 +286,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void showShell(){
         root.removeAllViews();
         drawerOverlay=null;
+        stopDrawerProgressTicker();
         LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(9,11,17));
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
 
@@ -317,20 +357,76 @@ public final class UnifiedVisualActivity extends Activity {
         return done+"/"+total+" · 예상 "+(sec>=60?(sec/60)+"분 "+(sec%60)+"초":sec+"초");
     }
 
-    private void addProgressBlock(LinearLayout parent,String title,JSONObject state,int accent){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(7),dp(2),dp(8));
-        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);
-        TextView t=text(title,12);t.setTypeface(null,Typeface.BOLD);t.setTextColor(Color.rgb(215,222,237));head.addView(t,new LinearLayout.LayoutParams(0,dp(24),1));
+    private void updateDrawerProgressView(DrawerProgressViews views,JSONObject state){
+        if(views==null)return;
         int pct=state==null?0:Math.max(0,Math.min(100,state.optInt("percent",0)));
-        TextView pc=text(pct+"%",12);pc.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);pc.setTypeface(null,Typeface.BOLD);pc.setTextColor(accent);head.addView(pc,new LinearLayout.LayoutParams(dp(58),dp(24)));box.addView(head);
-        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(false);bar.setMax(100);bar.setProgress(pct);
-        if(Build.VERSION.SDK_INT>=21)bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));
-        box.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
+        views.percent.setText(pct+"%");
+        views.bar.setProgress(pct,true);
         String stage=state==null?"대기":state.optString("stage","대기");
         String current=state==null?"":state.optString("current",state.optString("detail",""));
         String eta=etaText(state);
-        TextView d=text(stage+(current.isEmpty()?"":" · "+current)+(eta.isEmpty()?"":" · "+eta),10);d.setTextColor(Color.rgb(139,151,174));d.setPadding(0,dp(5),0,0);box.addView(d);
+        views.detail.setText(stage+(current.isEmpty()?"":" · "+current)+(eta.isEmpty()?"":" · "+eta));
+    }
+
+    private DrawerProgressViews addProgressBlock(LinearLayout parent,String title,JSONObject state,int accent){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(7),dp(2),dp(8));
+        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);
+        TextView t=text(title,12);t.setTypeface(null,Typeface.BOLD);t.setTextColor(Color.rgb(215,222,237));head.addView(t,new LinearLayout.LayoutParams(0,dp(24),1));
+        TextView pc=text("0%",12);pc.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);pc.setTypeface(null,Typeface.BOLD);pc.setTextColor(accent);head.addView(pc,new LinearLayout.LayoutParams(dp(58),dp(24)));box.addView(head);
+        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(false);bar.setMax(100);
+        if(Build.VERSION.SDK_INT>=21)bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));
+        box.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
+        TextView d=text("",10);d.setTextColor(Color.rgb(139,151,174));d.setPadding(0,dp(5),0,0);box.addView(d);
         parent.addView(box,new LinearLayout.LayoutParams(-1,-2));
+        DrawerProgressViews views=new DrawerProgressViews(pc,bar,d);
+        updateDrawerProgressView(views,state);
+        return views;
+    }
+
+    private JSONObject effectiveImportProgress(JSONObject raw,JSONObject snapshot){
+        JSONObject state=raw==null?new JSONObject():raw;
+        JSONObject server=snapshot==null?null:snapshot.optJSONObject("mserver_migration");
+        if(server!=null&&!server.optBoolean("ready",false)&&server.optInt("total_chunks",0)>0
+                &&!state.optBoolean("complete",false)){
+            try{
+                state=new JSONObject(state.toString());
+                int received=server.optInt("received",0),total=server.optInt("total_chunks",0);
+                state.put("stage","PC→MSERVER 업로드").put("detail","승계 ZIP 수신")
+                    .put("done",received).put("total",total)
+                    .put("percent",total>0?received*100/total:0);
+            }catch(Exception ignored){}
+        }
+        return state;
+    }
+
+    private JSONObject drawerLocalProgress(String prefName,boolean importStage){
+        android.content.SharedPreferences p=getSharedPreferences(prefName,MODE_PRIVATE);
+        JSONObject state=new JSONObject();
+        try{
+            state.put("stage",p.getString("stage",""));
+            state.put(importStage?"detail":"current",p.getString(importStage?"detail":"current",""));
+            state.put("done",importStage?p.getLong("done",0L):p.getInt("done",0));
+            state.put("total",importStage?p.getLong("total",0L):p.getInt("total",0));
+            state.put("percent",p.getInt("percent",0));
+            state.put("complete",p.getBoolean("complete",false));
+            if(!importStage)state.put("started_at",p.getLong("started_at",0L));
+        }catch(Exception ignored){}
+        return state;
+    }
+
+    private void refreshOpenDrawerProgress(){
+        if(drawerOverlay==null)return;
+        JSONObject snapshot=copyCache();
+        updateDrawerProgressView(drawerPublishProgress,
+            drawerLocalProgress("artitrade_mserver_sync_v078",false));
+        updateDrawerProgressView(drawerImportProgress,
+            effectiveImportProgress(drawerLocalProgress("artitrade_pc_ledger_import_progress_v078",true),snapshot));
+    }
+
+    private void stopDrawerProgressTicker(){
+        main.removeCallbacks(drawerProgressTicker);
+        drawerPublishProgress=null;
+        drawerImportProgress=null;
     }
 
     private void openSettingsDrawer(){
@@ -374,7 +470,7 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject hubPub=snapshot.optJSONObject("hub_publish");
         JSONObject mAuth=snapshot.optJSONObject("mserver_auth");
         JSONObject syncProgress=snapshot.optJSONObject("mserver_sync");
-        JSONObject importProgress=snapshot.optJSONObject("pc_import_progress");
+        JSONObject importProgress=effectiveImportProgress(snapshot.optJSONObject("pc_import_progress"),snapshot);
         JSONObject migrationServer=snapshot.optJSONObject("mserver_migration");
         int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);int preserved=hubPub==null?0:hubPub.optInt("preserved",0);
         boolean authOk=mAuth!=null&&mAuth.optBoolean("ok",false);
@@ -394,7 +490,7 @@ public final class UnifiedVisualActivity extends Activity {
         if(!authOk&&!authError.isEmpty()){
             TextView ae=text("인증/연결: "+authError+(authHttp>0?" · HTTP "+authHttp:""),10);ae.setTextColor(Color.rgb(210,151,161));ae.setPadding(dp(2),0,dp(2),dp(5));tools.addView(ae);
         }
-        addProgressBlock(tools,"① 폰 기준원장 → MSERVER 게시",syncProgress,Color.rgb(0,196,164));
+        drawerPublishProgress=addProgressBlock(tools,"① 폰 기준원장 → MSERVER 게시",syncProgress,Color.rgb(0,196,164));
         if(syncProgress!=null&&syncProgress.optInt("total",0)>0){
             int processed=syncProgress.optInt("processed",syncProgress.optInt("done",0));
             int successful=syncProgress.optInt("successful",Math.max(0,processed-syncProgress.optInt("failed",0)));
@@ -415,16 +511,7 @@ public final class UnifiedVisualActivity extends Activity {
         }
 
         JSONObject migState=snapshot.optJSONObject("pc_ledger_migration");
-        if(importProgress==null)importProgress=new JSONObject();
-        if(migrationServer!=null&&!migrationServer.optBoolean("ready",false)&&migrationServer.optInt("total_chunks",0)>0&&!importProgress.optBoolean("complete",false)){
-            try{
-                int received=migrationServer.optInt("received",0),totalChunks=migrationServer.optInt("total_chunks",0);
-                importProgress.put("stage","PC→MSERVER 업로드").put("detail","승계 ZIP 수신")
-                    .put("done",received).put("total",totalChunks)
-                    .put("percent",totalChunks>0?(received*100/totalChunks):0);
-            }catch(Exception ignored){}
-        }
-        addProgressBlock(tools,"② 기존 PC EXE 원장 → S21+ 승계",importProgress,Color.rgb(77,124,254));
+        drawerImportProgress=addProgressBlock(tools,"② 기존 PC EXE 원장 → S21+ 승계",importProgress,Color.rgb(77,124,254));
 
         if(migState!=null&&migState.length()>0){
             String ms=migState.optString("status","");
@@ -493,11 +580,14 @@ public final class UnifiedVisualActivity extends Activity {
         FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(width,-1,Gravity.END);overlay.addView(scroll,pp);
         drawerOverlay=overlay;root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
         TranslateAnimation anim=new TranslateAnimation(width,0,0,0);anim.setDuration(220);scroll.startAnimation(anim);
+        main.removeCallbacks(drawerProgressTicker);
+        main.post(drawerProgressTicker);
     }
 
     private void closeSettingsDrawer(){
         if(drawerOverlay==null)return;
         View old=drawerOverlay;drawerOverlay=null;
+        stopDrawerProgressTicker();
         TranslateAnimation anim=new TranslateAnimation(0,dp(380),0,0);anim.setDuration(180);
         anim.setAnimationListener(new android.view.animation.Animation.AnimationListener(){
             public void onAnimationStart(android.view.animation.Animation a){}
@@ -551,6 +641,7 @@ public final class UnifiedVisualActivity extends Activity {
         refreshRunning=true;
         io.execute(()->{
             JSONObject packet=new JSONObject();JSONObject records=new JSONObject();
+            boolean reusedLocalRecords=false,meaningfulLocalRecords=false;
             try{
                 LocalHubClient client=new LocalHubClient(this);
                 try{packet.put("status",client.status());}catch(Exception e){packet.put("status",new JSONObject().put("ok",false));}
@@ -578,11 +669,23 @@ public final class UnifiedVisualActivity extends Activity {
                 JSONObject localRecords=new JSONObject();
                 try{
                     android.content.SharedPreferences lp=getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE);
-                    localRecords=new JSONObject(lp.getString("records","{}"));
+                    String raw=lp.getString("records","{}");
+                    reusedLocalRecords=cachedLocalRaw!=null
+                        &&(cachedLocalRaw==raw||cachedLocalRaw.equals(raw));
+                    if(reusedLocalRecords){
+                        localRecords=cachedLocalParsed;
+                        meaningfulLocalRecords=cachedLocalMeaningful;
+                    }else{
+                        localRecords=new JSONObject(raw);
+                        meaningfulLocalRecords=meaningfulTree(localRecords);
+                        cachedLocalRaw=raw;
+                        cachedLocalParsed=localRecords;
+                        cachedLocalMeaningful=meaningfulLocalRecords;
+                    }
                     packet.put("local_records",localRecords);
                     packet.put("local_records_at",lp.getLong("updated_at",0L));
                 }catch(Exception e){packet.put("local_records",new JSONObject());}
-                if(!meaningfulTree(localRecords)){
+                if(!meaningfulLocalRecords){
                     for(String[] k:RECORDS){
                         try{records.put(k[3],client.record(k[0],k[1],k[2]));}
                         catch(Exception e){records.put(k[3],new JSONObject().put("ok",false));}
@@ -634,11 +737,44 @@ public final class UnifiedVisualActivity extends Activity {
                 }catch(Exception e){packet.put("mserver_auth",new JSONObject());}
                 packet.put("records",records);packet.put("loaded_at",System.currentTimeMillis());
             }catch(Exception e){try{packet.put("refresh_error",e.getClass().getSimpleName()+": "+e.getMessage());}catch(Exception ignored){}}
-            synchronized(cacheLock){cache=packet;}
+            UiSnapshot previous=uiSnapshot;
+            Map<String,Stats> preparedTotals=new HashMap<>();
+            Map<String,Stats> preparedFrames=new HashMap<>();
+            // Preload summaries for every strategy in the worker, before a tab can draw them.
+            // No stock/coin order, SQLite write or strategy state is changed here.
+            if(reusedLocalRecords&&meaningfulLocalRecords&&!previous.totals.isEmpty()){
+                preparedTotals=previous.totals;
+                preparedFrames=previous.frames;
+            }else{
+                for(String m:new String[]{"stock","coin"}){
+                    String[] strategies="stock".equals(m)
+                        ?new String[]{"at","ma","close","gmo"}
+                        :new String[]{"general","ma"};
+                    for(String stg:strategies){
+                        try{
+                            Stats st=calculateStats(packet,m,stg);
+                            preparedTotals.put(m+"/"+stg,st);
+                            if("at".equals(stg)||"ma".equals(stg)||"general".equals(stg)){
+                                for(String tf:new String[]{"5m","30m","60m","day"})
+                                    preparedFrames.put(m+"/"+stg+"/"+tf,
+                                        calculateStatsTf(packet,m,stg,tf,st));
+                            }
+                        }catch(Exception e){
+                            new RuntimeCrashStore(this).add("ui_ledger_preload_"+m+"_"+stg,e);
+                        }
+                    }
+                }
+            }
+            boolean ledgerChanged=preparedTotals!=previous.totals;
+            uiSnapshot=new UiSnapshot(packet,preparedTotals,preparedFrames);
             refreshRunning=false;
-            // Never destroy an actively edited operation form on each 3.5-second poll.
-            // Navigation explicitly calls showShell(), and all edits are separately drafted.
-            main.post(()->{updateHeader();if(!"operation".equals(page))render();});
+            // Home has live feed indicators; historical pages need not recreate
+            // hundreds of views when the ledger version has not changed.
+            main.post(()->{
+                updateHeader();
+                if(!"operation".equals(page)
+                    &&(ledgerChanged||"home".equals(page)||"errors".equals(page)))render();
+            });
         });
     }
 
@@ -669,7 +805,8 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private JSONObject copyCache(){
-        synchronized(cacheLock){try{return new JSONObject(cache.toString());}catch(Exception e){return new JSONObject();}}
+        // Packet objects are built completely before publication and are read-only afterwards.
+        return uiSnapshot.packet;
     }
 
     private boolean meaningfulTree(Object value){
@@ -704,8 +841,9 @@ public final class UnifiedVisualActivity extends Activity {
         return value!=null&&meaningfulTree(value);
     }
 
-    private JSONObject localRecord(String key){
-        JSONObject all=copyCache().optJSONObject("local_records");if(all==null)return new JSONObject();
+    private JSONObject localRecord(String key){return localRecord(copyCache(),key);}
+    private JSONObject localRecord(JSONObject snapshot,String key){
+        JSONObject all=snapshot.optJSONObject("local_records");if(all==null)return new JSONObject();
         try{
             String market="",strategy="",bucket="";
             if(key.startsWith("stock"))market="stock";else if(key.startsWith("coin"))market="coin";else return new JSONObject();
@@ -723,10 +861,11 @@ public final class UnifiedVisualActivity extends Activity {
         }catch(Exception e){return new JSONObject();}
     }
 
-    private JSONObject record(String key){
-        JSONObject local=localRecord(key);
+    private JSONObject record(String key){return record(copyCache(),key);}
+    private JSONObject record(JSONObject snapshot,String key){
+        JSONObject local=localRecord(snapshot,key);
         if(meaningfulRecord(local))return local;
-        JSONObject p=copyCache().optJSONObject("records");
+        JSONObject p=snapshot.optJSONObject("records");
         if(p!=null){
             JSONObject r=p.optJSONObject(key);
             JSONObject d=r==null?null:r.optJSONObject("data");
@@ -735,10 +874,11 @@ public final class UnifiedVisualActivity extends Activity {
         return local==null?new JSONObject():local;
     }
 
-    private JSONObject ledger(String m,String s){
-        if("coin".equals(m))return record("ma".equals(s)?"coinMaLedger":"coinGeneralLedger");
-        if("close".equals(s))return record("stockCwLedger");
-        JSONObject base=record("stockAtLedger");
+    private JSONObject ledger(String m,String s){return ledger(copyCache(),m,s);}
+    private JSONObject ledger(JSONObject snapshot,String m,String s){
+        if("coin".equals(m))return record(snapshot,"ma".equals(s)?"coinMaLedger":"coinGeneralLedger");
+        if("close".equals(s))return record(snapshot,"stockCwLedger");
+        JSONObject base=record(snapshot,"stockAtLedger");
         if("ma".equals(s)){
             JSONObject x=base.optJSONObject("ma_subledger");return x==null?new JSONObject():x;
         }
@@ -748,14 +888,15 @@ public final class UnifiedVisualActivity extends Activity {
         return base;
     }
 
-    private JSONObject research(String m,String s){
-        if("coin".equals(m))return record("ma".equals(s)?"coinMaResearch":"coinGeneralResearch");
-        if("close".equals(s))return record("stockCwResearch");
-        JSONObject at=record("stockAtResearch");
+    private JSONObject research(String m,String s){return research(copyCache(),m,s);}
+    private JSONObject research(JSONObject snapshot,String m,String s){
+        if("coin".equals(m))return record(snapshot,"ma".equals(s)?"coinMaResearch":"coinGeneralResearch");
+        if("close".equals(s))return record(snapshot,"stockCwResearch");
+        JSONObject at=record(snapshot,"stockAtResearch");
         if("ma".equals(s)){
             JSONObject nested=at.optJSONObject("ma");
             if(nested!=null)return nested;
-            JSONObject ma=ledger("stock","ma");JSONArray items=ma.optJSONArray("research");
+            JSONObject ma=ledger(snapshot,"stock","ma");JSONArray items=ma.optJSONArray("research");
             try{return new JSONObject().put("items",items==null?new JSONArray():items);}
             catch(Exception e){return new JSONObject();}
         }
@@ -819,7 +960,11 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private Stats stats(String m,String s){
-        Stats st=new Stats();JSONObject l=ledger(m,s);
+        Stats preloaded=uiSnapshot.totals.get(m+"/"+s);
+        return preloaded==null?new Stats():preloaded;
+    }
+    private Stats calculateStats(JSONObject snapshot,String m,String s){
+        Stats st=new Stats();JSONObject l=ledger(snapshot,m,s);
         st.positions=rows(l,m,s,"positions","holdings");
         st.pending=rows(l,m,s,"pending","pending_orders","orders","candidates");
         st.executions=rows(l,m,s,"executions","fills","transactions","trades");
@@ -865,7 +1010,7 @@ public final class UnifiedVisualActivity extends Activity {
             if(any){st.flowPending=fp;st.flowBought=fb;st.flowHolding=fh;st.flowSold=fs;}
         }
 
-        JSONObject rs=research(m,s);JSONArray items=rs.optJSONArray("items");
+        JSONObject rs=research(snapshot,m,s);JSONArray items=rs.optJSONArray("items");
         if(items==null&&"ma".equals(s))items=l.optJSONArray("research");
         if(items==null)items=new JSONArray();
         JSONArray filtered=new JSONArray();
@@ -902,9 +1047,13 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private Stats statsTf(String m,String stg,String tf){
-        Stats all=stats(m,stg),st=new Stats();
+        Stats preloaded=uiSnapshot.frames.get(m+"/"+stg+"/"+tf);
+        return preloaded==null?new Stats():preloaded;
+    }
+    private Stats calculateStatsTf(JSONObject snapshot,String m,String stg,String tf,Stats all){
+        Stats st=new Stats();
         st.positions=filterTf(all.positions,tf);st.pending=filterTf(all.pending,tf);st.executions=filterTf(all.executions,tf);st.research=filterTf(all.research,tf);
-        JSONObject l=ledger(m,stg);
+        JSONObject l=ledger(snapshot,m,stg);
         JSONObject pf=l.optJSONObject("performance_by_frame");JSONObject p=pf==null?null:pf.optJSONObject(tf);
         if(p!=null){
             st.realized=num(p,"realized_won","realized_pnl","realized");
@@ -1191,6 +1340,42 @@ public final class UnifiedVisualActivity extends Activity {
         t.setPadding(dp(2),dp(5),dp(2),dp(5));t.setMaxLines(2);
         parent.addView(t,new LinearLayout.LayoutParams(0,-2,1));
     }
+    private int historyStart(String kind,int total){
+        String key=market+"/"+strategy+"/"+kind;
+        if(!key.equals(historyContext)){
+            historyContext=key;
+            historyOffset=0;
+        }
+        historyOffset=HistoryPager.start(historyOffset,total);
+        return historyOffset;
+    }
+
+    private void addHistoryPager(String kind,int total){
+        if(total<=HistoryPager.PAGE_SIZE)return;
+        int start=historyStart(kind,total),end=HistoryPager.end(start,total);
+        LinearLayout navigation=new LinearLayout(this);
+        navigation.setOrientation(LinearLayout.HORIZONTAL);
+        navigation.setGravity(Gravity.CENTER_VERTICAL);
+        navigation.setPadding(0,dp(7),0,dp(10));
+        TextView count=text((start+1)+"~"+end+" / "+total+"건",12);
+        count.setTextColor(Color.rgb(156,177,204));
+        navigation.addView(count,new LinearLayout.LayoutParams(0,dp(42),1));
+        Button previous=button("이전",false,()->{
+            historyOffset=HistoryPager.previous(historyOffset,total);
+            render();
+        });
+        previous.setEnabled(start>0);
+        navigation.addView(previous,new LinearLayout.LayoutParams(dp(68),dp(40)));
+        Button next=button("다음",true,()->{
+            historyOffset=HistoryPager.next(historyOffset,total);
+            render();
+        });
+        next.setEnabled(end<total);
+        LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(dp(68),dp(40));
+        np.setMargins(dp(6),0,0,0);navigation.addView(next,np);
+        content.addView(navigation,new LinearLayout.LayoutParams(-1,-2));
+    }
+
     private void renderList(String title,JSONArray a,String kind){
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
         TextView h=text(title+" · "+a.length()+"건",20);h.setTypeface(null,Typeface.BOLD);
@@ -1201,7 +1386,9 @@ public final class UnifiedVisualActivity extends Activity {
         }
         content.addView(header,new LinearLayout.LayoutParams(-1,dp(45)));
         if(a.length()==0){empty("기록 없음 · 실제 계좌 원장 기준");return;}
-        for(int i=0;i<Math.min(500,a.length());i++){
+        int first=historyStart(kind,a.length()),last=HistoryPager.end(first,a.length());
+        addHistoryPager(kind,a.length());
+        for(int i=first;i<last;i++){
             JSONObject r=a.optJSONObject(i);if(r==null)continue;
             LinearLayout c=card();
             LinearLayout topRow=new LinearLayout(this);topRow.setOrientation(LinearLayout.HORIZONTAL);topRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1232,6 +1419,7 @@ public final class UnifiedVisualActivity extends Activity {
             why.setPadding(dp(2),dp(5),dp(2),0);c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(5));content.addView(c,lp);
         }
+        addHistoryPager(kind,a.length());
     }
     private void showManualSellInfo(JSONObject position){
         String identity=nameOf(position);
@@ -1245,7 +1433,10 @@ public final class UnifiedVisualActivity extends Activity {
         guide.setTextColor(Color.rgb(145,166,191));guide.setPadding(0,dp(5),0,dp(12));content.addView(guide);
         JSONArray executions=stats(market,strategy).executions;
         if(executions.length()==0){empty("기록된 체결·매도 정책 판단 없음");return;}
-        for(int i=0;i<Math.min(120,executions.length());i++){
+        int first=historyStart("policyHistory",executions.length());
+        int last=HistoryPager.end(first,executions.length());
+        addHistoryPager("policyHistory",executions.length());
+        for(int i=first;i<last;i++){
             JSONObject r=executions.optJSONObject(i);if(r==null)continue;
             LinearLayout c=card();
             TextView name=text(nameOf(r)+" · "+r.optString("side",r.optString("type","체결")),15);
@@ -1254,6 +1445,7 @@ public final class UnifiedVisualActivity extends Activity {
             time.setTextColor(Color.rgb(171,194,219));c.addView(time);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
+        addHistoryPager("policyHistory",executions.length());
     }
 
     private void zipPut(ZipOutputStream zip,String name,String text)throws Exception{
@@ -1360,7 +1552,10 @@ public final class UnifiedVisualActivity extends Activity {
 
         TextView hist=text("최근 연구 기록",17);hist.setTypeface(null,Typeface.BOLD);hist.setTextColor(Color.rgb(157,181,208));hist.setPadding(0,dp(13),0,dp(6));content.addView(hist);
         if(st.research.length()==0){empty("연구이력 없음");return;}
-        for(int i=0;i<Math.min(120,st.research.length());i++){
+        int first=historyStart("research",st.research.length());
+        int last=HistoryPager.end(first,st.research.length());
+        addHistoryPager("research",st.research.length());
+        for(int i=first;i<last;i++){
             JSONObject r=st.research.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
             LinearLayout rowHead=new LinearLayout(this);rowHead.setOrientation(LinearLayout.HORIZONTAL);
             TextView n=text(nameOf(r),17);n.setTypeface(null,Typeface.BOLD);rowHead.addView(n,new LinearLayout.LayoutParams(0,dp(30),1));
@@ -1377,6 +1572,7 @@ public final class UnifiedVisualActivity extends Activity {
             TextView why=text("근거: "+reasonOf(r),13);why.setTextColor(Color.rgb(176,197,220));why.setPadding(0,dp(3),0,0);c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
+        addHistoryPager("research",st.research.length());
     }
 
     private void renderScores(){
@@ -1389,7 +1585,9 @@ public final class UnifiedVisualActivity extends Activity {
         int hi=0,mid=0,low=0;for(int i=0;i<items.length();i++){JSONObject x=items.optJSONObject(i);double sc=x==null?Double.NaN:num(x,"score","diverse_11_score","gmo_score_at_signal");if(!finite(sc))continue;if(sc>=61)hi++;else if(sc>=41)mid++;else low++;}
         addMini(kr,"61점+",String.valueOf(hi));addMini(kr,"41~60",String.valueOf(mid));addMini(kr,"40점↓",String.valueOf(low));k.addView(kr);content.addView(k,new LinearLayout.LayoutParams(-1,dp(78)));
         if(items.length()==0){empty("점수 비교 후보 없음");return;}
-        for(int i=0;i<Math.min(150,items.length());i++){
+        int first=historyStart("scores",items.length()),last=HistoryPager.end(first,items.length());
+        addHistoryPager("scores",items.length());
+        for(int i=first;i<last;i++){
             JSONObject r=items.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
             LinearLayout hr=new LinearLayout(this);hr.setOrientation(LinearLayout.HORIZONTAL);
             TextView n=text(nameOf(r),16);n.setTypeface(null,Typeface.BOLD);hr.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
@@ -1399,6 +1597,7 @@ public final class UnifiedVisualActivity extends Activity {
             TextView why=text("근거: "+reasonOf(r),12);why.setTextColor(Color.rgb(184,201,221));c.addView(why);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
+        addHistoryPager("scores",items.length());
     }
 
     private void appendErrorItems(JSONArray out,JSONObject bucket){
@@ -1444,13 +1643,16 @@ public final class UnifiedVisualActivity extends Activity {
         for(int i=0;i<all.length();i++){JSONObject r=all.optJSONObject(i);String x=r==null?"":r.toString().toLowerCase(Locale.ROOT);if(x.contains("auth")||x.contains("token")||x.contains("key")||x.contains("oauth"))auth++;if(x.contains("websocket")||x.contains("feed")||x.contains("0b")||x.contains("0d"))feed++;if(x.contains("order")||x.contains("fill")||x.contains("체결")||x.contains("주문"))order++;}
         addKpi(summary,"인증",String.valueOf(auth));addKpi(summary,"실시간",String.valueOf(feed));addKpi(summary,"주문/체결",String.valueOf(order));content.addView(summary);
         if(all.length()==0){empty("기록된 오류 없음");return;}
-        for(int i=0;i<Math.min(180,all.length());i++){
+        int first=historyStart("errors",all.length()),last=HistoryPager.end(first,all.length());
+        addHistoryPager("errors",all.length());
+        for(int i=first;i<last;i++){
             JSONObject r=all.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
             TextView n=text(r.optString("stage",r.optString("error_type",r.optString("code","오류 기록"))),12);n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(255,145,155));c.addView(n);
             TextView d=text(r.optString("message",r.optString("detail","상세 미기록")),10);d.setPadding(0,dp(4),0,0);c.addView(d);
             TextView t=text(formatKst(r.opt("at")),9);t.setTextColor(Color.rgb(130,153,182));c.addView(t);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(7));content.addView(c,lp);
         }
+        addHistoryPager("errors",all.length());
     }
 
     private JSONObject defaultOperationSettings(){
@@ -1939,7 +2141,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text("ARTITRADE 네이티브 안전모드",22);h.setTypeface(null,Typeface.BOLD);p.addView(h);TextView d=text(e==null?"알 수 없는 오류":e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),11);d.setTextColor(Color.rgb(255,145,155));d.setPadding(0,dp(10),0,dp(10));p.addView(d);p.addView(button("화면 다시 구성",true,()->{try{showShell();refresh(false);}catch(Throwable x){}}),new LinearLayout.LayoutParams(dp(240),dp(44)));root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
-    @Override protected void onResume(){super.onResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);}
-    @Override protected void onPause(){main.removeCallbacks(periodic);super.onPause();}
-    @Override protected void onDestroy(){main.removeCallbacks(periodic);io.shutdownNow();super.onDestroy();}
+    @Override protected void onResume(){super.onResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
+    @Override protected void onPause(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
+    @Override protected void onDestroy(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);io.shutdownNow();super.onDestroy();}
 }

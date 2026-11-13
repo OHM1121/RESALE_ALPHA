@@ -1,5 +1,5 @@
-ARTITRADE v0.7.15 PC transfer fix
-Trigger this Android build once. No USB or phone-side old-ledger backup is required.
-Original package: com.artitrade.unified.s21dex (uninstall old debug-signed version before install).
-PC EXE main DB files are the source of truth; no phone-only history retained.
-ZIP transient -wal/-shm entries from old PC migrator accepted but never imported.
+Build ARTITRADE Unified v0.7.16-LEDGER-UI-PERF
+Release branch artitrade-phone-main-v070-live-orders-20261112.
+Includes 0.75s live drawer transfer progress, background immutable ledger snapshot/preload,
+bounded 40-row history pagination, retained previous PC-ledger migration FIX4,
+existing package and cached stable signing key for in-place update.
