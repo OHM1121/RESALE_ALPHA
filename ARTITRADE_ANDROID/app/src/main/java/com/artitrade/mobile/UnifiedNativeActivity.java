@@ -97,10 +97,10 @@ public final class UnifiedNativeActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         try{
-            getWindow().setStatusBarColor(Color.rgb(7,16,28));
-            getWindow().setNavigationBarColor(Color.rgb(7,16,28));
+            getWindow().setStatusBarColor(PremiumUi.BG);
+            getWindow().setNavigationBarColor(PremiumUi.BG);
             root=new FrameLayout(this);
-            root.setBackgroundColor(Color.rgb(7,16,28));
+            root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
             showBoot();
             // Guarantee a native first frame before any server/Python/broker work.
@@ -125,7 +125,7 @@ public final class UnifiedNativeActivity extends Activity {
     private TextView text(String value,int sp){
         TextView t=new TextView(this);
         t.setText(value);
-        t.setTextSize(sp);
+        t.setTextSize(Math.max(sp,12));
         t.setTextColor(Color.rgb(240,247,255));
         t.setGravity(Gravity.CENTER_VERTICAL);
         return t;
@@ -142,22 +142,23 @@ public final class UnifiedNativeActivity extends Activity {
         Button b=new Button(this);
         b.setAllCaps(false);
         b.setText(label);
-        b.setTextSize(11);
+        b.setTextSize(13);
         b.setTypeface(null,Typeface.BOLD);
         b.setTextColor(active?Color.rgb(4,32,25):Color.rgb(203,220,239));
-        b.setBackground(bg(active?Color.rgb(62,224,181):Color.rgb(18,36,58),
-            active?Color.rgb(62,224,181):Color.rgb(43,67,97),10));
+        b.setBackground(PremiumUi.rounded(this,active?PremiumUi.COIN:PremiumUi.SURFACE_HIGH,
+            active?PremiumUi.COIN:PremiumUi.LINE,11));
         b.setPadding(dp(10),0,dp(10),0);
         b.setMinHeight(0);b.setMinimumHeight(0);
         b.setOnClickListener(v->action.run());
+        PremiumUi.tapMotion(b);
         return b;
     }
 
     private LinearLayout card(){
         LinearLayout c=new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(13),dp(10),dp(13),dp(10));
-        c.setBackground(bg(Color.rgb(16,29,49),Color.rgb(38,59,86),14));
+        c.setPadding(dp(10),dp(8),dp(10),dp(8));
+        c.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,13));
         return c;
     }
 
@@ -166,7 +167,7 @@ public final class UnifiedNativeActivity extends Activity {
         LinearLayout p=new LinearLayout(this);
         p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);
         p.setPadding(dp(32),dp(24),dp(32),dp(24));
-        p.setBackgroundColor(Color.rgb(7,16,28));
+        p.setBackgroundColor(PremiumUi.BG);
         TextView brand=text("ARTITRADE",28);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.12f);p.addView(brand);
         TextView sub=text("S21+ PHONE MAIN · NATIVE SAFEBOOT",12);sub.setTextColor(Color.rgb(139,164,194));sub.setPadding(0,dp(8),0,dp(18));p.addView(sub);
         ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(true);
@@ -177,7 +178,7 @@ public final class UnifiedNativeActivity extends Activity {
 
     private void showShell(){
         root.removeAllViews();
-        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(Color.rgb(7,16,28));
+        LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(PremiumUi.BG);
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
 
         LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(12),dp(7),dp(12),dp(7));
@@ -208,8 +209,8 @@ public final class UnifiedNativeActivity extends Activity {
         }
         nh.addView(nav,new HorizontalScrollView.LayoutParams(-2,-1));shell.addView(nh,new LinearLayout.LayoutParams(-1,dp(42)));
 
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(7,16,28));
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(12),dp(10),dp(12),dp(18));
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(PremiumUi.BG);
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(9),dp(7),dp(9),dp(12));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
             if(e.getAction()==MotionEvent.ACTION_DOWN)swipeX=e.getX();
@@ -634,8 +635,8 @@ public final class UnifiedNativeActivity extends Activity {
     }
 
     private void showFatal(Throwable e){
-        if(root==null){root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(7,16,28));try{setContentView(root);}catch(Throwable ignored){}}
-        root.removeAllViews();LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);p.setPadding(dp(28),dp(20),dp(28),dp(20));p.setBackgroundColor(Color.rgb(7,16,28));
+        if(root==null){root=new FrameLayout(this);root.setBackgroundColor(PremiumUi.BG);try{setContentView(root);}catch(Throwable ignored){}}
+        root.removeAllViews();LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);p.setPadding(dp(28),dp(20),dp(28),dp(20));p.setBackgroundColor(PremiumUi.BG);
         TextView h=text("ARTITRADE 네이티브 안전모드",22);h.setTypeface(null,Typeface.BOLD);p.addView(h);TextView d=text(e==null?"알 수 없는 오류":e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),11);d.setTextColor(Color.rgb(255,145,155));d.setPadding(0,dp(10),0,dp(10));p.addView(d);p.addView(button("화면 다시 구성",true,()->{try{showShell();refresh(false);}catch(Throwable x){}}),new LinearLayout.LayoutParams(dp(240),dp(44)));root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
