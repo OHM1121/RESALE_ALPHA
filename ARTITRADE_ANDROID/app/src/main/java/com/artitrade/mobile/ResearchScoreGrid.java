@@ -51,6 +51,9 @@ final class ResearchScoreGrid {
             else c.virtualPending++;
         }else c.virtualNotEntered++;
     }
+    void add(String frame,double score,boolean bought,boolean entryObserved,String outcome){
+        add(frame,Double.valueOf(score),bought,entryObserved,outcome);
+    }
     void add(String frame,Double score,boolean bought,boolean entryObserved,String outcome){
         String tf=scopeFrame(frame),band=band(score==null?Double.NaN:score.doubleValue()),key=tf+"/"+band;
         Cell value=cells.computeIfAbsent(key,k->new Cell());
