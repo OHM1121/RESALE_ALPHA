@@ -534,8 +534,16 @@ final class LegacyLedgerMigration {
         if(!remote.optBoolean("ok")||!remote.optBoolean("ready")||
            !remote.optBoolean("archive_exists",false))return null;
         String incoming=remote.optString("archive_sha256","");
-        if(incoming.isEmpty()||incoming.equalsIgnoreCase(previousSha)||
-           incoming.equalsIgnoreCase(prefs().getString("last_supplement_sha256","")))return null;
+        if(incoming.isEmpty())return null;
+        String session=remote.optString("session","");
+        // The first imported ZIP might still be pending because its ACK was lost.
+        // Its already verified SHA is sufficient to retry ACK without a reinstall.
+        if(incoming.equalsIgnoreCase(previousSha)){
+            JSONObject ack=hub.migrationAck(session,incoming);
+            if(!ack.optBoolean("ok",false))
+                throw new IOException("Previously verified archive ACK still pending: "+ack.optString("error"));
+            return null;
+        }
         int chunks=remote.optInt("read_chunks",0);
         int readBytes=remote.optInt("read_chunk_bytes",240000);
         long total=remote.optLong("total_bytes",-1);
@@ -545,7 +553,6 @@ final class LegacyLedgerMigration {
         long free=freeStorageBytes(context.getCacheDir());
         if(free<total+MIN_FREE_SPACE)
             throw new IOException("Insufficient storage to inspect research supplement");
-        String session=remote.optString("session","");
         File archive=new File(context.getCacheDir(),"pc_data_supplement_"+session+".zip");
         File staging=new File(context.getCacheDir(),"pc_data_supplement_stage_"+session);
         try{
@@ -584,9 +591,22 @@ final class LegacyLedgerMigration {
                 if(!allowedDataPath(rel)||"manifest.json".equals(rel))
                     throw new SecurityException("Invalid supplemental path: "+rel);
                 File target=deployedFile(rel);
-                // A phone-created file, an active GMO account, or a previously
-                // migrated DB wins unconditionally. Never replace or merge it.
-                if(target.exists()||previousFiles.has(rel)){retained++;continue;}
+                // Existing phone files have absolute priority. If they were
+                // installed during a crash-interrupted prior supplement, recover
+                // their manifest only when the full source SHA still matches.
+                if(previousFiles.has(rel)){retained++;continue;}
+                if(target.exists()){
+                    JSONObject expected=candidateFiles.optJSONObject(rel);
+                    if(target.isFile()&&expected!=null&&
+                       target.length()==expected.optLong("size",-1)&&
+                       sha256(target).equalsIgnoreCase(expected.optString("sha256",""))){
+                        combinedFiles.put(rel,expected);
+                        added++; // previously moved, now recovered into journal
+                        continue;
+                    }
+                    throw new IOException("PC_RESEARCH_FILE_CONFLICT: "+rel+
+                        " (existing phone data retained; archive must not be acknowledged)");
+                }
                 File source=new File(staging,rel);
                 File parent=target.getParentFile();
                 if(parent!=null&&!parent.exists()&&!parent.mkdirs())
@@ -596,7 +616,13 @@ final class LegacyLedgerMigration {
                 added++;
             }
             if(added==0){
+                // An archive that adds nothing still occupies MSERVER storage.
+                // ACK only after complete SHA and manifest verification.
+                JSONObject ack=hub.migrationAck(session,incoming);
+                if(!ack.optBoolean("ok",false))
+                    throw new IOException("No-change research archive ACK failed: "+ack.optString("error"));
                 prefs().edit().putString("last_supplement_sha256",incoming).apply();
+                progress("COMPLETE","중복 원장 검증 · 기존 기록 유지, 새 파일 없음",1,1,true,"");
                 return null;
             }
             // Files are installed, but do NOT acknowledge the PC archive before
@@ -647,6 +673,12 @@ final class LegacyLedgerMigration {
                             if(extras!=null)return extras;
                         }catch(Exception supplementalError){
                             crashes.add("pc_research_supplement",supplementalError);
+                            String reason=String.valueOf(supplementalError.getMessage());
+                            progress("BLOCKED","PC 보충자료 충돌/검증 실패 · 기존 기록 보호",
+                                0,1,false,reason);
+                            return obj("ok",false,"status","PC_RESEARCH_SUPPLEMENT_BLOCKED",
+                                "message",reason,"manifest",previous,
+                                "sha256",imported);
                         }
                     }
                     progress("VERIFY_RUNTIME","승계 완료 원장 재사용 · 기존 계좌 원장 유지",0,1,false,"");
