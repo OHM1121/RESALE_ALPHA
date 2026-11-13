@@ -1,1 +1,2 @@
 ARTITRADE v0.7.19: complete EXE research and GMO single-archive import, original GMO read fallback, Naver/Upbit four-tap browser navigation; Android regression CI.
+CI retry: update original APK versionCode check and dynamic research archive paths.
