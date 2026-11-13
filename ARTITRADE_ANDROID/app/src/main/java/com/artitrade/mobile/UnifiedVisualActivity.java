@@ -347,7 +347,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        return "stock".equals(market)?"STOCK CLOSE PNL FIX2":"COIN FIX38 SR1 POLICY";
+        return "stock".equals(market)?"v0.7.21 · 주식":"v0.7.21 · 코인";
     }
 
     private void showShell(){
