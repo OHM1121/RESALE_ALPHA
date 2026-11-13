@@ -239,8 +239,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.25-UI-LEDGER-VERIFY'" in s
-          assert "versionCode 36" in s
+          assert "versionName '0.7.26-LEDGER-SCREEN-AUDIT'" in s
+          assert "versionCode 37" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -421,6 +421,7 @@ jobs:
           grep -F 'static final int BG=Color.BLACK' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/PremiumUi.java
           grep -F 'android:theme="@style/ArtitradeBlackTheme"' ARTITRADE_ANDROID/app/src/main/AndroidManifest.xml
           grep -F 'android:windowBackground">#000000' ARTITRADE_ANDROID/app/src/main/res/values/styles.xml
+          grep -F 'windowOptOutEdgeToEdgeEnforcement' ARTITRADE_ANDROID/app/src/main/res/values/styles.xml
           grep -F 'RippleDrawable' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/PremiumUi.java
           grep -F 'bindSymbolFourTap' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'https://finance.naver.com/item/main.naver?code=' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
@@ -458,8 +459,8 @@ jobs:
           grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'TimeframeAccountFlowView' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.25 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'v0.7.25 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.26 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.26 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '실제 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '가상 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
