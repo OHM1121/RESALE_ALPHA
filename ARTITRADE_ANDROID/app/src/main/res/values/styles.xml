@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="ArtitradeBlackTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:colorBackground">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorAccent">#82A5FF</item>
+        <item name="android:textColorPrimary">#F3F7FB</item>
+        <item name="android:textColorSecondary">#B1BCCA</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:dialogTheme">@style/ArtitradeBlackDialog</item>
+    </style>
+    <style name="ArtitradeBlackDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">#0C0E12</item>
+        <item name="android:colorBackground">#0C0E12</item>
+        <item name="android:colorAccent">#82A5FF</item>
+        <item name="android:textColorPrimary">#F3F7FB</item>
+        <item name="android:textColorSecondary">#B1BCCA</item>
+    </style>
+</resources>
