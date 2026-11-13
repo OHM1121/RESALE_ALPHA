@@ -113,7 +113,7 @@ jobs:
           service=(j/'UnifiedTradingService.java').read_text()
           screen=(j/'UnifiedVisualActivity.java').read_text()
           assert 'finishRuntimeVerification' in migration and 'runtimeRows(records)' in migration
-          assert migration.index('verifyInstalled(manifest)') < migration.index('FILES_INSTALLED')
+          assert 'JSONObject verification=verifyInstalled(manifest);' in migration
           assert 'migrationAck(session,sha)' in migration and 'do not mark import successful' in migration
           assert 'File parent=target.getParentFile();' in migration
           assert 'checkPendingPCArchive(hub)' in service

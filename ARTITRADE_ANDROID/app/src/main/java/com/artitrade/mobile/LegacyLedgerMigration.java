@@ -333,6 +333,13 @@ final class LegacyLedgerMigration {
                 return obj("ok",true,"status","NO_PC_ARCHIVE");
             }
             String session=status.optString("session"),sha=status.optString("archive_sha256");
+            SharedPreferences live=context.getSharedPreferences("unified_live_orders",Context.MODE_PRIVATE);
+            if(live.getBoolean("live_stock",false)||live.getBoolean("live_coin",false)){
+                JSONObject blocked=obj("ok",false,"status","LIVE_TRADING_ACTIVE",
+                    "message","Disable live stock and coin orders before installing PC ledger files");
+                progress("BLOCKED","실거래 활성화 · PC 원장 덮어쓰기 차단",0,1,false,"LIVE_TRADING_ACTIVE");
+                return blocked;
+            }
             if(!sha.isEmpty()&&sha.equalsIgnoreCase(imported)&&previous!=null){
                 try{
                     JSONObject verification=verifyInstalled(previous);
