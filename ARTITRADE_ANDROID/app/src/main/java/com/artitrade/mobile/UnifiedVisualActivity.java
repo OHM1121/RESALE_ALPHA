@@ -1059,8 +1059,9 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private static long rowTimestamp(JSONObject row){
-        Object ts=firstValue(row,"filled_at","executed_at","exit_at","sold_at",
-            "closed_at","at","ts","timestamp","created_at","buy_at","entry_at",
+        Object ts=firstValue(row,"filled_at","executed_at","fill_time","trade_time",
+            "exit_at","sold_at","closed_at","ts","time","at","timestamp",
+            "created_at","buy_at","entry_at","entry_ts",
             "ref_ts","ref_at","reference_ts","event_date","gmo_event_date","event_day");
         return RealizedTrend.time(ts);
     }
@@ -2459,7 +2460,7 @@ public final class UnifiedVisualActivity extends Activity {
                 "MISS".equals(outcome)?Color.rgb(255,119,133):Color.rgb(255,194,91));
             panel.addView(status);
             String basis=reasonOf(row);
-            TextView detail=text("판단근거  "+basis,11);
+            TextView detail=text("판단근거  "+basis,13);
             detail.setTextColor(Color.rgb(177,199,223));
             detail.setMaxLines(4);detail.setPadding(dp(2),dp(5),0,0);panel.addView(detail);
             // Research observations are NOT fills. Only actual recorded
