@@ -739,7 +739,7 @@ def _gmo_original_record(root):
             "SELECT * FROM gmo_candidates ORDER BY event_date DESC,code LIMIT 3000")]
         full_count = conn.execute("SELECT COUNT(*) FROM gmo_candidates").fetchone()[0]
         candles = [dict(r) for r in conn.execute(
-            "SELECT code,event_date,day_index,high,final FROM gmo_daily_ohlc "
+            "SELECT code,event_date,trade_date,day_index,high,final FROM gmo_daily_ohlc "
             "WHERE day_index BETWEEN 1 AND 15")] if 'gmo_daily_ohlc' in tables else []
     buys = state.get('buy_fills') or []
     sells = state.get('fills') or []
@@ -782,35 +782,49 @@ def _gmo_original_record(root):
                 'fees':f.get('fees',f.get('fee')),'tax':f.get('tax'),
                 'reason':f.get('purpose')})
     executions.sort(key=lambda x:str(x.get('ts') or ''),reverse=True)
-    bought_codes = {(str(f.get('code')),str(f.get('time') or '')[:10].replace('-',''))
-                    for f in buys if isinstance(f,dict)}
-    available = {}
-    for candle in candles:
-        key=(str(candle.get('code')),str(candle.get('event_date')))
-        available.setdefault(key,{})[int(candle['day_index'])]=candle
-    items = []
-    for c in candidates:
-        code=str(c.get('code') or '')
-        day=str(c.get('entry_date') or '').replace('-','')[:8]
-        bought=(code,day) in bought_codes
-        observed=available.get((code,str(c.get('event_date'))),{})
+    # Use exactly the EXE's original 15-session evidence and paper-fill
+    # attribution. A candle HIGH is not a broker/paper SELL execution.
+    from d_gmo_score_research_paper import research_rows
+    def canonical_date(value):
+        raw=str(value or '').strip()
+        if len(raw)>=8 and raw[:8].isdigit() and (len(raw)==8 or raw[8] in 'T '):
+            return raw[:4]+'-'+raw[4:6]+'-'+raw[6:8]
+        return raw[:10]
+    normalized=[dict(c,entry_date=canonical_date(c.get('entry_date')))
+                for c in candidates]
+    original_rows=research_rows(normalized,candles,buys,sells)
+    items=[]
+    for c,r in zip(candidates,original_rows):
+        bought=bool(r.get('paper_bought'))
+        if bought:
+            # Only a confirmed first-target paper SELL fill proves success.
+            outcome=('HIT' if bool(r.get('paper_first_target_filled')) else
+                     'MISS' if r.get('paper_position_status')=='EXIT_SOLD' else
+                     'PENDING')
+        else:
+            virtual_status=r.get('research_5pct_status')
+            outcome=('HIT' if virtual_status=='TOUCHED_HIGH_NOT_FILL' else
+                     'MISS' if virtual_status=='NOT_TOUCHED_15_FINAL_DAYS' else
+                     'PENDING')
         opener=float(c.get('opening_price') or 0)
-        target=float(c.get('first_tp_pct') or 0)
-        hits=[i for i,x in observed.items() if int(x.get('final') or 0)==1 and
-              float(x.get('high') or 0)>0 and opener>0 and target>0 and
-              float(x.get('high'))>=opener*(1+target)]
-        completed=all(i in observed and int(observed[i].get('final') or 0)==1 for i in range(1,16))
-        outcome='HIT' if hits else 'MISS' if completed and opener>0 and target>0 else 'PENDING'
-        evidence=c.get('evidence') or ''
-        verified=False
-        try: verified=bool(json.loads(evidence).get('scoring_version'))
-        except (ValueError,TypeError,AttributeError):pass
-        items.append({'tf':'gmo','strategy':'gmo','code':code,'name':c.get('name'),
-            'at':c.get('saved_at'),'event_date':c.get('event_date'),
-            'score':c.get('gmo_score') if verified else None,
-            'bought':bought,'entry_observed':bought or (opener>0),
-            'outcome':outcome,'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
-            'reason':evidence,'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_OPEN_OBSERVED' if opener>0 else 'VIRTUAL_NOT_ENTERED'})
+        items.append({
+            'tf':'gmo','strategy':'gmo','code':c.get('code'),
+            'name':c.get('name'),'at':c.get('saved_at'),
+            'event_date':c.get('event_date'),'entry_date':c.get('entry_date'),
+            'score':r.get('gmo_original_score'),'score_state':r.get('observation_quality'),
+            'bought':bought,'entry_observed':bought or opener>0,
+            'outcome':outcome,
+            'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
+            'reason':('실제 PAPER 매도 체결 기준' if bought else
+                      '가상 D+1 공식시가 대비 5% · D+1~D+15 관측')+
+                     ' · '+str(r.get('research_5pct_status') or '기록 미완료'),
+            'entry_status':('ACTUAL_FILLED' if bought else
+                           'VIRTUAL_OPEN_OBSERVED' if opener>0 else 'VIRTUAL_NOT_ENTERED'),
+            'first_target_filled':r.get('paper_first_target_filled'),
+            'paper_realized_net_won':r.get('paper_realized_net_won'),
+            'research_5pct_status':r.get('research_5pct_status'),
+            'research_first_hit_day':r.get('first_5pct_research_hit_day')
+        })
     research = _research_record(items,items)
     audit = _research_source_audit(db,'gmo_candidates',
         ('gmo_flow','gmo_daily_ohlc','gmo_minute_ohlc','gmo_scan',
