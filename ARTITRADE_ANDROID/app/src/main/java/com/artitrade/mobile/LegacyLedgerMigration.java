@@ -40,6 +40,32 @@ final class LegacyLedgerMigration {
         "coin/ma/upbit_paper.sqlite3"
     ));
 
+    // A migration may contain every saved research/data file under known EXE roots.
+    // Match the PC migrator's allow rules; never allow traversal, hidden files or credentials.
+    private static final String[] SECRET_MARKS={"credential","secret","token","password","apikey",
+        "api_key","private_key","access_key","refresh_key","keyring","dpapi","auth_cache","broker_key"};
+    private static boolean allowedDataPath(String name){
+        if("manifest.json".equals(name))return true;
+        if(ALLOWED.contains(name))return true;
+        if(name==null||name.length()>320||name.indexOf('\\')>=0||name.indexOf(':')>=0
+            ||name.startsWith("/")||name.contains("//"))return false;
+        if(!(name.startsWith("stock/")||name.startsWith("coin/base/")||name.startsWith("coin/ma/")))
+            return false;
+        String[] parts=name.split("/");
+        if(parts.length<2||parts.length>12)return false;
+        for(String part:parts){
+            if(part.isEmpty()||part.equals(".")||part.equals("..")||part.startsWith("."))return false;
+            String lower=part.toLowerCase(Locale.ROOT);
+            for(String mark:SECRET_MARKS)if(lower.contains(mark))return false;
+            if(lower.equals("cache")||lower.equals("tmp")||lower.equals("temp"))return false;
+        }
+        String lower=name.toLowerCase(Locale.ROOT);
+        if(lower.contains(".pre_pc_import_"))return false;
+        for(String ext:new String[]{".sqlite3",".db",".json",".jsonl",".csv",".parquet"})
+            if(lower.endsWith(ext))return true;
+        return false;
+    }
+
     // Older PC migration EXEs accidentally included SQLite backup sidecars in ZIP.
     // The backup API already produced a complete main DB; these transient files
     // MUST NEVER be installed, but must not prevent first-import recovery.
@@ -167,16 +193,18 @@ final class LegacyLedgerMigration {
     private JSONObject extract(File archive,File staging)throws Exception{
         deleteTree(staging);if(!staging.mkdirs()&&!staging.isDirectory())throw new IOException("staging unavailable");
         JSONObject manifest=null;String root=staging.getCanonicalPath()+File.separator;
+        int entriesSeen=0;
         try(ZipInputStream zin=new ZipInputStream(new BufferedInputStream(new FileInputStream(archive)))){
             ZipEntry e;byte[] buf=new byte[65536];
             while((e=zin.getNextEntry())!=null){
                 String name=e.getName().replace('\\','/');
                 if(e.isDirectory()){zin.closeEntry();continue;}
+                if(++entriesSeen>2001)throw new SecurityException("too many migration members");
                 if(isSnapshotSidecar(name)){
                     // Ignore the transient sidecar of a known SQLite snapshot.
                     zin.closeEntry();continue;
                 }
-                if(!ALLOWED.contains(name))throw new SecurityException("unexpected migration entry: "+name);
+                if(!allowedDataPath(name))throw new SecurityException("unexpected migration entry: "+name);
                 File out=new File(staging,name);String canonical=out.getCanonicalPath();
                 if(!canonical.startsWith(root))throw new SecurityException("invalid migration path");
                 File parent=out.getParentFile();if(parent!=null&&!parent.exists()&&!parent.mkdirs())throw new IOException("cannot create staging parent");
@@ -193,11 +221,11 @@ final class LegacyLedgerMigration {
         if(manifest==null||!SCHEMA.equals(manifest.optString("schema")))
             throw new SecurityException("migration manifest mismatch");
         JSONObject files=manifest.optJSONObject("files");
-        if(files==null)throw new SecurityException("migration file hashes missing");
+        if(files==null||files.length()>2000)throw new SecurityException("migration file hashes missing/too many");
         java.util.Iterator<String> names=files.keys();
         while(names.hasNext()){
             String name=names.next();
-            if(!ALLOWED.contains(name))throw new SecurityException("invalid manifest entry");
+            if(!allowedDataPath(name)||"manifest.json".equals(name))throw new SecurityException("invalid manifest entry");
             JSONObject entry=files.optJSONObject(name);
             File saved=new File(staging,name);
             if(entry==null||!saved.isFile()||entry.optLong("size",-1)!=saved.length()||
@@ -214,7 +242,7 @@ final class LegacyLedgerMigration {
                 ZipEntry e=entries.nextElement();
                 if(e.isDirectory())continue;
                 String name=e.getName().replace('\\','/');
-                if(!(ALLOWED.contains(name)||isSnapshotSidecar(name))||!seen.add(name))
+                if(!(allowedDataPath(name)||isSnapshotSidecar(name))||!seen.add(name))
                     throw new SecurityException("Unexpected or duplicate archive entry: "+name);
                 long size=e.getSize();
                 if(size<0||total>MAX_EXPANDED_DATA-size)
@@ -230,8 +258,11 @@ final class LegacyLedgerMigration {
     }
     private long oldFilesBackupBytes(){
         long bytes=0;File root=runtimeRoot();
-        for(String rel:ALLOWED){
-            if("manifest.json".equals(rel))continue;
+        JSONObject listed=storedManifest()==null?null:storedManifest().optJSONObject("files");
+        Set<String> entries=new HashSet<>(ALLOWED);
+        if(listed!=null){Iterator<String> keys=listed.keys();while(keys.hasNext())entries.add(keys.next());}
+        for(String rel:entries){
+            if("manifest.json".equals(rel)||!allowedDataPath(rel))continue;
             File f=deployedFile(rel);
             if(f.isFile()){
                 bytes+=f.length();
@@ -246,10 +277,23 @@ final class LegacyLedgerMigration {
     private static long freeStorageBytes(File base){
         return new android.os.StatFs(base.getAbsolutePath()).getAvailableBytes();
     }
+    private static void collectStageFiles(File base,File current,List<String> paths)throws Exception{
+        File[] entries=current.listFiles();
+        if(entries==null)throw new IOException("Cannot list migrated files");
+        for(File child:entries){
+            if(child.isDirectory()){collectStageFiles(base,child,paths);continue;}
+            String rel=base.toPath().relativize(child.toPath()).toString().replace(File.separatorChar,'/');
+            if(!allowedDataPath(rel))throw new SecurityException("Unexpected staged research file: "+rel);
+            paths.add(rel);
+        }
+    }
     private void install(File staging,String sha)throws Exception{
         File root=runtimeRoot();if(!root.exists()&&!root.mkdirs())throw new IOException("runtime root unavailable");
         String stamp=String.valueOf(System.currentTimeMillis());
-        for(String rel:ALLOWED){
+        File[] ignored=null; // install uses manifest-validated stage entries, not a legacy fixed file list.
+        ArrayList<String> entries=new ArrayList<>();
+        collectStageFiles(staging,staging,entries);
+        for(String rel:entries){
             if("manifest.json".equals(rel))continue;
             File source=new File(staging,rel);if(!source.isFile())continue;
             File target=deployedFile(rel);
@@ -302,7 +346,7 @@ final class LegacyLedgerMigration {
         Iterator<String> names=files.keys();
         while(names.hasNext()){
             String rel=names.next();
-            if(!ALLOWED.contains(rel)||"manifest.json".equals(rel))
+            if(!allowedDataPath(rel)||"manifest.json".equals(rel))
                 throw new SecurityException("Invalid PC ledger path: "+rel);
             JSONObject expected=files.optJSONObject(rel);
             File target=deployedFile(rel);
