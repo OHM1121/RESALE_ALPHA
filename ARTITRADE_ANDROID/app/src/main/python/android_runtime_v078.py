@@ -963,20 +963,20 @@ def _hub_records_v078(self):
             gr['actual_rate_pct']=gr['actual_summary']['rate_pct']
             gr['insights']=research.get('insights') or []
             stock.setdefault('research',{})['gmo']=gr
-            # If a running GMO engine publishes an empty snapshot while its
-            # imported originals have records, read the originals directly.
-            # Never synthesize orders, P&L, or modify the paper-state JSON.
-            if not (ledger['positions'] or ledger['executions'] or gr.get('loaded_items')):
-                try:
-                    originals=_gmo_original_record(self.root)
-                    if originals is not None:
-                        source_ledger,source_research=originals
-                        if (source_ledger['positions'] or source_ledger['executions']
-                                or source_research.get('loaded_items')):
-                            stock['ledger']['gmo']=source_ledger
-                            stock['research']['gmo']=source_research
-                except Exception as original_error:
-                    self._err('gmo_imported_original_fallback',original_error)
+            # Always prefer the original EXE's paper SELL-fill + 15-session
+            # virtual-result research rules over a condensed dashboard's
+            # 'high touched' status. Keep current live balances/positions.
+            try:
+                originals=_gmo_original_record(self.root)
+                if originals is not None:
+                    source_ledger,source_research=originals
+                    if source_research.get('load_status')=='OK':
+                        stock['research']['gmo']=source_research
+                        if not (ledger['positions'] or ledger['executions']):
+                            if (source_ledger['positions'] or source_ledger['executions']):
+                                stock['ledger']['gmo']=source_ledger
+            except Exception as original_error:
+                self._err('gmo_original_research_parity',original_error)
         else:
             # The same PC import already holds the GMO originals. Display their
             # verified original state even if the live GMO service is not ready.
