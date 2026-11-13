@@ -282,10 +282,37 @@ def coin_root() -> Path:
     return local / "AT_COIN_B_V1_0"
 
 
+# Only program data inside the known EXE roots may be migrated. Credential files,
+# private keys, caches, and SQLite sidecars must never leave the Windows machine.
+DATA_SUFFIXES = {".sqlite3", ".db", ".json", ".jsonl", ".csv", ".parquet"}
+PRIVATE_PARTS = ("credential", "secret", "token", "password", "apikey",
+                 "api_key", "private_key", "access_key", "refresh_key",
+                 "keyring", "dpapi", "auth_cache", "broker_key")
+
+
+def _data_file_for_migration(source: Path, relative: Path) -> bool:
+    parts = relative.parts
+    if not parts or any(
+        part in ("", ".", "..") or part.startswith(".") or
+        any(mark in part.lower() for mark in PRIVATE_PARTS) or
+        part.lower() in ("__pycache__", ".git", "tmp", "temp", "cache")
+        for part in parts
+    ):
+        return False
+    name = source.name.lower()
+    if source.is_symlink() or not source.is_file():
+        return False
+    if source.suffix.lower() not in DATA_SUFFIXES:
+        return False
+    if name.endswith(("-wal", "-shm", "-journal")) or ".pre_pc_import_" in name:
+        return False
+    return True
+
+
 def source_map() -> dict[str, tuple[Path, bool]]:
     sr = stock_root()
     cr = coin_root()
-    return {
+    sources = {
         "stock/ARTITRADE_D.sqlite3": (sr / "ARTITRADE_D.sqlite3", True),
         "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3": (sr / "STOCK_MA_ENGINE_V1" / "ma_paper.sqlite3", True),
         "stock/AT_CLOSE/AT_CLOSE_PAPER.sqlite3": (sr / "AT_CLOSE_PAPER.sqlite3", True),
@@ -294,6 +321,28 @@ def source_map() -> dict[str, tuple[Path, bool]]:
         "coin/base/upbit_paper.sqlite3": (cr / "upbit_paper.sqlite3", True),
         "coin/ma/upbit_paper.sqlite3": (cr / "MA_ENGINE_V1" / "upbit_paper.sqlite3", True),
     }
+    indexed = {str(path.resolve()) for path, _ in sources.values()}
+    # Preserve the entire EXE research/storage directory, not merely the seven
+    # originally hardcoded snapshots. A copied SQLite DB keeps ALL of its tables.
+    for root, market in ((sr, "stock"), (cr, "coin")):
+        if not root.is_dir():
+            continue
+        for source in root.rglob("*"):
+            rel = source.relative_to(root)
+            if not _data_file_for_migration(source, rel):
+                continue
+            resolved = str(source.resolve())
+            if resolved in indexed:
+                continue
+            if market == "coin" and rel.parts[0] == "MA_ENGINE_V1":
+                archive_name = "coin/ma/" + "/".join(rel.parts[1:])
+            else:
+                archive_name = ("stock/" if market == "stock" else "coin/base/") + rel.as_posix()
+            if archive_name.endswith("/"):
+                continue
+            sources[archive_name] = (source, source.suffix.lower() in (".sqlite3", ".db"))
+            indexed.add(resolved)
+    return sources
 
 
 def sqlite_snapshot(source: Path, target: Path):
@@ -371,6 +420,9 @@ def build_archive(progress=lambda msg: None) -> tuple[Path, dict]:
             "files": {},
         }
     
+        if len(sources) > 2000:
+            raise ValueError("EXE 저장자료가 2,000개를 초과함. 전체 원장 누락을 막기 위해 승계를 중단합니다.")
+        progress("원본 데이터 파일 검출: " + str(sum(p.is_file() for p, _ in sources.values())) + "개")
         for arc, (source, is_db) in sources.items():
             if not source.is_file():
                 progress("선택 원장 없음: " + str(source))
