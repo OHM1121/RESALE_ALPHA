@@ -84,7 +84,8 @@ class GMOMigrationTest(unittest.TestCase):
                     high INTEGER,final INTEGER);
             """)
             for code in ("005930","000001","000002","000003","000004","000005"):
-                candidate(db,code,valid=(code!="000005"))
+                candidate(db,code,valid=(code!="000005"),
+                          opening=0 if code=="000005" else 70000)
             observation(db,"005930",1,81000)
             observation(db,"000001",1,74000) # 5.7% high, virtual HIT.
             for day in range(1,16):
