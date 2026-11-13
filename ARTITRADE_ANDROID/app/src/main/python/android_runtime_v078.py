@@ -718,6 +718,119 @@ def _research_history(self, out):
         'COIN_MA',lambda:_coin_research(self.root,'ma'))
     return out
 
+def _gmo_original_record(root):
+    """Read the unmodified PC GMO SQLite + full JSON state without an engine restart.
+
+    This is the same PC archive as the other strategies, not a second import.
+    There is no synthetic execution or target result: missing evidence stays pending.
+    """
+    root = Path(root) / 'stock'
+    state_file = root / 'PROJECTGMO_V1.0_account_state.json'
+    db = root / 'PROJECTGMO_V1.0_research.sqlite3'
+    if not state_file.is_file() or not db.is_file():
+        return None
+    state = json.loads(state_file.read_text(encoding='utf-8'))
+    with sqlite3.connect(db.resolve().as_uri()+'?mode=ro', uri=True, timeout=4) as conn:
+        conn.row_factory = sqlite3.Row
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'gmo_candidates' not in tables:
+            raise ValueError("GMO candidate source table missing")
+        candidates = [dict(r) for r in conn.execute(
+            "SELECT * FROM gmo_candidates ORDER BY event_date DESC,code LIMIT 3000")]
+        full_count = conn.execute("SELECT COUNT(*) FROM gmo_candidates").fetchone()[0]
+        candles = [dict(r) for r in conn.execute(
+            "SELECT code,event_date,day_index,high,final FROM gmo_daily_ohlc "
+            "WHERE day_index BETWEEN 1 AND 15")] if 'gmo_daily_ohlc' in tables else []
+    buys = state.get('buy_fills') or []
+    sells = state.get('fills') or []
+    positions = state.get('positions') or {}
+    orders = state.get('orders') or {}
+    signals = state.get('signals') or {}
+    if not isinstance(positions, dict) or not isinstance(orders, dict):
+        raise ValueError("GMO account state positions/orders schema invalid")
+    names = {str(k): str(v.get('name') or k) for k,v in signals.items() if isinstance(v,dict)}
+    # Opening price / last price are intentionally NOT manufactured.
+    active = []
+    for code,p in positions.items():
+        if not isinstance(p,dict): continue
+        qty = int(p.get('qty') or 0)
+        if qty <= 0: continue
+        active.append({'tf':'gmo','strategy':'gmo','code':code,
+            'name':p.get('name') or names.get(code,code),'qty':qty,
+            'entry_price':p.get('entry_price'),'last_price':None,
+            'gmo_score':p.get('gmo_score'),'status':'OPEN',
+            'first_sold':bool(p.get('first_filled_qty')),
+            'reason':p.get('stage'),'gmo_event_date':p.get('entry_date')})
+    pending = []
+    for value in orders.values():
+        if not isinstance(value,dict):continue
+        if str(value.get('side','')).upper()!='BUY' or str(value.get('state','')).upper() in ('FILLED','CANCELED'):continue
+        code = str(value.get('code') or '')
+        pending.append({'tf':'gmo','strategy':'gmo','code':code,
+            'name':names.get(code,code),'qty':max(0,int(value.get('requested') or 0)-int(value.get('filled') or 0)),
+            'limit_price':value.get('limit'),'at':value.get('time'),
+            'reason':value.get('purpose'),'status':value.get('state')})
+    executions = []
+    for kind,rows in (('SELL',sells),('BUY',buys)):
+        for f in rows:
+            if not isinstance(f,dict):continue
+            code=str(f.get('code') or '')
+            executions.append({'tf':'gmo','strategy':'gmo','code':code,
+                'name':names.get(code,code),'side':kind,'ts':f.get('time'),
+                'qty':f.get('qty'),'price':f.get('price'),
+                'net_profit':f.get('net_profit') if kind=='SELL' else None,
+                'fees':f.get('fees',f.get('fee')),'tax':f.get('tax'),
+                'reason':f.get('purpose')})
+    executions.sort(key=lambda x:str(x.get('ts') or ''),reverse=True)
+    bought_codes = {(str(f.get('code')),str(f.get('time') or '')[:10].replace('-',''))
+                    for f in buys if isinstance(f,dict)}
+    available = {}
+    for candle in candles:
+        key=(str(candle.get('code')),str(candle.get('event_date')))
+        available.setdefault(key,{})[int(candle['day_index'])]=candle
+    items = []
+    for c in candidates:
+        code=str(c.get('code') or '')
+        day=str(c.get('entry_date') or '').replace('-','')[:8]
+        bought=(code,day) in bought_codes
+        observed=available.get((code,str(c.get('event_date'))),{})
+        opener=float(c.get('opening_price') or 0)
+        target=float(c.get('first_tp_pct') or 0)
+        hits=[i for i,x in observed.items() if int(x.get('final') or 0)==1 and
+              float(x.get('high') or 0)>0 and opener>0 and target>0 and
+              float(x.get('high'))>=opener*(1+target)]
+        completed=all(i in observed and int(observed[i].get('final') or 0)==1 for i in range(1,16))
+        outcome='HIT' if hits else 'MISS' if completed and opener>0 and target>0 else 'PENDING'
+        evidence=c.get('evidence') or ''
+        verified=False
+        try: verified=bool(json.loads(evidence).get('scoring_version'))
+        except (ValueError,TypeError,AttributeError):pass
+        items.append({'tf':'gmo','strategy':'gmo','code':code,'name':c.get('name'),
+            'at':c.get('saved_at'),'event_date':c.get('event_date'),
+            'score':c.get('gmo_score') if verified else None,
+            'bought':bought,'entry_observed':bought or (opener>0),
+            'outcome':outcome,'target_hit':True if outcome=='HIT' else False if outcome=='MISS' else None,
+            'reason':evidence,'entry_status':'ACTUAL_FILLED' if bought else 'VIRTUAL_OPEN_OBSERVED' if opener>0 else 'VIRTUAL_NOT_ENTERED'})
+    research = _research_record(items,items)
+    audit = _research_source_audit(db,'gmo_candidates',
+        ('gmo_flow','gmo_daily_ohlc','gmo_minute_ohlc','gmo_scan',
+         'gmo_open','gmo_issues','gmo_policy_restorations'))
+    research.update(audit)
+    research.update({'load_status':audit['source_status'],'loaded_items':len(items),
+                     'partial_window':full_count>len(items),'origin':'IMPORTED_PC_GMO_ORIGINAL'})
+    wallet={'tf':'gmo','strategy':'gmo','seed':(state.get('cfg') or {}).get('seed'),
+            'cash':state.get('cash'),'realized_pnl':state.get('realized'),
+            'unrealized_pnl':None}
+    ledger={'schema':'phone-v078','origin':'IMPORTED_PC_GMO_ORIGINAL',
+            'accounts':[wallet],'positions':active,'pending':pending,
+            'executions':executions,'realized_pnl':state.get('realized'),
+            'unrealized_pnl':None,'positions_count':len(active),
+            'pending_count':len(pending),'candidate_count':full_count,
+            'load_diagnostic':{'stage':'PC_ORIGINAL_LOADED','files_present':[
+                state_file.name,db.name]}}
+    return ledger,research
+
+
 def _hub_records_v078(self):
     raw=_ORIG_HUB_RECORDS(self)
     try:
@@ -803,6 +916,22 @@ def _hub_records_v078(self):
             gr['insights']=research.get('insights') or []
             stock.setdefault('research',{})['gmo']=gr
         else:
+            # The same PC import already holds the GMO originals. Display their
+            # verified original state even if the live GMO service is not ready.
+            try:
+                restored=_gmo_original_record(self.root)
+                if restored is not None:
+                    source_ledger,source_research=restored
+                    stock=out.setdefault('stock',{}).setdefault('at',{})
+                    stock.setdefault('ledger',{})['gmo']=source_ledger
+                    stock.setdefault('research',{})['gmo']=source_research
+                else:
+                    pass
+            except Exception as gmo_exc:
+                self._err('gmo_original_record',gmo_exc)
+                restored=None
+            if restored is not None:
+                return json.dumps(out,ensure_ascii=False,default=str)
             # Do not report an empty GMO screen as a successful PC ledger load.
             # Read-only source-file diagnostics distinguish absent data from
             # a strategy engine which has not initialized its account state.
