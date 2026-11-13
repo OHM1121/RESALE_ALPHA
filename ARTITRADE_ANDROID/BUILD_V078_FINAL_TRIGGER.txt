@@ -5,3 +5,5 @@ ARTITRADE v0.7.21 native UI: exact KRW (51,000원), compact icon-number cards, l
 v0.7.21 final layout QA: fit 51dp navigation and header, 131dp research donuts, preserve exact full won figures.
 v0.7.22 2026-11-13: atomic MSERVER journal, missing research supplement auto-ack, original GMO paper fill parity, full WAL-safe ledger export with reread validation.
 Ledger safety CI retry: reflect split no-overwrite guard assertions; 2026-11-13.
+
+ARTITRADE v0.7.23 OLED PREMIUM: restored GitHub connection; signed Android build, dark native UI, button ripple/press, font layout tests, five repeated frozen PC GMO parity checks, 2026-11-13.
