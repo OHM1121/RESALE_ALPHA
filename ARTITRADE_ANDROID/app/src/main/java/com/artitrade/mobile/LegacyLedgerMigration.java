@@ -507,6 +507,99 @@ final class LegacyLedgerMigration {
         }
     }
 
+    /** Additive second PC archive: only paths absent in the first verified import.
+     * Existing phone SQLite, GMO paper state, and broker fills are NEVER replaced.
+     * This is the ordinary automatic PC-import step, not a separate GMO feature.
+     */
+    private JSONObject importOnlyMissingResearch(JSONObject previous,String previousSha)throws Exception{
+        LocalHubClient hub=new LocalHubClient(context);
+        JSONObject remote=hub.migrationStatus();
+        if(!remote.optBoolean("ok")||!remote.optBoolean("ready")||
+           !remote.optBoolean("archive_exists",false))return null;
+        String incoming=remote.optString("archive_sha256","");
+        if(incoming.isEmpty()||incoming.equalsIgnoreCase(previousSha)||
+           incoming.equalsIgnoreCase(prefs().getString("last_supplement_sha256","")))return null;
+        int chunks=remote.optInt("read_chunks",0);
+        int readBytes=remote.optInt("read_chunk_bytes",240000);
+        long total=remote.optLong("total_bytes",-1);
+        if(chunks<1||total<1||total>MAX_MIGRATION_ZIP||readBytes<1||readBytes>1000000||
+           chunks!=(total+readBytes-1)/readBytes)
+            throw new SecurityException("Invalid supplemental migration transfer");
+        long free=freeStorageBytes(context.getCacheDir());
+        if(free<total+MIN_FREE_SPACE)
+            throw new IOException("Insufficient storage to inspect research supplement");
+        String session=remote.optString("session","");
+        File archive=new File(context.getCacheDir(),"pc_data_supplement_"+session+".zip");
+        File staging=new File(context.getCacheDir(),"pc_data_supplement_stage_"+session);
+        try{
+            progress("DOWNLOAD","PC 누락 연구자료 자동 확인",0,chunks,false,"");
+            try(FileOutputStream out=new FileOutputStream(archive,false)){
+                long received=0;
+                for(int i=0;i<chunks;i++){
+                    JSONObject part=hub.migrationChunk(session,i);
+                    if(!part.optBoolean("ok")||part.optInt("index",-1)!=i)
+                        throw new IOException("Supplement chunk missing: "+i);
+                    byte[] data=Base64.decode(part.optString("data_b64"),Base64.DEFAULT);
+                    if(!sha256(data).equalsIgnoreCase(part.optString("sha256")))
+                        throw new SecurityException("Supplement chunk SHA mismatch: "+i);
+                    out.write(data);received+=data.length;
+                    progress("DOWNLOAD","PC 누락 연구자료 확인",i+1,chunks,false,"");
+                }
+                out.flush();out.getFD().sync();
+                if(received!=total)throw new IOException("Supplement size mismatch");
+            }
+            if(!sha256(archive).equalsIgnoreCase(incoming))
+                throw new SecurityException("Supplement archive SHA mismatch");
+            long expanded=expandedArchiveBytes(archive);
+            if(freeStorageBytes(context.getCacheDir())<expanded+MIN_FREE_SPACE)
+                throw new IOException("Insufficient space to expand research supplement");
+            JSONObject candidate=extract(archive,staging);
+            JSONObject candidateFiles=candidate.optJSONObject("files");
+            JSONObject previousFiles=previous.optJSONObject("files");
+            if(candidateFiles==null||previousFiles==null)
+                throw new SecurityException("Missing original/supplemental file manifest");
+            JSONObject combined=new JSONObject(previous.toString());
+            JSONObject combinedFiles=combined.getJSONObject("files");
+            Iterator<String> iter=candidateFiles.keys();
+            int added=0,retained=0;
+            while(iter.hasNext()){
+                String rel=iter.next();
+                if(!allowedDataPath(rel)||"manifest.json".equals(rel))
+                    throw new SecurityException("Invalid supplemental path: "+rel);
+                File target=deployedFile(rel);
+                // A phone-created file, an active GMO account, or a previously
+                // migrated DB wins unconditionally. Never replace or merge it.
+                if(target.exists()||previousFiles.has(rel)){retained++;continue;}
+                File source=new File(staging,rel);
+                File parent=target.getParentFile();
+                if(parent!=null&&!parent.exists()&&!parent.mkdirs())
+                    throw new IOException("Cannot create supplement destination");
+                java.nio.file.Files.move(source.toPath(),target.toPath());
+                combinedFiles.put(rel,candidateFiles.get(rel));
+                added++;
+            }
+            if(added==0){
+                prefs().edit().putString("last_supplement_sha256",incoming).apply();
+                return null;
+            }
+            // Files are installed, but do NOT acknowledge the PC archive before
+            // strategy runtime verification has read the new original records.
+            if(!prefs().edit().putString("installed_manifest",combined.toString())
+                .putString("installed_sha256",incoming)
+                .putString("installed_session",session).commit())
+                throw new IOException("Supplemental checkpoint save failed");
+            progress("VERIFY_RUNTIME","기존 계좌 보존 · 연구자료 "+added+"개 추가, "+retained+"개 유지",
+                0,1,false,"");
+            return obj("ok",true,"status","FILES_INSTALLED",
+                "sha256",incoming,"session",session,"manifest",combined,
+                "verification",verifyInstalled(combined,false),"extra_files_added",added,
+                "existing_files_kept",retained);
+        }finally{
+            deleteTree(staging);
+            if(archive.exists())archive.delete();
+        }
+    }
+
     JSONObject importIfReady(){
         try{
             progress("CHECK","MSERVER 승계자료 확인",0,1,false,"");
@@ -529,7 +622,17 @@ final class LegacyLedgerMigration {
                 }
                 try{
                     JSONObject verification=verifyInstalled(previous,false);
-                    progress("VERIFY_RUNTIME","승계 완료 원장 재사용 · PC ZIP 재설치 금지",0,1,false,"");
+                    // Ordinary startup also checks for extra EXE research files.
+                    // This never overwrites an already existing phone file.
+                    if(!armed&&!phoneHasRealBrokerFills()){
+                        try{
+                            JSONObject extras=importOnlyMissingResearch(previous,imported);
+                            if(extras!=null)return extras;
+                        }catch(Exception supplementalError){
+                            crashes.add("pc_research_supplement",supplementalError);
+                        }
+                    }
+                    progress("VERIFY_RUNTIME","승계 완료 원장 재사용 · 기존 계좌 원장 유지",0,1,false,"");
                     return obj("ok",true,"status","LOCAL_FILES_PRESENT","sha256",imported,
                         "manifest",previous,"verification",verification,"pc_import_locked",true);
                 }catch(Exception e){
