@@ -156,19 +156,12 @@ def _target_summary(rows, mode):
     for p in rows or []:
         status=str(p.get('status') or '').upper()
         reached=False
-        if mode=='stock_at':
-            target=float(p.get('ref_bodytop') or 0);peak=float(p.get('peak') or 0)
-            reached=bool(p.get('first_sold')) or (target>0 and peak>=target)
-        elif mode=='stock_ma':
-            target=float(p.get('target') or 0);peak=float(p.get('peak') or 0)
-            reached=bool(p.get('first_sold')) or (target>0 and peak>=target)
+        if mode in ('stock_at','stock_ma'):
+            # Price HIGH alone is virtual market observation, not an actual fill.
+            reached=bool(p.get('first_sold'))
         elif mode=='coin':
-            try: reached=float(p.get('first_sold_qty') or 0)>0
-            except Exception: reached=False
-            try:
-                target=float(p.get('target') or 0);peak=float(p.get('peak') or 0)
-                reached=reached or (target>0 and peak>=target)
-            except Exception: pass
+            try:reached=float(p.get('first_sold_qty') or 0)>0
+            except Exception:reached=False
         elif mode=='close':
             reached=bool(p.get('first_sold'))
         if reached: hit+=1
@@ -248,8 +241,9 @@ def _stock_at_research(root):
         bought=p is not None;entry_observed=bought or bool(sh and sh.get('entry_ts'))
         outcome='PENDING';closed=False
         if bought:
-            try: reached=bool(p.get('first_sold')) or (float(p.get('peak') or 0)>=float(x.get('first_target') or 0)>0)
-            except Exception: reached=bool(p.get('first_sold'))
+            # The original EXE marks first_sold only after the sell execution.
+            # A peak merely crossing the limit must stay in pending state.
+            reached=bool(p.get('first_sold'))
             closed=str(p.get('status') or '').upper()=='CLOSED'
             outcome='HIT' if reached else 'MISS' if closed else 'PENDING'
         elif sh and sh.get('entry_ts'):
@@ -280,8 +274,6 @@ def _stock_ma_research(root):
         if p:
             closed=str(p.get('status') or '').upper()=='CLOSED'
             reached=bool(p.get('first_sold'))
-            try:reached=reached or (float(p.get('peak') or 0)>=float(p.get('target') or 0)>0)
-            except Exception:pass
             outcome='HIT' if reached else 'MISS' if closed else 'PENDING'
         items.append({'at':x.get('at'),'tf':x.get('tf'),'strategy':'MA','code':x.get('code'),'name':x.get('name'),
             'ref_ts':x.get('ref_ts'),'score':x.get('score'),'bought':bought,'entry_observed':bought,
@@ -312,7 +304,7 @@ def _coin_research(root,which):
         outcome='PENDING';closed=False
         if p:
             closed=str(p.get('status') or '').upper()=='CLOSED'
-            try: reached=float(p.get('first_sold_qty') or 0)>0 or (float(p.get('peak') or 0)>=float(p.get('target') or 0)>0)
+            try: reached=float(p.get('first_sold_qty') or 0)>0
             except Exception: reached=False
             outcome='HIT' if reached else 'MISS' if closed else 'PENDING'
         elif sh and sh.get('entry_at'):
@@ -982,6 +974,8 @@ def _hub_records_v078(self):
                     source_ledger,source_research=originals
                     if source_research.get('load_status')=='OK':
                         stock['research']['gmo']=source_research
+                        stock['ledger']['gmo']['actual_target']=source_research.get(
+                            'actual_summary') or {}
                         if not (ledger['positions'] or ledger['executions']):
                             if (source_ledger['positions'] or source_ledger['executions']):
                                 stock['ledger']['gmo']=source_ledger
