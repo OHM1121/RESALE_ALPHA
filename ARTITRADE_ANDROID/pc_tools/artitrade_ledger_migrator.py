@@ -610,16 +610,21 @@ def verify_phone_backup(path: Path, progress=lambda msg: None) -> dict:
         if manifest.get("schema")!=PHONE_BACKUP_SCHEMA:
             raise ValueError("ARTITRADE 휴대폰 전체 원장 백업 형식이 아닙니다.")
         entries=manifest.get("strategy_files")
-        if not isinstance(entries, dict) or not entries or len(entries)>2000:
-            raise ValueError("백업 원본 파일 목록 오류")
-        if set(names)!=(set(entries)|{"manifest.json"}):
+        reports=manifest.get("report_files") or {}
+        if not isinstance(entries,dict) or not entries or len(entries)>2000 or \
+           not isinstance(reports,dict) or len(reports)>16:
+            raise ValueError("백업 원본/분석자료 파일 목록 오류")
+        if set(entries).intersection(reports) or \
+           set(names)!=(set(entries)|set(reports)|{"manifest.json"}):
             raise ValueError("백업 ZIP 파일목록과 SHA 명세가 일치하지 않음")
         total=0;sqlite_count=0
-        for i,(name,info) in enumerate(sorted(entries.items()),1):
+        all_entries={**entries,**reports}
+        for i,(name,info) in enumerate(sorted(all_entries.items()),1):
             p=Path(name)
+            prefix_ok=name.startswith(("stock/","coin/")) if name in entries \
+                else name.startswith("analysis/")
             if (p.is_absolute() or ".." in p.parts or "\\" in name or
-                not name.startswith(("stock/","coin/")) or
-                any(mark in name.lower() for mark in PRIVATE_PARTS)):
+                not prefix_ok or any(mark in name.lower() for mark in PRIVATE_PARTS)):
                 raise ValueError("안전하지 않은 백업 파일 경로: "+name)
             if not isinstance(info,dict):
                 raise ValueError("백업 파일 검증정보 누락: "+name)
@@ -634,9 +639,9 @@ def verify_phone_backup(path: Path, progress=lambda msg: None) -> dict:
             total+=size
             if info.get("kind")=="sqlite":
                 sqlite_count+=1
-            if i==1 or i%25==0 or i==len(entries):
-                progress(f"휴대폰 백업 검증 {i}/{len(entries)}")
-    return {"ok": True, "file_count": len(entries), "sqlite_count": sqlite_count,
+            if i==1 or i%25==0 or i==len(all_entries):
+                progress(f"휴대폰 백업 검증 {i}/{len(all_entries)}")
+    return {"ok": True, "file_count": len(entries), "report_count":len(reports), "sqlite_count": sqlite_count,
             "verified_bytes":total, "sha256":sha256_file(path),
             "schema":PHONE_BACKUP_SCHEMA}
 
@@ -645,14 +650,14 @@ def run_gui():
     from tkinter import filedialog, messagebox, ttk
 
     root = tk.Tk()
-    root.title("ARTITRADE 원장 이관·백업 검증 V4")
+    root.title("ARTITRADE 원장 이관·연구 검증 V5")
     root.geometry("760x680")
     root.minsize(700, 540)
 
     frm = ttk.Frame(root, padding=18)
     frm.pack(fill="both", expand=True)
 
-    ttk.Label(frm, text="ARTITRADE EXE↔S21+ 원장 관리 V4", font=("Malgun Gothic", 17, "bold")).pack(anchor="w")
+    ttk.Label(frm, text="ARTITRADE EXE↔S21+ 원장·연구 V5", font=("Malgun Gothic", 17, "bold")).pack(anchor="w")
     ttk.Label(frm, text="최신 주식/코인 EXE의 SQLite · GMO 상태를 읽기 전용 스냅샷으로 만들어 MSERVER에 전송합니다.").pack(anchor="w", pady=(4, 14))
 
     roots = ttk.LabelFrame(frm, text="자동 탐색 결과", padding=10)
