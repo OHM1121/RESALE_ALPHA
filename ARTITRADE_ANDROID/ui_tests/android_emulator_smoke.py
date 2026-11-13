@@ -188,8 +188,11 @@ def put_pref(name,entries):
             contents.append(f'<long name="{escape(key)}" value="{int(value)}" />')
     contents.append("</map>")
     body=("\n".join(contents)+"\n").encode("utf-8")
-    cmd="mkdir -p shared_prefs && cat > shared_prefs/"+name+".xml"
-    run("adb","shell","run-as",PACKAGE,"sh","-c",cmd,input_data=body,timeout=20)
+    # Android 15 adb-shell re-tokenizes sh -c and loses its quoted command.
+    # Use two unambiguous argv commands instead; tee reads the XML on stdin.
+    adb("shell","run-as",PACKAGE,"mkdir","-p","shared_prefs",timeout=20)
+    run("adb","shell","run-as",PACKAGE,"tee",
+        "shared_prefs/"+name+".xml",input_data=body,timeout=20)
 
 def start_app(stage):
     adb("shell","am","start","-W","-n",PACKAGE+"/"+ACTIVITY,timeout=60)
