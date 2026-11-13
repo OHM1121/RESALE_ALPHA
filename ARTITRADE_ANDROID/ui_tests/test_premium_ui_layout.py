@@ -70,7 +70,8 @@ class OLEDNativeUiRegressions(unittest.TestCase):
         self.assertIn('String amount=compact(value);',VISUAL)
         self.assertIn('return WonFormat.signed(v);',VISUAL)
         self.assertIn('return WonFormat.won(v);',VISUAL)
-        self.assertIn('p.setTextSize(sp(11));',VISUAL)
+        self.assertTrue('p.setTextSize(sp(12));' in VISUAL,
+                        'financial chart axis must remain at least 12sp')
         self.assertIn('p.getTextSize()>sp(10)',VISUAL)
         self.assertIn('float middle=top+height*.66f;',VISUAL)
         self.assertIn('p.setTextSize(sp(12))',VISUAL)
