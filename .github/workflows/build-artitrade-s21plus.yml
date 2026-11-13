@@ -156,8 +156,8 @@ jobs:
           assert 'trackOperationDraft(seedEdit,key+".seed")' in ui
           assert 'trackOperationDraft(maxEdit,key+".max_positions")' in ui
           assert 'clearSavedOperationDrafts(market)' in ui
-          assert 'new LinearLayout.LayoutParams(-1,dp(180))' in ui
-          assert 'originalStepH*(2f/3f)' in visuals
+          assert 'new LinearLayout.LayoutParams(-1,dp(165))' in ui
+          assert 'amountTile(c,"●","실현"' in visuals and 'amountTile(c,"◇","평가"' in visuals
           assert 'showKiwoomFeedDiagnosis' in ui
           assert 'stockFeed.optInt("subscribed",0)' in service
           assert 'stockFeed.optLong("last_frame_ms",0L)' in service
@@ -237,8 +237,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.20-FULL-RESEARCH-SUPPLEMENT'" in s
-          assert "versionCode 31" in s
+          assert "versionName '0.7.21-VISUAL-KRW'" in s
+          assert "versionCode 32" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -312,7 +312,7 @@ jobs:
             'isolated trend':'addTrendCard("all",strategyName(market,strategy)+" 누적",null)' in ui,
             'scoped trend fetch':'StrategyDashboardScope.trend(market,strategy,frame)' in ui,
             'scoped history':'StrategyDashboardScope.history(market,strategy,kind,activeHistoryFilter())' in ui,
-            'five minute/30 minute':'addTrendCard("5m","5분봉", "30m")' in ui,
+            'five minute/30 minute':'addTrendCard("5m","5분봉","30m")' in ui,
             'hour/daily':'addTrendCard("60m","1시간봉","day")' in ui,
             'time/amount axis':'drawXAxisLabels' in visuals and 'compactMoney' in visuals,
             'coin fields retained':'positions=_normalize_coin_holdings(positions,all_positions)' in coin,
@@ -339,6 +339,24 @@ jobs:
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_source_audit.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_gmo_original_migration.py' -v
+          mkdir -p /tmp/artitrade-krw-test
+          javac -d /tmp/artitrade-krw-test \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/WonFormat.java \
+            ARTITRADE_ANDROID/ui_tests/WonFormatTest.java
+          java -cp /tmp/artitrade-krw-test com.artitrade.mobile.WonFormatTest
+          python3 - <<'PY'
+          from pathlib import Path
+          ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          visual=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ArtitradeVisualViews.java').read_text()
+          assert 'WonFormat.signed' in ui and 'WonFormat.won' in ui
+          assert 'WonFormat.won(v)' in visual and 'WonFormat.signed(v)' in visual
+          assert 'addDashboardKpi(activity' in ui
+          assert 'boolean matrixColumns=getResources().getConfiguration().screenWidthDp>=720;' in ui
+          assert 'getResources().getConfiguration().screenWidthDp>=680' in ui
+          assert 'return WonFormat.won(v);' in visual
+          assert '%.1f만' not in visual and '%.1f억' not in visual
+          print('DENSE_ICON_FIRST_FULL_KRW_UI_OK')
+          PY
           python3 -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p 'test_migrator_full_research.py' -v
           grep -F 'bindSymbolFourTap' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'https://finance.naver.com/item/main.naver?code=' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
@@ -376,9 +394,9 @@ jobs:
           grep -F 'openSettingsDrawer' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'BrokerApiProbe.all' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F 'TimeframeAccountFlowView' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'STOCK CLOSE PNL FIX2' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F 'COIN FIX38 SR1 POLICY' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
-          grep -F '실제 목표도달율' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.21 · 주식' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'v0.7.21 · 코인' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F '목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '실제 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '가상 목표도달률' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
           grep -F '엔진 점수 비교' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
