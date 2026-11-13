@@ -24,6 +24,7 @@ public final class TradeExplanationTest {
         eq("매도 사유가 기록되지 않음",TradeExplanation.shortReason("","매도").replace("원장에 ",""));
         eq("2026-11-13 09:00:00 KST",TradeExplanation.kst("2026-11-13T00:00:00Z",false));
         eq("2026-11-13 09:00:00 KST",TradeExplanation.kst("2026-11-13T00:00:00+00:00",false));
+        eq("2026-11-13 09:00:00 KST",TradeExplanation.kst("2026-11-13 00:00:00+00:00",false));
         eq("2026-11-13 09:00:00 KST",TradeExplanation.kst("2026-11-13T09:00:00+09:00",false));
         eq("2026-11-13 09:00:00 KST",TradeExplanation.kst("2026-11-13 00:00:00",true));
         eq("2026-11-13 00:00:00 KST",TradeExplanation.kst("2026-11-13 00:00:00",false));
