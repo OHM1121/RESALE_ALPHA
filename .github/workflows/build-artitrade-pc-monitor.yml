@@ -1,0 +1,60 @@
+name: Build ARTITRADE PC Read-Only MSERVER Viewer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ artitrade-pc-readonly-mserver-viewer-20261113 ]
+    paths:
+      - 'ARTITRADE_ANDROID/PC_MONITOR_TRIGGER.txt'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate stock and coin research, no-order API and phone revisions
+        shell: pwsh
+        run: |
+          python -m py_compile ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor_core.py ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor.py
+          python -m unittest discover -s ARTITRADE_ANDROID/pc_tools -p test_pc_monitor_core.py -v
+          @'
+          from pathlib import Path
+          from ast import parse, walk, Import, ImportFrom
+          root=Path("ARTITRADE_ANDROID/pc_tools")
+          core=(root/"artitrade_pc_monitor_core.py").read_text(encoding="utf8")
+          app=(root/"artitrade_pc_monitor.py").read_text(encoding="utf8")
+          imported=set()
+          for source in (core,app):
+              for n in walk(parse(source)):
+                  if isinstance(n,Import):imported.update(alias.name.split(".")[0] for alias in n.names)
+                  elif isinstance(n,ImportFrom):imported.add((n.module or "").split(".")[0])
+          forbidden={"d_live","d_storage","d_gmo_runtime","android_runtime_v078",
+                     "stock_ma_engine","upbit","kiwoom","pyupbit","ccxt"}
+          assert not(imported&forbidden), f"Trading runtime import forbidden: {imported&forbidden}"
+          assert 'method != "GET"' in core
+          assert '"/v1/record/meta"' in core and '"/v1/record"' in core
+          assert 'self.requester("GET", "/v1/status", None)' in core
+          assert 'ReadOnlyHubClient' in app
+          assert 'summarize_research' in app
+          assert '10초마다 자동' in app
+          assert 'buy(' not in app and 'sell(' not in app
+          print("PC_MONITOR_READ_ONLY_AND_RESEARCH_CHECKS_PASS")
+          '@ | python -
+      - name: Install Windows EXE builder
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.16.0
+      - name: Build standalone EXE without any trading engine
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113 --paths ARTITRADE_ANDROID/pc_tools ARTITRADE_ANDROID/pc_tools/artitrade_pc_monitor.py
+          if (!(Test-Path "dist/ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113.exe")) { throw "Read-only EXE not produced" }
+          Get-FileHash "dist/ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113.exe" -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113
+          path: dist/ARTITRADE_PC_MSERVER_READONLY_VIEWER_v1.0_20261113.exe
+          if-no-files-found: error
+          retention-days: 14
