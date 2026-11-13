@@ -594,19 +594,65 @@ def migrate(base: str, token: str, progress=lambda msg: None) -> tuple[dict, dic
             pass
 
 
+
+PHONE_BACKUP_SCHEMA = "ARTITRADE_PHONE_LEDGER_BACKUP_V1"
+
+
+def verify_phone_backup(path: Path, progress=lambda msg: None) -> dict:
+    """Verify a full Android backup without extracting or modifying the PC."""
+    if not path.is_file():
+        raise FileNotFoundError("휴대폰 백업 ZIP 파일이 없습니다.")
+    with zipfile.ZipFile(path, "r", allowZip64=True) as z:
+        names=z.namelist()
+        if len(names)!=len(set(names)) or "manifest.json" not in names:
+            raise ValueError("백업 ZIP에 중복 파일 또는 manifest 누락")
+        manifest=json.loads(z.read("manifest.json"))
+        if manifest.get("schema")!=PHONE_BACKUP_SCHEMA:
+            raise ValueError("ARTITRADE 휴대폰 전체 원장 백업 형식이 아닙니다.")
+        entries=manifest.get("strategy_files")
+        if not isinstance(entries, dict) or not entries or len(entries)>2000:
+            raise ValueError("백업 원본 파일 목록 오류")
+        if set(names)!=(set(entries)|{"manifest.json"}):
+            raise ValueError("백업 ZIP 파일목록과 SHA 명세가 일치하지 않음")
+        total=0;sqlite_count=0
+        for i,(name,info) in enumerate(sorted(entries.items()),1):
+            p=Path(name)
+            if (p.is_absolute() or ".." in p.parts or "\\" in name or
+                not name.startswith(("stock/","coin/")) or
+                any(mark in name.lower() for mark in PRIVATE_PARTS)):
+                raise ValueError("안전하지 않은 백업 파일 경로: "+name)
+            if not isinstance(info,dict):
+                raise ValueError("백업 파일 검증정보 누락: "+name)
+            digest=hashlib.sha256()
+            size=0
+            with z.open(name) as member:
+                for block in iter(lambda: member.read(1024*1024),b""):
+                    digest.update(block)
+                    size+=len(block)
+            if size!=info.get("size") or digest.hexdigest()!=info.get("sha256"):
+                raise ValueError("백업 SHA-256/크기 불일치: "+name)
+            total+=size
+            if info.get("kind")=="sqlite":
+                sqlite_count+=1
+            if i==1 or i%25==0 or i==len(entries):
+                progress(f"휴대폰 백업 검증 {i}/{len(entries)}")
+    return {"ok": True, "file_count": len(entries), "sqlite_count": sqlite_count,
+            "verified_bytes":total, "sha256":sha256_file(path),
+            "schema":PHONE_BACKUP_SCHEMA}
+
 def run_gui():
     import tkinter as tk
-    from tkinter import messagebox, ttk
+    from tkinter import filedialog, messagebox, ttk
 
     root = tk.Tk()
-    root.title("ARTITRADE 기존 EXE 원장 → S21+ 승계 FIX3 (대용량)")
+    root.title("ARTITRADE 원장 이관·백업 검증 V4")
     root.geometry("760x680")
     root.minsize(700, 540)
 
     frm = ttk.Frame(root, padding=18)
     frm.pack(fill="both", expand=True)
 
-    ttk.Label(frm, text="ARTITRADE 기존 EXE 원장 승계 V2", font=("Malgun Gothic", 17, "bold")).pack(anchor="w")
+    ttk.Label(frm, text="ARTITRADE EXE↔S21+ 원장 관리 V4", font=("Malgun Gothic", 17, "bold")).pack(anchor="w")
     ttk.Label(frm, text="최신 주식/코인 EXE의 SQLite · GMO 상태를 읽기 전용 스냅샷으로 만들어 MSERVER에 전송합니다.").pack(anchor="w", pady=(4, 14))
 
     roots = ttk.LabelFrame(frm, text="자동 탐색 결과", padding=10)
@@ -655,8 +701,10 @@ def run_gui():
     actions.pack(fill="x", pady=(9, 0))
     test_btn = ttk.Button(actions, text="MSERVER 연결 확인", command=lambda: check_connection())
     test_btn.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=6)
-    btn = ttk.Button(actions, text="기존 EXE 원장을 S21+로 승계 시작", command=lambda: start())
+    btn = ttk.Button(actions, text="PC 원장 → S21+ 승계", command=lambda: start())
     btn.pack(side="left", fill="x", expand=True, ipady=6)
+    backup_btn=ttk.Button(actions, text="휴대폰 백업 ZIP 검증",command=lambda: verify_phone_dialog())
+    backup_btn.pack(side="left", fill="x", expand=True, padx=(6,0), ipady=6)
 
     status = tk.Text(frm, height=9, wrap="word", font=("Consolas", 10))
     status.pack(fill="both", expand=True, pady=(12, 10))
@@ -682,6 +730,28 @@ def run_gui():
             status.see("end")
             status.configure(state="disabled")
         root.after(0, put)
+
+    def verify_phone_dialog():
+        path=filedialog.askopenfilename(title="S21+ 전체 원장 백업 ZIP",
+            filetypes=[("ARTITRADE 원장 백업", "*.zip"),("모든 파일","*.*")])
+        if not path:
+            return
+        backup_btn.configure(state="disabled")
+        def work():
+            try:
+                result=verify_phone_backup(Path(path),log)
+                message=(f"파일: {result['file_count']:,}개 / SQLite: {result['sqlite_count']:,}개\n"
+                         f"원본검증: {result['verified_bytes']:,}바이트\n"
+                         f"SHA-256: {result['sha256']}\n\n"
+                         "읽기 전용 검사 완료. 파일을 수정하거나 복원하지 않았습니다.")
+                log("휴대폰 백업 무결성 검증 완료: "+result["sha256"])
+                root.after(0,lambda:messagebox.showinfo("원장 백업 검증 정상",message))
+            except Exception as exc:
+                log("휴대폰 백업 검증 실패: "+str(exc))
+                root.after(0,lambda msg=str(exc):messagebox.showerror("백업 검증 실패",msg))
+            finally:
+                root.after(0,lambda:backup_btn.configure(state="normal"))
+        threading.Thread(target=work,daemon=True).start()
 
     def auto_scan():
         raw = url_var.get()
