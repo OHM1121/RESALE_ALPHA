@@ -1,5 +1,6 @@
-Build ARTITRADE Unified v0.7.16-LEDGER-UI-PERF
-Release branch artitrade-phone-main-v070-live-orders-20261112.
-Includes 0.75s live drawer transfer progress, background immutable ledger snapshot/preload,
-bounded 40-row history pagination, retained previous PC-ledger migration FIX4,
-existing package and cached stable signing key for in-place update.
+ARTITRADE UNIFIED v0.7.17 RELEASE TRIGGER
+Source branch: artitrade-phone-main-v070-live-orders-20261112
+Package: com.artitrade.unified.s21dex
+Includes all-account history filters, source tags, dated amount-axis PnL trends,
+non-destructive coin price/reference mapping, GMO migration diagnostics,
+navigation restoration and semantic colors. Existing phone PC-origin ledgers preserved.

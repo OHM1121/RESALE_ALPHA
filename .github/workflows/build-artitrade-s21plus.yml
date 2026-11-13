@@ -235,8 +235,8 @@ jobs:
           from pathlib import Path
           s=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
           assert "applicationId 'com.artitrade.unified.s21dex'" in s
-          assert "versionName '0.7.16-LEDGER-UI-PERF'" in s
-          assert "versionCode 27" in s
+          assert "versionName '0.7.17-FILTER-TRENDS-LEDGER'" in s
+          assert "versionCode 28" in s
           assert "signingConfig signingConfigs.ciStable" in s
           assert "storeFile file((System.getenv('HOME')" in s
           print('ORIGINAL_PACKAGE_AND_STABLE_SIGNING_CONFIG_OK')
@@ -278,6 +278,46 @@ jobs:
           assert "main.post(drawerProgressTicker)" in src
           assert "stopDrawerProgressTicker()" in src
           print("LEDGER_PRELOAD_PAGINATION_DRAWER_REGRESSION_OK")
+          PY
+      - name: Regression test v0.7.17 five date/value charts, all-account filters, coin position recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_DIR="$(mktemp -d)"
+          javac -d "$TEST_DIR" \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistoryPager.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/RealizedTrend.java \
+            ARTITRADE_ANDROID/ui_tests/HistoryPagerTest.java \
+            ARTITRADE_ANDROID/ui_tests/HistorySelectionTest.java \
+            ARTITRADE_ANDROID/ui_tests/RealizedTrendTest.java
+          for klass in HistoryPagerTest HistorySelectionTest RealizedTrendTest; do
+            java -cp "$TEST_DIR" "com.artitrade.mobile.$klass"
+          done
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_coin_ui_mapping.py' -v
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          ui=(root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          visuals=(root/'java/com/artitrade/mobile/ArtitradeVisualViews.java').read_text()
+          coin=(root/'python/android_runtime_v078.py').read_text()
+          checks={
+            'market-wide list filter':'showHistoryFilterMenu(Button anchor)' in ui,
+            'row strategy tag':'HistorySelection.strategyTag(item.source,item.frame)' in ui,
+            'persist navigation':'restoreNavigation(state)' in ui and 'onSaveInstanceState(Bundle state)' in ui,
+            'preload audit':'화면 사전로딩:' in ui,
+            'GMO audit':'PC 수급매매 승계 확인' in ui,
+            'full-width trend':'addTrendCard("all","전 계좌 통합 추세",null)' in ui,
+            'five minute/30 minute':'addTrendCard("5m","5분봉", "30m")' in ui,
+            'hour/daily':'addTrendCard("60m","1시간봉","day")' in ui,
+            'time/amount axis':'drawXAxisLabels' in visuals and 'compactMoney' in visuals,
+            'coin fields retained':'positions=_normalize_coin_holdings(positions,all_positions)' in coin,
+            'GMO missing diagnosis':"PC_SOURCE_NOT_PRESENT" in coin,
+          }
+          for name,ok in checks.items():
+              print(name, 'PASS' if ok else 'FAIL')
+          assert all(checks.values())
+          print('ARTITRADE_V0717_REGRESSION_OK')
           PY
       - name: Build stock, coin, unified and MSERVER APKs
         working-directory: ARTITRADE_ANDROID
