@@ -262,6 +262,12 @@ def _connect(root,market):
         ON position_observations(strategy,observed_minute);
       CREATE INDEX IF NOT EXISTS feat_dates_v040
         ON feature_snapshots(strategy,frame,event_ts);
+      CREATE TABLE IF NOT EXISTS analysis_runs(
+        strategy TEXT NOT NULL,
+        generated_at INTEGER NOT NULL,
+        report_json TEXT NOT NULL,
+        PRIMARY KEY(strategy,generated_at)
+      );
     """)
     return conn
 
@@ -359,6 +365,21 @@ def stored(root,market,strategy):
             "SELECT * FROM position_observations WHERE strategy=? ORDER BY observed_minute",
             (strategy,))]
     return output
+
+
+def save_report(root,market,strategy,report,when=None):
+    """Preserve every button-triggered report in scoped research ZIP exports."""
+    if (market,strategy) not in SCOPES:return
+    moment=int(when if when is not None else time.time())
+    if not isinstance(report,dict) or report.get("scope")!=market+"/"+strategy:
+        raise ValueError("analysis scope mismatch")
+    with _connect(root,market) as conn:
+        conn.execute("""INSERT INTO analysis_runs(strategy,generated_at,report_json)
+                        VALUES (?,?,?)
+                        ON CONFLICT(strategy,generated_at)
+                        DO UPDATE SET report_json=excluded.report_json""",
+                     (strategy,moment,json.dumps(report,ensure_ascii=False,
+                                                 separators=(",",":"))))
 
 
 class _EvidenceWorker:
