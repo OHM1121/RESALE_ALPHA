@@ -262,6 +262,16 @@ def _connect(root,market):
         ON position_observations(strategy,observed_minute);
       CREATE INDEX IF NOT EXISTS feat_dates_v040
         ON feature_snapshots(strategy,frame,event_ts);
+      CREATE TABLE IF NOT EXISTS candle_observations(
+        strategy TEXT NOT NULL,frame TEXT NOT NULL,symbol TEXT NOT NULL,
+        bar_ts INTEGER NOT NULL,high REAL NOT NULL,low REAL NOT NULL,
+        close REAL NOT NULL,volume REAL,origin TEXT NOT NULL,
+        PRIMARY KEY(strategy,frame,symbol,bar_ts)
+      );
+      CREATE TABLE IF NOT EXISTS market_score_observations(
+        score_ts INTEGER NOT NULL PRIMARY KEY,
+        score REAL NOT NULL,source TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS analysis_runs(
         strategy TEXT NOT NULL,
         generated_at INTEGER NOT NULL,
@@ -289,6 +299,14 @@ def capture_scope(root,market,strategy,research,ledger,now=None,market_score=Non
                             row.get("ref_ts") or row.get("ref_at") or row.get("ts"))
             # Features captured *today* for an imported old signal are retained,
             # but their capture time is never backdated to the signal date.
+            indicators_bars=_n_relevant_bars(row,when if when is not None else now)
+            for bar_ts,hi,lo,close,volume in indicators_bars:
+                if bar_ts is None:continue
+                conn.execute("""INSERT OR IGNORE INTO candle_observations
+                    (strategy,frame,symbol,bar_ts,high,low,close,volume,origin)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (strategy,frame,str(row.get("code") or row.get("market") or ""),
+                     bar_ts,hi,lo,close,volume,"SOURCE_OHLCV"))
             features=extract_features(row,when if when is not None else now)
             if not features:continue
             encoded=json.dumps(features,sort_keys=True,separators=(",",":"))
@@ -339,6 +357,20 @@ def capture_packet(root,packet,now=None):
     data=_json_obj(packet)
     scores=_json_obj(data.get("market_research"))
     totals={"signals":0,"positions":0}
+    # Duplicate the exact event-time score into each market-specific export DB.
+    # Never replace the event timestamp with the present observation time.
+    for market in ("stock","coin"):
+        evidence=_json_obj(scores.get(market))
+        score=_number(evidence.get("score"))
+        asof=_timestamp(evidence.get("asof"))
+        if score is None or asof is None or not -100<=score<=100:continue
+        try:
+            with _connect(root,market) as conn:
+                conn.execute("""INSERT OR IGNORE INTO market_score_observations
+                  (score_ts,score,source) VALUES (?,?,?)""",
+                  (asof,score,str(evidence.get("source") or "MARKET_RESEARCH_V033")))
+        except (sqlite3.Error,OSError):
+            pass
     for market,strategy in SCOPES:
         research,ledger=_records(data,market,strategy)
         score=_number(_json_obj(scores.get(market)).get("score"))
@@ -354,7 +386,7 @@ def capture_packet(root,packet,now=None):
 def stored(root,market,strategy):
     """Readable union; only the selected strategy, never mixed markets."""
     path=db_path(root,market)
-    output={"features":[],"positions":[]}
+    output={"features":[],"positions":[],"market_scores":[],"candles":[]}
     if not path.is_file():return output
     with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",uri=True,timeout=5) as conn:
         conn.row_factory=sqlite3.Row
@@ -364,6 +396,11 @@ def stored(root,market,strategy):
         output["positions"]=[dict(x) for x in conn.execute(
             "SELECT * FROM position_observations WHERE strategy=? ORDER BY observed_minute",
             (strategy,))]
+        output["market_scores"]=[dict(x) for x in conn.execute(
+            "SELECT score_ts,score FROM market_score_observations ORDER BY score_ts")]
+        output["candles"]=[dict(x) for x in conn.execute(
+            "SELECT frame,symbol,bar_ts,high,low,close,volume FROM candle_observations "
+            "WHERE strategy=? ORDER BY bar_ts",(strategy,))]
     return output
 
 
