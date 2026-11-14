@@ -117,13 +117,13 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
             "analysis/source_table_catalog.json":json.dumps(
                 catalog,ensure_ascii=False,indent=2).encode("utf8"),
             "analysis/README_ko.txt":(
-                "ARTITRADE 통합 리서치 원장 — "+scope+"\\n"
-                "모든 원본 SQLite와 JSON을 백업 시점의 무손실 스냅샷으로 포함함.\\n"
+                "ARTITRADE 통합 리서치 원장 — "+scope+"\n"
+                "모든 원본 SQLite와 JSON을 백업 시점의 무손실 스냅샷으로 포함함.\n"
                 "각 ZIP은 독립적으로 열 수 있음. fragments/ 항목은 원본의 일부이므로 "
-                "같은 묶음의 모든 ZIP과 artitrade_research_restore.py로 결합할 것.\\n"
-                "analysis/bundle_index.json은 모든 조각의 원본경로, 순서, SHA256을 기록함.\\n"
-                "실제 체결과 가상관측은 각 원본 테이블에서 구분할 것.\\n"
-                "암호·API 키는 제외하며 원본 DB와 자동매매 엔진은 변경하지 않음.\\n"
+                "같은 묶음의 모든 ZIP과 artitrade_research_restore.py로 결합할 것.\n"
+                "analysis/bundle_index.json은 모든 조각의 원본경로, 순서, SHA256을 기록함.\n"
+                "실제 체결과 가상관측은 각 원본 테이블에서 구분할 것.\n"
+                "암호·API 키는 제외하며 원본 DB와 자동매매 엔진은 변경하지 않음.\n"
             ).encode("utf8")
         }
         for name,blob in reports.items():
