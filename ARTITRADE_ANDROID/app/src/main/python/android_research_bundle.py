@@ -85,7 +85,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
         raise OSError("Insufficient temporary storage for verified research export")
 
     prefix="ARTITRADE_"+scope.upper()+"_RESEARCH_"+time.strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:6]
-    reserve=max(4096,min(4_000_000,max_part_bytes//20))
+    reserve=max(8192,min(4_000_000,max_part_bytes//20))
     capacity=max_part_bytes-reserve
     pieces=[[]]
     used=[0]
@@ -144,7 +144,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
                "all_original_rows_preserved":True,
                "single_zip_is_not_sufficient_if_part_count_gt_1":len(pieces)>1}
         encoded=json.dumps(index,ensure_ascii=False,separators=(",",":")).encode("utf8")
-        if len(encoded)>reserve//2:
+        if len(encoded)>reserve-2048:
             raise ValueError("Research bundle index exceeds reserved part metadata space")
         results=[]
         try:
