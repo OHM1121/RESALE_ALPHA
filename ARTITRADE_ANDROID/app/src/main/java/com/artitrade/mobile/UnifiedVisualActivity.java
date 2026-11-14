@@ -166,6 +166,8 @@ public final class UnifiedVisualActivity extends Activity {
             main.postDelayed(this,DRAWER_PROGRESS_REFRESH_MS);
         }
     };
+    // Per-table presentation choices only; original strategy rows remain unchanged.
+    private final Map<String,ColumnQueryV036> uiTableQueries=new HashMap<>();
     private final Map<String,EditText[]> operationFields=new HashMap<>();
     // Unsaved drafts are isolated from the live strategy settings. Only Save applies them.
     private final Map<String,String> operationDraftValues=new HashMap<>();
@@ -2972,6 +2974,169 @@ public final class UnifiedVisualActivity extends Activity {
         if(raw.matches("[0-9]{8}"))return raw.substring(0,4)+"-"+
             raw.substring(4,6)+"-"+raw.substring(6,8);
         return formatKst(value);
+    }
+
+    private ColumnQueryV036 tableQuery(String id,String... fields){
+        ColumnQueryV036 existing=uiTableQueries.get(id);
+        if(existing!=null)return existing;
+        ColumnQueryV036 q=new ColumnQueryV036(fields);
+        try{
+            String saved=getSharedPreferences("artitrade_table_preferences_v036",MODE_PRIVATE)
+                .getString(id,"");
+            if(!saved.isEmpty()){
+                JSONObject conf=new JSONObject(saved);
+                JSONArray prior=conf.optJSONArray("order");
+                if(prior!=null){
+                    java.util.ArrayList<String> newOrder=new java.util.ArrayList<>();
+                    for(int i=0;i<prior.length();i++){
+                        String key=prior.optString(i,"");
+                        if(q.order.contains(key)&&!newOrder.contains(key))newOrder.add(key);
+                    }
+                    for(String key:q.order)if(!newOrder.contains(key))newOrder.add(key);
+                    q.order.clear();q.order.addAll(newOrder);
+                }
+                JSONArray hidden=conf.optJSONArray("hidden");
+                if(hidden!=null)for(int i=0;i<hidden.length();i++){
+                    String key=hidden.optString(i,"");
+                    if(q.order.contains(key))q.hide(key,true);
+                }
+                JSONObject filters=conf.optJSONObject("filters");
+                if(filters!=null){
+                    java.util.Iterator<String> it=filters.keys();
+                    while(it.hasNext()){String key=it.next();
+                        q.setFilter(key,filters.optString(key,""));
+                    }
+                }
+                String sort=conf.optString("sort","");
+                if(q.order.contains(sort)){
+                    q.sortColumn=sort;q.descending=conf.optBoolean("desc",false);
+                }
+            }
+        }catch(Exception problem){
+            new RuntimeCrashStore(this).add("table_preferences_read_"+id,problem);
+        }
+        uiTableQueries.put(id,q);
+        return q;
+    }
+
+    private void saveTableQuery(String id,ColumnQueryV036 q){
+        try{
+            JSONObject saved=new JSONObject();
+            JSONArray order=new JSONArray(),hidden=new JSONArray();
+            for(String key:q.columns())order.put(key);
+            for(String key:q.hidden)hidden.put(key);
+            JSONObject filters=new JSONObject();
+            for(Map.Entry<String,String> e:q.filters.entrySet())
+                filters.put(e.getKey(),e.getValue());
+            saved.put("order",order).put("hidden",hidden)
+                .put("filters",filters).put("sort",q.sortColumn)
+                .put("desc",q.descending);
+            getSharedPreferences("artitrade_table_preferences_v036",MODE_PRIVATE)
+                .edit().putString(id,saved.toString()).apply();
+        }catch(Exception e){
+            new RuntimeCrashStore(this).add("table_preferences_save_"+id,e);
+        }
+    }
+
+    private void editTableFilter(String id,ColumnQueryV036 q,String key,Runnable redraw){
+        EditText edit=new EditText(this);
+        edit.setSingleLine(true);
+        edit.setText(q.filters.getOrDefault(key,""));
+        edit.setHint("포함된 값 입력 (정확히 일치: =값)");
+        edit.setTextSize(14);
+        edit.setPadding(dp(16),dp(6),dp(13),dp(6));
+        new AlertDialog.Builder(this).setTitle(key+" · 값 필터")
+            .setView(edit)
+            .setNegativeButton("취소",null)
+            .setNeutralButton("필터 해제",(d,w)->{
+                q.setFilter(key,"");saveTableQuery(id,q);redraw.run();
+            })
+            .setPositiveButton("적용",(d,w)->{
+                q.setFilter(key,edit.getText().toString());
+                saveTableQuery(id,q);redraw.run();
+            }).show();
+    }
+
+    private void tableColumnMenu(View anchor,String id,ColumnQueryV036 q,
+                                  String key,Runnable redraw){
+        PopupMenu menu=new PopupMenu(this,anchor);
+        String[] actions={"오름차순 정렬","내림차순 정렬","값 필터 편집",
+            "열 왼쪽으로","열 오른쪽으로",
+            q.hidden.contains(key)?"열 다시 표시":"열 숨기기",
+            "전체 필터 초기화"};
+        for(int i=0;i<actions.length;i++){
+            final int action=i;
+            menu.getMenu().add(actions[i]).setOnMenuItemClickListener(v->{
+                if(action==2){editTableFilter(id,q,key,redraw);return true;}
+                if(action==0||action==1){q.sortColumn=key;q.descending=action==1;}
+                else if(action==3)q.move(key,-1);
+                else if(action==4)q.move(key,1);
+                else if(action==5)q.hide(key,!q.hidden.contains(key));
+                else if(action==6){q.filters.clear();q.sortColumn="";q.descending=false;}
+                saveTableQuery(id,q);redraw.run();return true;
+            });
+        }
+        menu.show();
+    }
+
+    /** Always reachable even after a user has hidden a column. */
+    private void tableOptionsDialog(String id,ColumnQueryV036 q,Runnable redraw){
+        String[] choices=new String[q.order.size()+1];
+        choices[0]="정렬/값 필터 초기화 · 모든 열 표시";
+        for(int i=0;i<q.order.size();i++){
+            String key=q.order.get(i);
+            choices[i+1]=(q.hidden.contains(key)?"[숨김] ":"")+key+
+                (q.filters.containsKey(key)?" · 필터 중":"");
+        }
+        new AlertDialog.Builder(this).setTitle("열 정렬·표시·필터")
+            .setItems(choices,(d,w)->{
+                if(w==0){
+                    q.filters.clear();q.hidden.clear();
+                    q.sortColumn="";q.descending=false;
+                    saveTableQuery(id,q);redraw.run();
+                }else{
+                    // Reveal the column if hidden before editing it; users
+                    // can still hide it again using the header's long press.
+                    String key=q.order.get(w-1);
+                    if(q.hidden.contains(key)){
+                        q.hide(key,false);saveTableQuery(id,q);redraw.run();
+                    }else{
+                        editTableFilter(id,q,key,redraw);
+                    }
+                }
+            }).setPositiveButton("닫기",null).show();
+    }
+
+    private void tableHeaderCell(LinearLayout parent,String title,String key,float weight,
+                                 String id,ColumnQueryV036 q,Runnable redraw){
+        TextView label=text(title+
+            (key.equals(q.sortColumn)?(q.descending?" ▼":" ▲"):"")+
+            (q.filters.containsKey(key)?" •":""),12);
+        label.setTextColor(Color.rgb(215,230,250));
+        label.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
+        label.setPadding(dp(7),0,dp(3),0);
+        label.setMaxLines(3);
+        label.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        label.setOnClickListener(v->{
+            q.sort(key);saveTableQuery(id,q);redraw.run();
+        });
+        label.setOnLongClickListener(v->{
+            tableColumnMenu(v,id,q,key,redraw);return true;
+        });
+        parent.addView(label,new LinearLayout.LayoutParams(0,-1,weight));
+    }
+
+    private void filterAndSortHistory(java.util.List<HistoryRow> data,
+                                     ColumnQueryV036 q,
+                        java.util.function.Function<HistoryRow,Map<String,String>> values){
+        data.removeIf(r->!q.matches(values.apply(r)));
+        if(q.sortColumn.isEmpty())return;
+        data.sort((left,right)->{
+            int n=ColumnQueryV036.compare(
+                values.apply(left).get(q.sortColumn),
+                values.apply(right).get(q.sortColumn));
+            return q.descending?-n:n;
+        });
     }
 
     private void researchPopupCell(LinearLayout row,String value,float weight,boolean header,int color){
