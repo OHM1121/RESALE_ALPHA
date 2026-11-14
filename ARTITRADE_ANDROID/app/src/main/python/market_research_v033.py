@@ -106,6 +106,26 @@ def _change(now,then):
     return (now/then-1.0)*100 if now is not None and then not in (None,0) else None
 
 
+
+def _rsi14_closed(closes,period=14):
+    """Wilder RSI from fully closed daily candles (exclude today's live bar)."""
+    if len(closes)<period+1:
+        return None
+    changes=[closes[i]-closes[i-1] for i in range(1,len(closes))]
+    ups=[max(0.0,x) for x in changes[:period]]
+    downs=[max(0.0,-x) for x in changes[:period]]
+    gain=sum(ups)/period
+    loss=sum(downs)/period
+    for x in changes[period:]:
+        gain=(gain*(period-1)+max(0.0,x))/period
+        loss=(loss*(period-1)+max(0.0,-x))/period
+    if gain==0 and loss==0:
+        return 50.0
+    if loss==0:
+        return 100.0
+    return 100.0-100.0/(1.0+gain/loss)
+
+
 def coin_score(tickers,btc_candles,eth_candles):
     """Experimental breadth+volume+trend model, not an official Fear/Greed index."""
     ticks=[t for t in (tickers or []) if isinstance(t,dict) and
@@ -136,12 +156,22 @@ def coin_score(tickers,btc_candles,eth_candles):
     relative=clamp(50+((eth7 or 0)-(btc7 or 0))*5)
     # A 2%-10% daily return volatility range is a heuristic (not calibrated).
     vol_health=clamp((10.0-vol)*12.5)
+    # Today's Upbit daily candle is not yet finalized: only closed candles
+    # may establish an RSI extreme. 30=oversold (+100), 70=overbought (-100).
+    rsi14=_rsi14_closed(btc[:-1])
+    if rsi14 is None:
+        return {"score":None,"coverage":0.0,"factors":[],
+                "status":"BTC 확정 일봉 RSI 표본 부족"}
+    rsi_health=clamp((70.0-rsi14)*2.5)
+
     factors=[
-        {"name":"BTC 추세","value":round(trend,1),"weight":0.30},
+        {"name":"BTC 추세","value":round(trend,1),"weight":0.15},
         {"name":"KRW 상승종목 비율","value":round(breadth,1),"weight":0.25},
         {"name":"상승종목 거래대금 비율","value":round(cashflow,1),"weight":0.20},
         {"name":"ETH/BTC 7일 상대강도","value":round(relative,1),"weight":0.15},
         {"name":"BTC 20일 변동성 건강도","value":round(vol_health,1),"weight":0.10},
+        {"name":"BTC RSI(14) 과매도/과매수","value":round(rsi_health,1),"weight":0.15,
+         "rsi14":round(rsi14,2)},
     ]
     # Each component is reported on the same bearish/neutral/bullish scale.
     # Raw value is retained independently as the 0~100 component observation.
@@ -151,7 +181,7 @@ def coin_score(tickers,btc_candles,eth_candles):
     return {"score":round(clamp(total,-100,100),1),"coverage":1.0,"factors":factors,
         "status":"관측 완료 · 실험적 점수",
         "sample_count":len(ticks),"btc_7d_pct":round(btc7,2),
-        "btc_vol20_pct":round(vol,2)}
+        "btc_vol20_pct":round(vol,2), "btc_rsi14":round(rsi14,2)}
 
 
 def holding_returns(records):
