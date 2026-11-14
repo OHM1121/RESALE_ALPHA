@@ -222,15 +222,28 @@ def _rollup_one(root,market,strategy,row,conn,events,candles_cache,inds_cache,
         if entry_ts<=when<=bound:
             hold_samples.append(journal._json_obj(indicator["features_json"]))
     interval_bars=[r for r in candles if entry_ts<=r["bar_ts"]+BAR_SECONDS[frame]<=bound]
-    if interval_bars:
-        # Aggregate genuine OHLCV observations; no interpolation over missing
-        # exchange sessions.
-        vals=[r["volume"] for r in interval_bars if r["volume"] is not None]
-        if vals:hold_samples.append({"volume":sum(vals)/len(vals)})
+    bar_volumes=[r["volume"] for r in interval_bars if r["volume"] is not None]
     for position in state_rows:
         features=journal._json_obj(position["extra_json"])
         if features:hold_samples.append(features)
+    # Position-bound factor observations include spread, depth, market score,
+    # technical snapshots and other real-time indicators not in public candles.
+    live_events=[dict(x) for x in conn.execute("""
+        SELECT observed_minute,features_json,market_score
+        FROM position_factor_events_v042 WHERE strategy=? AND position_key=?
+        AND observed_minute BETWEEN ? AND ? ORDER BY observed_minute""",
+        (strategy,key,entry_ts,bound))]
+    for fact in live_events:
+        values=journal._json_obj(fact.get("features_json"))
+        if fact["market_score"] is not None:
+            values["market_score"]=fact["market_score"]
+        if values:hold_samples.append(values)
     averages,feature_counts=_rollup(hold_samples)
+    # Average volume is a genuine per-bar mean, not an average of a mean
+    # with event-side tick-volume observations.
+    if bar_volumes:
+        averages["volume"]=round(sum(bar_volumes)/len(bar_volumes),6)
+        feature_counts["volume"]=len(bar_volumes)
     market_entry=_market_at(events,entry_ts,market)
     market_exit=_market_at(events,exit_ts,market)
     market_avg,market_covered_seconds,market_points=_market_average(
@@ -251,6 +264,8 @@ def _rollup_one(root,market,strategy,row,conn,events,candles_cache,inds_cache,
         "entry_bar_count":entry_bars,"exit_bar_count":exit_bars,
         "bar_observations":len(interval_bars),
         "indicator_observations":len(hold_samples),
+        "position_factor_events":len(live_events),
+        "volume_observations":len(bar_volumes),
         "start_price":entry_price,
         "duration_seconds":max(0,bound-entry_ts),
         "state":state,"closed":closed,"entry_ts":entry_ts,"exit_ts":exit_ts,
