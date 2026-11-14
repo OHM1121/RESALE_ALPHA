@@ -11,6 +11,31 @@ final class ResearchBandSelection {
         return candidate.equals(selected)&&ResearchScoreGrid.band(score).equals(selectedBand);
     }
 
+    /** Exact heatmap column, not merely the Y-position of its score row. */
+    static String tapSide(float x,float width,float density){
+        if(!Float.isFinite(x)||!Float.isFinite(width)||
+           !Float.isFinite(density)||density<=0||width<190*density)return null;
+        float pad=10*density,scoreRight=pad+66*density,gap=9*density;
+        float column=(width-scoreRight-pad-gap*2)/2f;
+        float actualLeft=scoreRight+gap,virtualLeft=actualLeft+column+gap;
+        if(x>=actualLeft&&x<=actualLeft+column)return "actual";
+        if(x>=virtualLeft&&x<=virtualLeft+column)return "virtual";
+        return null;
+    }
+
+    static boolean includeInPopup(boolean bought,boolean entryObserved,String side){
+        return "actual".equals(side)?bought:
+            "virtual".equals(side)&&!bought&&entryObserved;
+    }
+
+    /** Unknown/missing evidence must never be mislabeled as a failure. */
+    static String goalSymbol(String outcome,boolean verified){
+        if(!verified)return "—";
+        if("HIT".equalsIgnoreCase(outcome))return "O";
+        if("MISS".equalsIgnoreCase(outcome))return "X";
+        return "—";
+    }
+
     /** Mirror ResearchScoreMatrixView.onDraw row coordinates exactly. */
     static String bandAtY(float y,float viewHeight,float density,int rowCount){
         if(!Float.isFinite(y)||!Float.isFinite(viewHeight)||!Float.isFinite(density)||
