@@ -462,7 +462,8 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
                      "closed_roi":result,"open_roi":open_roi,
                      "state":state,"at":entry or (match["signal_ts"] if match else None),
                      "hold_market_avg":hold_avg,"hold_market_n":hold_n,
-                     "exit_reason":exit_reason})
+                     "exit_reason":exit_reason,
+                     "signal_ts":match["signal_ts"] if match else None})
     # If a source DB has not arrived on the phone but position snapshots were
     # captured previously, still count open holdings without fabricating P&L.
     # Never count the same original DB position twice when its snapshot is also
@@ -602,12 +603,15 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     trades=_build_trades(raw,ledger,signals,archive,market,strategy,now,events)
     # Per-actual-position internal data: entry/exit/holding averages and risk
     # trajectory. Persist to scope-specific AI SQLite, not the visible UI.
-    from ai_trade_lifecycle_v042 import rebuild as rebuild_lifecycle
+    from ai_trade_lifecycle_v042 import (
+        rebuild as rebuild_lifecycle,
+        merge_original_signal_features)
     from ai_pattern_diagnosis_v042 import diagnose
     all_positions=raw.get("positions",[])+[
         p for p in ledger.get("positions",[]) if isinstance(p,dict)]
     lifecycle=rebuild_lifecycle(root,market,strategy,all_positions,now,
                                raw.get("executions",[]))
+    lifecycle=merge_original_signal_features(root,market,strategy,lifecycle,trades)
     available=["gmo"] if strategy=="gmo" else (["day"] if strategy=="close" else list(FRAMES))
     frames=[diagnose(
                 attach_market_band_research(
