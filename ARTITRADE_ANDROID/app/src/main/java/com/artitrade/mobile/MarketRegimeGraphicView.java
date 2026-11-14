@@ -39,26 +39,39 @@ public final class MarketRegimeGraphicView extends View {
         final float top=dp(47),height=dp(22);
         paint.setColor(Color.rgb(37,42,59));
         c.drawRoundRect(new RectF(left,top,right,top+height),dp(9),dp(9),paint);
-        for(int tick:new int[]{50,60,70,80,90}){
-            float tx=left+w*tick/100f;
-            paint.setColor(Color.rgb(67,72,91));
-            c.drawRect(tx-dp(.5f),top,tx+dp(.5f),top+height,paint);
+        // Signed EXE scale: center is 0, left is -100, right is +100.
+        for(int tick:new int[]{-50,0,50}){
+            float tx=left+w*(float)SignedMarketScore.position(tick);
+            paint.setColor(tick==0?Color.rgb(150,159,182):Color.rgb(67,72,91));
+            c.drawRect(tx-dp(tick==0?1f:.5f),top,
+                tx+dp(tick==0?1f:.5f),top+height,paint);
         }
-        text(c,"시장 점수",12,left,dp(23),Color.rgb(177,202,230),false);
-        if(Double.isFinite(score)&&score>=0&&score<=100){
-            int color=score<=50?Color.rgb(248,116,127):
-                score<=70?Color.rgb(236,193,102):Color.rgb(93,218,170);
+        text(c,"시장 점수 (-100 ~ +100)",12,left,dp(23),
+            Color.rgb(177,202,230),false);
+        if(SignedMarketScore.isValid(score)){
+            int color=score<0?Color.rgb(248,116,127):
+                score>0?Color.rgb(93,218,170):Color.rgb(236,193,102);
+            float center=left+w*.5f;
+            float endpoint=left+w*(float)SignedMarketScore.position(score);
             paint.setColor(color);
-            c.drawRoundRect(new RectF(left,top,left+w*(float)(score/100.0),top+height),
-                dp(9),dp(9),paint);
-            text(c,String.format(java.util.Locale.KOREA,"%.1f / 100",score),
-                18,right-dp(112),dp(26),color,true);
+            if(score==0){
+                c.drawRect(center-dp(2),top,center+dp(2),top+height,paint);
+            }else{
+                c.drawRoundRect(new RectF(Math.min(center,endpoint),top,
+                    Math.max(center,endpoint),top+height),dp(6),dp(6),paint);
+            }
+            text(c,String.format(java.util.Locale.KOREA,"%+.1f / ±100",score),
+                17,right-dp(125),dp(26),color,true);
         }else{
-            text(c,"자료 미수신",14,right-dp(96),dp(26),Color.rgb(248,180,99),false);
+            text(c,"자료 미수신",14,right-dp(96),dp(26),
+                Color.rgb(248,180,99),false);
         }
-        text(c,"0",10,left,top+height+dp(18),Color.rgb(133,151,174),false);
-        text(c,"50",10,left+w*.50f-dp(7),top+height+dp(18),Color.rgb(133,151,174),false);
-        text(c,"100",10,right-dp(19),top+height+dp(18),Color.rgb(133,151,174),false);
+        text(c,"-100",10,left,top+height+dp(18),
+            Color.rgb(133,151,174),false);
+        text(c,"0",10,left+w*.5f-dp(3),top+height+dp(18),
+            Color.rgb(133,151,174),false);
+        text(c,"+100",10,right-dp(23),top+height+dp(18),
+            Color.rgb(133,151,174),false);
         paint.setColor(Color.rgb(57,63,85));
         c.drawRect(left,top+height+dp(26),right,top+height+dp(27),paint);
         String movement=Double.isFinite(delta)?
