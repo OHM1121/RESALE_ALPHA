@@ -35,6 +35,10 @@ public final class TradeExplanationTest {
         eq("고점에서 내려와 추적매도",
             TradeExplanation.shortReason("TRAIL_EXIT","매도"));
 
+        eq("Upbit 공개 호가 기반 하단 지정가 가상체결",
+            TradeExplanation.shortReason("Upbit 공개 호가 기반 하단 지정가 가상체결","매수"));
+        eq("AT DIVERSE 1.1 순수 점수 | 50만원 상한 | 호가 기반 가상체결",
+            TradeExplanation.shortReason("AT DIVERSE 1.1 순수 점수 | 50만원 상한 | 호가 기반 가상체결","매수"));
         eq("수동 매도",TradeExplanation.shortReason("MANUAL_SELL","매도"));
         eq("주문호가 부족 · 체결 대기",TradeExplanation.shortReason("NO_BID","매수"));
         eq("수급매매 점수 조건 충족",TradeExplanation.shortReason("GMO_SCORE","매수"));
