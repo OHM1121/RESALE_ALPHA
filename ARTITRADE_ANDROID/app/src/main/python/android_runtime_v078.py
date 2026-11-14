@@ -306,11 +306,13 @@ def _stock_at_research(root):
     candidates=_core._db_rows(db, """SELECT signal_id,tf,code,name,signal_ts AS at,ref_ts,
         diverse_11_score AS score,limit_price,first_target FROM candidate_snapshots
         ORDER BY signal_id DESC LIMIT 3000""")
-    positions=_core._db_rows(db,"SELECT tf,code,ref_ts,status,peak,entry_ts,first_sold FROM positions")
+    positions=_core._db_rows(db,"SELECT * FROM positions")
+    first_target_sells=_research_first_target_fills(db)
     shadows={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
         "SELECT signal_id,state,entry_ts,entry_price,peak,realized_net_krw,sold_at FROM stock_shadow_trials")}
-    target_fills={int(x.get('signal_id') or 0) for x in _core._db_rows(db,
-        "SELECT DISTINCT signal_id FROM stock_shadow_fills WHERE reason='FIRST_TARGET_40PCT'")}
+    shadow_target_sales={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
+        "SELECT * FROM stock_shadow_fills WHERE reason='FIRST_TARGET_40PCT'")}
+    target_fills=set(shadow_target_sales)
     actual={(str(x.get('tf')),str(x.get('code')),str(x.get('ref_ts'))):x for x in positions}
     decisions={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
         "SELECT signal_id,decision_at_evaluation,reason_at_evaluation,origin_10_rank,"
@@ -358,13 +360,29 @@ def _stock_at_research(root):
             'origin_rank':decision.get('origin_10_rank'),
             'diverse_rank':decision.get('diverse_11_rank'),
             'reason':decision.get('reason_at_evaluation') or '선정 근거 원본 별도 저장'})
+        item=items[-1]
+        if bought:
+            item.update({'buy_price':p.get('entry_price'),'buy_at':p.get('entry_ts'),
+                         'buy_evidence':'ORIGINAL_POSITION'})
+            if outcome=='HIT':
+                item.update(first_target_sells.get(int(p.get('id') or 0),{}))
+        elif sh and sh.get('entry_ts'):
+            item.update({'virtual_buy_price':sh.get('entry_price'),
+                         'virtual_buy_at':sh.get('entry_ts')})
+            if outcome=='HIT':
+                virtual=shadow_target_sales.get(int(x.get('signal_id') or 0),{})
+                if virtual:
+                    item.update({'virtual_sell_price':virtual.get('price'),
+                                 'virtual_sell_at':virtual.get('minute_ts'),
+                                 'virtual_sell_evidence':'STOCK_SHADOW_1M_FILL'})
     return _research_record(items,candidates)
 
 
 def _stock_ma_research(root):
     db=Path(root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
     candidates=_core._db_rows(db,"SELECT id,tf,code,name,ref_ts,created_at AS at,score,status,target,features FROM candidates ORDER BY id DESC LIMIT 3000")
-    positions=_core._db_rows(db,"SELECT id,candidate_id,tf,code,name,status,first_sold,peak,target,entry_at FROM positions")
+    positions=_core._db_rows(db,"SELECT * FROM positions")
+    first_target_sells=_research_first_target_fills(db)
     pos={int(x.get('candidate_id') or 0):x for x in positions if x.get('candidate_id') is not None}
     items=[]
     for x in candidates:
@@ -382,6 +400,11 @@ def _stock_ma_research(root):
             'candidate_id':x.get('id'),'decision':x.get('status'),
              'features':x.get('features'),
             'reason':x.get('status') or '판단 근거 별도 저장'})
+        if bought:
+            items[-1].update({'buy_price':p.get('entry'),
+                'buy_at':p.get('entry_at'),'buy_evidence':'ORIGINAL_MA_POSITION'})
+            if outcome=='HIT':
+                items[-1].update(first_target_sells.get(int(p.get('id') or 0),{}))
     # The original EXE records *every* examined reference in 'research',
     # including rejected signals which never enter the candidates table.
     # Treat the independent research row as evidence, not as a paper fill.
@@ -409,6 +432,7 @@ def _coin_research(root,which):
     db=Path(root)/'coin'/which/'upbit_paper.sqlite3'
     candidates=_core._db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,created_at AS at,score,limit_price,target,reason FROM candidates ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions")
+    first_target_sells=_research_first_target_fills(db)
     actual={(str(x.get('tf')),str(x.get('market')),str(x.get('ref_at'))):x for x in positions if str(x.get('status') or '')!='RESET_B_V1'}
     shadows={int(x.get('candidate_id') or 0):x for x in _core._db_rows(db,
         "SELECT candidate_id,state,entry_at,entry_price,peak,realized_net,sell_at FROM coin_shadow_trials")}
@@ -416,10 +440,13 @@ def _coin_research(root,which):
     for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY rowid DESC"):
         decisions.setdefault(int(decision.get('candidate_id') or 0),decision)
     target_fills=set()
-    for x in _core._db_rows(db,"SELECT candidate_id,side,reason FROM coin_shadow_fills WHERE side='SELL'"):
+    shadow_target_sales={}
+    for x in _core._db_rows(db,"SELECT * FROM coin_shadow_fills WHERE side='SELL'"):
         reason=str(x.get('reason') or '').upper()
         if 'FIRST_TARGET' in reason or '1차 목표' in reason or 'FIRST' in reason and 'TARGET' in reason:
-            target_fills.add(int(x.get('candidate_id') or 0))
+            cid=int(x.get('candidate_id') or 0)
+            target_fills.add(cid)
+            shadow_target_sales.setdefault(cid,x)
     items=[]
     for x in candidates:
         key=(str(x.get('tf')),str(x.get('market')),str(x.get('ref_ts')))
@@ -447,6 +474,21 @@ def _coin_research(root,which):
              'decision_at':selection.get('at'),
              'limit_price':x.get('limit_price'),'target':x.get('target'),
              'reason':selection.get('reason') or x.get('reason')})
+        item=items[-1]
+        if bought:
+            item.update({'buy_price':p.get('entry'),'buy_at':p.get('entry_at'),
+                         'buy_evidence':'ORIGINAL_COIN_POSITION'})
+            if outcome=='HIT':
+                item.update(first_target_sells.get(int(p.get('id') or 0),{}))
+        elif sh and sh.get('entry_at'):
+            item.update({'virtual_buy_price':sh.get('entry_price'),
+                         'virtual_buy_at':sh.get('entry_at')})
+            if outcome=='HIT':
+                sell=shadow_target_sales.get(int(x.get('id') or 0),{})
+                if sell:
+                    item.update({'virtual_sell_price':sell.get('price'),
+                                 'virtual_sell_at':sell.get('at'),
+                                 'virtual_sell_evidence':'COIN_SHADOW_BOOK_FILL'})
     return _research_record(items,candidates)
 
 
@@ -486,6 +528,7 @@ def _close_research(root):
     signals=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,entry_result,feature_json,reason_json FROM signals ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     by_signal={int(x.get('signal_id') or 0):x for x in positions if x.get('signal_id') is not None}
+    first_target_sells=_research_first_target_fills(db)
     # SELECT * keeps pre-upgrade EXE followup files readable: mfe_pct and
     # mae_pct were added later, and their absence is not a missing ledger.
     followups=_core._db_rows(db,"SELECT * FROM research_followups ORDER BY id DESC LIMIT 16000")
@@ -515,6 +558,11 @@ def _close_research(root):
              'observed_price':follow.get('observed_price'),
              'observed_at':follow.get('observed_ts'),
              'reason':x.get('reason_json') or x.get('entry_result') or x.get('decision')})
+        if bought:
+            items[-1].update({'buy_price':p.get('entry_price'),
+                'buy_at':p.get('entry_ts'),'buy_evidence':'ORIGINAL_CLOSE_POSITION'})
+            if outcome=='HIT':
+                items[-1].update(first_target_sells.get(int(p.get('id') or 0),{}))
     score_rows=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,near_signal,feature_json,reason_json FROM research_candidates ORDER BY id DESC LIMIT 3000")
     # The EXE separately saves rejected and near-qualifying CLOSE candidates.
     # Their forward prices are research evidence, never simulated fills.
