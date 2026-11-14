@@ -3256,41 +3256,73 @@ public final class UnifiedVisualActivity extends Activity {
                    r.optString("research_5pct_status",""));
     }
 
-    private View researchBandPopupRow(HistoryRow item,int position){
+    private Map<String,String> researchPopupValues(HistoryRow item){
         JSONObject r=item.row;
         boolean bought=bool(r,"bought","actually_bought","filled");
-        boolean virtual=bool(r,"entry_observed","virtual_entered","shadow_entered");
+        boolean entered=bool(r,"entry_observed","virtual_entered","shadow_entered");
+        String frame=item.frame.isEmpty()?item.source:item.frame;
+        String identity=nameOf(r)+"\n"+HistorySelection.strategyTag(item.source,frame)
+            +" · "+ResearchBandSelection.eventType(bought,entered);
+        String day="gmo".equals(item.source)?"D일 ":"조건충족일 ";
+        Object signal="gmo".equals(item.source)?
+            firstValue(r,"gmo_event_date","event_date","at"):
+            firstValue(r,"at","signal_ts","created_at","ref_ts");
+        String[] buy=researchBuyCell(item),sell=researchSellCell(item);
+        String outcome=ResearchBandSelection.goalSymbol(
+            r.optString("outcome",""),researchGoalVerified(item));
+        Map<String,String> values=new HashMap<>();
+        values.put("identity",identity);
+        values.put("when",day+researchMoment(signal));
+        values.put("buy",buy[0]+"\n"+buy[1]);
+        values.put("sell",sell[0]+"\n"+sell[1]);
+        values.put("goal",outcome);
+        return values;
+    }
+
+    private String popupColumnTitle(String key){
+        switch(key){
+            case "identity":return "종목명 / 전략";
+            case "when":return "조건충족일 (D일)";
+            case "buy":return "매수가 (일자)";
+            case "sell":return "매도가 / 목표관측 (일자)";
+            case "goal":return "목표달성 O/X";
+            default:return key;
+        }
+    }
+    private float popupColumnWidth(String key){
+        switch(key){
+            case "identity":return 2.05f;
+            case "when":return 1.65f;
+            case "buy":return 2.15f;
+            case "sell":return 2.40f;
+            case "goal":return 0.90f;
+            default:return 1f;
+        }
+    }
+
+    private View researchBandPopupRow(HistoryRow item,int position,ColumnQueryV036 columns){
         LinearLayout row=new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackground(bg(position%2==0?PremiumUi.SURFACE:PremiumUi.SURFACE_HIGH,0,5));
-        String frame=item.frame.isEmpty()?item.source:item.frame;
-        String identity=nameOf(r)+"\n"+HistorySelection.strategyTag(item.source,frame)+
-            " · "+ResearchBandSelection.eventType(bought,virtual);
-        String dayLabel="gmo".equals(item.source)?"D일 ":"신호일 ";
-        Object signal="gmo".equals(item.source)
-            ?firstValue(r,"gmo_event_date","event_date","at")
-            :firstValue(r,"at","signal_ts","created_at","ref_ts");
-        String[] buy=researchBuyCell(item);
-        String[] sell=researchSellCell(item);
-        researchPopupCell(row,identity,2.05f,false,PremiumUi.TEXT);
-        researchPopupCell(row,dayLabel+researchMoment(signal),1.65f,false,Color.rgb(172,195,220));
-        researchPopupCell(row,buy[0]+"\n"+buy[1],2.15f,false,Color.rgb(145,208,247));
-        researchPopupCell(row,sell[0]+"\n"+sell[1],2.40f,false,
-            sell[0].contains("미체결")||sell[0].contains("미기록")?
-                Color.rgb(245,189,111):Color.rgb(92,224,176));
-        String symbol=ResearchBandSelection.goalSymbol(
-            r.optString("outcome",""),researchGoalVerified(item));
-        researchPopupCell(row,symbol,0.85f,false,
-            "O".equals(symbol)?Color.rgb(83,221,173):
-            "X".equals(symbol)?Color.rgb(255,124,147):PremiumUi.MUTED);
+        row.setBackground(bg(position%2==0?
+            PremiumUi.SURFACE:PremiumUi.SURFACE_HIGH,0,5));
+        Map<String,String> values=researchPopupValues(item);
+        for(String key:columns.visibleColumns()){
+            String value=values.getOrDefault(key,"미기록");
+            int tint="goal".equals(key)?
+                "O".equals(value)?Color.rgb(76,228,180):
+                "X".equals(value)?Color.rgb(251,121,145):PremiumUi.MUTED:
+                "buy".equals(key)?Color.rgb(150,207,247):
+                "sell".equals(key)?Color.rgb(162,214,186):PremiumUi.TEXT;
+            researchPopupCell(row,value,popupColumnWidth(key),false,tint);
+        }
         row.setMinimumHeight(dp(83));
         return row;
     }
 
     private void showResearchBandPopup(String frame,String band,String entrySide){
         java.util.List<HistoryRow> all=selectedHistory("research");
-        java.util.ArrayList<HistoryRow> selected=new java.util.ArrayList<>();
+        java.util.ArrayList<HistoryRow> sourceRows=new java.util.ArrayList<>();
         for(HistoryRow item:all){
             JSONObject r=item.row;
             if(r==null)continue;
@@ -3298,62 +3330,77 @@ public final class UnifiedVisualActivity extends Activity {
             if(candidateFrame.isEmpty())candidateFrame=item.source;
             double score=num(r,"score","gmo_score_at_signal",
                 "original_score","signal_score");
-            boolean actuallyBought=bool(r,"bought","actually_bought","filled");
-            boolean virtualEntered=bool(r,"entry_observed","virtual_entered","shadow_entered");
+            boolean bought=bool(r,"bought","actually_bought","filled");
+            boolean entered=bool(r,"entry_observed","virtual_entered","shadow_entered");
             if(ResearchBandSelection.matches(candidateFrame,score,frame,band)
-                && ResearchBandSelection.includeInPopup(
-                   actuallyBought,virtualEntered,entrySide))
-                selected.add(item);
+                && ResearchBandSelection.includeInPopup(bought,entered,entrySide))
+                sourceRows.add(item);
         }
         String section="gmo".equals(frame)?"수급매매":"close".equals(frame)?
             "종가베팅":tfLabel(frame);
         String bandLabel=ResearchScoreGrid.NO_SCORE.equals(band)?band:band+"점";
+        String entryLabel="actual".equals(entrySide)?"실제 매매":"가상 진입";
+        String id="popup/"+market+"/"+strategy+"/"+frame+"/"+band+"/"+entrySide;
+        ColumnQueryV036 columns=tableQuery(id,"identity","when","buy","sell","goal");
+        final java.util.ArrayList<HistoryRow> shown=new java.util.ArrayList<>();
+
         LinearLayout body=new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setBackgroundColor(PremiumUi.BG);
         body.setPadding(dp(7),dp(2),dp(7),dp(3));
-        String entryLabel="actual".equals(entrySide)?"실제 매매":"가상 진입·관측";
-        TextView note=text(section+" · "+bandLabel+" · "+entryLabel+" "+selected.size()+
-            "건 · 미진입 후보는 제외",13);
+        LinearLayout tools=new LinearLayout(this);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        TextView note=text("",12);
         note.setTextColor(Color.rgb(174,204,232));
-        note.setPadding(dp(6),dp(5),dp(4),dp(6));
-        body.addView(note);
-        LinearLayout header=new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,5));
-        researchPopupCell(header,"종목명 / 전략",2.05f,true,PremiumUi.TEXT);
-        researchPopupCell(header,"조건충족일 (D일)",1.65f,true,PremiumUi.TEXT);
-        researchPopupCell(header,"매수가 (일자)",2.15f,true,PremiumUi.TEXT);
-        researchPopupCell(header,"매도가 / 목표관측 (일자)",2.40f,true,PremiumUi.TEXT);
-        researchPopupCell(header,"목표달성",0.85f,true,PremiumUi.TEXT);
-        body.addView(header,new LinearLayout.LayoutParams(-1,dp(43)));
+        note.setMaxLines(2);
+        tools.addView(note,new LinearLayout.LayoutParams(0,dp(45),1));
+        Button prefs=button("열 · 필터",false,()->{});
+        prefs.setTextSize(12);
+        tools.addView(prefs,new LinearLayout.LayoutParams(dp(90),dp(38)));
+        body.addView(tools,new LinearLayout.LayoutParams(-1,dp(49)));
+
+        LinearLayout headers=new LinearLayout(this);
+        headers.setOrientation(LinearLayout.HORIZONTAL);
+        headers.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,5));
+        body.addView(headers,new LinearLayout.LayoutParams(-1,dp(48)));
+
         android.widget.ListView list=new android.widget.ListView(this);
         list.setDividerHeight(dp(4));
         list.setCacheColorHint(Color.TRANSPARENT);
         list.setSelector(android.R.color.transparent);
-        list.setAdapter(new android.widget.BaseAdapter(){
-            @Override public int getCount(){return selected.size();}
-            @Override public Object getItem(int position){return selected.get(position);}
+        android.widget.BaseAdapter adapter=new android.widget.BaseAdapter(){
+            @Override public int getCount(){return shown.size();}
+            @Override public Object getItem(int position){return shown.get(position);}
             @Override public long getItemId(int position){return position;}
             @Override public View getView(int position,View convertView,
                                           android.view.ViewGroup parent){
-                return researchBandPopupRow(selected.get(position),position);
+                return researchBandPopupRow(shown.get(position),position,columns);
             }
-        });
-        int listHeight=Math.min((int)(getResources().getDisplayMetrics().heightPixels*.57f),
-            dp(90)*Math.max(1,Math.min(selected.size(),8)));
+        };
+        list.setAdapter(adapter);
+        int listHeight=Math.min((int)(getResources().getDisplayMetrics().heightPixels*.55f),
+            dp(91)*Math.max(1,Math.min(sourceRows.size(),8)));
         body.addView(list,new LinearLayout.LayoutParams(-1,listHeight));
-        if(selected.isEmpty()){
-            TextView emptyNote=text("해당 점수구간·"+entryLabel+"에 로드된 종목이 없습니다. "
-                +"원본 전체 기록은 연구이력 ZIP을 확인하십시오.",12);
-            emptyNote.setTextColor(PremiumUi.MUTED);
-            body.addView(emptyNote);
-        }
-        TextView footer=text("원장 매도·PAPER 매도·가상 시세관측은 서로 다른 기록임. "
-            +"미기록은 가격이나 일자를 임의 추정하지 않은 항목임.",11);
+        TextView footer=text("O 확인된 목표 달성 · X 관측기간 종료 후 미달성 · "+
+            "— 판정보류. 고가관측과 실제 매도체결은 별도 근거임.",11);
         footer.setTextColor(Color.rgb(174,179,194));
         footer.setPadding(dp(6),dp(7),dp(5),dp(4));
         body.addView(footer);
+        final Runnable[] redraw=new Runnable[1];
+        redraw[0]=()->{
+            shown.clear();shown.addAll(sourceRows);
+            filterAndSortHistory(shown,columns,this::researchPopupValues);
+            headers.removeAllViews();
+            for(String key:columns.visibleColumns()){
+                tableHeaderCell(headers,popupColumnTitle(key),key,
+                    popupColumnWidth(key),id,columns,redraw[0]);
+            }
+            note.setText(section+" · "+bandLabel+" · "+entryLabel+
+                " "+shown.size()+"/"+sourceRows.size()+"건");
+            adapter.notifyDataSetChanged();
+        };
+        prefs.setOnClickListener(v->tableOptionsDialog(id,columns,redraw[0]));
+        redraw[0].run();
         AlertDialog dialog=new AlertDialog.Builder(this)
             .setTitle(section+" · "+bandLabel+" · "+entryLabel+" 종목")
             .setView(body)
@@ -3362,7 +3409,7 @@ public final class UnifiedVisualActivity extends Activity {
         dialog.show();
         if(dialog.getWindow()!=null)
             dialog.getWindow().setLayout(
-                (int)(getResources().getDisplayMetrics().widthPixels*.93f),-2);
+                (int)(getResources().getDisplayMetrics().widthPixels*.96f),-2);
     }
 
     private void renderResearch(){
