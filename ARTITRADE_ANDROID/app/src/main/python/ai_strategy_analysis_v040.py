@@ -345,7 +345,8 @@ def _frame_summary(frame,signals,trades,archive,events,now,source):
     cause_kind="상관 가설" if best else "진입조건 관측"
     return {
         "frame":frame,"label":label,"status":status,"signals":signal_count,
-        "entries":len(group),"closed":len(completed),"open":len(open_items),
+        "entries":len(group),"closed":len(completed)+len(unknown),
+        "evaluated":len(completed),"open":len(open_items),
         "open_marked":len(open_marked),"closed_missing":len(unknown),
         "avg_realized_pct":round(average,3) if average is not None else None,
         "avg_open_pct":round(avg_open,3) if avg_open is not None else None,
