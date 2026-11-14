@@ -125,6 +125,7 @@ class Coordinator:
         self._virtual={}
         self._last_fetch_error={}
         self._watch_after={}
+        self._position_snapshot_at={}
         self._recover_positions()
 
     def _recover_positions(self):
@@ -207,22 +208,21 @@ class Coordinator:
             self.modes[market]=mode
 
     def _cancel_native_pending(self,market):
-        # FOK new-mode order is not a persistent unfilled broker order.
-        # Existing original pending only expire when original is disabled.
-        if True:
-            parent=_parent(market)
-            for strategy in parent:
-                try:
-                    with self.wallet._connect(market,strategy) as c:
-                        if market=="stock" and strategy=="at":
-                            c.execute("UPDATE v19_orders SET status='MT43_MODE_SWITCH' WHERE status='PENDING'")
-                            c.execute("DELETE FROM pending")
-                        elif market=="stock":
-                            c.execute("UPDATE candidates SET status='MT43_MODE_SWITCH' WHERE status='PENDING'")
-                        else:
-                            c.execute("UPDATE orders SET status='MT43_MODE_SWITCH' WHERE status='PENDING'")
-                except sqlite3.Error as exc:
-                    self._last_fetch_error[market]="PENDING_CANCEL:"+type(exc).__name__
+        """Never claim broker cancellation just because a local row changed.
+
+        The original live broker adapter submits FOK orders, but a timeout or
+        unknown broker status can still be unresolved. Preserve every original
+        order/pending row until broker-side finality is verified. A separate
+        broker reconciliation must explicitly confirm cancellation or fill.
+        """
+        if self.rt.live_enabled(market):
+            self._last_fetch_error[market]="PENDING_BROKER_RECONCILIATION_REQUIRED"
+            self.journal.event("MT43:PENDING_REVIEW:"+market+":"+str(int(time.time())),
+                market,"system","","","UNSAFE","BROKER_ORDER_STATUS_UNCONFIRMED")
+            return
+        # Paper-mode rows may be expired by their original engines. Do not
+        # erase pending rows even in paper mode without the owner's checks.
+        self._last_fetch_error[market]="PENDING_ORIGINAL_ENGINE_RECONCILIATION"
 
     def observe_stock_tick(self,tick):
         if len(tick)<8 or tick[7]!="KRX":return
@@ -387,6 +387,13 @@ class Coordinator:
         for key,rows in histories:
             _,code,frame=key
             if len(rows)<21:continue
+            # Candidate history can remain cached for minutes. Avoid 400
+            # unnecessary file transactions per scheduling cycle.
+            if (self._last_closed.get(key)==max(x["end"] for x in rows)
+                and not any(p.market==market and p.symbol==code and
+                            p.frame==frame and not p.__dict__.get("bar_finalized")
+                            for p in self._positions.values())):
+                continue
             rows=sorted(rows,key=lambda x:x["end"])
             last=self._last_closed.get(key)
             new_rows=rows[-1:] if last is None else [
@@ -483,6 +490,12 @@ class Coordinator:
                 if submit and entry not in self._ordered:
                     due[code].append((frame,rsi,barid,q))
         for code,signals in due.items():
+            # Broker/ledger duplicate checks and a durable filled-stop ban are
+            # mandatory before an entry can consume parent-strategy cash.
+            if self.journal.stop_reentry_blocked(market,code,now):
+                for frame,_,barid,_ in signals:
+                    self._ordered.add((market,code,frame,barid))
+                continue
             chosen=mt.choose_frame([x[0] for x in signals])
             if chosen is None:continue
             frame,rsi,barid,q=next(x for x in signals if x[0]==chosen)
@@ -532,11 +545,21 @@ class Coordinator:
             if result:
                 try:
                     sold,status=self.wallet.sell(p,q["bid"],now,result[0],bid_size=q["bid_size"])
-                    if sold and p.qty<=0:self._positions.pop(key,None)
+                    if sold:
+                        if result[0]=="MT_STOP_9PCT":
+                            p.__dict__["stop_fill_at"]=now.isoformat()
+                            self.journal.save_position(p,p.position_id)
+                        if p.qty<=0:self._positions.pop(key,None)
                 except Exception as exc:
                     self._last_fetch_error[market]="SELL:"+type(exc).__name__
             else:
-                self.journal.save_position(p,p.position_id)
+                # No need to open/write/close SQLite every 450ms while idle.
+                # Retain periodic mark/peak checkpoints for restart safety.
+                now_mono=time.monotonic()
+                last=self._position_snapshot_at.get(key,0)
+                if now_mono-last>=10.0:
+                    self.journal.save_position(p,p.position_id)
+                    self._position_snapshot_at[key]=now_mono
         for key,v in list(self._virtual.items()):
             if v.market!=market:continue
             q=self._quote(market,v.symbol)
