@@ -509,6 +509,7 @@ def _close_full(self):
         ORDER BY s.id DESC LIMIT 500""",(day,))
     pos_by_id={str(p.get('id')):p for p in all_positions}
     for e in executions:
+        _attach_policy_symbol(e,pos_by_id.get(str(e.get('position_id'))))
         e['at']=e.get('ts');e['net_profit']=e.get('net_realized');e['strategy']='CLOSE'
         _attach_fill_cost(e,pos_by_id.get(str(e.get('position_id'))))
     realized=sum(float(x.get('realized') or 0) for x in wallets)
@@ -623,6 +624,7 @@ def _stock_at_v19_full(self, base):
               EXISTS(SELECT 1 FROM v19_legacy_members l WHERE l.position_id=e.position_id)
               ORDER BY e.id DESC LIMIT 10000""").fetchall()]
         for e in executions:
+            _attach_policy_symbol(e,posmap.get(int(e.get('position_id') or 0),{}))
             e['at']=e.get('ts');e['strategy']=e.get('tf') or 'AT'
             net=_sell_net_stock(e,posmap.get(int(e.get('position_id') or 0),{}))
             if net is not None:e['net_profit']=net
@@ -748,6 +750,7 @@ def _stock_ma_full(self):
         # No 'reason' column exists in the frozen MA candidates schema;
         # keep the original Korean quote/expiry diagnostic rather than invent one.
     for x in full_exec:
+        _attach_policy_symbol(x,full_by_id.get(str(x.get('position_id'))))
         x['at']=x.get('ts');x['strategy']='MA'
         _attach_fill_cost(x,full_by_id.get(str(x.get('position_id'))))
     realized=sum(float((perf.get(tf) or {}).get('realized_won') or 0) for tf in _FRAMES)
@@ -774,6 +777,26 @@ def _stock_ma_full(self):
                 'pending_count':len(snap.get('pending') or [])})
     out['win_rate']=_closed_position_win_rate(all_positions,full_exec)
     return out
+
+def _attach_policy_symbol(execution,position=None):
+    """Display source-original symbol on fills which stored only position_id.
+
+    No matching entry? Leave it unlinked rather than inventing a symbol.
+    """
+    if not isinstance(position,dict):
+        return execution
+    for field,candidates in (('code',('code','market')),
+                             ('name',('name',)),
+                             ('tf',('tf',))):
+        if execution.get(field) not in (None,''):
+            continue
+        for key in candidates:
+            value=position.get(key)
+            if value not in (None,''):
+                execution[field]=value
+                break
+    return execution
+
 
 def _attach_fill_cost(execution,position=None):
     """Show recorded EXE position cost beside its paper/real SELL fill.
@@ -920,6 +943,7 @@ def _coin_full(ledger):
         x['strategy']=x.get('tf')
     all_by_id={str(x.get('id')):x for x in all_positions}
     for e in executions:
+        _attach_policy_symbol(e,all_by_id.get(str(e.get('position_id'))))
         e['net_profit']=e.get('net_pnl');e['strategy']=e.get('tf')
         _attach_fill_cost(e,all_by_id.get(str(e.get('position_id'))))
     realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
