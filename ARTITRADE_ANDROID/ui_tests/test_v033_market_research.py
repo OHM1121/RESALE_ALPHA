@@ -23,8 +23,8 @@ class MarketRegimeTests(unittest.TestCase):
         old={'score':55,'asof':1000,'status':'정상','factors':[]}
         result=m.display_snapshot('stock',old,now=1000+3700)
         self.assertTrue(result['stale'])
-        self.assertEqual(result['score'],55)
-        self.assertIn('오래됨',result['status'])
+        self.assertIsNone(result['score'])
+        self.assertIn('거래 일정 확인 필요',result['status'])
         failure=m.display_snapshot('coin',old,now=1005,poll_error='업비트 오류')
         self.assertFalse(failure['stale'])
         self.assertIn('업비트 오류',failure['status'])
@@ -44,7 +44,7 @@ class MarketRegimeTests(unittest.TestCase):
             db.observe_positions('stock', {'stock/at/5m/1':4.0},100180)
             snap=db.snapshot('stock')
             self.assertAlmostEqual(snap['active_avg_change_pp'],2.0)
-            self.assertTrue(any(row['band']=='40~59' and row['count']==1
+            self.assertTrue(any(row['band']=='40~59' and row['position_segments']==2
                             for row in snap['bands']))
             db.close()
 
@@ -56,8 +56,8 @@ class MarketRegimeTests(unittest.TestCase):
             db.observe_positions('coin', {'coin/general/5m/BTC':2,'coin/ma/5m/ETH':30},100120)
             s=db.snapshot('coin')
             self.assertEqual(s['active_band'],'40~59')
-            self.assertAlmostEqual(s['active_avg_change_pp'],6.0)
-            self.assertEqual(s['active_count'],1)
+            self.assertAlmostEqual(s['active_avg_change_pp'],3.0)
+            self.assertEqual(s['active_count'],2)
             db.close()
 
     def test_market_score_join_rejects_future_and_old(self):
