@@ -421,9 +421,8 @@ public final class UnifiedVisualActivity extends Activity {
         preloadScreenReady=true;
         if(startupProgress!=null)startupProgress.setProgress(100);
         startupProgress=null;startupStage=null;
-        showShell();
+        showShell(); // showShell already renders the prepared snapshot once.
         updateHeader();
-        render();
         if(!engineReady && statusText!=null)
             statusText.setText("원장 초기화 대기 · 백그라운드 연결 확인");
         main.postDelayed(this::autoProbeBroker,900);
@@ -1062,8 +1061,11 @@ public final class UnifiedVisualActivity extends Activity {
             // hundreds of views when the ledger version has not changed.
             main.post(()->{
                 if(!preloadScreenReady){
+                    JSONObject engine=packet.optJSONObject("strategy_runtime");
                     boolean engineReady=packet.optLong("local_records_at",0L)>0 &&
-                        uiSnapshot.totals.size()>=6;
+                        uiSnapshot.totals.size()>=6 && engine!=null &&
+                        (engine.optJSONObject("stock")!=null ||
+                         engine.optJSONObject("coin")!=null);
                     boolean timedOut=android.os.SystemClock.elapsedRealtime()-
                         preloadStartedAt>=16000L;
                     if(engineReady||timedOut){
