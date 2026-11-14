@@ -718,4 +718,11 @@ def offer_records(root,records):
             worker=_MarketWorker(path)
             _WORKERS[path]=worker
     worker.offer(records)
+    # Independent, research-only, append-only evidence collection.
+    # If archival storage is full/unavailable, market scores still render.
+    try:
+        from ai_research_v040 import offer_records as offer_ai_records
+        offer_ai_records(root,records)
+    except Exception:
+        pass
     return worker.snapshot()
