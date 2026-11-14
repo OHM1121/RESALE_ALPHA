@@ -139,6 +139,51 @@ def attach_buy_evidence(positions,executions,candidates=(),*,market,strategy,
     return result
 
 
+def read_open_signal_evidence(path,market,strategy):
+    """Lookup each still-open BUY signal with a fixed read-only indexed JOIN.
+
+    The app previously fetched the newest 12,000 irrelevant candidate rows
+    every hub refresh, potentially hiding an old open position's original
+    reason and causing UI lag. Every query is anchored to a held position.
+    """
+    queries={
+        ("stock","at"):"""SELECT s.id,s.tf,s.code,s.ref_ts,s.features,
+                                   s.score,s.decision
+                 FROM positions AS p
+                 JOIN v19_members AS m ON m.position_id=p.id
+                 JOIN signals AS s ON s.id=m.signal_id
+                 WHERE p.status='OPEN' ORDER BY p.id DESC""",
+        ("stock","ma"):"""SELECT c.id,c.tf,c.code,c.ref_ts,c.features,c.score
+                 FROM positions AS p
+                 JOIN candidates AS c ON c.id=p.candidate_id
+                 WHERE p.status='OPEN' ORDER BY p.id DESC""",
+        ("stock","close"):"""SELECT s.id,s.strategy,s.code,s.ts AS ref_ts,
+                                   s.reason_json AS reason,
+                                   s.feature_json AS features
+                 FROM positions AS p
+                 JOIN signals AS s ON s.id=p.signal_id
+                 WHERE p.status='OPEN' ORDER BY p.id DESC""",
+        ("coin","base"):"""SELECT c.id,c.tf,c.market,c.ref_at,c.reason,c.score,c.features
+                 FROM positions AS p
+                 JOIN candidates AS c ON c.tf=p.tf AND c.market=p.market
+                    AND c.ref_at=p.ref_at
+                 WHERE p.status='OPEN' ORDER BY p.id DESC""",
+        ("coin","ma"):"""SELECT c.id,c.tf,c.market,c.ref_at,c.reason,c.score,c.features
+                 FROM positions AS p
+                 JOIN candidates AS c ON c.tf=p.tf AND c.market=p.market
+                    AND c.ref_at=p.ref_at
+                 WHERE p.status='OPEN' ORDER BY p.id DESC"""
+    }
+    query=queries.get((market,strategy))
+    if query is None:raise ValueError("Unknown strategy evidence source")
+    db=Path(path)
+    if not db.is_file():return []
+    with sqlite3.connect(db.resolve().as_uri()+"?mode=ro",uri=True,timeout=4) as c:
+        c.row_factory=sqlite3.Row
+        c.execute("PRAGMA query_only=ON")
+        return [dict(r) for r in c.execute(query)]
+
+
 def read_at_open_buy_fills(path):
     """Read only BUY executions attached to currently OPEN original AT positions.
 
