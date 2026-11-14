@@ -139,6 +139,46 @@ def attach_buy_evidence(positions,executions,candidates=(),*,market,strategy,
     return result
 
 
+def attach_gmo_buy_evidence(positions,executions,entry_dates):
+    """GMO phone holdings use shared id=-1. Match strictly code + BUY day.
+
+    No other symbol's or later re-buy's paper fills may be presented as this
+    position's purchase decision. Original GMO JSON buy_fills are durable.
+    """
+    out=[]
+    for position in positions or ():
+        if not isinstance(position,dict):continue
+        code=str(position.get("code") or "").strip()
+        day=str((entry_dates or {}).get(code) or "")[:10]
+        if len(day)==8 and day.isdigit():
+            day=day[:4]+"-"+day[4:6]+"-"+day[6:8]
+        if not code or len(day)!=10 or day[4]!='-':
+            continue
+        buys=[]
+        for e in executions or ():
+            if not isinstance(e,dict):continue
+            ts=_timestamp(e)
+            if (str(e.get("code") or "")!=code or
+                str(e.get("side") or "").upper()!="BUY" or
+                ts[:10]!=day or not _value(e,"reason","purpose")):
+                continue
+            buys.append(e)
+        if not buys:continue
+        first=min(buys,key=lambda e:_timestamp(e))
+        when=_timestamp(first)
+        reason=str(_value(first,"reason","purpose"))
+        if not position.get("buy_reason"):
+            position["buy_reason"]=reason
+        position["buy_reason_source"]="ORIGINAL_GMO_PHONE_BUY_FILL"
+        position["buy_reason_at"]=when
+        position.setdefault("entry_at",when)
+        out.append({"market":"stock","strategy":"gmo",
+                    "position_id":code+":"+day,"code":code,"tf":"gmo",
+                    "buy_at":when,"buy_reason":reason,"buy_signal_reason":"",
+                    "source":"ORIGINAL_GMO_PHONE_BUY_FILL"})
+    return out
+
+
 def store_buy_evidence(root,events):
     """Append-only phone journal; never write PC/EXE or trading-state databases."""
     valid=[x for x in events or [] if isinstance(x,dict) and
