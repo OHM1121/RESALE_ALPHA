@@ -241,7 +241,17 @@ def _research_first_target_fills(db):
     """
     fills={}
     try:
-        records=_core._db_rows(db, "SELECT * FROM executions ORDER BY id DESC LIMIT 30000")
+        # The original UI window used the latest 30,000 *all* fills, which
+        # silently discarded older first-target SELL evidence and caused
+        # '목표달성, 매도가 미기록' despite verified EXE fills existing.
+        records=_core._db_rows(db, """SELECT * FROM executions
+            WHERE UPPER(COALESCE(side,'')) IN ('SELL','S','매도')
+              AND (UPPER(COALESCE(reason,'')) LIKE '%FIRST_TARGET%'
+                   OR UPPER(COALESCE(reason,'')) LIKE '%FIRST_TP%'
+                   OR UPPER(COALESCE(reason,'')) LIKE '%TP_FIRST%'
+                   OR UPPER(COALESCE(reason,'')) LIKE '%TP1%'
+                   OR reason LIKE '%1차 목표%' OR reason LIKE '%1차_목표%')
+            ORDER BY id DESC""")
     except Exception:
         raise
     for row in reversed(records):
