@@ -1465,6 +1465,11 @@ def _hub_records_v078(self):
                 self._err('gmo_original_record',gmo_exc)
                 restored=None
             if restored is not None:
+                try:
+                    from market_research_v033 import offer_records
+                    out['market_research']=offer_records(self.root,out)
+                except Exception as score_error:
+                    self._err('market_research_v033',score_error)
                 return json.dumps(out,ensure_ascii=False,default=str)
             # Do not report an empty GMO screen as a successful PC ledger load.
             # Read-only source-file diagnostics distinguish absent data from
@@ -1501,6 +1506,13 @@ def _hub_records_v078(self):
                 stock.setdefault('research',{})['gmo']=original_research
         except Exception as recovery_error:
             self._err('hub_records_gmo_last_resort',recovery_error)
+        try:
+            # Passive, read-only worker. Network and SQLite work only on its
+            # daemon thread; this hub snapshot/order thread only enqueues.
+            from market_research_v033 import offer_records
+            out['market_research']=offer_records(self.root,out)
+        except Exception as score_error:
+            self._err('market_research_v033',score_error)
     return json.dumps(out,ensure_ascii=False,default=str)
 
 def _stock_at_ledger_v19(self):
