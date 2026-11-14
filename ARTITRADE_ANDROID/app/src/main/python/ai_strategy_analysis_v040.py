@@ -448,28 +448,29 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
     existing_position_ids={
         journal._key(item["raw"],strategy,"position") for item in rows
         if item.get("raw") and item["key"] and not str(item["key"]).startswith("archived:")}
-    for row in archive.get("positions",[]):
-        if row.get("frame") not in (FRAMES+("gmo",)):continue
-        key=row.get("position_key","")
-        if key in existing_position_ids:continue
-        if row.get("status") in ("CLOSED","DONE","SOLD"):continue
-        # The same position can have dozens of periodic journal rows.
-        older=next((r for r in rows if r.get("archive_key")==key),None)
-        if older:continue
-        last=max((v for v in archive["positions"] if v.get("position_key")==key),
-                 key=lambda v:v.get("observed_minute") or 0)
-        if last is not row:continue
+    latest_by_id={}
+    for observed in archive.get("positions",[]):
+        if observed.get("frame") not in (FRAMES+("gmo",)):continue
+        key=observed.get("position_key","")
+        if not key or key in existing_position_ids:continue
+        prior=latest_by_id.get(key)
+        if prior is None or (observed.get("observed_minute") or 0)>(
+                prior.get("observed_minute") or 0):
+            latest_by_id[key]=observed
+    for key,last in latest_by_id.items():
+        if str(last.get("status","")).upper() in ("CLOSED","DONE","SOLD"):
+            continue
         entry=last.get("entry_price")
         mark=last.get("mark")
         open_roi=(100*(mark/entry-1)) if entry and mark and entry>0 and mark>0 else None
         rows.append({"key":"archived:"+key,"archive_key":key,
-                     "frame":row.get("frame"),"features":{},
+                     "frame":last.get("frame"),"features":{},
                      "current_features":dict(
-                         journal._json_obj(row.get("extra_json")),
+                         journal._json_obj(last.get("extra_json")),
                          **current_indicators.get(
-                             (row.get("frame"),key.split("|")[-1]),{})),
-                     "raw":row,"closed_roi":None,"open_roi":open_roi,
-                     "state":"OPEN","at":row.get("entry_ts"),
+                             (last.get("frame"),key.split("|")[-1]),{})),
+                     "raw":last,"closed_roi":None,"open_roi":open_roi,
+                     "state":"OPEN","at":last.get("entry_ts"),
                      "hold_market_avg":None,"hold_market_n":0})
     return rows
 
