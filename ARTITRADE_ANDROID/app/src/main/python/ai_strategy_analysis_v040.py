@@ -129,6 +129,20 @@ def _is_closed(row):
     return False
 
 
+def _exit_reason(position,fills):
+    # Exit reasons explain why the program sold; they are NOT repackaged as
+    # pre-entry causal features.
+    for row in ([position]+list(reversed(fills or []))):
+        if row is not position and "SELL" not in str(row.get("side") or "").upper():
+            continue
+        for key in ("exit_reason","sell_reason","close_reason",
+                    "reason","purpose","sell_purpose"):
+            value=str(row.get(key) or "").strip()
+            if value and value.lower() not in ("none","null","nan"):
+                return value[:90]
+    return None
+
+
 def _returns(row,fills):
     if not _is_closed(row):return None,"OPEN"
     # Original EXE net realized PnL/cost-basis only; no guessed sell price.
@@ -219,6 +233,9 @@ def _frame_summary(frame,signals,trades,archive,events,now,source):
     hold_scores=[x["hold_market_avg"] for x in group if x.get("hold_market_avg") is not None]
     avg_hold=_mean(hold_scores) if hold_scores else None
     total_market_obs=sum(x.get("hold_market_n",0) for x in group)
+    sell_reasons=Counter(x["exit_reason"] for x in completed
+                         if x.get("closed_roi",0)<0 and x.get("exit_reason"))
+    most_exit=sell_reasons.most_common(1)[0][0] if sell_reasons else None
     patterns=[]
     for feature,title in (("atr_pct","ATR"),("volume_ratio","거래량"),
                           ("williams_r","Williams %R"),("rsi","RSI"),
@@ -355,6 +372,7 @@ def _frame_summary(frame,signals,trades,archive,events,now,source):
         "coverage":cover,"coverage_index":cover_pct,"maturity":maturity,
         "patterns":patterns[:6],
         "finding":finding,"finding_basis":mode,"cause_kind":cause_kind,
+        "exit_trigger":most_exit,
         "proposal":scenario,"risk_count":best["exposed"] if best and "exposed" in best else
                       open_risk[0]["hits"] if open_risk else 0,
         "risk_open":open_risk[:3],
@@ -433,7 +451,9 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
             pass
         entry=_row_time(row,("entry_at","entry_ts","buy_at","time","entry_date"))
         exit_ts=_row_time(row,("exit_at","closed_at","sold_at","sell_at"))
-        result,state=_returns(row,fills_by_position.get(str(row.get("id")),[]))
+        fills=fills_by_position.get(str(row.get("id")),[])
+        result,state=_returns(row,fills)
+        exit_reason=_exit_reason(row,fills) if _is_closed(row) else None
         open_roi=_unrealized_pct(row)
         if not _is_closed(row):state="OPEN"
         hold_avg,hold_n=_market_interval(*events,entry,exit_ts or now)
@@ -441,7 +461,8 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
                      "features":feats,"current_features":context,
                      "closed_roi":result,"open_roi":open_roi,
                      "state":state,"at":entry or (match["signal_ts"] if match else None),
-                     "hold_market_avg":hold_avg,"hold_market_n":hold_n})
+                     "hold_market_avg":hold_avg,"hold_market_n":hold_n,
+                     "exit_reason":exit_reason})
     # If a source DB has not arrived on the phone but position snapshots were
     # captured previously, still count open holdings without fabricating P&L.
     # Never count the same original DB position twice when its snapshot is also
