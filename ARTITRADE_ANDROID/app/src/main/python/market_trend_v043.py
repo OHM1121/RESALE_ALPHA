@@ -366,8 +366,10 @@ class TrendJournal:
                _finite(rsi20_live),_finite(rsi20_closed),_finite(price),_finite(qty),
                str(reason),json.dumps(payload or {},ensure_ascii=False,default=str)))
 
-    def record_watch(self,market,symbol,frame,price,rsi20_live,bar_key,at=None):
-        if _finite(rsi20_live) is None or rsi20_live>40:return
+    def record_watch(self,market,symbol,frame,price,rsi20_live,bar_key,at=None,
+                     after_trigger=False):
+        if _finite(rsi20_live) is None:return
+        if rsi20_live>40 and not after_trigger:return
         ts=float(at or time.time())
         with self.lock,self.connect() as c:
             c.execute("""INSERT OR REPLACE INTO watch_observations
