@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0,str(BASE))
 from android_sqlite_reader import db_rows
 
-NAMES={"_research_scope","_research_bands","_research_record",
+NAMES={"_research_first_target_fills","_research_scope","_research_bands","_research_record",
        "_stock_at_research","_stock_ma_research","_coin_research","_close_research"}
 tree=ast.parse(SRC.read_text(encoding="utf8"))
 nodes=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in NAMES]
