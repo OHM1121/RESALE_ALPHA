@@ -459,13 +459,19 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     now=int(time())
     research=journal._json_obj(research_json)
     ledger=journal._json_obj(ledger_json)
-    # Include every real sample visible at the moment ANALYZE is pressed.
-    try:
-        journal.capture_scope(root,market,strategy,research,ledger,now)
-        archive=journal.stored(root,market,strategy)
-    except (OSError,sqlite3.Error,ValueError) as exc:
-        archive={"features":[],"positions":[]}
     raw=old._read_source(root,market,strategy)
+    # Inspect both the currently visible phone snapshots and the underlying
+    # original EXE historical tables, rather than requiring an already-funded
+    # UI research popup. The original DBs remain read-only.
+    try:
+        live_candidates=[x for x in research.get("items",[]) if isinstance(x,dict)]
+        live_positions=[x for x in ledger.get("positions",[]) if isinstance(x,dict)]
+        archive_research={"items":(raw["candidates"][:8000]+live_candidates)}
+        archive_ledger={"positions":(raw["positions"][:8000]+live_positions)}
+        journal.capture_scope(root,market,strategy,archive_research,archive_ledger,now)
+        archive=journal.stored(root,market,strategy)
+    except (OSError,sqlite3.Error,ValueError):
+        archive={"features":[],"positions":[],"market_scores":[],"candles":[]}
     events=old._market_events(root,market)
     # v040 market-score journal also survives scoped stock-only or coin-only
     # research export/restore when the original shared score DB is absent.
