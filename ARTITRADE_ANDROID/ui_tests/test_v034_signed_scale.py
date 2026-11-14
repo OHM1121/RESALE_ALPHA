@@ -40,8 +40,8 @@ class SignedMarketScale(unittest.TestCase):
         self.assertLess(low["score"],0)
         self.assertTrue(all(-100<=f["impact"]<=100 for f in high["factors"]))
         self.assertTrue(all(-100<=f["impact"]<=100 for f in low["factors"]))
-        self.assertEqual(sum(round(f["impact"]*f["weight"],8) for f in high["factors"]),
-            round(high["score"],1),msg="weighted signed subscore must equal market score")
+        self.assertAlmostEqual(sum(f["impact"]*f["weight"] for f in high["factors"]),
+            high["score"],places=1,msg="weighted signed subscore must equal market score")
 
     def test_negative_bands_preserve_positive_55_and_20_examples(self):
         for score,band in ((-100,"-100~-51"),(-80,"-100~-51"),
