@@ -139,7 +139,7 @@ class WalletV043(TestCase):
         qty,status=self.w.sell(pos,10200,self.now+dt.timedelta(seconds=60),"MT_TP1")
         self.assertGreater(qty,0)
         self.assertEqual(status,"SOLD")
-        self.assertAlmostEqual(pos.qty/pos.original_qty,.70,places=2)
+        self.assertLessEqual(abs(pos.qty-pos.original_qty*.70),1.0)
         with db(self.temp.name,"stock","ma") as c:
             self.assertEqual(c.execute("SELECT COUNT(*) FROM executions WHERE side='SELL'").fetchone()[0],1)
             self.assertEqual(c.execute("SELECT COUNT(*) FROM positions WHERE status='TREND_OPEN'").fetchone()[0],1)
