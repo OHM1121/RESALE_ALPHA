@@ -267,8 +267,9 @@ def _gmo_fill_evidence(candidate, research, buys, sells):
     if len(entry)>=8 and entry[:8].isdigit():
         entry=entry[:4]+'-'+entry[4:6]+'-'+entry[6:8]
     entry=entry[:10]
-    all_buys=sorted((x for x in buys if str(x.get('code') or '')==code and
-                     x.get('time') and x.get('qty')),key=lambda x:str(x.get('time')))
+    all_buys=sorted((x for x in buys if isinstance(x,dict) and
+                     str(x.get('code') or '')==code and x.get('time') and x.get('qty')),
+                    key=lambda x:str(x.get('time')))
     matched=[x for x in all_buys if str(x['time'])[:10]==entry]
     if not matched:
         return {}
@@ -281,6 +282,8 @@ def _gmo_fill_evidence(candidate, research, buys, sells):
         return out
     attributed=[]
     for x in sells:
+        if not isinstance(x,dict):
+            continue
         when=str(x.get('time') or '')
         if str(x.get('code') or '')!=code or not when or when<start or (
                 next_buy is not None and when>=next_buy):
@@ -1160,7 +1163,7 @@ def _gmo_original_record(root):
             'first_target_filled':r.get('paper_first_target_filled'),
             'paper_realized_net_won':r.get('paper_realized_net_won'),
             'sell_reason':r.get('paper_last_exit_purpose') or None,
-            'sell_at':r.get('paper_last_exit_at') or None,
+            'last_exit_at':r.get('paper_last_exit_at') or None,
             'paper_position_status':r.get('paper_position_status'),
             'official_d1_open':r.get('official_d1_open'),
             'score_base':r.get('score_base'),
@@ -1172,6 +1175,31 @@ def _gmo_original_record(root):
             'research_5pct_status':r.get('research_5pct_status'),
             'research_first_hit_day':r.get('first_5pct_research_hit_day')
         })
+        item=items[-1]
+        if bought:
+            # EXE PAPER first-target SELL must be attributed to this D+1 buy.
+            item.update(_gmo_fill_evidence(
+                dict(c,entry_date=canonical_date(c.get('entry_date'))),r,buys,sells))
+        elif opener>0:
+            item.update({'virtual_buy_price':r.get('official_d1_open'),
+                         'virtual_buy_at':canonical_date(c.get('entry_date')),
+                         'virtual_buy_evidence':'GMO_D1_OFFICIAL_OPEN_OBSERVATION'})
+        # Reconstruct first D+N 5% HIGH observation day from the source daily
+        # OHLC; this is a price observation, never a SELL execution.
+        try:
+            hit_day=int(r.get('first_5pct_research_hit_day') or 0)
+        except (ValueError,TypeError):
+            hit_day=0
+        if hit_day>0 and r.get('research_5pct_status')=='TOUCHED_HIGH_NOT_FILL':
+            for d in candles:
+                if (str(d.get('code') or '')==str(c.get('code') or '') and
+                    canonical_date(d.get('event_date'))==canonical_date(c.get('event_date')) and
+                    int(d.get('day_index') or 0)==hit_day and d.get('trade_date') and
+                    float(d.get('high') or 0)>0):
+                    item.update({'observed_target_price':d.get('high'),
+                                 'observed_target_at':d.get('trade_date'),
+                                 'observed_target_evidence':'GMO_D_PLUS_HIGH_NOT_FILL'})
+                    break
     if not state_present:
         # Without PAPER account JSON, entry, exit and profit cannot be proven.
         for item in items:
