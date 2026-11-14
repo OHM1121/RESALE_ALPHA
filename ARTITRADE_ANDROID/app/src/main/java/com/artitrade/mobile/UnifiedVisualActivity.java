@@ -2271,14 +2271,12 @@ public final class UnifiedVisualActivity extends Activity {
             String time=fillTimeOf(r,kind,source);
             TextView when=text("executions".equals(kind)?"체결  "+time:
                 "positions".equals(kind)?"매수  "+time:"접수  "+time,12);
-            when.setTextColor(Color.rgb(151,175,198));
-            when.setPadding(dp(2),dp(3),0,0);
-            panel.addView(when);
+            when.setTextColor(Color.rgb(151,175,198));when.setMaxLines(4);
+            TextView scenario=null;
             if("positions".equals(kind)){
-                TextView scenario=text(scenarioSummary(r),12);
+                scenario=text(scenarioSummary(r),12);
                 scenario.setTextColor(Color.rgb(127,208,184));
-                scenario.setPadding(dp(2),dp(4),0,dp(2));
-                panel.addView(scenario);
+                scenario.setMaxLines(4);
                 LinearLayout actions=new LinearLayout(this);
                 actions.setOrientation(LinearLayout.HORIZONTAL);
                 Button sell=button("강제매도",false,()->showManualSellInfo(r));
@@ -2296,10 +2294,26 @@ public final class UnifiedVisualActivity extends Activity {
             String action="executions".equals(kind)?tradeSideOf(r):
                 "positions".equals(kind)||"pending".equals(kind)?"매수":"판단";
             TextView why=text(tradeReasonOf(r,action),12);
-            why.setTextColor(Color.rgb(181,202,221));
-            why.setMaxLines(2);
-            why.setPadding(dp(2),dp(5),0,dp(2));
-            panel.addView(why);
+            why.setTextColor(Color.rgb(181,202,221));why.setMaxLines(4);
+            // Reuse the full card width for timestamp / sell scenario / reason.
+            LinearLayout listFooterColumns=new LinearLayout(this);
+            boolean wideList=getResources().getConfiguration().screenWidthDp>=700;
+            listFooterColumns.setOrientation(wideList?
+                LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+            listFooterColumns.setPadding(0,dp(5),0,0);
+            listFooterColumns.addView(when,new LinearLayout.LayoutParams(
+                wideList?0:-1,-2,wideList?1.4f:0f));
+            if(scenario!=null){
+                LinearLayout.LayoutParams statusLp=new LinearLayout.LayoutParams(
+                    wideList?0:-1,-2,wideList?1.7f:0f);
+                if(wideList)statusLp.setMargins(dp(10),0,0,0);
+                listFooterColumns.addView(scenario,statusLp);
+            }
+            LinearLayout.LayoutParams whyLp=new LinearLayout.LayoutParams(
+                wideList?0:-1,-2,wideList?2.0f:0f);
+            if(wideList)whyLp.setMargins(dp(10),0,0,0);
+            listFooterColumns.addView(why,whyLp);
+            panel.addView(listFooterColumns,new LinearLayout.LayoutParams(-1,-2));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
             lp.setMargins(0,0,0,dp(6));content.addView(panel,lp);
         }
