@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 40
-            versionName '0.7.32-PC-LIVE-RESEARCH-DOUBLE-TAP'
+            versionCode 41
+            versionName '0.7.33-MARKET-POLICY-SCORE-COHORT'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
