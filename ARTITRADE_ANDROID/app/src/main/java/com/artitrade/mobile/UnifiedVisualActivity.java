@@ -2323,13 +2323,29 @@ public final class UnifiedVisualActivity extends Activity {
         for(int i=first;i<last;i++){
             JSONObject r=executions.optJSONObject(i);if(r==null)continue;
             LinearLayout c=card();
-            TextView name=text(nameOf(r)+" · "+r.optString("side",r.optString("type","체결")),15);
-            name.setTypeface(null,Typeface.BOLD);c.addView(name);
+            TextView name=text(nameOf(r)+" · "+r.optString("side",
+                r.optString("type","체결")),15);
+            name.setTypeface(null,Typeface.BOLD);name.setMaxLines(3);
             String side=tradeSideOf(r);
-            TextView time=text(side+" 체결 · "+fillTimeOf(r,"executions",strategy),13);
-            time.setTextColor(PremiumUi.MUTED);c.addView(time);
-            TextView why=text(side+" 원인 · "+tradeReasonOf(r,side),13);
-            why.setTextColor(PremiumUi.TEXT);c.addView(why);
+            TextView time=text(side+" 체결\n"+fillTimeOf(r,"executions",strategy),12);
+            time.setTextColor(PremiumUi.MUTED);time.setMaxLines(3);
+            TextView why=text(side+" 원인\n"+tradeReasonOf(r,side),13);
+            why.setTextColor(PremiumUi.TEXT);why.setMaxLines(4);
+            LinearLayout policyHistoryColumns=new LinearLayout(this);
+            boolean widePolicy=getResources().getConfiguration().screenWidthDp>=700;
+            policyHistoryColumns.setOrientation(widePolicy?
+                LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+            policyHistoryColumns.addView(name,new LinearLayout.LayoutParams(
+                widePolicy?0:-1,-2,widePolicy?1.5f:0f));
+            LinearLayout.LayoutParams whenLp=new LinearLayout.LayoutParams(
+                widePolicy?0:-1,-2,widePolicy?1.65f:0f);
+            if(widePolicy)whenLp.setMargins(dp(10),0,0,0);
+            policyHistoryColumns.addView(time,whenLp);
+            LinearLayout.LayoutParams whyLp=new LinearLayout.LayoutParams(
+                widePolicy?0:-1,-2,widePolicy?2.25f:0f);
+            if(widePolicy)whyLp.setMargins(dp(10),0,0,0);
+            policyHistoryColumns.addView(why,whyLp);
+            c.addView(policyHistoryColumns,new LinearLayout.LayoutParams(-1,-2));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
         addHistoryPager("policyHistory",executions.length());
@@ -3137,8 +3153,21 @@ public final class UnifiedVisualActivity extends Activity {
             TextView n=text(nameOf(r),16);n.setTypeface(null,Typeface.BOLD);bindSymbolFourTap(n,r,market);hr.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
             double sc=num(r,"score","diverse_11_score","gmo_score_at_signal");TextView sv=text(finite(sc)?number(sc)+"점":"점수 미기록",15);sv.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);sv.setTextColor(Color.rgb(255,201,94));hr.addView(sv,new LinearLayout.LayoutParams(dp(110),dp(28)));c.addView(hr);
             String dec=r.optString("decision",r.optString("status",r.optString("verdict","판정 미기록")));
-            TextView d=text("판정: "+dec+" · "+refLabel()+" "+timeOf(r),12);d.setTextColor(Color.rgb(153,175,201));c.addView(d);
-            TextView why=text("근거: "+reasonOf(r),12);why.setTextColor(Color.rgb(184,201,221));c.addView(why);
+            TextView d=text("판정  "+dec+"\n"+refLabel()+" "+timeOf(r),12);
+            d.setTextColor(Color.rgb(153,175,201));d.setMaxLines(4);
+            TextView why=text("판단 근거  "+reasonOf(r),12);
+            why.setTextColor(Color.rgb(184,201,221));why.setMaxLines(4);
+            LinearLayout scoreCandidateColumns=new LinearLayout(this);
+            boolean wideScore=getResources().getConfiguration().screenWidthDp>=700;
+            scoreCandidateColumns.setOrientation(wideScore?
+                LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+            scoreCandidateColumns.addView(d,new LinearLayout.LayoutParams(
+                wideScore?0:-1,-2,wideScore?1.2f:0f));
+            LinearLayout.LayoutParams reasonLp=new LinearLayout.LayoutParams(
+                wideScore?0:-1,-2,wideScore?1.9f:0f);
+            if(wideScore)reasonLp.setMargins(dp(10),0,0,0);
+            scoreCandidateColumns.addView(why,reasonLp);
+            c.addView(scoreCandidateColumns,new LinearLayout.LayoutParams(-1,-2));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
         addHistoryPager("scores",items.length());
@@ -3191,9 +3220,29 @@ public final class UnifiedVisualActivity extends Activity {
         addHistoryPager("errors",all.length());
         for(int i=first;i<last;i++){
             JSONObject r=all.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
-            TextView n=text(r.optString("stage",r.optString("error_type",r.optString("code","오류 기록"))),12);n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(255,145,155));c.addView(n);
-            TextView d=text(r.optString("message",r.optString("detail","상세 미기록")),10);d.setPadding(0,dp(4),0,0);c.addView(d);
-            TextView t=text(formatKst(r.opt("at")),9);t.setTextColor(Color.rgb(130,153,182));c.addView(t);
+            TextView n=text(r.optString("stage",
+                r.optString("error_type",r.optString("code","오류 기록"))),13);
+            n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(255,145,155));
+            n.setMaxLines(3);
+            TextView d=text(r.optString("message",r.optString("detail","상세 미기록")),12);
+            d.setTextColor(Color.rgb(192,209,228));d.setMaxLines(5);
+            TextView t=text(formatKst(r.opt("at")),11);
+            t.setTextColor(Color.rgb(140,166,195));t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            LinearLayout errorHistoryColumns=new LinearLayout(this);
+            boolean wideError=getResources().getConfiguration().screenWidthDp>=700;
+            errorHistoryColumns.setOrientation(wideError?
+                LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+            errorHistoryColumns.addView(n,new LinearLayout.LayoutParams(
+                wideError?0:-1,-2,wideError?1.4f:0f));
+            LinearLayout.LayoutParams detailLp=new LinearLayout.LayoutParams(
+                wideError?0:-1,-2,wideError?2.6f:0f);
+            if(wideError)detailLp.setMargins(dp(10),0,0,0);
+            errorHistoryColumns.addView(d,detailLp);
+            LinearLayout.LayoutParams timeLp=new LinearLayout.LayoutParams(
+                wideError?0:-1,-2,wideError?1.1f:0f);
+            if(wideError)timeLp.setMargins(dp(9),0,0,0);
+            errorHistoryColumns.addView(t,timeLp);
+            c.addView(errorHistoryColumns,new LinearLayout.LayoutParams(-1,-2));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(7));content.addView(c,lp);
         }
         addHistoryPager("errors",all.length());
