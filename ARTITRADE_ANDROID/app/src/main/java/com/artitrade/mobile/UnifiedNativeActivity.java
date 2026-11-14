@@ -61,6 +61,7 @@ public final class UnifiedNativeActivity extends Activity {
     private String strategy="at";
     private String page="home";
     private float swipeX=Float.NaN;
+    private float swipeY=Float.NaN;
     private static final long REFRESH_MS=3500L;
 
     private final Runnable periodic=new Runnable(){
@@ -213,10 +214,18 @@ public final class UnifiedNativeActivity extends Activity {
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(9),dp(7),dp(9),dp(12));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
-            if(e.getAction()==MotionEvent.ACTION_DOWN)swipeX=e.getX();
-            else if(e.getAction()==MotionEvent.ACTION_UP&&!Float.isNaN(swipeX)){
-                float dx=e.getX()-swipeX;swipeX=Float.NaN;
-                if(Math.abs(dx)>dp(70)){switchStrategy(dx<0?1:-1);return true;}
+            if(e.getAction()==MotionEvent.ACTION_DOWN){
+                swipeX=e.getX();swipeY=e.getY();
+            }else if(e.getAction()==MotionEvent.ACTION_CANCEL){
+                swipeX=Float.NaN;swipeY=Float.NaN;
+            }else if(e.getAction()==MotionEvent.ACTION_UP
+                &&!Float.isNaN(swipeX)&&!Float.isNaN(swipeY)){
+                float dx=e.getX()-swipeX,dy=e.getY()-swipeY;
+                swipeX=Float.NaN;swipeY=Float.NaN;
+                if(StrategySwipeThreshold.shouldSwitch(dx,dy,dp(112))){
+                    switchStrategy(dx<0?1:-1);
+                    return true;
+                }
             }
             return false;
         });
