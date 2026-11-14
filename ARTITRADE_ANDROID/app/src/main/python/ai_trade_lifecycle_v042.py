@@ -115,8 +115,9 @@ def _snapshot_at(observations,moment,frame):
     if moment is None:return {},None
     period=BAR_SECONDS.get(frame,60)
     matched=[row for row in observations
-             if row["observed_minute"]<=moment
-             and moment-row["observed_minute"]<=min(1800,max(60,period))]
+             if row["observed_minute"]+period<=moment
+             and moment-(row["observed_minute"]+period)
+                 <=min(1800,max(60,period))]
     if not matched:return {},None
     last=max(matched,key=lambda x:x["observed_minute"])
     return journal._json_obj(last["features_json"]),last["origin"]
@@ -448,6 +449,9 @@ def captured_event_features(conn,strategy,frame,symbol,now):
         ORDER BY observed_minute DESC LIMIT 1""",
         (strategy,frame,symbol,int(now))).fetchone()
     if latest is None:return {},None
-    if now-int(latest[0])>min(1800,max(300,BAR_SECONDS.get(frame,300)*2)):
+    period=BAR_SECONDS.get(frame,300)
+    if now<int(latest[0])+period or (
+            now-int(latest[0])-period >
+            min(1800,max(300,period*2))):
         return {},None
     return journal._json_obj(latest[1]),latest[2]
