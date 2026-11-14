@@ -344,6 +344,55 @@ def rebuild(root,market,strategy,positions,now=None,executions=()):
         return output
 
 
+def merge_original_signal_features(root,market,strategy,lifecycles,trades):
+    """Source candidate from the EXACT matched signal, never a later candle.
+
+    Signal-time indicators can serve as initial pre-buy evidence, but their
+    timestamps and provenance are explicit; no fabricated trade-time reading.
+    When closed candles genuinely establish buy-time values they take priority.
+    """
+    matched={}
+    for trade in trades:
+        if not isinstance(trade,dict):continue
+        original=trade.get("raw") or {}
+        key=original.get("position_key") or journal._key(
+            original,strategy,"position")
+        if key is None:continue
+        signal_ts=trade.get("signal_ts")
+        if signal_ts is None:continue
+        facts={k:journal._number(v) for k,v in
+               (trade.get("features") or {}).items() if k in MEASURE_KEYS}
+        facts={k:v for k,v in facts.items() if v is not None}
+        if facts:matched[key]=(int(signal_ts),facts)
+    with journal._connect(root,market) as conn:
+        for row in lifecycles:
+            item=matched.get(row.get("position_key"))
+            if item is None:continue
+            signal_ts,facts=item
+            entry=row.get("entry_ts")
+            if entry is None or signal_ts>entry or entry-signal_ts>30*86400:
+                continue
+            src=row.get("entry_features") or {}
+            missing={k:v for k,v in facts.items()
+                     if k not in src and k!="market_score"}
+            if not missing:continue
+            merged=dict(src,**missing)
+            row["entry_features"]=merged
+            row["entry_time_captured"]=True
+            row["entry_feature_origin"]=(
+                (row.get("entry_feature_origin") or "")+
+                ("+" if row.get("entry_feature_origin") else "")+
+                "MATCHED_PRE_ENTRY_SIGNAL")
+            conn.execute(
+                "UPDATE position_lifecycle_v042 SET summary_json=? "
+                "WHERE strategy=? AND position_key=?",
+                (json.dumps({k:v for k,v in row.items()
+                            if k not in ("position_key","frame","symbol")},
+                            ensure_ascii=False,separators=(",",":"),allow_nan=False),
+                 strategy,row["position_key"]))
+    return lifecycles
+
+
 def existing(root,market,strategy):
     path=journal.db_path(root,market)
     if not path.exists():return []
