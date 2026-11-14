@@ -81,7 +81,7 @@ def fetch_candles(market,symbol,frame,now=None):
                     if None in (hi,lo,close) or hi<close or close<lo:continue
                     bars.append((int(ts),hi,lo,close,volume))
                 if len(bars)>=16:
-                    return sorted({x[0]:x for x in bars}.values()),"YAHOO_KRX_PUBLIC_CHART"
+                    return sorted({x[0]:x for x in bars}.values())[-160:],"YAHOO_KRX_PUBLIC_CHART"
             except (OSError,ValueError,KeyError,IndexError,TypeError):
                 continue
     return [],""
@@ -91,16 +91,19 @@ def record(root,market,strategy,symbol,frame,bars,origin,
            signals=(),now=None):
     if frame not in FRAME_SECONDS or not bars:return {"bars":0,"entries":0}
     now=int(time.time() if now is None else now)
+    # GMO is one daily-strategy cohort, not a fabricated fifth timeframe.
+    save_frame="gmo" if strategy=="gmo" and frame=="day" else frame
     valid=sorted((x for x in bars if x[0]+FRAME_SECONDS[frame]<=now),
                  key=lambda x:x[0])
     if not valid:return {"bars":0,"entries":0}
+    valid=valid[-160:]  # recent complete source candles; older rows remain in DB
     indicators=compute_candle_indicators(valid)
     with _connect(root,market) as conn:
         for ts,hi,lo,close,volume in valid:
             conn.execute("""INSERT OR IGNORE INTO candle_observations
                 (strategy,frame,symbol,bar_ts,high,low,close,volume,origin)
                 VALUES (?,?,?,?,?,?,?,?,?)""",
-                (strategy,frame,symbol,ts,hi,lo,close,volume,origin))
+                (strategy,save_frame,symbol,ts,hi,lo,close,volume,origin))
         if indicators:
             last=valid[-1][0]
             conn.execute("""INSERT INTO indicator_observations(
@@ -109,13 +112,13 @@ def record(root,market,strategy,symbol,frame,bars,origin,
                ON CONFLICT(strategy,frame,symbol,observed_minute)
                DO UPDATE SET features_json=excluded.features_json,
                              origin=excluded.origin""",
-                (strategy,frame,symbol,last,
+                (strategy,save_frame,symbol,last,
                  json.dumps(indicators,sort_keys=True),origin))
         reconstructed=0
         for signal in signals:
             if not isinstance(signal,dict):continue
             if str(signal.get("code") or signal.get("market") or "")!=symbol:continue
-            if _frame(signal.get("tf") or signal.get("frame"),strategy)!=frame:continue
+            if _frame(signal.get("tf") or signal.get("frame"),strategy)!=save_frame:continue
             event=_timestamp(signal.get("at") or signal.get("signal_ts") or
                              signal.get("created_at") or signal.get("event_date") or
                              signal.get("ts") or signal.get("ref_at") or signal.get("ref_ts"))
@@ -135,7 +138,7 @@ def record(root,market,strategy,symbol,frame,bars,origin,
                 ON CONFLICT(strategy,signal_key,features_sha)
                 DO UPDATE SET last_seen=excluded.last_seen,
                               origin='RECONSTRUCTED_PRE_ENTRY_OHLCV'""",
-                (strategy,frame,key,event,now,now,digest,encoded,
+                (strategy,save_frame,key,event,now,now,digest,encoded,
                  "RECONSTRUCTED_PRE_ENTRY_OHLCV"))
             reconstructed+=1
     return {"bars":len(valid),"entries":reconstructed}
