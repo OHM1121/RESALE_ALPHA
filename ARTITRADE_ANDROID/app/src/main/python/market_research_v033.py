@@ -15,9 +15,10 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 
-BANDS=((-100,-50,"-100~-51"),(-50,0,"-50~-1"),(0,50,"0~50"),
-       (50,60,"51~60"),(60,70,"61~70"),(70,80,"71~80"),
-       (80,90,"81~90"),(90,100,"91~100"))
+BANDS=(
+    "-100~-81", "-80~-61", "-60~-41", "-40~-21", "-20~-1",
+    "0~19", "20~39", "40~59", "60~79", "80~100",
+)
 _STOCK_FACTORS={
     "KOSPI":(1.5,False,1.30),"KOSDAQ":(2.0,False,0.90),
     "KOSPI5":(4.0,False,0.65),"S&P500":(1.5,False,0.55),
@@ -45,17 +46,16 @@ def clamp(v,low=0.0,high=100.0):
 
 
 def market_band(score):
-    """Signed EXE-compatible bands: negative bear, zero neutral, positive bull."""
+    """Twenty-point intervals on a continuous signed [-100,+100] scale.
+
+    E.g. -80.0 begins the -80~-61 bin; -80.1 belongs to -100~-81.
+    +100 is included in the final bin rather than being dropped.
+    """
     v=finite(score)
-    if v is None or v<-100 or v>100:return None
-    if v < -50:return "-100~-51"
-    if v < 0:return "-50~-1"
-    if v <= 50:return "0~50"
-    if v <= 60:return "51~60"
-    if v <= 70:return "61~70"
-    if v <= 80:return "71~80"
-    if v <= 90:return "81~90"
-    return "91~100"
+    if v is None or v < -100 or v > 100:
+        return None
+    index=min(len(BANDS)-1, int(math.floor((v+100)/20)))
+    return BANDS[index]
 
 
 def _stock_driver(name,value,scale,invert,weight):
@@ -199,6 +199,7 @@ class ScoreLedger:
                     ON score_events(market,ts);
             """)
             self._upgrade_signed_scale_if_needed()
+            self._upgrade_20point_bands_if_needed()
 
     def _upgrade_signed_scale_if_needed(self):
         """One-time, transactional migration of v033 0..100 score observations.
@@ -247,6 +248,38 @@ class ScoreLedger:
                         "UPDATE cohort_segments SET band=? WHERE id=?",
                         (event["band"],segment["id"]))
             self.conn.execute("PRAGMA user_version=34")
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def _upgrade_20point_bands_if_needed(self):
+        """Remap old bucket labels in place, never overwrite score or P&L."""
+        version=int(self.conn.execute("PRAGMA user_version").fetchone()[0])
+        if version>=35:
+            return
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            for row in self.conn.execute(
+                    "SELECT market,ts,score,band FROM score_events").fetchall():
+                label=market_band(row["score"])
+                if label is not None and label!=row["band"]:
+                    self.conn.execute(
+                        "UPDATE score_events SET band=? WHERE market=? AND ts=?",
+                        (label,row["market"],row["ts"]))
+            # Old active/closed cohorts retain original positions and return
+            # baselines; only their display band string changes.
+            segments=self.conn.execute(
+                "SELECT id,market,start_ts,band FROM cohort_segments").fetchall()
+            for group in segments:
+                matched=self.conn.execute(
+                    "SELECT band FROM score_events WHERE market=? AND ts<=? "
+                    "ORDER BY ts DESC LIMIT 1",
+                    (group["market"],group["start_ts"])).fetchone()
+                if matched and matched["band"]!=group["band"]:
+                    self.conn.execute("UPDATE cohort_segments SET band=? WHERE id=?",
+                                      (matched["band"],group["id"]))
+            self.conn.execute("PRAGMA user_version=35")
             self.conn.execute("COMMIT")
         except Exception:
             self.conn.execute("ROLLBACK")
@@ -345,13 +378,9 @@ class ScoreLedger:
             active=self._active(market)
             last=self.conn.execute("SELECT score,ts,meta FROM score_events "
                 "WHERE market=? ORDER BY ts DESC LIMIT 1",(market,)).fetchone()
-            groups=self.conn.execute("""
-                SELECT s.band AS band,COUNT(p.identity) AS n,
-                    AVG(p.latest_return-p.start_return) AS avg_pp,
-                    SUM(CASE WHEN s.end_ts IS NULL THEN 1 ELSE 0 END) AS active_n
-                FROM cohort_segments s LEFT JOIN cohort_positions p ON p.segment_id=s.id
-                WHERE s.market=? GROUP BY s.band
-            """,(market,)).fetchall()
+            groups=self.conn.execute(
+                "SELECT band,COUNT(*) AS n FROM score_events "
+                "WHERE market=? GROUP BY band",(market,)).fetchall()
             active_data=self.conn.execute("""
                 SELECT COUNT(*) AS n,AVG(latest_return-start_return) AS avg_pp
                 FROM cohort_positions WHERE segment_id=?
@@ -366,8 +395,7 @@ class ScoreLedger:
             "active_since":active["start_ts"] if active else None,
             "active_count":active_data["n"] if active else 0,
             "active_avg_change_pp":active_data["avg_pp"] if active else None,
-            "bands":[{"band":row["band"],"count":row["n"],
-                      "avg_change_pp":row["avg_pp"],"active_count":row["active_n"]}
+            "bands":[{"band":row["band"],"count":row["n"]}
                      for row in groups],
             "recent_scores":[dict(row) for row in reversed(rows)],
             "coverage":metadata.get("coverage"),
