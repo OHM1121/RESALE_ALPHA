@@ -1182,6 +1182,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private Map<String,RealizedTrend.Series> prepareTrends(Map<String,Stats> totals){
+        java.util.List<RealizedTrend.Event> integratedEvents=new java.util.ArrayList<>();
         // In v0.7.17 trends were indexed only by market, which merged AT+MA+GMO+CLOSE.
         Map<String,RealizedTrend.Series> ready=new HashMap<>();
         for(Map.Entry<String,Stats> source:totals.entrySet()){
@@ -1204,6 +1205,7 @@ public final class UnifiedVisualActivity extends Activity {
                 if(at<=0||!finite(pnl))continue;
                 RealizedTrend.Event event=new RealizedTrend.Event(at,pnl);
                 grouped.get("all").add(event);
+                integratedEvents.add(event);
                 String frame=timeFrameOf(row);
                 if(grouped.containsKey(frame))grouped.get(frame).add(event);
             }
@@ -1211,6 +1213,7 @@ public final class UnifiedVisualActivity extends Activity {
                 ready.put(StrategyDashboardScope.trend(m,strategyName,e.getKey()),
                     RealizedTrend.cumulative(e.getValue(),100));
         }
+        ready.put("integrated/all",RealizedTrend.cumulative(integratedEvents,180));
         return ready;
     }
 
@@ -1894,6 +1897,224 @@ public final class UnifiedVisualActivity extends Activity {
             panels.addView(second,lp);
         }
         content.addView(panels,new LinearLayout.LayoutParams(-1,-2));
+    }
+
+
+    private static final class IntegratedHolding {
+        final String scopeMarket,scopeStrategy;
+        final JSONObject row;
+        IntegratedHolding(String m,String s,JSONObject r){
+            scopeMarket=m;scopeStrategy=s;row=r;
+        }
+    }
+    private java.util.List<IntegratedHolding> integratedHoldings(){
+        java.util.ArrayList<IntegratedHolding> all=new java.util.ArrayList<>();
+        java.util.HashSet<String> seen=new java.util.HashSet<>();
+        for(String m:new String[]{"stock","coin"}){
+            for(String[] def:strategyList(m)){
+                String s=def[0];
+                JSONArray pos=stats(m,s).positions;
+                for(int i=0;i<pos.length();i++){
+                    JSONObject r=pos.optJSONObject(i);
+                    if(r==null)continue;
+                    String status=r.optString("status","").toUpperCase(Locale.ROOT);
+                    if("CLOSED".equals(status)||"SOLD".equals(status)||
+                       "RESET_B_V1".equals(status))continue;
+                    double qty=num(r,"qty","quantity","holding_qty");
+                    if(finite(qty)&&qty<=0)continue;
+                    String id=r.optString("id",r.optString("position_id","row_"+i));
+                    String key=m+"/"+s+"/"+timeFrameOf(r)+"/"+id;
+                    if(seen.add(key))all.add(new IntegratedHolding(m,s,r));
+                }
+            }
+        }
+        return all;
+    }
+    private void integratedTextLine(LinearLayout parent,String label,String value,int size){
+        LinearLayout line=new LinearLayout(this);
+        line.setOrientation(LinearLayout.HORIZONTAL);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        TextView t=text(label,12);
+        t.setTextColor(PremiumUi.MUTED);
+        line.addView(t,new LinearLayout.LayoutParams(0,dp(24),1));
+        TextView v=text(value,size);
+        v.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        v.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        line.addView(v,new LinearLayout.LayoutParams(-2,dp(24)));
+        parent.addView(line);
+    }
+    private String scopeTitle(String m,String s){
+        for(String[] opt:strategyList(m))
+            if(opt[0].equals(s))return ("stock".equals(m)?"주식 ":"코인 ")+opt[1];
+        return ("stock".equals(m)?"주식 ":"코인 ")+s;
+    }
+    private LinearLayout integratedTrend(RealizedTrend.Series series,String caption,int heightDp){
+        LinearLayout c=card();
+        c.setPadding(dp(6),dp(6),dp(6),dp(4));
+        PnlSparklineView chart=new PnlSparklineView(this);
+        chart.setSeries(series==null?
+            new RealizedTrend.Series(new long[0],new double[0]):series,caption);
+        c.addView(chart,new LinearLayout.LayoutParams(-1,dp(heightDp-12)));
+        return c;
+    }
+    private void renderIntegratedHome(){
+        TextView title=text("통합 운용 대시보드",20);
+        title.setTypeface(null,Typeface.BOLD);
+        content.addView(title);
+        double realized=0,unrealized=0;
+        int knownR=0,knownU=0,totalScopes=0;
+        for(String m:new String[]{"stock","coin"}){
+            for(String[] def:strategyList(m)){
+                Stats v=stats(m,def[0]);
+                totalScopes++;
+                if(finite(v.realized)){realized+=v.realized;knownR++;}
+                if(finite(v.unrealized)){unrealized+=v.unrealized;knownU++;}
+            }
+        }
+        java.util.List<IntegratedHolding> held=integratedHoldings();
+        boolean complete=knownR==totalScopes&&knownU==totalScopes;
+        LinearLayout hero=card();
+        hero.setPadding(dp(15),dp(10),dp(15),dp(10));
+        TextView info=text("전략 6개 · 주식 4 / 코인 2 · 보유 "+held.size()+"종목",12);
+        info.setTextColor(PremiumUi.MUTED);hero.addView(info);
+        TextView totalTitle=text("전체 누적손익",12);
+        totalTitle.setTextColor(PremiumUi.MUTED);
+        totalTitle.setPadding(0,dp(6),0,dp(2));hero.addView(totalTitle);
+        double aggregate=realized+unrealized;
+        TextView total=text(complete?WonFormat.signed(aggregate):"일부 원장 미수신",27);
+        total.setTypeface(null,Typeface.BOLD);
+        autoSingle(total,16,27);
+        if(complete)paintProfit(total,aggregate);
+        hero.addView(total);
+        LinearLayout sums=new LinearLayout(this);
+        sums.setOrientation(LinearLayout.HORIZONTAL);
+        addLargeMoneyMetric(sums,"●","실현 ("+knownR+"/6)",knownR>0?realized:Double.NaN,
+                            Color.rgb(79,210,247));
+        addLargeMoneyMetric(sums,"◇","평가 ("+knownU+"/6)",knownU>0?unrealized:Double.NaN,
+                            Color.rgb(184,158,255));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(55));
+        sp.setMargins(0,dp(7),0,0);hero.addView(sums,sp);
+        LinearLayout.LayoutParams h=new LinearLayout.LayoutParams(-1,-2);
+        h.setMargins(0,dp(7),0,0);content.addView(hero,h);
+
+        TextView allTrend=text("전 전략 실현손익 추세",15);
+        allTrend.setTypeface(null,Typeface.BOLD);
+        allTrend.setPadding(dp(2),dp(13),0,dp(4));
+        content.addView(allTrend);
+        LinearLayout graph=integratedTrend(uiSnapshot.trends.get("integrated/all"),
+            "주식 + 코인 · 실현손익 합산",151);
+        content.addView(graph,new LinearLayout.LayoutParams(-1,dp(151)));
+
+        TextView strategyTitle=text("전략별 실적 · 실현손익 추세",15);
+        strategyTitle.setTypeface(null,Typeface.BOLD);
+        strategyTitle.setPadding(dp(2),dp(13),0,dp(6));
+        content.addView(strategyTitle);
+        boolean wide=getResources().getConfiguration().screenWidthDp>=720;
+        LinearLayout pair=null;int count=0;
+        for(String m:new String[]{"stock","coin"}){
+            for(String[] def:strategyList(m)){
+                String s=def[0];
+                Stats v=stats(m,s);
+                LinearLayout tile=card();
+                tile.setPadding(dp(9),dp(7),dp(9),dp(7));
+                LinearLayout heading=new LinearLayout(this);
+                heading.setGravity(Gravity.CENTER_VERTICAL);
+                TextView name=text(scopeTitle(m,s),14);
+                name.setTypeface(null,Typeface.BOLD);
+                heading.addView(name,new LinearLayout.LayoutParams(0,dp(25),1));
+                TextView hold=text("보유 "+v.positions.length(),11);
+                hold.setTextColor(PremiumUi.MUTED);
+                heading.addView(hold);
+                tile.addView(heading);
+                LinearLayout figures=new LinearLayout(this);
+                figures.setGravity(Gravity.CENTER_VERTICAL);
+                TextView current=text(finite(v.total)?WonFormat.signed(v.total):"손익 미수신",20);
+                current.setTypeface(null,Typeface.BOLD);
+                autoSingle(current,12,20);
+                if(finite(v.total))paintProfit(current,v.total);
+                figures.addView(current,new LinearLayout.LayoutParams(0,dp(29),1));
+                TextView win=text("매도 "+v.flowSold+"건",11);
+                win.setTextColor(PremiumUi.MUTED);figures.addView(win);
+                tile.addView(figures);
+                RealizedTrend.Series series=uiSnapshot.trends.get(
+                    StrategyDashboardScope.trend(m,s,"all"));
+                PnlSparklineView chart=new PnlSparklineView(this);
+                chart.setSeries(series==null?
+                    new RealizedTrend.Series(new long[0],new double[0]):series,
+                    "실현 "+(finite(v.realized)?WonFormat.signed(v.realized):"—"));
+                tile.addView(chart,new LinearLayout.LayoutParams(-1,dp(108)));
+                tile.setContentDescription(scopeTitle(m,s)+" · 손익 "+
+                    (finite(v.total)?WonFormat.signed(v.total):"미수신")+
+                    " · 탭하면 해당 전략 열기");
+                final String chosenMarket=m,chosenStrategy=s;
+                tile.setOnClickListener(view->{
+                    integratedMode=false;market=chosenMarket;strategy=chosenStrategy;
+                    page="home";resetHistoryFilter();persistNavigation();showShell();
+                });
+                PremiumUi.tapMotion(tile);
+                if(!wide){
+                    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+                    lp.setMargins(0,0,0,dp(6));content.addView(tile,lp);
+                }else{
+                    if(count%2==0){
+                        pair=new LinearLayout(this);
+                        pair.setOrientation(LinearLayout.HORIZONTAL);
+                        LinearLayout.LayoutParams rowLp=
+                            new LinearLayout.LayoutParams(-1,-2);
+                        rowLp.setMargins(0,0,0,dp(6));content.addView(pair,rowLp);
+                    }
+                    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+                    if(count%2!=0)lp.setMargins(dp(6),0,0,0);
+                    pair.addView(tile,lp);
+                }
+                count++;
+            }
+        }
+    }
+    private void renderIntegratedPositions(){
+        java.util.List<IntegratedHolding> all=integratedHoldings();
+        TextView heading=text("통합 보유종목 · "+all.size()+"건",19);
+        heading.setTypeface(null,Typeface.BOLD);
+        heading.setPadding(0,0,0,dp(8));
+        content.addView(heading);
+        if(all.isEmpty()){
+            empty("주식·코인 전략에서 확인된 보유종목 없음");
+            return;
+        }
+        for(IntegratedHolding holding:all){
+            JSONObject p=holding.row;
+            LinearLayout tile=card();
+            tile.setPadding(dp(10),dp(8),dp(10),dp(7));
+            LinearLayout top=new LinearLayout(this);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            TextView symbol=text(nameOf(p),15);
+            symbol.setTypeface(null,Typeface.BOLD);
+            symbol.setSingleLine(true);
+            bindSymbolFourTap(symbol,p,holding.scopeMarket);
+            top.addView(symbol,new LinearLayout.LayoutParams(0,dp(26),1));
+            TextView origin=text(scopeTitle(holding.scopeMarket,holding.scopeStrategy)+
+                " "+tfLabel(timeFrameOf(p)),11);
+            origin.setTextColor(PremiumUi.MUTED);
+            top.addView(origin);
+            tile.addView(top);
+            double pnl=tradePnL(p,"positions");
+            double rate=tradeReturnPct(p,"positions",pnl);
+            String detail="매수가 "+formatMaybeMoney(p,"entry_price","entry","avg_buy_price")+
+                "    현재가 "+formatMaybeMoney(p,"last_price","mark","current_price")+
+                "    수량 "+formatMaybeNumber(p,"qty","quantity","holding_qty");
+            TextView prices=text(detail,12);
+            prices.setTextColor(Color.rgb(168,193,219));
+            prices.setMaxLines(2);
+            tile.addView(prices);
+            TextView result=text("평가손익 "+
+                (finite(pnl)?WonFormat.signed(pnl):"—")+
+                (finite(rate)?" ("+signedPct(rate)+")":""),14);
+            if(finite(pnl))paintProfit(result,pnl);
+            tile.addView(result);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+            lp.setMargins(0,0,0,dp(6));
+            content.addView(tile,lp);
+        }
     }
 
     private void renderHome(){
