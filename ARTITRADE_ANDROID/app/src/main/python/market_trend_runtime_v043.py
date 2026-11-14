@@ -152,6 +152,23 @@ class Coordinator:
                     record["market"],record["strategy"],record["frame"],record["symbol"],
                     "UNSAFE",type(exc).__name__)
 
+        # Shadow trades are research-only but must survive phone restart.
+        for record in self.journal.virtual_open():
+            try:
+                key=tuple(json.loads(record["signal_key"]))
+                data=json.loads(record["payload"])
+                v=mt.TrendPosition(record["market"],record["strategy"],
+                    record["frame"],record["symbol"],data["entry_at"],
+                    data["entry"],data["original_qty"],data["bar_key"])
+                v.__dict__.update(data)
+                v.entry_at=mt._as_kst(data["entry_at"])
+                v.deadline=mt._as_kst(data["deadline"])
+                self._virtual[key]=v
+            except (KeyError,TypeError,ValueError) as exc:
+                self.journal.event("MT43:VRESTORE:"+str(record["signal_key"]),
+                    record["market"],record["strategy"],record["frame"],
+                    record["symbol"],"UNSAFE",type(exc).__name__)
+
     def mode(self,market):
         return self.modes.get(market,"PAUSED")
 
@@ -413,9 +430,10 @@ class Coordinator:
                             p.__dict__["rsi20_closed"]=rsi
                             changed=True
                 if changed:self.journal.save_position(p,p.position_id)
-            for v in tuple(self._virtual.values()):
+            for virtual_key,v in tuple(self._virtual.items()):
                 if v.market!=market or v.symbol!=code or v.frame!=frame:
                     continue
+                virtual_changed=False
                 if not v.__dict__.get("bar_finalized"):
                     entrybar=next((row for row in rows
                                    if row["end"].isoformat()==v.bar_key),None)
@@ -424,6 +442,7 @@ class Coordinator:
                                       if x["end"]<=entrybar["end"]])
                         v.close_entry_bar(v.bar_key,entrybar["high"],entrybar["low"],rsi)
                         v.__dict__["bar_finalized"]=True
+                        virtual_changed=True
                 if v.__dict__.get("bar_finalized"):
                     for row in rows:
                         stamp=row["end"].isoformat()
@@ -432,7 +451,11 @@ class Coordinator:
                             continue
                         rsi=mt.rsi20([x["close"] for x in rows
                                       if x["end"]<=row["end"]])
-                        if rsi is not None:v.close_next_bar(stamp,rsi)
+                        if rsi is not None:
+                            v.close_next_bar(stamp,rsi)
+                            virtual_changed=True
+                if virtual_changed:
+                    self.journal.save_virtual(json.dumps(virtual_key,ensure_ascii=False),v)
 
     def _preclose_candidates(self,market,now):
         if self.mode(market)!="MARKET_TREND":return
@@ -491,7 +514,9 @@ class Coordinator:
                 # Missed actual entry is shadow-only; never reserves wallet cash.
                 try:
                     v=mt.TrendPosition(market,assigned,frame,code,now,q["ask"],1,barid)
-                    self._virtual[(market,assigned,frame,code,barid)]=v
+                    key=(market,assigned,frame,code,barid)
+                    self._virtual[key]=v
+                    self.journal.save_virtual(json.dumps(key,ensure_ascii=False),v)
                 except (ValueError,TypeError):pass
 
     def _process_holds(self,market,now):
@@ -529,6 +554,7 @@ class Coordinator:
             if not action:continue
             amount=min(v.qty,v.qty*action[1])
             v.apply_sell(action[0],amount,q["bid"])
+            self.journal.save_virtual(json.dumps(key,ensure_ascii=False),v)
             self.journal.event("MT43:VEXIT:"+":".join(str(x) for x in key)+":"+action[0]+":"+str(int(now.timestamp())),
                v.market,v.strategy,v.frame,v.symbol,"VIRTUAL",action[0],price=q["bid"],
                qty=amount,payload={"hypothetical_entry":v.entry,
