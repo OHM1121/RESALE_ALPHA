@@ -2,10 +2,35 @@
 import sys
 from pathlib import Path
 import unittest
+import sqlite3
+import tempfile
+import ast
+from types import SimpleNamespace
+
 sys.path.insert(0,str(Path(__file__).parents[1]/"app/src/main/python"))
 import research_evidence_v036 as m
 
 class EvidenceTests(unittest.TestCase):
+    def test_first_target_sell_fill_survives_over_30000_unrelated_fills(self):
+        from android_sqlite_reader import db_rows
+        source=Path(__file__).parents[1]/"app/src/main/python/android_runtime_v078.py"
+        nodes=ast.parse(source.read_text())
+        fn=next(n for n in nodes.body if isinstance(n,ast.FunctionDef)
+                and n.name=="_research_first_target_fills")
+        ns={"_core":SimpleNamespace(_db_rows=db_rows)}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),"exec"),ns)
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/"paper.sqlite3"
+            with sqlite3.connect(path) as con:
+                con.execute("""CREATE TABLE executions(id INTEGER,position_id INTEGER,
+                    side TEXT,reason TEXT,price REAL,ts TEXT)""")
+                con.execute("INSERT INTO executions VALUES(1,7,'SELL','FIRST_TARGET_40PCT',120,'20261103105232')")
+                con.executemany("INSERT INTO executions VALUES(? ,11,'SELL','OTHER',130,'20261103140000')",
+                    ((i,) for i in range(2,30009)))
+            lookup=ns["_research_first_target_fills"](path)
+            self.assertEqual(lookup[7]["sell_price"],120)
+            self.assertEqual(lookup[7]["sell_at"],"20261103105232")
+
     def test_first_target_observation_is_not_a_sell_fill(self):
         row={"first_target":120,"first_observed_target_after_touch":"20261103135900",
              "observation_minutes":19,"observation_provenance":"KRX_1M"}
