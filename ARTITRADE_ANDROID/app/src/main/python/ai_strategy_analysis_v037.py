@@ -301,7 +301,7 @@ def _summarize_frame(frame, candidates, trades, source, truncated, error_notes):
     if not f_cand and not f_trades:
         base["causes"] = ["해당 시간봉의 연구 기록이 없음. 손익 개선 효과 산출 불가."]
         return base
-    if f_trades and not valid:
+    if not valid:
         base["causes"] = ["손실 원인을 판단하기 위한 종료 체결의 순손익·원금 정보가 부족함.",
                           "가격 하락 또는 목표 고가 관측을 손실 원인·매도 체결로 취급하지 않음."]
         base["warnings"].append("원본 매도 체결 순손익 및 매수원금(또는 순수익률) 기록 필요")
