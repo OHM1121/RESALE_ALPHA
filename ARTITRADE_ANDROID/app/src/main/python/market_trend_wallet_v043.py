@@ -135,7 +135,7 @@ class TrendWallet:
                     bar_key,event_key):
         stamp=at.astimezone(KST).isoformat(timespec="seconds")
         compact=at.astimezone(KST).strftime("%Y%m%d%H%M%S")
-        cost=_money(qty*price);spent=cost+fee
+        cost=_money(float(qty)*float(price));spent=cost+fee
         if market=="stock" and strategy=="at":
             c.execute("UPDATE v19_accounts SET cash=cash-?,last_update=? WHERE tf=?",
                       (spent,compact,frame))
@@ -177,7 +177,7 @@ class TrendWallet:
           entry,qty0,qty,entry_fee,target,peak,mark,first_qty,hold_until,status)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
           (frame,symbol,name,stamp,stamp,str(price),str(qty),str(qty),fee,
-           str(price),str(price),str(price),str(_coin_qty(Decimal(str(qty))*.30)),
+           str(price),str(price),str(price),str(_coin_qty(Decimal(str(qty))*Decimal('0.30'))),
            hold,"TREND_OPEN"))
         pid=int(p.lastrowid)
         balance=c.execute("SELECT cash FROM wallets WHERE tf=?",(frame,)).fetchone()[0]
