@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import sqlite3
 import threading
+from market_trend_v043 import _AutoClosingSqlite
 import time
 from decimal import Decimal,ROUND_DOWN
 from pathlib import Path
@@ -56,7 +57,7 @@ class TrendWallet:
     def _connect(self,market,strategy):
         db=self._path(market,strategy)
         if not db.is_file():raise UnsafeFill("ORIGINAL_WALLET_MISSING")
-        c=sqlite3.connect(str(db),timeout=12)
+        c=sqlite3.connect(str(db),timeout=12,factory=_AutoClosingSqlite)
         c.row_factory=sqlite3.Row
         c.execute("PRAGMA busy_timeout=12000")
         return c
