@@ -208,6 +208,11 @@ class TrendWallet:
                         price=int(math.ceil(float(ask)))
                         qty=min(int(budget//(price*(1+STOCK_FEE))),
                                 max(0,int(float(ask_size))))
+                        runner=getattr(self.rt,"stock_runner",None)
+                        if runner is not None:
+                            proof,_=runner.engine.book.available(symbol,"KRX",at,price,qty)
+                            if proof is None:return None,"INSUFFICIENT_FRESH_BEST_ASK"
+                            qty=min(qty,int(proof[1]))
                         if qty<1:return None,"INSUFFICIENT_DEPTH_OR_CASH"
                         fee=_money(qty*price*STOCK_FEE)
                         if qty*price+fee>budget:return None,"WALLET_BUDGET"
@@ -222,6 +227,13 @@ class TrendWallet:
                         if _money(float(qty)*price)+fee>budget:
                             return None,"WALLET_BUDGET"
                 # Never hold the original strategy DB transaction across broker IO.
+                # Share displayed best-level depth with the original AT/MA
+                # paper execution engines; never fabricate infinite liquidity.
+                if market=="stock":
+                    runner=getattr(self.rt,"stock_runner",None)
+                    if runner is not None and not runner.engine.book.reserve(
+                            symbol,"KRX",at,int(price),int(qty)):
+                        return None,"ORDERBOOK_CAPACITY_RESERVED"
                 self.journal.event(event_key+":INTENT",market,strategy,frame,symbol,
                    "INTENT","BROKER_ORDER_PREPARE",price=price,qty=float(qty),
                    rsi20_live=rsi20_live,payload={"bar_key":bar_key})
@@ -267,7 +279,7 @@ class TrendWallet:
             finally:
                 self._reservations.discard((market,symbol))
 
-    def sell(self,pos,price,at,reason):
+    def sell(self,pos,price,at,reason,bid_size=None):
         """Use the existing account, prevent duplicate sell against an in-flight fill."""
         with self.order_lock:
             market,strategy,frame,symbol=pos.market,pos.strategy,pos.frame,pos.symbol
@@ -287,8 +299,20 @@ class TrendWallet:
                 if why!=reason:return 0,"EXIT_REASON_CHANGED"
                 if market=="stock":
                     qty=int(qleft) if fraction>=.999 else max(1,int(round(qleft*fraction)))
+                    runner=getattr(self.rt,"stock_runner",None)
+                    if runner is not None:
+                        available=runner.engine.book.available_sell(
+                            symbol,"KRX",at,int(price),qty)
+                        qty=min(qty,int(available))
+                        if qty<1:return 0,"INSUFFICIENT_FRESH_BID_DEPTH"
+                        if not runner.engine.book.reserve_sell(
+                                symbol,"KRX",at,int(price),qty):
+                            return 0,"BID_DEPTH_ALREADY_RESERVED"
                 else:
+                    if bid_size is None:return 0,"NO_FRESH_BID_DEPTH"
+                    available=_coin_qty(Decimal(str(bid_size))*Decimal("0.5"))
                     qty=_coin_qty(qleft if fraction>=.999 else qleft*fraction)
+                    qty=min(qty,available)
                 if float(qty)<=0:return 0,"LOT_TOO_SMALL"
             try:
                 fill=self._order_fill(market,strategy,symbol,"SELL",qty,price,key,reason)
