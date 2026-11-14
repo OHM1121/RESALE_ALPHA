@@ -3480,9 +3480,24 @@ public final class UnifiedVisualActivity extends Activity {
         double sold=num(row,"sell_price");
         Object at=firstValue(row,"sell_at");
         String evidence=row.optString("sell_evidence","");
+        // Recover post-entry maximum and its true bar timestamp from the
+        // market-data API; never mistake candidate_forward.last_ts for a peak.
+        boolean minuteVerified="VERIFIED_MINUTE_BAR".equals(
+            row.optString("observed_max_evidence",""));
+        double fetchedHigh=num(row,"observed_max_price");
+        Object fetchedPeak=firstValue(row,"observed_max_at");
+        int precision=row.optInt("forward_high_precision_seconds",60);
+        String precisionText=precision==60?"1분봉":"5분봉";
+        boolean gotHigh=minuteVerified&&finite(fetchedHigh)&&fetchedHigh>0&&fetchedPeak!=null;
+        String highLine=gotHigh?
+            "후속고가  "+money(fetchedHigh)+"  ("+precisionText+")":"";
+        String peakLine=gotHigh?researchMoment(fetchedPeak):"";
         if(bought&&!evidence.isEmpty()&&finite(sold)&&sold>0&&at!=null){
             String tag="gmo".equals(source.source)?"PAPER 매도":"원장 매도";
-            return new String[]{tag+"  "+money(sold),researchMoment(at)};
+            return gotHigh?
+                new String[]{tag+" "+money(sold)+" · "+highLine,
+                    "매도 "+researchMoment(at)+" · 고점 "+peakLine}:
+                new String[]{tag+"  "+money(sold),researchMoment(at)};
         }
         double virtual=num(row,"virtual_sell_price");
         Object virtualAt=firstValue(row,"virtual_sell_at");
@@ -3515,20 +3530,12 @@ public final class UnifiedVisualActivity extends Activity {
             return new String[]{"최종매도 시각 · 1차 목표매도 여부 별도",
                 researchMoment(lastExit)};
         }
-        // A candidate_forward.max_price aggregate has no peak timestamp.
-        // Never attach its value to last_ts (which is merely the last tick),
-        // nor show an arbitrary price as that day's historical HIGH.
-        boolean independentBarVerified="VERIFIED_MINUTE_BAR".equals(
-            row.optString("observed_max_evidence",""));
-        double high=num(row,"observed_max_price","highest_observed_high");
-        Object peakAt=firstValue(row,"observed_max_at","highest_observed_trade_date");
-        if(independentBarVerified&&finite(high)&&high>0&&peakAt!=null)
-            return new String[]{"검증된 후속 고가  "+money(high),
-                researchMoment(peakAt)};
+        if(gotHigh)
+            return new String[]{highLine,peakLine};
         if("at".equals(source.source)&&(row.has("observed_max_unverified")||
-              row.has("observed_max_price")||row.has("last_observed_at"))){
-            return new String[]{"후속 고가 검증 대기",
-                "원본 고가 발생시각 및 1분봉 근거 미확인"};
+              row.has("last_observed_at"))){
+            return new String[]{"후속고가 시세 API 조회 중",
+                "매수 이후 고가·발생시각 조회"};
         }
         String quality=row.optString("observation_status","");
         if("DATA_GAP".equals(quality))
