@@ -70,11 +70,40 @@ def _same_market_date(ts):
     return dt.datetime.fromtimestamp(int(ts),KST).date().isoformat()
 
 
+def _naver_daily_highs(code,entry_ts,now):
+    """Second independent daily OHLC source for minute-high consistency."""
+    start=dt.datetime.fromtimestamp(int(entry_ts),KST).strftime("%Y%m%d")
+    end=dt.datetime.fromtimestamp(int(now),KST).strftime("%Y%m%d")
+    try:
+        response=_public_json(
+            "https://api.stock.naver.com/chart/domestic/item/"+code,
+            {"periodType":"dayCandle","startDateTime":start,
+             "endDateTime":end})
+        if isinstance(response,dict):
+            rows=(response.get("priceInfos") or response.get("priceInfoList")
+                  or response.get("data") or [])
+        else:
+            rows=response
+        results=[]
+        for bar in rows if isinstance(rows,list) else []:
+            if not isinstance(bar,dict):continue
+            local=str(bar.get("localDate") or bar.get("date") or "")
+            value=_number(bar.get("highPrice") or bar.get("high_price"))
+            if len(local)!=8 or not local.isdigit() or value is None:continue
+            day=dt.datetime.strptime(local,"%Y%m%d").replace(tzinfo=KST)
+            results.append((int(day.timestamp()),value))
+        return results
+    except Exception:
+        return []
+
+
 def _daily_conflicts(symbol,quotes,entry_ts,precision):
     # Accept 1m or 5m highs only if not above the exchange's own daily OHLC.
     # For days strictly after the entry date, the daily HIGH must not exceed
     # recovered intraday HIGH, or the intraday source is incomplete.
     daily=_json_chart(symbol,"1d","1mo")
+    if not daily:
+        daily=_naver_daily_highs(symbol[:6],entry_ts,int(time.time()))
     if not daily:return False,False
     full={_same_market_date(ts):high for ts,high in daily}
     intraday={}
