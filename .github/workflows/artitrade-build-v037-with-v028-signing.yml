@@ -6,7 +6,7 @@ on:
       - artitrade-phone-main-v070-live-orders-20261112
     paths:
       - 'ARTITRADE_ANDROID/**'
-      - '.github/workflows/artitrade-build-v036-with-v028-signing.yml'
+      - '.github/workflows/artitrade-build-v037-with-v028-signing.yml'
   workflow_dispatch:
 
 permissions:
