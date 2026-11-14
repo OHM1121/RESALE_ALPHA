@@ -3466,13 +3466,30 @@ public final class UnifiedVisualActivity extends Activity {
                 (int)(getResources().getDisplayMetrics().widthPixels*.96f),-2);
     }
 
+    private Map<String,String> researchListValues(HistoryRow item){
+        JSONObject row=item.row;
+        Map<String,String> values=researchPopupValues(item);
+        values.put("name",nameOf(row));
+        values.put("strategy",HistorySelection.strategyTag(item.source,item.frame));
+        values.put("score",Double.toString(num(row,"score","gmo_score_at_signal",
+            "original_score","signal_score")));
+        values.put("outcome",row.optString("outcome","PENDING"));
+        values.put("reason",reasonOf(row));
+        return values;
+    }
+
     private void renderResearch(){
         String filter=activeHistoryFilter();
         String scope="gmo".equals(filter)||"close".equals(filter)?filter:strategy;
         boolean combined="all".equals(filter);
         Stats st=stats(market,scope);
         JSONObject rs=research(market,scope);
-        java.util.List<HistoryRow> entries=selectedHistory("research");
+        java.util.ArrayList<HistoryRow> entries=
+            new java.util.ArrayList<>(selectedHistory("research"));
+        String queryId="research/"+market+"/"+scope;
+        ColumnQueryV036 researchQuery=tableQuery(queryId,
+            "name","strategy","when","score","outcome","reason","buy","sell");
+        filterAndSortHistory(entries,researchQuery,this::researchListValues);
         String gridKey=combined?market+"/all":market+"/"+scope;
         ResearchScoreGrid grid=uiSnapshot.researchGrids.get(gridKey);
         if(grid==null)grid=new ResearchScoreGrid();
@@ -3639,9 +3656,18 @@ public final class UnifiedVisualActivity extends Activity {
         note.setTextColor(Color.rgb(150,170,195));
         note.setPadding(dp(3),dp(7),dp(3),dp(4));content.addView(note);
 
+        LinearLayout researchHead=new LinearLayout(this);
+        researchHead.setOrientation(LinearLayout.HORIZONTAL);
+        researchHead.setGravity(Gravity.CENTER_VERTICAL);
         TextView recent=text("개별 연구 판단 근거 · "+entries.size()+"건",16);
         recent.setTypeface(null,Typeface.BOLD);
-        recent.setPadding(dp(2),dp(9),dp(2),dp(5));content.addView(recent);
+        recent.setPadding(dp(2),dp(7),0,dp(4));
+        researchHead.addView(recent,new LinearLayout.LayoutParams(0,dp(43),1));
+        Button rfilter=button("정렬·필터",false,()->
+            tableOptionsDialog(queryId,researchQuery,this::render));
+        rfilter.setTextSize(11);
+        researchHead.addView(rfilter,new LinearLayout.LayoutParams(dp(84),dp(37)));
+        content.addView(researchHead,new LinearLayout.LayoutParams(-1,dp(45)));
         if(entries.isEmpty()){
             empty("이 전략의 연구기록 없음 · 원본 건수와 로딩상태 확인");
             return;
