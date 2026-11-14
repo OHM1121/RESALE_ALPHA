@@ -1117,25 +1117,22 @@ def _gmo_original_record(root):
     if not isinstance(positions, dict) or not isinstance(orders, dict):
         raise ValueError("GMO account state positions/orders schema invalid")
     names = {str(k): str(v.get('name') or k) for k,v in signals.items() if isinstance(v,dict)}
-    # Opening price / last price are intentionally NOT manufactured.
-    bought_fill_by_code={}
-    for fill in buys:
-        if not isinstance(fill,dict):continue
-        code=str(fill.get('code') or '')
-        stamp=str(fill.get('time') or '')
-        if code and stamp and (code not in bought_fill_by_code or
-                stamp>str(bought_fill_by_code[code].get('time') or '')):
-            bought_fill_by_code[code]=fill
+    # Original buy_fills.time is authoritative: match current position's
+    # code+entry_date, not a later rebuy's same ticker and not event D-day.
+    from gmo_entry_time_v036 import entry_fill
     active = []
     for code,p in positions.items():
         if not isinstance(p,dict): continue
         qty = int(p.get('qty') or 0)
         if qty <= 0: continue
-        last_buy=bought_fill_by_code.get(str(code)) or {}
+        original_buy=entry_fill(dict(p,code=code),buys) or {}
         active.append({'tf':'gmo','strategy':'gmo','code':code,
             'name':p.get('name') or names.get(code,code),'qty':qty,
             'entry_price':p.get('entry_price'),'last_price':None,
-            'entry_at':last_buy.get('time'),'buy_reason':last_buy.get('purpose'),
+            'entry_at':original_buy.get('entry_at'),
+            'buy_at':original_buy.get('entry_at'),
+            'buy_reason':original_buy.get('buy_reason'),
+            'buy_reason_source':original_buy.get('buy_reason_source'),
             'gmo_score':p.get('gmo_score'),'status':'OPEN',
             'first_sold':bool(p.get('first_filled_qty')),
             'reason':p.get('stage'),'gmo_event_date':p.get('entry_date')})
@@ -1431,6 +1428,16 @@ def _hub_records_v078(self):
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
+            try:
+                from gmo_entry_time_v036 import enrich_positions
+                phone_state={
+                    'positions':{
+                        str(code):{'entry_date':getattr(position,'entry_date','')}
+                        for code,position in gmo.engine.positions.items()},
+                    'buy_fills':list(gmo.engine.buy_fills)}
+                enrich_positions(snap.get('positions') or [],phone_state)
+            except Exception as stamp_error:
+                self._err('gmo_original_buy_fill_timestamp',stamp_error)
             try:
                 from phone_buy_evidence_v035 import (
                     attach_gmo_buy_evidence,queue_phone_buy_evidence)
