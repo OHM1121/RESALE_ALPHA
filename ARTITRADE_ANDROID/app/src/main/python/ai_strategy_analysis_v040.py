@@ -600,10 +600,20 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
             value=old._point_in_time_market(*events,signal["signal_ts"],market)
             if value is not None:signal["features"]["market_score"]=value
     trades=_build_trades(raw,ledger,signals,archive,market,strategy,now,events)
+    # Per-actual-position internal data: entry/exit/holding averages and risk
+    # trajectory. Persist to scope-specific AI SQLite, not the visible UI.
+    from ai_trade_lifecycle_v042 import rebuild as rebuild_lifecycle
+    from ai_pattern_diagnosis_v042 import diagnose
+    all_positions=raw.get("positions",[])+[
+        p for p in ledger.get("positions",[]) if isinstance(p,dict)]
+    lifecycle=rebuild_lifecycle(root,market,strategy,all_positions,now,
+                               raw.get("executions",[]))
     available=["gmo"] if strategy=="gmo" else (["day"] if strategy=="close" else list(FRAMES))
-    frames=[attach_market_band_research(
-                _frame_summary(f,signals,trades,archive,events,now,raw["source"]),
-                band_scope_statistics(root,market,strategy,f))
+    frames=[diagnose(
+                attach_market_band_research(
+                    _frame_summary(f,signals,trades,archive,events,now,raw["source"]),
+                    band_scope_statistics(root,market,strategy,f)),
+                trades,lifecycle,market,strategy,f)
             for f in available]
     report={
         "ok":True,"schema":"ARTITRADE_AI_V040",
@@ -616,6 +626,7 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         "closed":sum(x["closed"] for x in frames),
         "feature_snapshots":len(archive["features"]),
         "position_snapshots":len(archive["positions"]),
+        "position_lifecycle_count":len(lifecycle),
         "error":raw.get("errors",[]),
     }
     try:
