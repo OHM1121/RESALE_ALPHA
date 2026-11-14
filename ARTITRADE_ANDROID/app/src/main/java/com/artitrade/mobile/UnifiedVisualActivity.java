@@ -136,6 +136,7 @@ public final class UnifiedVisualActivity extends Activity {
     private String policyTargetMarket="";
     private String strategy="at";
     private String page="home";
+    private boolean integratedMode=false;
     private volatile boolean aiAnalysisRunning=false;
     private JSONObject aiAnalysisReport=null;
     private String aiAnalysisScope="";
@@ -251,6 +252,10 @@ public final class UnifiedVisualActivity extends Activity {
         market=saved==null?prefs.getString("market","stock"):saved.getString("market",prefs.getString("market","stock"));
         strategy=saved==null?prefs.getString("strategy","at"):saved.getString("strategy",prefs.getString("strategy","at"));
         page=saved==null?prefs.getString("page","home"):saved.getString("page",prefs.getString("page","home"));
+        integratedMode=saved==null?prefs.getBoolean("integrated_mode",false):
+            saved.getBoolean("integrated_mode",prefs.getBoolean("integrated_mode",false));
+        if(integratedMode&&!("home".equals(page)||"positions".equals(page)))
+            page="home";
         // v2 keys deliberately reset the legacy v0.7.17 global 'all' default.
         historyFilterStock=prefs.getString("stock_filter_v2","current");
         historyFilterCoin=prefs.getString("coin_filter_v2","current");
@@ -267,6 +272,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void persistNavigation(){
         getSharedPreferences("artitrade_ui_navigation_v1",MODE_PRIVATE).edit()
             .putString("market",market).putString("strategy",strategy).putString("page",page)
+            .putBoolean("integrated_mode",integratedMode)
             .putString("stock_filter_v2",historyFilterStock)
             .putString("coin_filter_v2",historyFilterCoin)
             .apply();
@@ -276,6 +282,7 @@ public final class UnifiedVisualActivity extends Activity {
         state.putString("market",market);
         state.putString("strategy",strategy);
         state.putString("page",page);
+        state.putBoolean("integrated_mode",integratedMode);
         persistNavigation();
         super.onSaveInstanceState(state);
     }
@@ -474,28 +481,8 @@ public final class UnifiedVisualActivity extends Activity {
         brandBox.addView(statusText,new LinearLayout.LayoutParams(-1,dp(19)));
         top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(46),1));
 
-        LinearLayout marketSwitch=new LinearLayout(this);
-        marketSwitch.setOrientation(LinearLayout.HORIZONTAL);
-        marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
-        marketSwitch.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,14));
-        TextView marketTab=segmentItem("시장","market".equals(page),()->{
-            page="market";persistNavigation();showShell();
-        });
-        TextView stock=segmentItem("주식","stock".equals(market)&&
-            !"market".equals(page),()->{
-            if(!"stock".equals(market)){market="stock";strategy="at";resetHistoryFilter();}
-            page="home";persistNavigation();showShell();
-        });
-        TextView coin=segmentItem("코인","coin".equals(market)&&
-            !"market".equals(page),()->{
-            if(!"coin".equals(market)){market="coin";strategy="general";resetHistoryFilter();}
-            page="home";persistNavigation();showShell();
-        });
-        marketSwitch.addView(marketTab,new LinearLayout.LayoutParams(dp(49),dp(33)));
-        marketSwitch.addView(stock,new LinearLayout.LayoutParams(dp(49),dp(33)));
-        marketSwitch.addView(coin,new LinearLayout.LayoutParams(dp(49),dp(33)));
-        top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(155),dp(39)));
 
+        // Keep the brand/status/header readable on narrow phones.
         clockText=text("",12);
         clockText.setTextColor(PremiumUi.MUTED);
         clockText.setGravity(Gravity.CENTER);
@@ -506,11 +493,40 @@ public final class UnifiedVisualActivity extends Activity {
         top.addView(iconAction("☰",this::openSettingsDrawer),
             new LinearLayout.LayoutParams(dp(43),dp(43)));
         shell.addView(top,new LinearLayout.LayoutParams(-1,dp(51)));
+
+        // The four main destinations occupy their own full-width row.
+        LinearLayout marketSwitch=new LinearLayout(this);
+        marketSwitch.setOrientation(LinearLayout.HORIZONTAL);
+        marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
+        marketSwitch.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,14));
+        TextView marketTab=segmentItem("시장","market".equals(page)&&!integratedMode,()->{
+            integratedMode=false;page="market";persistNavigation();showShell();
+        });
+        TextView integrated=segmentItem("통합",integratedMode,()->{
+            integratedMode=true;page="home";persistNavigation();showShell();
+        });
+        TextView stock=segmentItem("주식","stock".equals(market)&&!integratedMode&&
+            !"market".equals(page),()->{
+            integratedMode=false;
+            if(!"stock".equals(market)){market="stock";strategy="at";resetHistoryFilter();}
+            page="home";persistNavigation();showShell();
+        });
+        TextView coin=segmentItem("코인","coin".equals(market)&&!integratedMode&&
+            !"market".equals(page),()->{
+            integratedMode=false;
+            if(!"coin".equals(market)){market="coin";strategy="general";resetHistoryFilter();}
+            page="home";persistNavigation();showShell();
+        });
+        marketSwitch.addView(marketTab,new LinearLayout.LayoutParams(0,dp(33),1));
+        marketSwitch.addView(integrated,new LinearLayout.LayoutParams(0,dp(33),1));
+        marketSwitch.addView(stock,new LinearLayout.LayoutParams(0,dp(33),1));
+        marketSwitch.addView(coin,new LinearLayout.LayoutParams(0,dp(33),1));
+        shell.addView(marketSwitch,new LinearLayout.LayoutParams(-1,dp(39)));
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
 
         HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);sh.setFillViewport(true);
         strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(11),dp(3),dp(11),dp(3));
-        sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));if(!"market".equals(page)){
+        sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));if(!"market".equals(page)&&!integratedMode){
             shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(40)));
             buildStrategyBar();
         }
@@ -519,7 +535,7 @@ public final class UnifiedVisualActivity extends Activity {
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(7),dp(5),dp(7),dp(8));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
-            if("analysis".equals(page)||"operation".equals(page)||"errors".equals(page)||
+            if(integratedMode||"analysis".equals(page)||"operation".equals(page)||"errors".equals(page)||
                "market".equals(page)||"policyHistory".equals(page))return false;
             if(e.getAction()==MotionEvent.ACTION_DOWN){
                 swipeX=e.getX();swipeY=e.getY();
@@ -540,12 +556,20 @@ public final class UnifiedVisualActivity extends Activity {
 
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         LinearLayout bottom=new LinearLayout(this);bottom.setOrientation(LinearLayout.HORIZONTAL);bottom.setGravity(Gravity.CENTER);bottom.setPadding(dp(6),dp(3),dp(6),dp(3));bottom.setBackgroundColor(PremiumUi.BG);
-        bottom.addView(bottomNavItem("home","⌂","대시보드"),new LinearLayout.LayoutParams(0,dp(46),1));
-        bottom.addView(bottomNavItem("positions","◆","보유종목"),new LinearLayout.LayoutParams(0,dp(46),1));
-        bottom.addView(bottomNavItem("pending","◌","매수대기"),new LinearLayout.LayoutParams(0,dp(46),1));
-        bottom.addView(bottomNavItem("executions","↔","체결이력"),new LinearLayout.LayoutParams(0,dp(46),1));
-        bottom.addView(bottomNavItem("research","◎","연구자료"),new LinearLayout.LayoutParams(0,dp(46),1));
-        bottom.addView(bottomNavItem("analysis","◇","AI분석"),new LinearLayout.LayoutParams(0,dp(46),1));
+        bottom.addView(bottomNavItem("home","⌂","대시보드"),
+            new LinearLayout.LayoutParams(0,dp(46),1));
+        bottom.addView(bottomNavItem("positions","◆","보유종목"),
+            new LinearLayout.LayoutParams(0,dp(46),1));
+        if(!integratedMode){
+            bottom.addView(bottomNavItem("pending","◌","매수대기"),
+                new LinearLayout.LayoutParams(0,dp(46),1));
+            bottom.addView(bottomNavItem("executions","↔","체결이력"),
+                new LinearLayout.LayoutParams(0,dp(46),1));
+            bottom.addView(bottomNavItem("research","◎","연구자료"),
+                new LinearLayout.LayoutParams(0,dp(46),1));
+            bottom.addView(bottomNavItem("analysis","◇","AI분석"),
+                new LinearLayout.LayoutParams(0,dp(46),1));
+        }
         shell.addView(bottom,new LinearLayout.LayoutParams(-1,dp(52)));
 
         updateClock();
@@ -1690,7 +1714,11 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void render(){
         if(content==null)return;content.removeAllViews();updateHeader();
-        if("market".equals(page))renderMarket();
+        if(integratedMode){
+            if("positions".equals(page))renderIntegratedPositions();
+            else renderIntegratedHome();
+        }
+        else if("market".equals(page))renderMarket();
         else if("home".equals(page))renderHome();
         else if("positions".equals(page))renderList("보유 종목",stats(market,strategy).positions,"positions");
         else if("pending".equals(page))renderList("매수 대기",stats(market,strategy).pending,"pending");
