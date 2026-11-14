@@ -98,7 +98,11 @@ def hold_deadline(entry,frame,market,is_krx_day=None):
     if market!="stock":raise ValueError("unknown market")
     checker=is_krx_day or _krx_day
     point=start
+    safety_days=0
     while amount>0:
+        safety_days+=1
+        if safety_days>400:
+            raise ValueError("UNVERIFIED_KRX_CALENDAR_OR_UNREACHABLE_HOLD_DEADLINE")
         next_day=dt.datetime.combine(point.date()+dt.timedelta(days=1),dt.time(),KST)
         if checker(point.date()):
             sec=int((next_day-point).total_seconds())
