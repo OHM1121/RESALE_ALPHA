@@ -2190,6 +2190,10 @@ public final class UnifiedVisualActivity extends Activity {
         return num(r,fields);
     }
     private String scenarioSummary(JSONObject r){
+        // Read-only hold diagnosis comes from the actual position.hold_days,
+        // not from a guessed target price or the reference candle timestamp.
+        String hold=r.optString("hold_exit_diagnostic","").trim();
+        if(!hold.isEmpty())return "보유기간 / 매도 판단 · "+hold;
         String state=r.optString("exit_scenario",r.optString("next_exit_scenario",r.optString("sell_scenario",""))).trim();
         if(!state.isEmpty()&&!state.equalsIgnoreCase("null"))return "가까운 매도 조건 · "+state;
         double now=usefulNumber(r,"last_price","current_price","market_price","price");
@@ -2484,8 +2488,25 @@ public final class UnifiedVisualActivity extends Activity {
             }
             String action="executions".equals(kind)?tradeSideOf(r):
                 "positions".equals(kind)||"pending".equals(kind)?"매수":"판단";
-            TextView why=text(tradeReasonOf(r,action),12);
-            why.setTextColor(Color.rgb(181,202,221));why.setMaxLines(4);
+            String actualReason=tradeReasonOf(r,action);
+            if("positions".equals(kind)){
+                String recorded=r.optString("buy_reason_source","");
+                if(recorded.isEmpty() && 
+                    actualReason.equals("원장에 매수 사유가 기록되지 않음"))
+                    actualReason="매수체결 근거 미연결 · 원본 BUY 체결 확인 필요";
+                else if(!recorded.isEmpty())
+                    actualReason="매수체결 근거 · "+actualReason;
+                String originalSignal=r.optString("buy_signal_reason","").trim();
+                if(!originalSignal.isEmpty()){
+                    String readable=TradeExplanation.shortReason(originalSignal,"매수");
+                    if(readable.startsWith("원본 판단코드 확인 필요"))
+                        readable="원본 신호코드 "+(originalSignal.length()>90?
+                            originalSignal.substring(0,87)+"…":originalSignal);
+                    actualReason+="\n신호선정 근거 · "+readable;
+                }
+            }
+            TextView why=text(actualReason,12);
+            why.setTextColor(Color.rgb(181,202,221));why.setMaxLines(6);
             // Reuse the full card width for timestamp / sell scenario / reason.
             LinearLayout listFooterColumns=new LinearLayout(this);
             boolean wideList=getResources().getConfiguration().screenWidthDp>=700;
