@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: artitrade-v036-research-audit-filter-cleanui-20261114
+          ref: ddc3dbece894f753d74130cb7838b63908511727
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
