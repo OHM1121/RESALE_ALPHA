@@ -3752,8 +3752,8 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
 
-    // v037 manual, read-only diagnosis. This page never calls any strategy
-    // settings writer or buy/sell operation.
+    // Manual analysis of the EXACT selected stock/coin strategy. No broker
+    // order, strategy setting, exchange execution, or source database is edited.
     private void runAiAnalysis(){
         if(aiAnalysisRunning)return;
         final String chosenMarket=market,chosenStrategy=strategy;
@@ -3761,156 +3761,287 @@ public final class UnifiedVisualActivity extends Activity {
         final String researchJson=research(chosenMarket,chosenStrategy).toString();
         final String ledgerJson=ledger(chosenMarket,chosenStrategy).toString();
         aiAnalysisRunning=true;
-        aiAnalysisError="";
-        aiAnalysisReport=null;
         aiAnalysisScope=scope;
+        aiAnalysisReport=null;
+        aiAnalysisError="";
         render();
         io.execute(()->{
-            JSONObject outcome=null;
+            JSONObject report=null;
             String error="";
             try{
                 if(!Python.isStarted())
-                    throw new IllegalStateException("전략 엔진 준비 중. 시작 완료 후 다시 분석하세요.");
+                    throw new IllegalStateException("전략 엔진 연결 전");
                 File folder=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
-                String raw=Python.getInstance()
-                    .getModule("ai_strategy_analysis_v037")
+                String raw=Python.getInstance().getModule("ai_strategy_analysis_v040")
                     .callAttr("analyze",folder.getAbsolutePath(),
                         chosenMarket,chosenStrategy,researchJson,ledgerJson).toString();
-                outcome=new JSONObject(raw);
-                if(!outcome.optBoolean("ok",false))
-                    error=outcome.optString("message","분석을 완료하지 못했습니다.");
-            }catch(Exception e){
-                error="분석 실패: "+e.getClass().getSimpleName()+
-                    (e.getMessage()==null?"":(" · "+e.getMessage()));
-                new RuntimeCrashStore(this).add("ai_strategy_analysis_v037",e);
+                report=new JSONObject(raw);
+                if(!report.optBoolean("ok",false)||
+                    !scope.equals(report.optString("scope","")))
+                    error=report.optString("message","선택한 전략의 분석값이 아님");
+            }catch(Exception ex){
+                error="분석 오류: "+ex.getClass().getSimpleName()+
+                      (ex.getMessage()==null?"":" · "+ex.getMessage());
+                new RuntimeCrashStore(this).add("ai_analysis_v040",ex);
             }
-            final JSONObject finalReport=outcome;
-            final String finalError=error;
+            final JSONObject done=report;
+            final String failure=error;
             main.post(()->{
                 if(scope.equals(aiAnalysisScope)){
-                    aiAnalysisReport=finalReport;
-                    aiAnalysisError=finalError;
+                    aiAnalysisReport=failure.isEmpty()?done:null;
+                    aiAnalysisError=failure;
                 }
                 aiAnalysisRunning=false;
-                if("analysis".equals(page)&&scope.equals(market+"/"+strategy))render();
+                if("analysis".equals(page)&&
+                   scope.equals(market+"/"+strategy)&&!integratedMode)render();
             });
         });
     }
 
-    private void aiLine(LinearLayout parent,String title,String body){
-        TextView heading=text(title,12);
-        heading.setTextColor(accent());
-        heading.setPadding(0,dp(8),0,dp(3));
-        parent.addView(heading);
-        TextView detail=text(body==null||body.trim().isEmpty()?"근거 미확인":body,12);
-        detail.setTextColor(PremiumUi.TEXT);
-        detail.setLineSpacing(dp(4),1.08f);
-        parent.addView(detail);
+    private void aiStatistic(LinearLayout row,String title,String value,int tint){
+        LinearLayout tile=new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(Gravity.CENTER);
+        tile.setPadding(dp(3),dp(6),dp(3),dp(7));
+        tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,10));
+        TextView number=text(value,25);
+        number.setGravity(Gravity.CENTER);
+        number.setTypeface(null,Typeface.BOLD);
+        number.setTextColor(tint);
+        autoSingle(number,17,25);
+        tile.addView(number,new LinearLayout.LayoutParams(-1,dp(34)));
+        TextView label=text(title,14);
+        label.setGravity(Gravity.CENTER);
+        label.setTextColor(PremiumUi.MUTED);
+        label.setSingleLine(true);
+        tile.addView(label,new LinearLayout.LayoutParams(-1,dp(23)));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(70),1);
+        if(row.getChildCount()>0)lp.setMargins(dp(6),0,0,0);
+        row.addView(tile,lp);
     }
-    private String aiStringList(JSONArray items){
-        if(items==null||items.length()==0)return "확인 가능한 자료 없음";
-        StringBuilder sb=new StringBuilder();
-        for(int i=0;i<items.length();i++){
-            if(i>0)sb.append("\n");
-            sb.append("· ").append(items.optString(i));
+    private void aiTitle(LinearLayout parent,String textValue,int topPadding){
+        TextView h=text(textValue,16);
+        h.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        h.setTextColor(Color.rgb(198,220,240));
+        h.setPadding(dp(2),dp(topPadding),dp(1),dp(5));
+        parent.addView(h);
+    }
+    private String aiFormatPct(JSONObject obj,String key){
+        if(obj==null||obj.isNull(key)||!obj.has(key))return "—";
+        return String.format(Locale.KOREA,"%+.2f%%",obj.optDouble(key));
+    }
+    private String aiFormatScore(JSONObject obj,String key){
+        if(obj==null||obj.isNull(key)||!obj.has(key))return "—";
+        return String.format(Locale.KOREA,"%+.1f",obj.optDouble(key));
+    }
+    private void aiFrameCard(LinearLayout parent,JSONObject frame){
+        LinearLayout tile=card();
+        tile.setPadding(dp(12),dp(10),dp(12),dp(12));
+        LinearLayout top=new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        String label=frame.optString("label","분봉");
+        TextView name=text(label,22);
+        name.setTypeface(null,Typeface.BOLD);
+        top.addView(name,new LinearLayout.LayoutParams(0,dp(32),1));
+        String status=frame.optString("status","");
+        String state="VALIDATED".equals(status)?"최근 검증":
+                     "HOLDOUT".equals(status)?"최근 비교":
+                     "EXPLORATORY".equals(status)?"탐색 결과":
+                     "OBSERVED".equals(status)?"종료 관측":
+                     "LIVE_OBSERVATION".equals(status)?"현재 관측":"기록 0건";
+        TextView badge=text(state,14);
+        badge.setTextColor("VALIDATED".equals(status)?
+            Color.rgb(83,224,180):Color.rgb(252,193,104));
+        badge.setPadding(dp(8),dp(4),dp(8),dp(4));
+        badge.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,9));
+        top.addView(badge);
+        tile.addView(top,new LinearLayout.LayoutParams(-1,dp(37)));
+
+        // First line communicates coverage without an explanatory paragraph.
+        LinearLayout stats=new LinearLayout(this);
+        stats.setOrientation(LinearLayout.HORIZONTAL);
+        aiStatistic(stats,"연구 신호",number(frame.optInt("signals",0)),
+                    Color.rgb(204,223,241));
+        aiStatistic(stats,"실제 진입",number(frame.optInt("entries",0)),
+                    Color.rgb(134,201,245));
+        aiStatistic(stats,"매도 완료",number(frame.optInt("closed",0)),
+                    Color.rgb(110,220,183));
+        aiStatistic(stats,"현재 보유",number(frame.optInt("open",0)),
+                    Color.rgb(252,191,108));
+        LinearLayout.LayoutParams metricsLp=new LinearLayout.LayoutParams(-1,dp(70));
+        metricsLp.setMargins(0,dp(6),0,0);
+        tile.addView(stats,metricsLp);
+
+        boolean actual=frame.optInt("closed",0)>0;
+        boolean holding=frame.optInt("open_marked",0)>0;
+        String outcomeLabel=actual?"실현 평균 수익률":
+            holding?"보유 평가 수익률":"실현손익 관측 전";
+        String amount=actual?aiFormatPct(frame,"avg_realized_pct"):
+            holding?aiFormatPct(frame,"avg_open_pct"):"—";
+        LinearLayout roi=new LinearLayout(this);
+        roi.setOrientation(LinearLayout.HORIZONTAL);
+        roi.setGravity(Gravity.CENTER_VERTICAL);
+        TextView indicator=text(outcomeLabel,15);
+        indicator.setTextColor(PremiumUi.MUTED);
+        roi.addView(indicator,new LinearLayout.LayoutParams(0,dp(34),1));
+        TextView value=text(amount,25);
+        value.setTypeface(null,Typeface.BOLD);
+        if(!"—".equals(amount))
+            value.setTextColor(amount.startsWith("-")?
+                Color.rgb(255,121,142):Color.rgb(85,222,177));
+        roi.addView(value);
+        LinearLayout.LayoutParams roiLp=new LinearLayout.LayoutParams(-1,dp(36));
+        roiLp.setMargins(0,dp(9),0,0);
+        tile.addView(roi,roiLp);
+
+        JSONObject effect=frame.optJSONObject("improvement");
+        aiTitle(tile,"개선효과 비교",7);
+        AiReturnCompareV040 bars=new AiReturnCompareV040(this);
+        bars.setResult(effect);
+        tile.addView(bars,new LinearLayout.LayoutParams(-1,dp(89)));
+        if(effect!=null){
+            String improvement=aiFormatPct(effect,"delta_pp");
+            TextView delta=text((effect.optBoolean("validated",false)?
+                "검증된 개선폭 ":"과거 탐색 개선폭 ")+improvement.replace("%","%p")+
+                "  ·  비교 "+effect.optInt("sample_n",0)+"건",15);
+            delta.setTextColor(effect.optBoolean("validated",false)?
+                Color.rgb(83,224,180):Color.rgb(251,194,106));
+            delta.setMaxLines(2);
+            tile.addView(delta);
         }
-        return sb.toString();
+
+        aiTitle(tile,"지표 축적률",9);
+        AiEvidenceMeterV040 evidence=new AiEvidenceMeterV040(this);
+        evidence.setEvidence(frame.optJSONObject("coverage"));
+        tile.addView(evidence,new LinearLayout.LayoutParams(-1,dp(139)));
+
+        LinearLayout marketLine=new LinearLayout(this);
+        marketLine.setGravity(Gravity.CENTER_VERTICAL);
+        TextView scoreLabel=text("매수~현재/매도 시장점수 평균",14);
+        scoreLabel.setTextColor(PremiumUi.MUTED);
+        marketLine.addView(scoreLabel,new LinearLayout.LayoutParams(0,dp(30),1));
+        TextView marketScore=text(aiFormatScore(frame,"avg_hold_market_score"),20);
+        marketScore.setTypeface(null,Typeface.BOLD);
+        marketLine.addView(marketScore);
+        tile.addView(marketLine,new LinearLayout.LayoutParams(-1,dp(35)));
+
+        JSONArray patterns=frame.optJSONArray("patterns");
+        if(patterns!=null&&patterns.length()>0){
+            LinearLayout summary=new LinearLayout(this);
+            summary.setOrientation(LinearLayout.VERTICAL);
+            summary.setPadding(dp(7),dp(4),dp(7),dp(6));
+            summary.setBackground(bg(PremiumUi.SURFACE_HIGH,0,8));
+            StringBuilder found=new StringBuilder();
+            for(int i=0;i<Math.min(3,patterns.length());i++){
+                JSONObject p=patterns.optJSONObject(i);
+                if(p==null)continue;
+                if(found.length()>0)found.append("   ·   ");
+                found.append(p.optString("name",""))
+                    .append(" ")
+                    .append(String.format(Locale.KOREA,"%.1f",p.optDouble("median")));
+            }
+            TextView m=text(found.toString(),15);
+            m.setTextColor(Color.rgb(193,212,232));
+            m.setMaxLines(2);
+            summary.addView(m);
+            LinearLayout.LayoutParams mlp=new LinearLayout.LayoutParams(-1,-2);
+            mlp.setMargins(0,dp(5),0,0);
+            tile.addView(summary,mlp);
+        }
+
+        aiTitle(tile,"원인 후보 / 공통패턴",12);
+        TextView finding=text(frame.optString("finding","현재 지표 관측 중"),17);
+        finding.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        finding.setMaxLines(2);
+        tile.addView(finding);
+        aiTitle(tile,"개선 전략",9);
+        TextView proposal=text(frame.optString("proposal","증거 축적 후 재분석"),17);
+        proposal.setTextColor(Color.rgb(90,221,179));
+        proposal.setMaxLines(3);
+        tile.addView(proposal);
+        LinearLayout.LayoutParams cardLp=new LinearLayout.LayoutParams(-1,-2);
+        cardLp.setMargins(0,0,0,dp(8));
+        parent.addView(tile,cardLp);
     }
-    private String aiPct(JSONObject q,String key){
-        if(q==null||!q.has(key)||q.isNull(key))return "산출불가";
-        return String.format(Locale.KOREA,"%+.3f%%",q.optDouble(key));
-    }
+
     private void renderAiAnalysis(){
         final String scope=market+"/"+strategy;
         LinearLayout header=card();
-        TextView title=text("AI 전략 개선 분석",18);
+        header.setPadding(dp(14),dp(11),dp(14),dp(11));
+        TextView sub=text("AI 전략 분석",16);
+        sub.setTextColor(PremiumUi.MUTED);
+        header.addView(sub);
+        TextView title=text(scopeTitle(market,strategy),26);
         title.setTypeface(null,Typeface.BOLD);
+        title.setPadding(0,dp(3),0,dp(7));
         header.addView(title);
-        String name="stock".equals(market)?"주식":"코인";
-        for(String[] opt:strategyList(market))if(strategy.equals(opt[0]))name+=" > "+opt[1];
-        TextView current=text(name+" · 분봉별 원장 분석",13);
-        current.setTextColor(PremiumUi.MUTED);
-        current.setPadding(0,dp(5),0,dp(8));
-        header.addView(current);
-        TextView guide=text("매수 전 지표 → 실제 매수/매도 원장 → 손익 → 원인 가설 → 검증. "+
-            "매매조건을 자동 변경하지 않는 읽기 전용 연구임.",12);
-        guide.setTextColor(PremiumUi.MUTED);
-        header.addView(guide);
-        Button start=button(aiAnalysisRunning?"분석 진행 중":"분석 시작",false,this::runAiAnalysis);
+        Button start=button(aiAnalysisRunning?"분석 중":"분석 시작",false,this::runAiAnalysis);
+        start.setTextSize(17);
         start.setEnabled(!aiAnalysisRunning);
-        LinearLayout.LayoutParams buttonLp=new LinearLayout.LayoutParams(-1,dp(43));
-        buttonLp.setMargins(0,dp(10),0,0);
-        header.addView(start,buttonLp);
-        content.addView(header,new LinearLayout.LayoutParams(-1,-2));
+        header.addView(start,new LinearLayout.LayoutParams(-1,dp(51)));
+        content.addView(header);
+
         if(aiAnalysisRunning&&scope.equals(aiAnalysisScope)){
-            LinearLayout waiting=card();
-            waiting.addView(text("원본 기록을 읽고 시간봉별 원인 후보를 검증 중",13));
-            content.addView(waiting);
+            LinearLayout pending=card();
+            TextView msg=text("현재 연구자료 분석 중",18);
+            pending.addView(msg);
+            ProgressBar progress=new ProgressBar(this);
+            LinearLayout.LayoutParams plp=new LinearLayout.LayoutParams(-1,dp(6));
+            plp.setMargins(0,dp(12),0,0);
+            pending.addView(progress,new LinearLayout.LayoutParams(-1,dp(35)));
+            content.addView(pending);
             return;
         }
         if(!scope.equals(aiAnalysisScope)||aiAnalysisReport==null){
-            LinearLayout empty=card();
-            empty.addView(text(!scope.equals(aiAnalysisScope)?
-                "이 전략의 분석 결과가 없습니다. 분석 시작을 누르세요.":
-                aiAnalysisError.isEmpty()?"분석 시작을 누르세요.":aiAnalysisError,13));
-            content.addView(empty);
+            LinearLayout emptyBox=card();
+            TextView nothing=text(aiAnalysisError.isEmpty()?
+                "이 전략의 분석을 시작하세요":aiAnalysisError,18);
+            nothing.setTextColor(PremiumUi.MUTED);
+            emptyBox.addView(nothing);
+            content.addView(emptyBox);
             return;
         }
         JSONObject report=aiAnalysisReport;
-        LinearLayout note=card();
-        aiLine(note,"분석 기준",report.optString("method_note",""));
-        aiLine(note,"정량 평가",report.optString("effect_note",""));
-        aiLine(note,"데이터 범위","원본 "+report.optString("source","")+" · 대상 기록 "+
-            report.optInt("source_total",0)+"건");
-        aiLine(note,"데이터 한계",report.optString("data_note",""));
-        content.addView(note);
+        if(!scope.equals(report.optString("scope","")))return;
+
+        LinearLayout summary=new LinearLayout(this);
+        summary.setOrientation(LinearLayout.HORIZONTAL);
+        aiStatistic(summary,"누적 신호",number(report.optInt("signals",0)),
+                    Color.rgb(207,226,246));
+        aiStatistic(summary,"진행 중",number(report.optInt("open",0)),
+                    Color.rgb(248,199,120));
+        aiStatistic(summary,"종료 관측",number(report.optInt("closed",0)),
+                    Color.rgb(105,220,181));
+        aiStatistic(summary,"축적 자료",number(report.optInt("feature_snapshots",0)+
+            report.optInt("position_snapshots",0)),
+                    Color.rgb(134,201,245));
+        LinearLayout.LayoutParams totalLp=new LinearLayout.LayoutParams(-1,dp(70));
+        totalLp.setMargins(0,dp(9),0,dp(12));
+        content.addView(summary,totalLp);
+
         JSONArray frames=report.optJSONArray("frames");
-        if(frames==null)return;
+        if(frames==null||frames.length()==0)return;
+        boolean sideBySide=getResources().getConfiguration().screenWidthDp>=720;
+        LinearLayout row=null;
         for(int i=0;i<frames.length();i++){
-            JSONObject f=frames.optJSONObject(i);
-            if(f==null)continue;
-            LinearLayout section=card();
-            LinearLayout.LayoutParams sectionLp=new LinearLayout.LayoutParams(-1,-2);
-            sectionLp.setMargins(0,dp(8),0,0);
-            TextView ftitle=text(f.optString("label","시간봉")+" · "+
-                ("VALIDATED_CANDIDATE".equals(f.optString("status"))?"검증후보":
-                 "HYPOTHESIS".equals(f.optString("status"))?"추가검증 필요":"자료부족"),16);
-            ftitle.setTypeface(null,Typeface.BOLD);
-            section.addView(ftitle);
-            aiLine(section,"1. 현황","연구후보 "+f.optInt("signals")+"건 / 실제 진입 "+
-                f.optInt("entries")+"건 / 순손익 검증 "+f.optInt("evaluated")+
-                "건 / 진행중 "+f.optInt("pending")+"건 / 손익근거 누락 "+
-                f.optInt("missing_net")+"건");
-            aiLine(section,"2. 문제점·원인 가설",aiStringList(f.optJSONArray("causes")));
-            aiLine(section,"3. 공통패턴",aiStringList(f.optJSONArray("patterns")));
-            aiLine(section,"4. 개선점",f.optString("improvement",""));
-            aiLine(section,"5. 전략","진입 당시 조건과 실제 체결 근거만으로 비교. "+
-                "후보 조건은 PAPER 연구에 한정하며 실거래 자동 적용 금지.");
-            JSONObject quant=f.optJSONObject("quantitative");
-            if(quant==null){
-                aiLine(section,"6. 예상 개선효과","정량 산출 불가 · "+
-                    "실현손익과 매수원금, 검증 표본의 추가 축적 필요");
+            JSONObject item=frames.optJSONObject(i);
+            if(item==null)continue;
+            if(!sideBySide){
+                aiFrameCard(content,item);
             }else{
-                String ci="검증 불충분";
-                JSONArray interval=quant.optJSONArray("delta_ci95_pp");
-                if(interval!=null&&interval.length()==2)
-                    ci=String.format(Locale.KOREA,"%+.3f ~ %+.3f%%p",
-                        interval.optDouble(0),interval.optDouble(1));
-                aiLine(section,"6. 정량 예상 개선효과",
-                    "최근 검증 "+quant.optInt("test_n")+"건 · 필터 대상 "+
-                        quant.optInt("screened_n")+"건\n"+
-                    "기존 기회당 "+aiPct(quant,"baseline_pct")+
-                    " → 필터 적용 "+aiPct(quant,"screened_pct")+
-                    "\n개선폭 "+String.format(Locale.KOREA,"%+.3f%%p",
-                        quant.optDouble("delta_pp"))+" · 95% 구간 "+ci+
-                    "\n판정: "+(quant.optBoolean("validated")?
-                        "제한적 과거 재현 통과":"가설 단계 · 효과 미확정")+
-                    "\n"+quant.optString("method",""));
+                if(i%2==0){
+                    row=new LinearLayout(this);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    content.addView(row,new LinearLayout.LayoutParams(-1,-2));
+                }
+                LinearLayout wrapper=new LinearLayout(this);
+                wrapper.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+                if(i%2==1)lp.setMargins(dp(7),0,0,0);
+                row.addView(wrapper,lp);
+                aiFrameCard(wrapper,item);
             }
-            JSONArray warnings=f.optJSONArray("warnings");
-            if(warnings!=null&&warnings.length()>0)
-                aiLine(section,"검증상 제약",aiStringList(warnings));
-            content.addView(section,sectionLp);
         }
     }
 
