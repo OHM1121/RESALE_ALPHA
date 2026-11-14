@@ -446,7 +446,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        return integratedMode?"v0.7.40 · 통합":("stock".equals(market)?"v0.7.40 · 주식":"v0.7.40 · 코인");
+        return integratedMode?"v0.7.41 · 통합":("stock".equals(market)?"v0.7.41 · 주식":"v0.7.41 · 코인");
     }
 
     private void showShell(){
