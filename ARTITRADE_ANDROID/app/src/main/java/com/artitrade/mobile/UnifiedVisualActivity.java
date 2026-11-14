@@ -3183,12 +3183,16 @@ public final class UnifiedVisualActivity extends Activity {
     private void filterAndSortHistory(java.util.List<HistoryRow> data,
                                      ColumnQueryV036 q,
                         java.util.function.Function<HistoryRow,Map<String,String>> values){
-        data.removeIf(r->!q.matches(values.apply(r)));
+        // Compute each formatted row only once. Re-formatting dates/prices
+        // inside an O(n log n) sorting comparator could freeze a 3k+ row UI.
+        Map<HistoryRow,Map<String,String>> prepared=new HashMap<>();
+        for(HistoryRow row:data)prepared.put(row,values.apply(row));
+        data.removeIf(row->!q.matches(prepared.get(row)));
         if(q.sortColumn.isEmpty())return;
         data.sort((left,right)->{
             int n=ColumnQueryV036.compare(
-                values.apply(left).get(q.sortColumn),
-                values.apply(right).get(q.sortColumn));
+                prepared.get(left).get(q.sortColumn),
+                prepared.get(right).get(q.sortColumn));
             return q.descending?-n:n;
         });
     }
