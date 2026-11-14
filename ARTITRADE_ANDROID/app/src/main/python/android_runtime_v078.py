@@ -450,6 +450,27 @@ def _coin_research(root,which):
     decisions={}
     for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY rowid DESC"):
         decisions.setdefault(int(decision.get('candidate_id') or 0),decision)
+    # The EXE's recorded UPBIT_BOOK_BID 1-minute shadow path is the
+    # authoritative VIRTUAL high observation, not a virtual/real SELL.
+    # Read only recently displayed candidate IDs and apply their own target.
+    from research_evidence_v036 import attach_coin_virtual_goal
+    book_observed=_core._db_rows(db,"""SELECT c.id AS candidate_id,
+        MIN(b.last_at) AS observed_target_at,
+        CAST(c.target AS REAL) AS observed_target_price
+        FROM (SELECT id,target FROM candidates ORDER BY id DESC LIMIT 3000) AS c
+        JOIN coin_shadow_trials t ON t.candidate_id=c.id
+        JOIN coin_shadow_book_path b ON b.candidate_id=c.id
+        WHERE b.source='UPBIT_BOOK_BID' AND t.entry_at<>''
+        AND b.last_at>=t.entry_at
+        AND CAST(b.bid_high AS REAL)>=CAST(c.target AS REAL)
+        AND CAST(c.target AS REAL)>0
+        GROUP BY c.id""")
+    observed_by_id={
+        int(x['candidate_id']):{
+            'observed_target_price':x['observed_target_price'],
+            'observed_target_at':x['observed_target_at'],
+            'observed_target_evidence':'COIN_BOOK_BID_HIGH_NOT_FILL'}
+        for x in book_observed if x.get('candidate_id') is not None}
     target_fills=set()
     shadow_target_sales={}
     for x in _core._db_rows(db,"SELECT * FROM coin_shadow_fills WHERE side='SELL'"):
@@ -494,6 +515,7 @@ def _coin_research(root,which):
         elif sh and sh.get('entry_at'):
             item.update({'virtual_buy_price':sh.get('entry_price'),
                          'virtual_buy_at':sh.get('entry_at')})
+            attach_coin_virtual_goal(item,observed_by_id.get(int(x.get('id') or 0)))
             if outcome=='HIT':
                 sell=shadow_target_sales.get(int(x.get('id') or 0),{})
                 if sell:
