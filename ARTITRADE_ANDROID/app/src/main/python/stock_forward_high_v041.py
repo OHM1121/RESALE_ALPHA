@@ -259,7 +259,7 @@ class _PriceWorker:
                     now=int(time.time())
                     for sid,code,entry in pending:
                         previous=conn.execute(
-                            "SELECT checked_at,state FROM price_highs "
+                            "SELECT * FROM price_highs "
                             "WHERE signal_id=? AND code=? AND entry_ts=?",
                             (sid,code,entry)).fetchone()
                         ttl=SOURCE_TTL if previous and previous["state"]=="OK" else MISSING_TTL
@@ -269,6 +269,18 @@ class _PriceWorker:
                         except Exception as exc:
                             found={"state":"SOURCE_UNAVAILABLE",
                                    "reason":type(exc).__name__}
+                        if previous and previous["state"]=="OK":
+                            old_high=previous["high_price"]
+                            new_high=_number(found.get("high_price"))
+                            # A later failed/partial API request must not erase
+                            # an already verified peak. Highest after entry is
+                            # monotonic across extended observation windows.
+                            if (new_high is None or old_high is not None and
+                                    new_high<old_high):
+                                found={k:previous[k] for k in (
+                                    "state","high_price","high_at",
+                                    "precision_seconds","source","coverage_start",
+                                    "coverage_end","observed_bars")}
                         conn.execute("""INSERT INTO price_highs(
                             signal_id,code,entry_ts,high_price,high_at,
                             precision_seconds,source,coverage_start,
