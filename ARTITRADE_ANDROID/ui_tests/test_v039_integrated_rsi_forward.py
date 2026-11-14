@@ -55,9 +55,10 @@ class IntegratedV039(unittest.TestCase):
         self.assertIn("AGGREGATE_NO_PEAK_TIMESTAMP",RUNTIME)
         body=JAVA[JAVA.index("private String[] researchSellCell("):
                   JAVA.index("private boolean researchGoalVerified(")]
-        self.assertIn('independentBarVerified="VERIFIED_MINUTE_BAR"',body)
-        self.assertIn('"후속 고가 검증 대기"',body)
-        self.assertIn("Object peakAt=firstValue(row,\"observed_max_at\",",body)
+        self.assertIn('minuteVerified="VERIFIED_MINUTE_BAR"',body)
+        self.assertNotIn('"후속 고가 검증 대기"',body)
+        self.assertIn('"후속고가 시세 API 조회 중"',body)
+        self.assertIn('Object fetchedPeak=firstValue(row,"observed_max_at");',body)
         self.assertNotIn('firstValue(row,"last_observed_at","highest_observed_trade_date")',body)
         self.assertIn('!"at".equals(source.source)&&finite(observed)',body)
         self.assertIn('!"at".equals(source.source)&&touched!=null',body)
