@@ -3832,177 +3832,91 @@ public final class UnifiedVisualActivity extends Activity {
         if(obj==null||obj.isNull(key)||!obj.has(key))return "—";
         return String.format(Locale.KOREA,"%+.1f",obj.optDouble(key));
     }
-    private void aiMarketBandMetric(LinearLayout parent,String title,String band,
-                                    double delta,double hours,boolean good){
-        LinearLayout tile=new LinearLayout(this);
-        tile.setOrientation(LinearLayout.VERTICAL);
-        tile.setPadding(dp(8),dp(7),dp(8),dp(7));
-        tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,8));
-        TextView label=text(title+" · "+band,14);
-        label.setTextColor(PremiumUi.MUTED);tile.addView(label);
-        TextView change=text(String.format(Locale.KOREA,"%+.2f%%",delta),23);
-        change.setTypeface(null,Typeface.BOLD);
-        change.setTextColor(delta>=0?Color.rgb(93,225,179):Color.rgb(255,131,149));
-        tile.addView(change);
-        TextView observed=text(String.format(Locale.KOREA,"%.1f시간",hours),13);
-        observed.setTextColor(PremiumUi.MUTED);tile.addView(observed);
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(93),1);
-        if(parent.getChildCount()>0)lp.setMargins(dp(7),0,0,0);
-        parent.addView(tile,lp);
+    // Only conclusions are rendered. ATR, RSI, Williams, per-trade volumes,
+    // buy/exit indicator snapshots and market-score histories stay private
+    // in the scope-specific research SQLite and exports.
+    private void aiFinding(LinearLayout parent,String heading,String value,
+                           int ink,boolean action){
+        LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12),dp(10),dp(12),dp(11));
+        panel.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,10));
+        TextView title=text(heading,15);
+        title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        title.setTextColor(ink);
+        panel.addView(title);
+        TextView detail=text(value,19);
+        detail.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        detail.setTextColor(action?Color.rgb(108,235,194):PremiumUi.TEXT);
+        detail.setMaxLines(3);
+        detail.setPadding(0,dp(7),0,dp(1));
+        panel.addView(detail);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+        lp.setMargins(0,dp(7),0,0);
+        parent.addView(panel,lp);
     }
     private void aiFrameCard(LinearLayout parent,JSONObject frame){
         LinearLayout tile=card();
         tile.setPadding(dp(12),dp(10),dp(12),dp(12));
-        LinearLayout top=new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        String label=frame.optString("label","분봉");
-        TextView name=text(label,22);
-        name.setTypeface(null,Typeface.BOLD);
-        top.addView(name,new LinearLayout.LayoutParams(0,dp(32),1));
-        String status=frame.optString("status","");
-        String state="VALIDATED".equals(status)?"최근 검증":
-                     "HOLDOUT".equals(status)?"최근 비교":
-                     "EXPLORATORY".equals(status)?"탐색 결과":
-                     "OBSERVED".equals(status)?"종료 관측":
-                     "LIVE_OBSERVATION".equals(status)?"현재 관측":"기록 0건";
-        TextView badge=text(state,14);
-        badge.setTextColor("VALIDATED".equals(status)?
-            Color.rgb(83,224,180):Color.rgb(252,193,104));
-        badge.setPadding(dp(8),dp(4),dp(8),dp(4));
-        badge.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,9));
-        top.addView(badge);
-        tile.addView(top,new LinearLayout.LayoutParams(-1,dp(37)));
+        JSONObject diagnosis=frame.optJSONObject("diagnosis");
+        if(diagnosis==null)diagnosis=new JSONObject();
 
-        // First line communicates coverage without an explanatory paragraph.
-        LinearLayout stats=new LinearLayout(this);
-        stats.setOrientation(LinearLayout.HORIZONTAL);
-        aiStatistic(stats,"연구 신호",number(frame.optInt("signals",0)),
-                    Color.rgb(204,223,241));
-        aiStatistic(stats,"실제 진입",number(frame.optInt("entries",0)),
-                    Color.rgb(134,201,245));
-        aiStatistic(stats,"매도 완료",number(frame.optInt("closed",0)),
-                    Color.rgb(110,220,183));
-        aiStatistic(stats,"현재 보유",number(frame.optInt("open",0)),
-                    Color.rgb(252,191,108));
-        LinearLayout.LayoutParams metricsLp=new LinearLayout.LayoutParams(-1,dp(70));
-        metricsLp.setMargins(0,dp(6),0,0);
-        tile.addView(stats,metricsLp);
+        LinearLayout heading=new LinearLayout(this);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView frameName=text(frame.optString("label","전략"),23);
+        frameName.setTypeface(null,Typeface.BOLD);
+        heading.addView(frameName,new LinearLayout.LayoutParams(0,dp(37),1));
+        String confidence=diagnosis.optString("confidence","검증 중");
+        TextView status=text(confidence,13);
+        status.setTextColor(Color.rgb(236,196,128));
+        status.setPadding(dp(6),dp(3),dp(6),dp(3));
+        status.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,8));
+        heading.addView(status);
+        tile.addView(heading);
 
-        boolean actual=frame.optInt("closed",0)>0;
-        boolean holding=frame.optInt("open_marked",0)>0;
-        String outcomeLabel=actual?"실현 평균 수익률":
-            holding?"보유 평가 수익률":"실현손익 관측 전";
-        String amount=actual?aiFormatPct(frame,"avg_realized_pct"):
-            holding?aiFormatPct(frame,"avg_open_pct"):"—";
-        LinearLayout roi=new LinearLayout(this);
-        roi.setOrientation(LinearLayout.HORIZONTAL);
-        roi.setGravity(Gravity.CENTER_VERTICAL);
-        TextView indicator=text(outcomeLabel,15);
-        indicator.setTextColor(PremiumUi.MUTED);
-        roi.addView(indicator,new LinearLayout.LayoutParams(0,dp(34),1));
-        TextView value=text(amount,25);
-        value.setTypeface(null,Typeface.BOLD);
-        if(!"—".equals(amount))
-            value.setTextColor(amount.startsWith("-")?
-                Color.rgb(255,121,142):Color.rgb(85,222,177));
-        roi.addView(value);
-        LinearLayout.LayoutParams roiLp=new LinearLayout.LayoutParams(-1,dp(36));
-        roiLp.setMargins(0,dp(9),0,0);
-        tile.addView(roi,roiLp);
+        LinearLayout measures=new LinearLayout(this);
+        measures.setOrientation(LinearLayout.HORIZONTAL);
+        aiStatistic(measures,"관측 종목",
+            number(Math.max(frame.optInt("entries",0),diagnosis.optInt("sample_n",0))),
+            Color.rgb(192,220,246));
+        aiStatistic(measures,"종료 거래",
+            number(frame.optInt("closed",0)),Color.rgb(96,219,184));
+        LinearLayout.LayoutParams measuresLp=new LinearLayout.LayoutParams(-1,dp(70));
+        measuresLp.setMargins(0,dp(4),0,dp(7));
+        tile.addView(measures,measuresLp);
 
-        JSONObject effect=frame.optJSONObject("improvement");
-        aiTitle(tile,"개선효과 비교",7);
-        AiReturnCompareV040 bars=new AiReturnCompareV040(this);
-        bars.setResult(effect);
-        tile.addView(bars,new LinearLayout.LayoutParams(-1,dp(89)));
-        if(effect!=null){
-            String improvement=aiFormatPct(effect,"delta_pp");
-            TextView delta=text((effect.optBoolean("validated",false)?
-                "검증된 개선폭 ":"과거 탐색 개선폭 ")+improvement.replace("%","%p")+
-                "  ·  비교 "+effect.optInt("sample_n",0)+"건",15);
-            delta.setTextColor(effect.optBoolean("validated",false)?
-                Color.rgb(83,224,180):Color.rgb(251,194,106));
-            delta.setMaxLines(2);
-            tile.addView(delta);
+        aiFinding(tile,"01  손실 선행조건",
+            diagnosis.optString("cause","손실의 선행조건 비교 중"),
+            Color.rgb(252,152,165),false);
+        aiFinding(tile,"02  반복 하락패턴",
+            diagnosis.optString("decline","종목별 하락 전 공통조건 분석 중"),
+            Color.rgb(248,187,135),false);
+        aiFinding(tile,"03  반복 상승패턴",
+            diagnosis.optString("rise","종목별 상승 전 공통조건 분석 중"),
+            Color.rgb(103,222,184),false);
+        aiFinding(tile,"04  개선 전략",
+            diagnosis.optString("recommendation","현재 전략 유지 · 비교표본 추가 확보"),
+            Color.rgb(126,199,255),true);
+
+        JSONObject effect=diagnosis.optJSONObject("effect");
+        if(effect!=null&&effect.has("delta_pp")&&!effect.isNull("delta_pp")){
+            aiTitle(tile,"정량 개선효과 · 과거 거래 비교",12);
+            AiReturnCompareV040 chart=new AiReturnCompareV040(this);
+            chart.setResult(effect);
+            tile.addView(chart,new LinearLayout.LayoutParams(-1,dp(89)));
+            TextView summary=text(
+                String.format(Locale.KOREA,"%+.2f%%p",effect.optDouble("delta_pp"))+
+                "  ·  손익기록 "+effect.optInt("sample_n",0)+"건 비교",18);
+            summary.setTypeface(null,Typeface.BOLD);
+            summary.setTextColor(effect.optDouble("delta_pp",0)>=0?
+                Color.rgb(99,223,183):Color.rgb(247,147,157));
+            summary.setPadding(0,dp(5),0,dp(2));
+            tile.addView(summary);
         }
-
-        aiTitle(tile,"지표 축적률",9);
-        AiEvidenceMeterV040 evidence=new AiEvidenceMeterV040(this);
-        evidence.setEvidence(frame.optJSONObject("coverage"));
-        tile.addView(evidence,new LinearLayout.LayoutParams(-1,dp(139)));
-
-        LinearLayout marketLine=new LinearLayout(this);
-        marketLine.setGravity(Gravity.CENTER_VERTICAL);
-        TextView scoreLabel=text("매수~현재/매도 시장점수 평균",14);
-        scoreLabel.setTextColor(PremiumUi.MUTED);
-        marketLine.addView(scoreLabel,new LinearLayout.LayoutParams(0,dp(30),1));
-        TextView marketScore=text(aiFormatScore(frame,"avg_hold_market_score"),20);
-        marketScore.setTypeface(null,Typeface.BOLD);
-        marketLine.addView(marketScore);
-        tile.addView(marketLine,new LinearLayout.LayoutParams(-1,dp(35)));
-        JSONObject weakest=frame.optJSONObject("market_band_worst");
-        JSONObject strongest=frame.optJSONObject("market_band_best");
-        if(weakest!=null&&strongest!=null){
-            aiTitle(tile,"시장점수 구간별 보유수익률 변화",11);
-            LinearLayout bandRow=new LinearLayout(this);
-            bandRow.setOrientation(LinearLayout.HORIZONTAL);
-            aiMarketBandMetric(bandRow,"최저",
-                weakest.optString("band",""),
-                weakest.optDouble("avg_change_pp",0),
-                weakest.optDouble("observed_hours",0),false);
-            aiMarketBandMetric(bandRow,"최고",
-                strongest.optString("band",""),
-                strongest.optDouble("avg_change_pp",0),
-                strongest.optDouble("observed_hours",0),true);
-            tile.addView(bandRow,new LinearLayout.LayoutParams(-1,dp(95)));
-        }
-        String sellCause=frame.optString("exit_trigger","").trim();
-        if(!sellCause.isEmpty()){
-            aiTitle(tile,"실제 매도 사유",6);
-            TextView cause=text(sellCause,16);
-            cause.setTextColor(Color.rgb(236,192,139));
-            cause.setMaxLines(2);
-            tile.addView(cause);
-        }
-
-        JSONArray patterns=frame.optJSONArray("patterns");
-        if(patterns!=null&&patterns.length()>0){
-            LinearLayout summary=new LinearLayout(this);
-            summary.setOrientation(LinearLayout.VERTICAL);
-            summary.setPadding(dp(7),dp(4),dp(7),dp(6));
-            summary.setBackground(bg(PremiumUi.SURFACE_HIGH,0,8));
-            StringBuilder found=new StringBuilder();
-            for(int i=0;i<Math.min(3,patterns.length());i++){
-                JSONObject p=patterns.optJSONObject(i);
-                if(p==null)continue;
-                if(found.length()>0)found.append("   ·   ");
-                found.append(p.optString("name",""))
-                    .append(" ")
-                    .append(String.format(Locale.KOREA,"%.1f",p.optDouble("median")));
-            }
-            TextView m=text(found.toString(),15);
-            m.setTextColor(Color.rgb(193,212,232));
-            m.setMaxLines(2);
-            summary.addView(m);
-            LinearLayout.LayoutParams mlp=new LinearLayout.LayoutParams(-1,-2);
-            mlp.setMargins(0,dp(5),0,0);
-            tile.addView(summary,mlp);
-        }
-
-        aiTitle(tile,"원인 후보 / 공통패턴",12);
-        TextView finding=text(frame.optString("finding","현재 지표 관측 중"),17);
-        finding.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
-        finding.setMaxLines(2);
-        tile.addView(finding);
-        aiTitle(tile,"개선 전략",9);
-        TextView proposal=text(frame.optString("proposal","증거 축적 후 재분석"),17);
-        proposal.setTextColor(Color.rgb(90,221,179));
-        proposal.setMaxLines(3);
-        tile.addView(proposal);
-        LinearLayout.LayoutParams cardLp=new LinearLayout.LayoutParams(-1,-2);
-        cardLp.setMargins(0,0,0,dp(8));
-        parent.addView(tile,cardLp);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+        lp.setMargins(0,0,0,dp(8));
+        parent.addView(tile,lp);
     }
 
     private void renderAiAnalysis(){
@@ -4044,21 +3958,6 @@ public final class UnifiedVisualActivity extends Activity {
         }
         JSONObject report=aiAnalysisReport;
         if(!scope.equals(report.optString("scope","")))return;
-
-        LinearLayout summary=new LinearLayout(this);
-        summary.setOrientation(LinearLayout.HORIZONTAL);
-        aiStatistic(summary,"누적 신호",number(report.optInt("signals",0)),
-                    Color.rgb(207,226,246));
-        aiStatistic(summary,"진행 중",number(report.optInt("open",0)),
-                    Color.rgb(248,199,120));
-        aiStatistic(summary,"종료 관측",number(report.optInt("closed",0)),
-                    Color.rgb(105,220,181));
-        aiStatistic(summary,"축적 자료",number(report.optInt("feature_snapshots",0)+
-            report.optInt("position_snapshots",0)),
-                    Color.rgb(134,201,245));
-        LinearLayout.LayoutParams totalLp=new LinearLayout.LayoutParams(-1,dp(70));
-        totalLp.setMargins(0,dp(9),0,dp(12));
-        content.addView(summary,totalLp);
 
         JSONArray frames=report.optJSONArray("frames");
         if(frames==null||frames.length()==0)return;
