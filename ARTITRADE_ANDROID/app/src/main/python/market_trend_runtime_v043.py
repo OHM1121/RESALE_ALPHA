@@ -391,8 +391,13 @@ class Coordinator:
             # unnecessary file transactions per scheduling cycle.
             if (self._last_closed.get(key)==max(x["end"] for x in rows)
                 and not any(p.market==market and p.symbol==code and
-                            p.frame==frame and not p.__dict__.get("bar_finalized")
-                            for p in self._positions.values())):
+                            p.frame==frame and (not p.__dict__.get("bar_finalized")
+                                or p.last_closed_bar!=rows[-1]["end"].isoformat())
+                            for p in self._positions.values())
+                and not any(v.market==market and v.symbol==code and v.frame==frame
+                            and (not v.__dict__.get("bar_finalized")
+                                or v.last_closed_bar!=rows[-1]["end"].isoformat())
+                            for v in self._virtual.values())):
                 continue
             rows=sorted(rows,key=lambda x:x["end"])
             last=self._last_closed.get(key)
