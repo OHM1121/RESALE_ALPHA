@@ -3526,7 +3526,7 @@ public final class UnifiedVisualActivity extends Activity {
         bundleButtons.addView(every,new LinearLayout.LayoutParams(0,dp(42),1));
         content.addView(bundleButtons,new LinearLayout.LayoutParams(-1,dp(52)));
 
-        String loadStatus=rs.optString("load_status","확인 전");
+        String loadStatus=rs.optString("load_status","");
         boolean researchReadFailed="ERROR".equals(loadStatus)||
             "QUERY_RETURNED_ZERO".equals(loadStatus)||
             "DB_MISSING".equals(loadStatus)||
@@ -3535,48 +3535,17 @@ public final class UnifiedVisualActivity extends Activity {
             "ACCOUNT_STATE_MISSING".equals(loadStatus);
         int loaded=rs.optInt("loaded_items",st.research.length());
         int sourceCount=rs.optInt("source_total",-1);
-        int maxShown=loaded;
-        boolean shortRead=sourceCount>maxShown;
-        String subtitle=(combined?"전체 전략":strategyName(market,scope))+
-            "  ·  원본 "+(sourceCount<0?"?":String.valueOf(sourceCount))+
-            "  /  표시 "+entries.size()+"  ·  "+loadStatus;
-        TextView origin=text(subtitle,11);
-        origin.setTextColor(researchReadFailed||shortRead?Color.rgb(255,119,133):
-            "OK".equals(loadStatus)?Color.rgb(62,224,181):Color.rgb(255,194,91));
-        origin.setPadding(dp(2),dp(3),dp(2),dp(8));content.addView(origin);
-        JSONObject sourceEvidence=rs.optJSONObject("evidence_counts");
-        if(sourceEvidence!=null&&sourceEvidence.length()>0){
-            long evidenceRows=0;
-            StringBuilder evidenceDetail=new StringBuilder();
-            java.util.Iterator<String> tables=sourceEvidence.keys();
-            while(tables.hasNext()){
-                String tableName=tables.next();
-                long count=sourceEvidence.optLong(tableName,0);
-                evidenceRows+=Math.max(0,count);
-                evidenceDetail.append(tableName).append(": ").append(count).append("행\n");
-            }
-            LinearLayout sourceKpis=new LinearLayout(this);
-            sourceKpis.setOrientation(LinearLayout.HORIZONTAL);
-            addKpi(sourceKpis,"후보 원본",sourceCount<0?"—":String.valueOf(sourceCount));
-            addKpi(sourceKpis,"관련 원장 행",String.valueOf(evidenceRows));
-            addKpi(sourceKpis,"화면 게시",String.valueOf(loaded));
-            LinearLayout.LayoutParams auditLp=new LinearLayout.LayoutParams(-1,dp(68));
-            auditLp.setMargins(0,dp(4),0,dp(8));
-            content.addView(sourceKpis,auditLp);
-            final String detail=evidenceDetail.toString();
-            sourceKpis.setOnClickListener(v->new AlertDialog.Builder(this)
-                .setTitle("PC 승계 원본 연구·체결 증거 테이블")
-                .setMessage(detail+"\n※ 원본 테이블 행수이며 화면에 모두 게시됐다는 뜻이 아님")
-                .setPositiveButton("확인",null).show());
-            PremiumUi.tapMotion(sourceKpis);
-        }
-        if(shortRead||researchReadFailed){
-            String msg=researchReadFailed?"PC 원장 조회/승계 확인 필요: "+loadStatus+" · "+rs.optString("load_error","")+
-                " · 다른 전략 리서치는 별도로 확인":
-                "전체 원본 중 일부만 화면에 게시됨 · PC 원본 DB/휴대폰 SQLite 전체 기록 검증 필요";
-            TextView warn=text(msg,11);warn.setTextColor(Color.rgb(255,119,133));
-            warn.setPadding(dp(4),dp(4),dp(4),dp(8));content.addView(warn);
-        }
+        boolean partial=sourceCount>=0&&sourceCount>loaded;
+        String sourceState=researchReadFailed?"오류":
+            partial?"일부조회":
+            "OK".equals(loadStatus)?"완료":"미완료";
+        TextView origin=text("연구원장  "+sourceState+
+            (partial?" · 화면은 최근 기록, 전체 원본은 ZIP에 포함":""),12);
+        origin.setTextColor(researchReadFailed?Color.rgb(255,119,133):
+            partial?Color.rgb(253,195,111):
+            "완료".equals(sourceState)?Color.rgb(85,225,170):PremiumUi.MUTED);
+        origin.setPadding(dp(2),dp(3),dp(2),dp(8));
+        content.addView(origin);
 
         double actualRate=tally.actualRate(),virtualRate=tally.virtualRate();
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
