@@ -1,0 +1,56 @@
+name: ARTITRADE v031 research doubletap and layout code-only
+on:
+  push:
+    branches: [artitrade-v031-score-doubletap-wide-layout-code-only-20261114]
+    paths:
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/artitrade-v031-code-only-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artitrade-v031-code-only-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Test score-band hit geometry, frame selection and unverified observation
+        run: |
+          mkdir -p /tmp/artitrade-v031
+          javac -d /tmp/artitrade-v031 \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchScoreGrid.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchBandSelection.java \
+            ARTITRADE_ANDROID/ui_tests/ResearchBandSelectionTest.java \
+            ARTITRADE_ANDROID/ui_tests/ResearchScoreGridTest.java
+          java -cp /tmp/artitrade-v031 com.artitrade.mobile.ResearchBandSelectionTest
+          java -cp /tmp/artitrade-v031 com.artitrade.mobile.ResearchScoreGridTest
+      - name: Regression test old and new history readers, UI layout
+        run: |
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py ARTITRADE_ANDROID/app/src/main/python/android_sqlite_reader.py
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v031_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v029_research_loaders.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v028_trade_record_parity.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_premium_native_ui.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v030_*.py' -v
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Compile unified Android Java UI without making APK
+        run: |
+          cd ARTITRADE_ANDROID
+          gradle --no-daemon :app:compileUnifiedDebugJavaWithJavac
+          test ! -d app/build/outputs/apk
