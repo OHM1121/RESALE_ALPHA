@@ -1,0 +1,25 @@
+name: ARTITRADE v039 Original Candidate Forward Price Attribution Audit
+on:
+  push:
+    branches: [feature-artitrade-v039-forward-verified-rsi-integrated]
+    paths: ['.github/workflows/artitrade-v039-source-audit.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect original EXE candidate_forward update logic
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,pathlib
+          folder=pathlib.Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          src=base64.b64decode(''.join(p.read_text() for p in sorted(folder.glob('part_*.txt'))))
+          with zipfile.ZipFile(io.BytesIO(src)) as zip:
+              lines=zip.read('d_candidate_history.py').decode('utf8','replace').splitlines()
+          print('---- schema 80..120 ----')
+          for i in range(78,120):print(f'{i+1}: {lines[i]}')
+          print('---- source update 410..530 ----')
+          for i in range(405,533):print(f'{i+1}: {lines[i]}')
+          PY
