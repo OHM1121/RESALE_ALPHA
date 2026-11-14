@@ -176,8 +176,14 @@ def _target_summary(rows, mode):
         elif status=='CLOSED' or (mode=='stock_at' and int(p.get('qty') or 0)<=0): miss+=1
         else: pending+=1
     evaluated=hit+miss
-    return {'evaluated':evaluated,'hit':hit,'miss':miss,'pending':pending,
-            'rate_pct':round(hit*100.0/evaluated,2) if evaluated else None}
+    eligible=hit+miss+pending
+    # Confirmed target-hit share of every entered position. Old percentage
+    # was hit/(hit+miss), which advertises 100% for 1 HIT and 9 PENDING.
+    # Keep conditional decided rate separately for forensic comparisons.
+    return {'evaluated':evaluated,'eligible':eligible,'hit':hit,'miss':miss,
+            'pending':pending,
+            'decided_rate_pct':round(hit*100.0/evaluated,2) if evaluated else None,
+            'rate_pct':round(hit*100.0/eligible,2) if eligible else None}
 
 
 def _research_scope(items):
