@@ -31,6 +31,11 @@ class ComprehensiveUi(unittest.TestCase):
             self.assertIn(state,block)
         self.assertIn("logMserverIssue(",UI)
 
+    def test_home_target_label_never_calls_incomplete_100pct_success(self):
+        self.assertIn('hit.setMetric("목표확인 비중"',UI)
+        self.assertIn('win.setMetric("실현손익 승률"',UI)
+        self.assertIn('actual.optInt("pending"',UI)
+
     def test_research_popup_labels_target_OX_and_ignores_not_bought_candidates(self):
         self.assertIn("ResearchBandSelection.includeInPopup(",UI)
         self.assertIn('case "goal":return "목표달성 O/X"',UI)
