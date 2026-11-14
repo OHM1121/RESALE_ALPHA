@@ -1423,6 +1423,16 @@ def _hub_records_v078(self):
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
+            try:
+                from phone_buy_evidence_v035 import (
+                    attach_gmo_buy_evidence,queue_phone_buy_evidence)
+                entry_dates={str(code):str(getattr(p,'entry_date',''))
+                    for code,p in getattr(gmo.engine,'positions',{}).items()}
+                captured=attach_gmo_buy_evidence(snap.get('positions') or [],
+                    snap.get('executions') or [],entry_dates)
+                queue_phone_buy_evidence(self.root,captured)
+            except Exception as evidence_exc:
+                self._err('gmo_phone_buy_evidence',evidence_exc)
             wallet=snap.get('wallet') or {}
             sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']
             wins=sum(1 for x in sells if float(x.get('net_profit') or 0)>0)
