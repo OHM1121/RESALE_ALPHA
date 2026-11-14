@@ -3026,23 +3026,48 @@ public final class UnifiedVisualActivity extends Activity {
             return new String[]{"가상매도  "+money(virtual)+" (모의체결)",
                 researchMoment(virtualAt)};
 
-        // An unselected research candidate may reach its target HIGH without a BUY
-        // or a SELL fill. Label the original OHLC observation explicitly as such.
-        if(!bought){
-            double observed=num(row,"observed_target_price");
-            Object observedAt=firstValue(row,"observed_target_at");
-            if(finite(observed)&&observed>0&&observedAt!=null)
-                return new String[]{"고가 관측  "+money(observed)+" (미체결)",
-                    researchMoment(observedAt)};
-            Object touched=firstValue(row,"first_observed_target_after_touch");
-            double threshold=num(row,"first_target","target");
-            if(touched!=null&&finite(threshold)&&threshold>0)
-                return new String[]{"목표 기준가  "+money(threshold)+" (관측·미체결)",
-                    researchMoment(touched)};
+        // Observed one-minute highs / BOOK_BID price paths are NEVER a
+        // broker or PAPER SELL. But they must not be hidden as '미기록'.
+        double observed=num(row,"observed_target_price");
+        Object observedAt=firstValue(row,"observed_target_at");
+        if(finite(observed)&&observed>0&&observedAt!=null&&
+           !row.optString("observed_target_evidence","").isEmpty()){
+            return new String[]{"목표 고가관측  "+money(observed)+" (매도 체결 아님)",
+                researchMoment(observedAt)};
         }
+        Object touched=firstValue(row,"first_observed_target_after_touch");
+        double threshold=num(row,"first_target","target");
+        if(touched!=null&&finite(threshold)&&threshold>0)
+            return new String[]{"목표가격 관측  "+money(threshold)+" (매도 체결 아님)",
+                researchMoment(touched)};
+        // The original GMO engine records PAPER last-exit time separately from
+        // the *first-target* sale. Show it as final exit, never as first TP.
+        Object lastExit=firstValue(row,"last_exit_at","paper_last_exit_at");
+        if(bought&&lastExit!=null&&!row.optString("sell_reason","").isEmpty()){
+            return new String[]{"최종매도 시각 · 1차 목표매도 여부 별도",
+                researchMoment(lastExit)};
+        }
+        double high=num(row,"observed_max_price","highest_observed_high");
+        Object last=firstValue(row,"last_observed_at","highest_observed_trade_date");
+        if(finite(high)&&high>0&&last!=null){
+            return new String[]{"후속 고가  "+money(high)+" (목표체결 아님)",
+                researchMoment(last)};
+        }
+        String quality=row.optString("observation_status","");
+        if("DATA_GAP".equals(quality))
+            return new String[]{"1분봉 수집 누락 · 목표 판정보류",
+                "미관측 "+row.optInt("missing_observation_minutes",0)+"분"};
+        if("NO_OBSERVATIONS".equals(quality))
+            return new String[]{"후속 관측자료 0건 · 승계/시세 수집 점검",
+                "원본 시각 미기록"};
         if(bought&&"HIT".equalsIgnoreCase(row.optString("outcome","")))
-            return new String[]{"목표도달 판정 · 매도가 미기록","체결일 미기록"};
-        return new String[]{"매도 / 목표관측 미기록","일자 미기록"};
+            return new String[]{"1차 매도 완료 표시 · 원장 체결가격/시각 미연결",
+                "원본 executions 확인 필요"};
+        if("MISS".equalsIgnoreCase(row.optString("outcome","")))
+            return new String[]{"목표 미달성 확정 · 1차 목표체결 없음",
+                "최종 시각 미기록"};
+        return new String[]{"후속 관측 중 · 목표판정 미확정",
+            "매도체결/고가관측 근거 없음"};
     }
 
     private boolean researchGoalVerified(HistoryRow source){
