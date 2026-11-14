@@ -43,6 +43,9 @@ def _candidate(root: Path, file: Path) -> bool:
     rel = file.relative_to(root)
     # Paper trading capital/slot settings are part of the reproducible research.
     # This exact local JSON contains limits, never broker API credentials.
+    if rel.as_posix() in ("market_research_v033.sqlite3",
+                          "phone_buy_evidence_v035.sqlite3"):
+        return True
     if rel.as_posix()=="ANDROID_OPERATION_V074.json":
         return True
     parts = rel.parts
@@ -109,6 +112,10 @@ def _db_snapshot(source: Path, target: Path) -> dict:
 
 def _research_class(table):
     x=table.lower()
+    if ("feature_snapshot" in x or "candle_observation" in x or
+            "market_score_observation" in x or "analysis_run" in x or
+            "position_observation" in x):
+        return "ai_analysis_evidence"
     if ("shadow" in x or "forward" in x or "milestone" in x
             or "book_path" in x):
         return "virtual_research"
