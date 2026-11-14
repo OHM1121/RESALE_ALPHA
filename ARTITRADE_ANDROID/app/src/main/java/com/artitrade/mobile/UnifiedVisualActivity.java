@@ -3795,20 +3795,55 @@ public final class UnifiedVisualActivity extends Activity {
         addHistoryPager("research",entries.size());
     }
 
+    private Map<String,String> scoreListValues(HistoryRow item){
+        JSONObject x=item.row;
+        Map<String,String> out=new HashMap<>();
+        out.put("name",nameOf(x));
+        out.put("strategy",HistorySelection.strategyTag(item.source,item.frame));
+        out.put("score",Double.toString(num(x,"score","diverse_11_score","gmo_score_at_signal")));
+        out.put("decision",x.optString("decision",
+            x.optString("status",x.optString("verdict",""))));
+        out.put("reason",reasonOf(x));
+        out.put("when",timeOf(x,item.source));
+        return out;
+    }
+
     private void renderScores(){
         JSONObject rs=research(market,strategy);
         JSONArray items=rs.optJSONArray("score_items");if(items==null)items=rs.optJSONArray("items");if(items==null)items=new JSONArray();
-        TextView h=text(strategyName(market,strategy)+" · 엔진 점수 비교",22);h.setTypeface(null,Typeface.BOLD);content.addView(h);
+        java.util.ArrayList<HistoryRow> scoreRows=new java.util.ArrayList<>();
+        for(int i=0;i<items.length();i++){
+            JSONObject x=items.optJSONObject(i);
+            if(x!=null)scoreRows.add(new HistoryRow(x,strategy,timeFrameOf(x),rowTimestamp(x)));
+        }
+        String tableId="scores/"+market+"/"+strategy;
+        ColumnQueryV036 query=tableQuery(tableId,
+            "name","strategy","score","decision","reason","when");
+        filterAndSortHistory(scoreRows,query,this::scoreListValues);
+        LinearLayout scoreHead=new LinearLayout(this);
+        scoreHead.setOrientation(LinearLayout.HORIZONTAL);
+        scoreHead.setGravity(Gravity.CENTER_VERTICAL);
+        TextView h=text(strategyName(market,strategy)+" · 엔진 점수 비교",20);
+        h.setTypeface(null,Typeface.BOLD);
+        scoreHead.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
+        Button sort=button("정렬·필터",false,()->
+            tableOptionsDialog(tableId,query,this::render));
+        sort.setTextSize(11);
+        scoreHead.addView(sort,new LinearLayout.LayoutParams(dp(86),dp(37)));
+        content.addView(scoreHead,new LinearLayout.LayoutParams(-1,dp(45)));
         TextView sub=text("미선정 후보 포함 · 후보 당시 점수와 판정 상태 · 실제 계좌성과와 분리",13);sub.setTextColor(Color.rgb(135,160,190));sub.setPadding(0,dp(3),0,dp(9));content.addView(sub);
         LinearLayout k=card();LinearLayout kr=new LinearLayout(this);kr.setOrientation(LinearLayout.HORIZONTAL);
         addMini(kr,"후보",String.valueOf(items.length()));
         int hi=0,mid=0,low=0;for(int i=0;i<items.length();i++){JSONObject x=items.optJSONObject(i);double sc=x==null?Double.NaN:num(x,"score","diverse_11_score","gmo_score_at_signal");if(!finite(sc))continue;if(sc>=61)hi++;else if(sc>=41)mid++;else low++;}
         addMini(kr,"61점+",String.valueOf(hi));addMini(kr,"41~60",String.valueOf(mid));addMini(kr,"40점↓",String.valueOf(low));k.addView(kr);content.addView(k,new LinearLayout.LayoutParams(-1,dp(78)));
-        if(items.length()==0){empty("점수 비교 후보 없음");return;}
-        int first=historyStart("scores",items.length()),last=HistoryPager.end(first,items.length());
-        addHistoryPager("scores",items.length());
+        if(scoreRows.isEmpty()){
+            empty("점수 비교 기록 없음 / 필터 조건을 확인하십시오.");return;
+        }
+        int first=historyStart("scores",scoreRows.size()),
+            last=HistoryPager.end(first,scoreRows.size());
+        addHistoryPager("scores",scoreRows.size());
         for(int i=first;i<last;i++){
-            JSONObject r=items.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
+            JSONObject r=scoreRows.get(i).row;if(r==null)continue;LinearLayout c=card();
             LinearLayout hr=new LinearLayout(this);hr.setOrientation(LinearLayout.HORIZONTAL);
             TextView n=text(nameOf(r),16);n.setTypeface(null,Typeface.BOLD);bindSymbolFourTap(n,r,market);hr.addView(n,new LinearLayout.LayoutParams(0,dp(28),1));
             double sc=num(r,"score","diverse_11_score","gmo_score_at_signal");TextView sv=text(finite(sc)?number(sc)+"점":"점수 미기록",15);sv.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);sv.setTextColor(Color.rgb(255,201,94));hr.addView(sv,new LinearLayout.LayoutParams(dp(110),dp(28)));c.addView(hr);
@@ -3830,7 +3865,7 @@ public final class UnifiedVisualActivity extends Activity {
             c.addView(scoreCandidateColumns,new LinearLayout.LayoutParams(-1,-2));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
         }
-        addHistoryPager("scores",items.length());
+        addHistoryPager("scores",scoreRows.size());
     }
 
     private void appendErrorItems(JSONArray out,JSONObject bucket){
