@@ -3534,6 +3534,9 @@ public final class UnifiedVisualActivity extends Activity {
             return new String[]{highLine,peakLine};
         if("at".equals(source.source)&&(row.has("observed_max_unverified")||
               row.has("last_observed_at"))){
+            String state=row.optString("forward_high_status","");
+            if("SOURCE_UNAVAILABLE".equals(state))
+                return new String[]{"후속고가 시세 API 재조회 중","최고가·분봉시각 원본 조회"};
             return new String[]{"후속고가 시세 API 조회 중",
                 "매수 이후 고가·발생시각 조회"};
         }
