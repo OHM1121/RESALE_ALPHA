@@ -1788,86 +1788,71 @@ public final class UnifiedVisualActivity extends Activity {
             updated.setTextColor(PremiumUi.MUTED);
             panel.addView(updated);
         }
-        TextView bandTitle=text("점수 구간",14);
-        bandTitle.setTypeface(null,Typeface.BOLD);
-        bandTitle.setPadding(0,dp(8),0,dp(3));
-        panel.addView(bandTitle);
 
+        TextView bandTitle=text("점수 구간별 평균 등락률",16);
+        bandTitle.setTypeface(null,Typeface.BOLD);
+        bandTitle.setPadding(0,dp(10),0,dp(8));
+        panel.addView(bandTitle);
+        LinearLayout labels=new LinearLayout(this);
+        labels.setGravity(Gravity.CENTER_VERTICAL);
+        TextView bandHeader=text("시장점수",13);
+        bandHeader.setTextColor(PremiumUi.MUTED);
+        labels.addView(bandHeader,new LinearLayout.LayoutParams(0,dp(30),1));
+        TextView changeHeader=text("평균 등락률",13);
+        changeHeader.setTextColor(PremiumUi.MUTED);
+        changeHeader.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        labels.addView(changeHeader,new LinearLayout.LayoutParams(0,dp(30),1));
+        TextView durationHeader=text("관측시간",13);
+        durationHeader.setTextColor(PremiumUi.MUTED);
+        durationHeader.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        labels.addView(durationHeader,new LinearLayout.LayoutParams(0,dp(30),1));
+        panel.addView(labels);
         JSONArray groups=data.optJSONArray("bands");
         String[] marketBands={
             "-100~-81","-80~-61","-60~-41","-40~-21","-20~-1",
             "0~19","20~39","40~59","60~79","80~100"
         };
-        int maxN=0;
-        if(groups!=null)for(int j=0;j<groups.length();j++){
-            JSONObject g=groups.optJSONObject(j);
-            if(g!=null)maxN=Math.max(maxN,g.optInt("count",0));
-        }
         for(String band:marketBands){
-            int count=0;
+            JSONObject found=null;
             if(groups!=null)for(int j=0;j<groups.length();j++){
-                JSONObject g=groups.optJSONObject(j);
-                if(g!=null&&band.equals(g.optString("band"))){
-                    count=g.optInt("count",0);
-                    break;
+                JSONObject entry=groups.optJSONObject(j);
+                if(entry!=null&&band.equals(entry.optString("band"))){
+                    found=entry;break;
                 }
             }
             boolean active=band.equals(data.optString("active_band",""));
-            LinearLayout row=new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackground(bg(active?PremiumUi.SURFACE_HIGH:
+            LinearLayout line=new LinearLayout(this);
+            line.setOrientation(LinearLayout.HORIZONTAL);
+            line.setGravity(Gravity.CENTER_VERTICAL);
+            line.setPadding(dp(4),dp(2),dp(4),dp(2));
+            line.setBackground(bg(active?PremiumUi.SURFACE_HIGH:
                 Color.TRANSPARENT,active?PremiumUi.LINE:Color.TRANSPARENT,6));
-            TextView label=text(band+(active?" ●":""),12);
-            label.setTextColor(active?Color.rgb(122,220,181):Color.rgb(176,193,213));
-            row.addView(label,new LinearLayout.LayoutParams(dp(88),dp(30)));
-            ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
-            bar.setMax(Math.max(1,maxN));
-            bar.setProgress(count);
-            if(Build.VERSION.SDK_INT>=21){
-                bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent()));
-                bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                    Color.rgb(41,46,62)));
-            }
-            LinearLayout.LayoutParams barLp=new LinearLayout.LayoutParams(0,dp(9),1);
-            barLp.setMargins(dp(6),0,dp(9),0);
-            row.addView(bar,barLp);
-            TextView n=text(count+"회",12);
-            n.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-            n.setTextColor(PremiumUi.MUTED);
-            row.addView(n,new LinearLayout.LayoutParams(dp(44),dp(30)));
-            panel.addView(row,new LinearLayout.LayoutParams(-1,dp(32)));
-        }
-        TextView method=text("평가 항목",13);
-        method.setTextColor(Color.rgb(161,203,240));
-        method.setPadding(0,dp(9),0,dp(5));
-        panel.addView(method);
-        JSONArray factors=data.optJSONArray("factors");
-        if(factors==null||factors.length()==0){
-            TextView no=text("지표 수신 대기 · 신호나 가상 점수를 생성하지 않음",12);
-            no.setTextColor(PremiumUi.MUTED);
-            panel.addView(no);
-        }else{
-            for(int i=0;i<Math.min(factors.length(),12);i+=2){
-                LinearLayout row=new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                JSONObject first=factors.optJSONObject(i);
-                JSONObject second=factors.optJSONObject(i+1);
-                if(first!=null){
-                    row.addView(marketEvidenceCard(first,crypto),
-                        new LinearLayout.LayoutParams(0,-2,1));
-                }
-                if(second!=null){
-                    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
-                    lp.setMargins(dp(5),0,0,0);
-                    row.addView(marketEvidenceCard(second,crypto),lp);
-                }else{
-                    row.addView(space(),new LinearLayout.LayoutParams(0,dp(1),1));
-                }
-                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
-                lp.setMargins(0,dp(5),0,0);
-                panel.addView(row,lp);
-            }
+            TextView interval=text(band,14);
+            interval.setTextColor(active?Color.rgb(103,223,185):Color.rgb(188,210,233));
+            if(active)interval.setTypeface(null,Typeface.BOLD);
+            line.addView(interval,new LinearLayout.LayoutParams(0,dp(33),1));
+            boolean hasReturn=found!=null&&found.has("avg_change_pp")&&
+                !found.isNull("avg_change_pp")&&found.optInt("position_segments",0)>0;
+            double delta=hasReturn?found.optDouble("avg_change_pp"):0;
+            String deltaString=hasReturn?
+                String.format(Locale.KOREA,"%+.2f%%",delta):"—";
+            TextView change=text(deltaString,15);
+            change.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            change.setTypeface(null,Typeface.BOLD);
+            if(hasReturn)change.setTextColor(delta>=0?
+                Color.rgb(90,223,183):Color.rgb(255,133,149));
+            line.addView(change,new LinearLayout.LayoutParams(0,dp(33),1));
+            double hours=found==null?0:found.optDouble("observed_seconds",0)/3600.0;
+            String hourText=hours>0&&hours<0.1?
+                String.format(Locale.KOREA,"%.2f시간",hours):
+                String.format(Locale.KOREA,"%.1f시간",hours);
+            TextView hoursView=text(hourText,14);
+            hoursView.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            hoursView.setTextColor(PremiumUi.MUTED);
+            line.addView(hoursView,new LinearLayout.LayoutParams(0,dp(33),1));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(38));
+            lp.setMargins(0,dp(1),0,0);
+            panel.addView(line,lp);
         }
         return panel;
     }
