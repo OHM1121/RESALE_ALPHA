@@ -3099,32 +3099,66 @@ public final class UnifiedVisualActivity extends Activity {
         menu.show();
     }
 
-    /** Always reachable even after a user has hidden a column. */
+    /** General action menu: card lists can sort/filter; true tables can also
+     * hide/reorder columns. User preferences are retained per market/screen. */
     private void tableOptionsDialog(String id,ColumnQueryV036 q,Runnable redraw){
         String[] choices=new String[q.order.size()+1];
-        choices[0]="정렬/값 필터 초기화 · 모든 열 표시";
+        choices[0]="필터/정렬 초기화 · 모든 열 표시";
         for(int i=0;i<q.order.size();i++){
             String key=q.order.get(i);
-            choices[i+1]=(q.hidden.contains(key)?"[숨김] ":"")+key+
-                (q.filters.containsKey(key)?" · 필터 중":"");
+            choices[i+1]=(q.hidden.contains(key)?"[숨김] ":"")+humanColumnName(key)+
+                (q.filters.containsKey(key)?" · 필터 중":"")+
+                (q.sortColumn.equals(key)?(q.descending?" · 내림차순":" · 오름차순"):"");
         }
-        new AlertDialog.Builder(this).setTitle("열 정렬·표시·필터")
+        new AlertDialog.Builder(this).setTitle("표시 순서 · 정렬 · 필터")
             .setItems(choices,(d,w)->{
                 if(w==0){
                     q.filters.clear();q.hidden.clear();
                     q.sortColumn="";q.descending=false;
                     saveTableQuery(id,q);redraw.run();
                 }else{
-                    // Reveal the column if hidden before editing it; users
-                    // can still hide it again using the header's long press.
                     String key=q.order.get(w-1);
-                    if(q.hidden.contains(key)){
-                        q.hide(key,false);saveTableQuery(id,q);redraw.run();
-                    }else{
-                        editTableFilter(id,q,key,redraw);
-                    }
+                    boolean trueTable=id.startsWith("popup/")||id.startsWith("policy/");
+                    String[] actions=trueTable?
+                        new String[]{"오름차순","내림차순","값 필터",
+                            "열 왼쪽으로","열 오른쪽으로",
+                            q.hidden.contains(key)?"열 표시":"열 숨김"}:
+                        new String[]{"오름차순 정렬","내림차순 정렬","값 필터"};
+                    new AlertDialog.Builder(this).setTitle(humanColumnName(key))
+                        .setItems(actions,(dialog,action)->{
+                            if(action==2){editTableFilter(id,q,key,redraw);return;}
+                            if(action==0||action==1){
+                                q.sortColumn=key;q.descending=action==1;
+                            }else if(action==3)q.move(key,-1);
+                            else if(action==4)q.move(key,1);
+                            else if(action==5)q.hide(key,!q.hidden.contains(key));
+                            saveTableQuery(id,q);redraw.run();
+                        }).setNegativeButton("닫기",null).show();
                 }
             }).setPositiveButton("닫기",null).show();
+    }
+
+    private String humanColumnName(String key){
+        switch(key){
+            case "identity":return "종목명 / 전략";
+            case "name":return "종목명";
+            case "strategy":return "전략·시간봉";
+            case "when":return "날짜·시간";
+            case "buy":return "매수가";
+            case "sell":return "매도가 / 목표관측";
+            case "goal":return "목표 달성 여부";
+            case "reason":return "매수·매도 판단근거";
+            case "side":return "매수·매도 여부";
+            case "price":return "체결가";
+            case "current":return "현재가";
+            case "qty":return "수량";
+            case "pnl":return "손익금액";
+            case "score":return "점수";
+            case "status":return "상태";
+            case "tf":return "시간봉";
+            case "outcome":return "목표도달 판정";
+            default:return key;
+        }
     }
 
     private void tableHeaderCell(LinearLayout parent,String title,String key,float weight,
