@@ -73,13 +73,15 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
     folder=Path(output_dir).resolve()
     if not root.is_dir() or not folder.is_dir():
         raise FileNotFoundError("Phone ledger or export cache missing")
+    # Both market scopes retain their own AI journal plus full market-score
+    # history, needed to reconstruct buy-to-sell interval averages.
+    shared_scores={"market_research_v033.sqlite3"}
+    if scope in ("stock","all"):
+        shared_scores.add("phone_buy_evidence_v035.sqlite3")
     originals=sorted((p for p in root.rglob("*")
         if (_candidate(root,p) and (
             scope=="all" or p.relative_to(root).parts[0]==scope))
-        or (scope=="all" and p.is_file() and
-            p.parent==root and p.name in (
-                "market_research_v033.sqlite3",
-                "phone_buy_evidence_v035.sqlite3"))),
+        or (p.is_file() and p.parent==root and p.name in shared_scores)),
         key=lambda p:p.relative_to(root).as_posix())
     if not originals:raise ValueError("No original research ledger files for "+scope)
     if len(originals)>MAX_FILES:raise ValueError("Too many original research files")
