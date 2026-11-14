@@ -44,10 +44,10 @@ class SignedMarketScale(unittest.TestCase):
             high["score"],places=1,msg="weighted signed subscore must equal market score")
 
     def test_negative_bands_preserve_positive_55_and_20_examples(self):
-        for score,band in ((-100,"-100~-51"),(-80,"-100~-51"),
-            (-50,"-50~-1"),(-20,"-50~-1"),(-0.1,"-50~-1"),
-            (0,"0~50"),(20,"0~50"),(50,"0~50"),
-            (55,"51~60"),(75,"71~80"),(100,"91~100")):
+        for score,band in ((-100,"-100~-81"),(-80,"-80~-61"),
+            (-50,"-60~-41"),(-20,"-20~-1"),(-0.1,"-20~-1"),
+            (0,"0~19"),(20,"20~39"),(50,"40~59"),
+            (55,"40~59"),(75,"60~79"),(100,"80~100")):
             self.assertEqual(m.market_band(score),band,msg=f"wrong band for {score}")
         for score in (-100.1,100.1,float("nan")):
             self.assertIsNone(m.market_band(score))
@@ -78,15 +78,15 @@ class SignedMarketScale(unittest.TestCase):
             ledger=m.ScoreLedger(path)
             self.assertEqual(ledger.score_at("stock",10020),40)
             self.assertEqual(ledger.score_at("coin",10020),-80)
-            self.assertEqual(ledger.snapshot("stock")["active_band"],"0~50")
-            self.assertEqual(ledger.snapshot("coin")["active_band"],"-100~-51")
+            self.assertEqual(ledger.snapshot("stock")["active_band"],"40~59")
+            self.assertEqual(ledger.snapshot("coin")["active_band"],"-80~-61")
             self.assertEqual(ledger.snapshot("stock")["active_avg_change_pp"],6)
             self.assertEqual(ledger.snapshot("coin")["active_avg_change_pp"],2)
             ledger.close()
             second=m.ScoreLedger(path)
             self.assertEqual(second.score_at("coin",10020),-80)
             self.assertEqual(second.score_at("stock",10020),40)
-            self.assertEqual(second.conn.execute("PRAGMA user_version").fetchone()[0],34)
+            self.assertEqual(second.conn.execute("PRAGMA user_version").fetchone()[0],35)
             second.close()
 
     def test_fresh_scores_keep_minus_100_and_signed_snapshot(self):
@@ -94,7 +94,7 @@ class SignedMarketScale(unittest.TestCase):
             ledger=m.ScoreLedger(Path(folder)/"market.sqlite3")
             self.assertTrue(ledger.record_score("coin",-88,10000,{"coin/general/5m/1":-4},{}))
             self.assertEqual(ledger.snapshot("coin")["score"],-88)
-            self.assertEqual(ledger.snapshot("coin")["active_band"],"-100~-51")
+            self.assertEqual(ledger.snapshot("coin")["active_band"],"-100~-81")
             ledger.close()
 
 
