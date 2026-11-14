@@ -2793,11 +2793,12 @@ public final class UnifiedVisualActivity extends Activity {
         }
         String section="gmo".equals(frame)?"수급매매":"close".equals(frame)?
             "종가베팅":tfLabel(frame);
+        String bandLabel=ResearchScoreGrid.NO_SCORE.equals(band)?band:band+"점";
         LinearLayout body=new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setBackgroundColor(PremiumUi.BG);
         body.setPadding(dp(7),dp(2),dp(7),dp(3));
-        TextView note=text(section+" · "+band+"점 · "+selected.size()+
+        TextView note=text(section+" · "+bandLabel+" · "+selected.size()+
             "건 (화면에 사전로딩된 연구 원장 기준, 더블탭 상세조회)",13);
         note.setTextColor(Color.rgb(174,204,232));
         note.setPadding(dp(6),dp(5),dp(4),dp(6));
@@ -2838,7 +2839,7 @@ public final class UnifiedVisualActivity extends Activity {
         footer.setPadding(dp(6),dp(7),dp(5),dp(4));
         body.addView(footer);
         AlertDialog dialog=new AlertDialog.Builder(this)
-            .setTitle(section+" · "+band+"점 연구 종목")
+            .setTitle(section+" · "+bandLabel+" 연구 종목")
             .setView(body)
             .setPositiveButton("닫기",null)
             .create();
