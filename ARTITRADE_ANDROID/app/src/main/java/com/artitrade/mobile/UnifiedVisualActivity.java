@@ -3350,18 +3350,42 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject cfg=operationPair(settings,m,stg,tf);
         long seed=cfg.optLong("seed",2000000),maxp=cfg.optLong("max_positions",4);
         LinearLayout c=card();
-        LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView tfv=text(tfLabel(tf),18);tfv.setTypeface(null,Typeface.BOLD);tfv.setTextColor(Color.rgb(218,214,255));head.addView(tfv,new LinearLayout.LayoutParams(0,dp(28),1));
-        TextView acct=text("독립계좌",10);acct.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);acct.setTextColor(Color.rgb(113,123,145));head.addView(acct,new LinearLayout.LayoutParams(dp(64),dp(28)));c.addView(head);
-        TextView sl=text("운용시드",11);sl.setTextColor(Color.rgb(137,147,169));sl.setPadding(0,dp(5),0,dp(3));c.addView(sl);
+        LinearLayout head=new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView tfv=text(tfLabel(tf),18);tfv.setTypeface(null,Typeface.BOLD);
+        tfv.setTextColor(Color.rgb(218,214,255));
+        head.addView(tfv,new LinearLayout.LayoutParams(0,dp(28),1));
+        TextView acct=text("독립계좌",10);acct.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        acct.setTextColor(Color.rgb(113,123,145));
+        head.addView(acct,new LinearLayout.LayoutParams(dp(64),dp(28)));
+        c.addView(head);
+
         String key=m+"."+stg+"."+tf;
-        EditText seedEdit=operationInput(operationDraft(key,"seed",String.valueOf(seed)),"2,000,000");
+        // Previous cards stacked both fields vertically, leaving the right
+        // half empty; align independent seed / max-hold controls side by side.
+        LinearLayout operationFrameColumns=new LinearLayout(this);
+        operationFrameColumns.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout seedBox=new LinearLayout(this);seedBox.setOrientation(LinearLayout.VERTICAL);
+        TextView sl=text("운용시드",12);sl.setTextColor(Color.rgb(150,169,194));
+        seedBox.addView(sl,new LinearLayout.LayoutParams(-1,dp(24)));
+        EditText seedEdit=operationInput(
+            operationDraft(key,"seed",String.valueOf(seed)),"2,000,000");
         trackOperationDraft(seedEdit,key+".seed");
-        c.addView(seedEdit,new LinearLayout.LayoutParams(-1,dp(40)));
-        TextView ml=text("최대 보유종목",11);ml.setTextColor(Color.rgb(137,147,169));ml.setPadding(0,dp(6),0,dp(3));c.addView(ml);
-        EditText maxEdit=operationInput(operationDraft(key,"max_positions",String.valueOf(maxp)),"4");
+        seedBox.addView(seedEdit,new LinearLayout.LayoutParams(-1,dp(43)));
+        operationFrameColumns.addView(seedBox,new LinearLayout.LayoutParams(0,dp(70),1.7f));
+
+        LinearLayout maxBox=new LinearLayout(this);maxBox.setOrientation(LinearLayout.VERTICAL);
+        TextView ml=text("최대 보유",12);ml.setTextColor(Color.rgb(150,169,194));
+        maxBox.addView(ml,new LinearLayout.LayoutParams(-1,dp(24)));
+        EditText maxEdit=operationInput(
+            operationDraft(key,"max_positions",String.valueOf(maxp)),"4");
         trackOperationDraft(maxEdit,key+".max_positions");
-        c.addView(maxEdit,new LinearLayout.LayoutParams(-1,dp(40)));
+        maxBox.addView(maxEdit,new LinearLayout.LayoutParams(-1,dp(43)));
+        LinearLayout.LayoutParams maxLp=new LinearLayout.LayoutParams(0,dp(70),1f);
+        maxLp.setMargins(dp(8),0,0,0);
+        operationFrameColumns.addView(maxBox,maxLp);
+        c.addView(operationFrameColumns,new LinearLayout.LayoutParams(-1,dp(74)));
         operationFields.put(key,new EditText[]{seedEdit,maxEdit});
         return c;
     }
@@ -3390,10 +3414,10 @@ public final class UnifiedVisualActivity extends Activity {
             for(int col=0;col<2;col++){
                 String tf=frames[row*2+col];
                 LinearLayout card=operationFrameCard(m,stg,tf,settings);
-                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(202),1);
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(132),1);
                 if(col>0)lp.setMargins(dp(8),0,0,0);line.addView(card,lp);
             }
-            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(202));if(row>0)rp.setMargins(0,dp(8),0,0);content.addView(line,rp);
+            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(132));if(row>0)rp.setMargins(0,dp(8),0,0);content.addView(line,rp);
         }
     }
 
