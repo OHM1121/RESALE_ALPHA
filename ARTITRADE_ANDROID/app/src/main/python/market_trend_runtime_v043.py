@@ -601,7 +601,9 @@ class Coordinator:
                 with self.lock:
                     base.update(self._candidates["coin"])
                     base.update(p.symbol for p in self._positions.values() if p.market=="coin")
-                return base
+                # Original REST orderbook helper slices this collection;
+                # preserve the original list contract, never return a set.
+                return sorted(base)
             coin._both_watched_codes=watched
         for market in ("stock","coin"):
             for target in (lambda m=market:self._rank_loop(m),
