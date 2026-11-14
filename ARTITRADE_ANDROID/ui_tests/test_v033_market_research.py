@@ -19,6 +19,16 @@ class MarketRegimeTests(unittest.TestCase):
     def test_crypto_breadth_missing_candles_cannot_make_score(self):
         self.assertIsNone(m.coin_score([], [], [])['score'])
 
+    def test_stale_market_snapshot_is_not_claimed_current(self):
+        old={'score':55,'asof':1000,'status':'정상','factors':[]}
+        result=m.display_snapshot('stock',old,now=1000+3700)
+        self.assertTrue(result['stale'])
+        self.assertEqual(result['score'],55)
+        self.assertIn('오래됨',result['status'])
+        failure=m.display_snapshot('coin',old,now=1005,poll_error='업비트 오류')
+        self.assertFalse(failure['stale'])
+        self.assertIn('업비트 오류',failure['status'])
+
     def test_score_band_cohort_moving_55_to_20(self):
         with tempfile.TemporaryDirectory() as d:
             db=m.ScoreLedger(Path(d)/'market.sqlite3')
