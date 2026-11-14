@@ -30,6 +30,7 @@ public final class UnifiedTradingService extends Service {
     static final String SET_LIVE="com.artitrade.mobile.SET_LIVE";
     static final String APPLY_OPERATION="com.artitrade.mobile.APPLY_OPERATION";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
+    static final String SET_PC_SYNC="com.artitrade.mobile.SET_PC_LIVE_SYNC";
     static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
@@ -46,6 +47,7 @@ public final class UnifiedTradingService extends Service {
     private StrategyRuntimeBridge strategy;
     private RuntimeCrashStore crashes;
     private volatile long lastHubPublish=0L;
+    private volatile boolean publishOneShot=false;
     private volatile boolean lastMserverAuthOk=false;
 
     @Override public void onCreate(){
@@ -85,9 +87,21 @@ public final class UnifiedTradingService extends Service {
                 final boolean requestedEnabled=enabled;
                 new Thread(()->applyLiveMode(requestedMarket,requestedEnabled),"artitrade-v070-live-arm").start();
             }
+            if(intent!=null&&SET_PC_SYNC.equals(intent.getAction())){
+                boolean enabled=intent.getBooleanExtra("enabled",false);
+                if(!getSharedPreferences("artitrade_pc_live_sync_v1",MODE_PRIVATE).edit()
+                    .putBoolean("enabled",enabled).commit())
+                    throw new IllegalStateException("Cannot persist PC sync consent");
+                lastHubPublish=0L;
+                publishOneShot=false;
+                mserverSyncProgress(enabled?"STARTING":"OFF",
+                    enabled?"PC와 실시간연동 시작 · 최초 원장 게시 대기":"PC 실시간연동 중지",
+                    0,0,0,System.currentTimeMillis());
+            }
             if(intent!=null&&RETRY_SYNC.equals(intent.getAction())){
-                lastHubPublish=0L; // next monitor pass republishes; never runs a second concurrent writer
-                mserverSyncProgress("RETRY","원장 다시 게시 요청",0,0,0,System.currentTimeMillis());
+                publishOneShot=true; // explicitly requested single publish, not background opt-in
+                lastHubPublish=0L;
+                mserverSyncProgress("RETRY","원장 1회 게시 요청",0,0,0,System.currentTimeMillis());
             }
             if(intent!=null&&RESTART_FEEDS.equals(intent.getAction())){
                 new Thread(()->safeRestartStrategy(),"artitrade-v074-restart").start();
@@ -282,7 +296,12 @@ public final class UnifiedTradingService extends Service {
                 JSONObject localRecords=strategy.hubRecords();
                 getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE).edit()
                     .putString("records",localRecords.toString()).putLong("updated_at",now).apply();
-                if(now-lastHubPublish>=4500){
+                boolean pcSyncOn=getSharedPreferences("artitrade_pc_live_sync_v1",
+                    MODE_PRIVATE).getBoolean("enabled",false);
+                if(PcLiveSyncPolicy.shouldPublish(pcSyncOn,publishOneShot,now,lastHubPublish)){
+                    publishOneShot=false;
+                    // Only changed record revisions travel to MSERVER. Phone-local
+                    // collection and trade execution continue even while PC sync is OFF.
                     publishPhoneLedgers(hub,localRecords);
                     lastHubPublish=now;
                 }
