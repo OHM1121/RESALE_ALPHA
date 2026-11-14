@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.provider.DocumentsContract;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -168,10 +169,12 @@ public final class UnifiedVisualActivity extends Activity {
     private boolean operationDraftLoaded=false;
     private static final int REQUEST_EXPORT_RESEARCH=7711;
     private static final int REQUEST_EXPORT_FULL_LEDGER=7712;
+    private static final int REQUEST_EXPORT_COMBINED_RESEARCH=7713;
     private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
         new java.util.concurrent.atomic.AtomicBoolean(false);
     private byte[] pendingResearchExport;
     private String pendingResearchReports;
+    private String pendingCombinedResearchScope;
     private static final long REFRESH_MS=3500L;
 
     private final Runnable periodic=new Runnable(){
@@ -2502,8 +2505,123 @@ public final class UnifiedVisualActivity extends Activity {
         }
     }
 
+    private void requestCombinedResearch(String scope){
+        if(!("stock".equals(scope)||"coin".equals(scope)||"all".equals(scope)))
+            return;
+        if(fullExportRunning.get()){
+            new AlertDialog.Builder(this).setTitle("연구이력 추출 진행 중")
+                .setMessage("기존 추출이 끝난 후 재시도할 수 있습니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        pendingCombinedResearchScope=scope;
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(picker,REQUEST_EXPORT_COMBINED_RESEARCH);
+    }
+
+    private void exportCombinedResearchToFolder(Uri tree,String scope){
+        if(!fullExportRunning.compareAndSet(false,true))return;
+        new Thread(()->{
+            File folder=new File(getCacheDir(),"artitrade_research_bundle_"+System.nanoTime());
+            java.util.List<Uri> newDocuments=new java.util.ArrayList<>();
+            try{
+                if(!folder.mkdirs()&&!folder.isDirectory())
+                    throw new IOException("사전 검증 임시폴더 생성 실패");
+                if(!Python.isStarted())
+                    throw new IllegalStateException("전략엔진 초기화 후 연구자료 추출 가능");
+                if(tree==null||!"content".equals(tree.getScheme()))
+                    throw new SecurityException("지원되지 않는 저장 폴더");
+                try{
+                    getContentResolver().takePersistableUriPermission(tree,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION|
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                }catch(SecurityException ignored){}
+                File runtime=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                String raw=Python.getInstance().getModule("android_research_bundle")
+                    .callAttr("make_bundle",runtime.getAbsolutePath(),
+                        folder.getAbsolutePath(),scope).toString();
+                JSONObject info=new JSONObject(raw);
+                if(!info.optBoolean("ok")||info.optInt("parts")<=0)
+                    throw new IOException("분할 리서치 생성 검증 실패");
+                Uri parent=DocumentsContract.buildDocumentUriUsingTree(
+                    tree,DocumentsContract.getTreeDocumentId(tree));
+                JSONArray parts=info.getJSONArray("files");
+                if(parts.length()!=info.optInt("parts"))
+                    throw new IOException("분할 파일 목록과 실제 개수 불일치");
+                long verified=0;
+                for(int i=0;i<parts.length();i++){
+                    JSONObject item=parts.getJSONObject(i);
+                    String filename=item.getString("name");
+                    if(!filename.matches("ARTITRADE_[A-Z]+_RESEARCH_[A-Za-z0-9_]+_PART_[0-9]{3}_OF_[0-9]{3}\\.zip"))
+                        throw new SecurityException("안전하지 않은 출력 파일명");
+                    File source=new File(folder,filename);
+                    if(!source.isFile()||source.length()!=item.getLong("bytes")||
+                       source.length()>500_000_000L)
+                        throw new IOException("500MB 한도 또는 원본 파일 크기 검사 실패");
+                    Uri saved=DocumentsContract.createDocument(getContentResolver(),
+                        parent,"application/zip",filename);
+                    if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
+                    newDocuments.add(saved);
+                    MessageDigest streamed=MessageDigest.getInstance("SHA-256");
+                    try(InputStream input=new FileInputStream(source);
+                        OutputStream output=getContentResolver().openOutputStream(saved,"w")){
+                        if(output==null)throw new IOException("ZIP 저장 스트림 없음");
+                        byte[] buf=new byte[1024*1024];int n;
+                        while((n=input.read(buf))!=-1){output.write(buf,0,n);streamed.update(buf,0,n);}
+                        output.flush();
+                    }
+                    String expected=item.getString("sha256");
+                    if(!expected.equalsIgnoreCase(hex(streamed.digest())))
+                        throw new IOException("ZIP 출력 중 SHA-256 불일치");
+                    MessageDigest disk=MessageDigest.getInstance("SHA-256");
+                    long bytes=0;
+                    try(InputStream input=getContentResolver().openInputStream(saved)){
+                        if(input==null)throw new IOException("저장된 ZIP 재열기 실패");
+                        byte[] buf=new byte[1024*1024];int n;
+                        while((n=input.read(buf))!=-1){disk.update(buf,0,n);bytes+=n;}
+                    }
+                    if(bytes!=source.length()||
+                        !expected.equalsIgnoreCase(hex(disk.digest())))
+                        throw new IOException("저장된 ZIP 검증 불일치");
+                    verified+=bytes;
+                }
+                fullLedgerExportResult(true,
+                    ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
+                    " 연구이력 "+parts.length()+"개 ZIP 저장 완료\\n"+
+                    "각 파일 500MB 이하 · 원본 SQLite/JSON 전체 포함\\n"+
+                    "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\\n"+
+                    "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",true);
+            }catch(Throwable e){
+                // A failed multi-file transfer must not masquerade as a complete export.
+                for(Uri created:newDocuments){
+                    try{DocumentsContract.deleteDocument(getContentResolver(),created);}
+                    catch(Exception ignored){}
+                }
+                new RuntimeCrashStore(this).add("combined_research_export",e);
+                fullLedgerExportResult(false,
+                    "통합 연구이력 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\\n"+
+                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),true);
+            }finally{
+                File[] files=folder.listFiles();
+                if(files!=null)for(File file:files)if(file.isFile())file.delete();
+                folder.delete();
+                fullExportRunning.set(false);
+            }
+        },"artitrade-scoped-multipart-research").start();
+    }
+
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==REQUEST_EXPORT_COMBINED_RESEARCH){
+            String scope=pendingCombinedResearchScope;
+            pendingCombinedResearchScope=null;
+            if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
+                exportCombinedResearchToFolder(data.getData(),scope);
+            return;
+        }
         if(requestCode==REQUEST_EXPORT_FULL_LEDGER){
             if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null)
                 exportFullLedgerToDocument(data.getData());
@@ -2540,6 +2658,23 @@ public final class UnifiedVisualActivity extends Activity {
         Button export=button("현재 ZIP",false,()->exportResearch(st));
         export.setTextSize(13);head.addView(export,new LinearLayout.LayoutParams(dp(92),dp(38)));
         content.addView(head,new LinearLayout.LayoutParams(-1,dp(44)));
+
+        // Each strategy keeps its existing independent ZIP button above.
+        // These three additional actions export every original SQLite/JSON
+        // for the selected MARKET group, not only the 3,000-row screen preview.
+        LinearLayout bundleButtons=new LinearLayout(this);
+        bundleButtons.setOrientation(LinearLayout.HORIZONTAL);
+        bundleButtons.setPadding(0,dp(3),0,dp(7));
+        Button stockAll=button("주식 통합 ZIP",false,()->requestCombinedResearch("stock"));
+        Button coinAll=button("코인 통합 ZIP",false,()->requestCombinedResearch("coin"));
+        Button every=button("프로그램 전체 ZIP",false,()->requestCombinedResearch("all"));
+        stockAll.setTextSize(11);coinAll.setTextSize(11);every.setTextSize(11);
+        bundleButtons.addView(stockAll,new LinearLayout.LayoutParams(0,dp(42),1));
+        LinearLayout.LayoutParams groupLp=new LinearLayout.LayoutParams(0,dp(42),1);
+        groupLp.setMargins(dp(4),0,dp(4),0);
+        bundleButtons.addView(coinAll,groupLp);
+        bundleButtons.addView(every,new LinearLayout.LayoutParams(0,dp(42),1));
+        content.addView(bundleButtons,new LinearLayout.LayoutParams(-1,dp(52)));
 
         String loadStatus=rs.optString("load_status","확인 전");
         boolean researchReadFailed="ERROR".equals(loadStatus)||
