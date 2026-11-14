@@ -253,6 +253,7 @@ def _connect(root,market):
         strategy TEXT NOT NULL,frame TEXT NOT NULL,signal_key TEXT NOT NULL,
         event_ts INTEGER,first_captured INTEGER NOT NULL,last_seen INTEGER NOT NULL,
         features_sha TEXT NOT NULL,features_json TEXT NOT NULL,
+        origin TEXT NOT NULL DEFAULT 'SOURCE_SIGNAL',
         PRIMARY KEY(strategy,signal_key,features_sha)
       );
       CREATE TABLE IF NOT EXISTS position_observations(
@@ -271,6 +272,12 @@ def _connect(root,market):
         bar_ts INTEGER NOT NULL,high REAL NOT NULL,low REAL NOT NULL,
         close REAL NOT NULL,volume REAL,origin TEXT NOT NULL,
         PRIMARY KEY(strategy,frame,symbol,bar_ts)
+      );
+      CREATE TABLE IF NOT EXISTS indicator_observations(
+        strategy TEXT NOT NULL,frame TEXT NOT NULL,symbol TEXT NOT NULL,
+        observed_minute INTEGER NOT NULL,features_json TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        PRIMARY KEY(strategy,frame,symbol,observed_minute)
       );
       CREATE TABLE IF NOT EXISTS market_score_observations(
         score_ts INTEGER NOT NULL PRIMARY KEY,
@@ -317,10 +324,10 @@ def capture_scope(root,market,strategy,research,ledger,now=None,market_score=Non
             digest=hashlib.sha256(encoded.encode("utf8")).hexdigest()[:24]
             conn.execute("""INSERT INTO feature_snapshots
                 (strategy,frame,signal_key,event_ts,first_captured,last_seen,
-                 features_sha,features_json) VALUES (?,?,?,?,?,?,?,?)
+                 features_sha,features_json,origin) VALUES (?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(strategy,signal_key,features_sha)
                 DO UPDATE SET last_seen=excluded.last_seen""",
-                (strategy,frame,key,when,now,now,digest,encoded))
+                (strategy,frame,key,when,now,now,digest,encoded,"SOURCE_SIGNAL"))
             signal_count+=1
         for row in positions:
             key=_key(row,strategy,"position")
@@ -390,7 +397,7 @@ def capture_packet(root,packet,now=None):
 def stored(root,market,strategy):
     """Readable union; only the selected strategy, never mixed markets."""
     path=db_path(root,market)
-    output={"features":[],"positions":[],"market_scores":[],"candles":[]}
+    output={"features":[],"positions":[],"market_scores":[],"candles":[],"indicators":[]}
     if not path.is_file():return output
     with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",uri=True,timeout=5) as conn:
         conn.row_factory=sqlite3.Row
@@ -404,7 +411,11 @@ def stored(root,market,strategy):
             "SELECT score_ts,score FROM market_score_observations ORDER BY score_ts")]
         output["candles"]=[dict(x) for x in conn.execute(
             "SELECT frame,symbol,bar_ts,high,low,close,volume FROM candle_observations "
-            "WHERE strategy=? ORDER BY bar_ts",(strategy,))]
+            "WHERE strategy=? ORDER BY bar_ts DESC LIMIT 20000",(strategy,))]
+        output["indicators"]=[dict(x) for x in conn.execute(
+            "SELECT frame,symbol,observed_minute,features_json,origin "
+            "FROM indicator_observations WHERE strategy=? "
+            "ORDER BY observed_minute DESC LIMIT 10000",(strategy,))]
     return output
 
 
@@ -452,6 +463,13 @@ class _EvidenceWorker:
             if packet is None:continue
             try:capture_packet(self.root,packet)
             except Exception:pass
+            # Network collection runs ONLY here, never on trading or UI
+            # callbacks. Cap at three instrument/timeframe queries per cycle.
+            try:
+                from ai_market_data_v040 import refresh_packet
+                refresh_packet(self.root,packet,max_calls=3)
+            except Exception:
+                pass
 
 
 def offer_records(root,packet):
