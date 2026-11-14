@@ -172,7 +172,9 @@ def _signal_rows(raw,research,market,strategy,archive):
         except (ValueError,KeyError,TypeError):continue
         event_ts=archived.get("event_ts")
         first=archived.get("first_captured") or 0
-        safe_at_entry=event_ts is not None and first<=int(event_ts)+120
+        safe_at_entry=(
+            archived.get("origin")=="RECONSTRUCTED_PRE_ENTRY_OHLCV"
+            or (event_ts is not None and first<=int(event_ts)+120))
         # Native journal primary ID may differ from the identity of a raw row.
         source_item=None
         for item in results:
@@ -399,6 +401,15 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
             fills_by_position[str(fill["position_id"])].append(fill)
     rows=[]
     seen=set()
+    # The most recent candle-derived metrics describe current exposure only.
+    # They cannot be promoted to original pre-buy indicator evidence.
+    current_indicators={}
+    for snap in archive.get("indicators",[]):
+        frame=snap.get("frame","")
+        code=snap.get("symbol","")
+        index=(frame,code)
+        if index not in current_indicators:
+            current_indicators[index]=journal._json_obj(snap.get("features_json"))
     for row in original+live:
         if not isinstance(row,dict):continue
         frame=journal._frame(row.get("tf") or row.get("frame"),strategy)
@@ -413,6 +424,9 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
         # A current holding's indicators describe CURRENT exposure, not a
         # feature recorded at the historical moment of buying.
         context=journal.extract_features(row,now)
+        for k,v in current_indicators.get((frame,str(row.get("code") or
+                    row.get("market") or "")),{}).items():
+            context.setdefault(k,v)
         if match is None and not feats:
             # Do not convert current indicators into entry-time causes.
             pass
@@ -450,7 +464,10 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
         open_roi=(100*(mark/entry-1)) if entry and mark and entry>0 and mark>0 else None
         rows.append({"key":"archived:"+key,"archive_key":key,
                      "frame":row.get("frame"),"features":{},
-                     "current_features":journal._json_obj(row.get("extra_json")),
+                     "current_features":dict(
+                         journal._json_obj(row.get("extra_json")),
+                         **current_indicators.get(
+                             (row.get("frame"),key.split("|")[-1]),{})),
                      "raw":row,"closed_roi":None,"open_roi":open_roi,
                      "state":"OPEN","at":row.get("entry_ts"),
                      "hold_market_avg":None,"hold_market_n":0})
@@ -476,7 +493,7 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         journal.capture_scope(root,market,strategy,archive_research,archive_ledger,now)
         archive=journal.stored(root,market,strategy)
     except (OSError,sqlite3.Error,ValueError):
-        archive={"features":[],"positions":[],"market_scores":[],"candles":[]}
+        archive={"features":[],"positions":[],"market_scores":[],"candles":[],"indicators":[]}
     events=old._market_events(root,market)
     # v040 market-score journal also survives scoped stock-only or coin-only
     # research export/restore when the original shared score DB is absent.
