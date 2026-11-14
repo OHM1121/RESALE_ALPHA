@@ -85,7 +85,7 @@ def _naver_daily_highs(code,entry_ts,now):
         else:
             rows=response
         results=[]
-        for bar in rows if isinstance(rows,list) else []:
+        for bar in (rows if isinstance(rows,list) else []):
             if not isinstance(bar,dict):continue
             local=str(bar.get("localDate") or bar.get("date") or "")
             value=_number(bar.get("highPrice") or bar.get("high_price"))
@@ -217,6 +217,12 @@ def _row_key(item):
     code=normalized_code(item.get("code"))
     sid=item.get("signal_id")
     entry=item.get("buy_at") or item.get("entry_ts") or item.get("virtual_buy_at")
+    label=str(entry or "").strip()
+    # A calendar date is not a filled purchase time: treating midnight as a
+    # fill would produce a false "highest since buy" attribution.
+    if len(label)==8 and label.isdigit() or (
+            len(label)==10 and label[4:5]=="-" and label[7:8]=="-"):
+        return None
     parsed=_timestamp(entry)
     if code is None or sid is None or parsed is None:return None
     return str(sid),code,parsed
@@ -246,7 +252,10 @@ def enrich(root,items):
     source=fetch_cache(root,items)
     for row in items:
         key=_row_key(row)
-        if key is None:continue
+        if key is None:
+            if row.get("bought") or row.get("entry_observed"):
+                row["forward_high_status"]="ENTRY_TIMESTAMP_MISSING"
+            continue
         result=source.get(key)
         if result is None:
             row["forward_high_status"]="API_QUERY_QUEUED"
