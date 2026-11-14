@@ -1729,14 +1729,23 @@ public final class UnifiedVisualActivity extends Activity {
         name.setTextColor(Color.rgb(168,193,219));
         name.setMaxLines(2);
         tile.addView(name);
-        double value=factor.optDouble("value",Double.NaN);
-        String display=finite(value)?(crypto?
-            String.format(Locale.KOREA,"%.1f / 100",value):
-            String.format(Locale.KOREA,"%+.2f%%",value)):"미기록";
+        // The impact is always the signed contribution: -100..+100.
+        // The raw value remains an observation, not the market score.
+        double impact=factor.optDouble("impact",Double.NaN);
+        String display=finite(impact)?
+            String.format(Locale.KOREA,"%+.1f / ±100",impact):"점수 미기록";
         TextView metric=text(display,15);
         metric.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
-        metric.setTextColor(Color.rgb(229,237,253));
+        metric.setTextColor(impact<0?Color.rgb(253,145,155):
+            impact>0?Color.rgb(119,229,180):Color.rgb(229,237,253));
         tile.addView(metric);
+        double observed=factor.optDouble("value",Double.NaN);
+        if(finite(observed)){
+            TextView raw=text((crypto?"기초지표 ":"관측값 ")+
+                String.format(Locale.KOREA,"%+.2f",observed),10);
+            raw.setTextColor(PremiumUi.MUTED);
+            tile.addView(raw);
+        }
         return tile;
     }
 
@@ -1783,7 +1792,7 @@ public final class UnifiedVisualActivity extends Activity {
         panel.addView(guide);
 
         JSONArray groups=data.optJSONArray("bands");
-        for(String band:new String[]{"0~50","51~60","61~70","71~80","81~90","91~100"}){
+        for(String band:new String[]{"-100~-51","-50~-1","0~50","51~60","61~70","71~80","81~90","91~100"}){
             JSONObject found=null;
             if(groups!=null)for(int j=0;j<groups.length();j++){
                 JSONObject g=groups.optJSONObject(j);
