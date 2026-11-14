@@ -503,8 +503,8 @@ def _close_full(self):
     executions=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 3000")
     # Original phone BUY fills contain the actual executed rule and time.
     from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
-    original_signals=_core._db_rows(db,
-        "SELECT id,strategy,code,ts AS ref_ts,reason_json AS reason,feature_json AS features FROM signals ORDER BY id DESC LIMIT 12000")
+    from phone_buy_evidence_v035 import read_open_signal_evidence
+    original_signals=read_open_signal_evidence(db,'stock','close')
     buy_records=attach_buy_evidence(positions,executions,original_signals,
                                    market='stock',strategy='close')
     queue_phone_buy_evidence(self.root,buy_records)
@@ -777,8 +777,8 @@ def _stock_ma_full(self):
     from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
     # MA fills carry position_id, while selected reference is linked by
     # candidate_id. No symbol-only guessing across wallets.
-    ma_candidates=_core._db_rows(db,
-        "SELECT id,tf,code,ref_ts,score,features FROM candidates ORDER BY id DESC LIMIT 12000")
+    from phone_buy_evidence_v035 import read_open_signal_evidence
+    ma_candidates=read_open_signal_evidence(db,'stock','ma')
     ma_positions=snap.get('positions') or []
     buy_records=attach_buy_evidence(ma_positions,full_exec,ma_candidates,
                                     market='stock',strategy='ma')
@@ -967,8 +967,8 @@ def _coin_full(ledger):
     source_variant='ma' if account_variant=='ma' else 'base'
     # candidates are immutable original strategy research rows, not imported
     # hypothetical stock prices. Requiring both reference ID and position BUY.
-    coin_candidates=_core._db_rows(ledger.path,
-        "SELECT id,tf,market,ref_at,reason,score,features FROM candidates ORDER BY id DESC LIMIT 12000")
+    from phone_buy_evidence_v035 import read_open_signal_evidence
+    coin_candidates=read_open_signal_evidence(ledger.path,'coin',source_variant)
     buy_records=attach_buy_evidence(positions,executions,coin_candidates,
                                    market='coin',strategy=source_variant)
     queue_phone_buy_evidence(Path(ledger.path).parents[2],buy_records)
@@ -1621,8 +1621,8 @@ def _stock_at_ledger_v19(self):
         from datetime import datetime
         from zoneinfo import ZoneInfo
         stock_db=Path(self.root)/'stock'/'ARTITRADE_D.sqlite3'
-        source_signals=_core._db_rows(stock_db,
-            "SELECT id,tf,code,ref_ts,features,score,decision FROM signals ORDER BY id DESC LIMIT 12000")
+        from phone_buy_evidence_v035 import read_open_signal_evidence
+        source_signals=read_open_signal_evidence(stock_db,'stock','at')
         membership=_core._db_rows(stock_db,"SELECT position_id,signal_id FROM v19_members")
         link_map={str(m['position_id']):str(m['signal_id']) for m in membership}
         # OPEN holdings' original buys must not fall out of a capped UI feed.
