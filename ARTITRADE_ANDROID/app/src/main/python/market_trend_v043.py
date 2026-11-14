@@ -335,6 +335,11 @@ class TrendJournal:
               CREATE TABLE IF NOT EXISTS gate_events(
                 at REAL NOT NULL,market TEXT NOT NULL,old_mode TEXT NOT NULL,
                 new_mode TEXT NOT NULL,reason TEXT NOT NULL);
+              -- Durable RSI20-only re-entry ban. No original position/order table changes.
+              CREATE TABLE IF NOT EXISTS stop_reentry_blocks(
+                market TEXT NOT NULL,symbol TEXT NOT NULL,trade_day TEXT NOT NULL,
+                first_fill_at TEXT NOT NULL,reason TEXT NOT NULL,
+                PRIMARY KEY(market,symbol,trade_day));
             """)
 
     def connect(self):
@@ -386,6 +391,24 @@ class TrendJournal:
                             updated_at=excluded.updated_at""",
               (pos.market,pos.strategy,pos.frame,pos.symbol,int(position_id),payload,
                "OPEN" if pos.qty>0 else "CLOSED",time.time()))
+            # The position snapshot and stop-loss ban commit together. The
+            # underlying strategy account retains its own authoritative fills.
+            stop_at=pos.__dict__.get("stop_fill_at")
+            if stop_at:
+                when=_as_kst(stop_at)
+                c.execute("""INSERT OR IGNORE INTO stop_reentry_blocks
+                   (market,symbol,trade_day,first_fill_at,reason)
+                   VALUES(?,?,?,?,?)""",
+                   (pos.market,pos.symbol,when.date().isoformat(),
+                    when.isoformat(),"MT_STOP_9PCT"))
+
+    def stop_reentry_blocked(self,market,symbol,at):
+        """Ban only RSI20 entries on the KST date of a filled -9% exit."""
+        day=_as_kst(at).date().isoformat()
+        with self.lock,self.connect() as c:
+            return c.execute("""SELECT 1 FROM stop_reentry_blocks
+                WHERE market=? AND symbol=? AND trade_day=? LIMIT 1""",
+                (market,str(symbol),day)).fetchone() is not None
 
     def open_positions(self):
         with self.lock,self.connect() as c:
