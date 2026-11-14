@@ -58,6 +58,20 @@ class MarketV038(unittest.TestCase):
                              {"-100~-81":1,"40~59":1})
             second.close()
 
+    def test_domestic_stock_fallback_supplies_both_required_indices(self):
+        def source(url,params):
+            if "m.stock.naver.com/api/index/KOSPI/basic" in url:
+                return {"fluctuationsRatio":"1.35"}
+            if "m.stock.naver.com/api/index/KOSDAQ/basic" in url:
+                return {"fluctuationsRatio":"-0.75"}
+            raise ConnectionError("Yahoo blocked")
+        with patch.object(m,"_public_json",side_effect=source):
+            score=m._fetch_stock()
+        self.assertIsNotNone(score["score"])
+        self.assertIn("KOSPI",score["naver_fallback"])
+        self.assertIn("KOSDAQ",score["naver_fallback"])
+        self.assertAlmostEqual(score["coverage"],(1.30+.90)/8.9,places=2)
+
     def test_coin_quote_24h_contract_produces_score(self):
         def source(url,params):
             if url.endswith("/ticker/all"):
