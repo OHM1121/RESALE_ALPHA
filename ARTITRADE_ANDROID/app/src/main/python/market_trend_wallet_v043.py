@@ -213,7 +213,7 @@ class TrendWallet:
                         if qty*price+fee>budget:return None,"WALLET_BUDGET"
                     else:
                         price=float(ask)
-                        limit=_coin_qty(min(Decimal(str(ask_size))*.5,
+                        limit=_coin_qty(min(Decimal(str(ask_size))*Decimal('0.5'),
                            Decimal(str(budget))/(Decimal(str(price))*(Decimal(1)+Decimal(str(COIN_FEE))))))
                         qty=limit
                         if qty<=0 or float(qty)*price<MIN_COIN_KRW:
@@ -286,7 +286,7 @@ class TrendWallet:
                 why,fraction=action
                 if why!=reason:return 0,"EXIT_REASON_CHANGED"
                 if market=="stock":
-                    qty=int(qleft) if fraction>=.999 else max(1,int(math.floor(qleft*fraction)))
+                    qty=int(qleft) if fraction>=.999 else max(1,int(round(qleft*fraction)))
                 else:
                     qty=_coin_qty(qleft if fraction>=.999 else qleft*fraction)
                 if float(qty)<=0:return 0,"LOT_TOO_SMALL"
