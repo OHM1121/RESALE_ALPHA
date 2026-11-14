@@ -1,0 +1,31 @@
+"""EXE observation timestamps are separate from actual SELL fills."""
+import sys
+from pathlib import Path
+import unittest
+sys.path.insert(0,str(Path(__file__).parents[1]/"app/src/main/python"))
+import research_evidence_v036 as m
+
+class EvidenceTests(unittest.TestCase):
+    def test_first_target_observation_is_not_a_sell_fill(self):
+        row={"first_target":120,"first_observed_target_after_touch":"20261103135900",
+             "observation_minutes":19,"observation_provenance":"KRX_1M"}
+        result=m.from_at_forward(row)
+        self.assertEqual(result["observed_target_at"],"20261103135900")
+        self.assertEqual(result["observed_target_price"],120)
+        self.assertEqual(result["observed_target_evidence"],"STOCK_MINUTE_HIGH_NOT_FILL")
+        self.assertFalse(result["sell_evidence"])
+
+    def test_missing_observation_marks_explicit_reason_not_target_miss(self):
+        a=m.observation_status({"missing_observation_minutes":200,"observation_minutes":1})
+        self.assertEqual(a,"DATA_GAP")
+        b=m.observation_status({"missing_observation_minutes":0,"observation_minutes":0})
+        self.assertEqual(b,"NO_OBSERVATIONS")
+        self.assertEqual(m.observation_status({"observation_minutes":10}),"OBSERVING")
+
+    def test_high_target_is_never_a_buy_or_sell_fill(self):
+        r=m.from_at_forward({"first_target":100,
+            "first_observed_target_after_touch":None,
+            "observation_minutes":3,"observed_max_price":120})
+        self.assertIsNone(r["observed_target_at"])
+        self.assertEqual(r["observed_target_evidence"],"")
+if __name__=="__main__":unittest.main()
