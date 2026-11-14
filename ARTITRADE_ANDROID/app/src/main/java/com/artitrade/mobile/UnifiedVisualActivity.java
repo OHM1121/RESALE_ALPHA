@@ -3537,6 +3537,8 @@ public final class UnifiedVisualActivity extends Activity {
             String state=row.optString("forward_high_status","");
             if("SOURCE_UNAVAILABLE".equals(state))
                 return new String[]{"후속고가 시세 API 재조회 중","최고가·분봉시각 원본 조회"};
+            if("ENTRY_TIMESTAMP_MISSING".equals(state))
+                return new String[]{"후속고가 매수시각 확인 필요","원본 매수 체결시각 미연결"};
             return new String[]{"후속고가 시세 API 조회 중",
                 "매수 이후 고가·발생시각 조회"};
         }
