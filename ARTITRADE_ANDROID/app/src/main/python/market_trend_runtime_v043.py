@@ -124,6 +124,7 @@ class Coordinator:
         self._positions={}
         self._virtual={}
         self._last_fetch_error={}
+        self._watch_after={}
         self._recover_positions()
 
     def _recover_positions(self):
@@ -574,6 +575,43 @@ class Coordinator:
                 self.modes[market]="PAUSED"
             self.stop_event.wait(.45)
 
+    def _watch_loop(self,market):
+        """Record RSI<=40 and ten minutes of following price evidence.
+
+        This runs separately from the -15/-12 second order scheduler. Its
+        lower-frequency writes cannot delay time-critical trade decisions.
+        """
+        while not self.stop_event.is_set():
+            try:
+                if self.mode(market)=="MARKET_TREND":
+                    now=dt.datetime.now(mt.KST)
+                    since=time.monotonic()
+                    with self.lock:
+                        candidates=list(self._candidates[market])
+                        quotes=dict(self._quotes[market])
+                    for code in candidates:
+                        raw=quotes.get(code)
+                        if raw is None or since-raw[1]>3:continue
+                        price=raw[0]
+                        for frame in mt.FRAMES:
+                            finish=_end_clock(now,market,frame)
+                            if finish is None:continue
+                            rows=self._closed_series(market,code,frame,finish)
+                            if not rows:continue
+                            rsi=mt.rsi20([x["close"] for x in rows],price)
+                            if rsi is None:continue
+                            key=(market,code,frame)
+                            if rsi<=40:
+                                self._watch_after[key]=time.time()+600
+                            after=time.time()<self._watch_after.get(key,0)
+                            if after:
+                                self.journal.record_watch(market,code,frame,
+                                    price,rsi,finish.isoformat(),
+                                    after_trigger=True)
+            except Exception as exc:
+                self._last_fetch_error[market]="WATCH:"+type(exc).__name__
+            self.stop_event.wait(30)
+
     def _rank_loop(self,market):
         while not self.stop_event.is_set():
             try:
@@ -608,6 +646,7 @@ class Coordinator:
         for market in ("stock","coin"):
             for target in (lambda m=market:self._rank_loop(m),
                            lambda m=market:self._prefetch(m),
+                           lambda m=market:self._watch_loop(m),
                            lambda m=market:self._loop(m)):
                 thread=threading.Thread(target=target,daemon=True,
                        name="artitrade-market-trend-v043-"+market)
