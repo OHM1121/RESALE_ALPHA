@@ -2324,10 +2324,36 @@ public final class UnifiedVisualActivity extends Activity {
         return chip;
     }
 
+    private Map<String,String> historyColumnValues(HistoryRow item,String kind){
+        JSONObject r=item.row;
+        Map<String,String> values=new HashMap<>();
+        values.put("name",nameOf(r));
+        values.put("strategy",HistorySelection.strategyTag(item.source,item.frame));
+        values.put("side",tradeSideOf(r));
+        values.put("when",fillTimeOf(r,kind,item.source));
+        values.put("buy",Double.toString(positionBuyPrice(r)));
+        values.put("current",Double.toString(positionMark(r)));
+        values.put("price",Double.toString(num(r,"price","fill_price","limit_price")));
+        values.put("qty",Double.toString(usefulNumber(r,"qty","quantity","holding_qty")));
+        values.put("pnl",Double.toString(tradePnL(r,kind)));
+        values.put("reason",tradeReasonOf(r,"executions".equals(kind)?
+            tradeSideOf(r):"매수"));
+        values.put("score",Double.toString(num(r,"score","signal_score","gmo_score")));
+        values.put("status",r.optString("status",r.optString("state","")));
+        return values;
+    }
+
     private void renderList(String title,JSONArray a,String kind){
         boolean marketWide="positions".equals(kind)||"pending".equals(kind)||
             "executions".equals(kind);
-        java.util.List<HistoryRow> history=marketWide?selectedHistory(kind):null;
+        java.util.List<HistoryRow> history=marketWide?
+            new java.util.ArrayList<>(selectedHistory(kind)):null;
+        String tableId="list/"+market+"/"+strategy+"/"+kind;
+        ColumnQueryV036 query=tableQuery(tableId,
+            "name","strategy","side","when","buy","current","price",
+            "qty","pnl","reason","score","status");
+        if(marketWide)filterAndSortHistory(history,query,
+            item->historyColumnValues(item,kind));
         int total=marketWide?history.size():a.length();
         LinearLayout header=new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -2336,6 +2362,12 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text(title+" · "+total+"건",18);
         h.setTypeface(null,Typeface.BOLD);
         header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
+        Button arrange=button("정렬·필터",false,()->
+            tableOptionsDialog(tableId,query,this::render));
+        arrange.setTextSize(11);
+        LinearLayout.LayoutParams flp=new LinearLayout.LayoutParams(dp(83),dp(38));
+        flp.setMargins(dp(3),0,dp(3),0);
+        header.addView(arrange,flp);
         if("positions".equals(kind)){
             Button policyButton=button("정책이력",false,()->{
                 page="policyHistory";persistNavigation();render();
