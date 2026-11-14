@@ -3012,27 +3012,58 @@ public final class UnifiedVisualActivity extends Activity {
             TextView score=text(finite(sc)?number(sc):"—",19);
             score.setTextColor(Color.rgb(252,193,99));score.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
             title.addView(score,new LinearLayout.LayoutParams(dp(66),dp(26)));
-            panel.addView(title);
+            panel.addView(title,new LinearLayout.LayoutParams(-1,dp(29)));
+
+            // The old research rows attached every status, reason and observation
+            // as a left-aligned full-width sentence. Use three genuine weighted
+            // information columns to occupy the landscape display instead.
+            boolean wideEvidence=getResources().getConfiguration().screenWidthDp>=720;
+            LinearLayout researchEvidenceColumns=new LinearLayout(this);
+            researchEvidenceColumns.setOrientation(wideEvidence?
+                LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+            LinearLayout identityCol=new LinearLayout(this);identityCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout reasonCol=new LinearLayout(this);reasonCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout observedCol=new LinearLayout(this);observedCol.setOrientation(LinearLayout.VERTICAL);
             String outcome=row.optString("outcome","");
             if(outcome.isEmpty()){Boolean reached=target(row);
                 outcome=reached==null?"PENDING":reached?"HIT":"MISS";}
             boolean actualEntry=bool(row,"bought");
             boolean unselected=bool(row,"unselected")||
                 row.optString("entry_status","").contains("UNSELECTED");
-            String tag=actualEntry?"실제체결":unselected?"불채택":"가상";
+            String tag=actualEntry?("gmo".equals(item.source)?"PAPER체결":"원장체결"):
+                unselected?"불채택":"가상";
             String outcomeKo="HIT".equals(outcome)?
-                (actualEntry?"1차 매도체결":"가상 고가관측"):
+                (actualEntry?"1차 매도 확인":"가상 목표관측"):
                 "MISS".equals(outcome)?
                 (actualEntry?"목표 미체결 종료":"가상 목표미도달"):"후속 관측 중";
-            TextView status=text(tag+"  ·  "+outcomeKo+"  ·  신호 "+timeOf(row,item.source),13);
+            TextView status=text(tag+" · "+outcomeKo+"\n신호 "+timeOf(row,item.source),13);
             status.setTextColor("HIT".equals(outcome)?Color.rgb(62,224,181):
                 "MISS".equals(outcome)?Color.rgb(255,119,133):Color.rgb(255,194,91));
-            panel.addView(status);
+            status.setMaxLines(5);
+            identityCol.addView(status);
             String basis=reasonOf(row);
-            TextView detail=text("판단근거  "+basis,13);
+            TextView detail=text("판단근거\n"+basis,13);
             detail.setTextColor(Color.rgb(177,199,223));
-            detail.setMaxLines(2);detail.setPadding(dp(2),dp(5),0,0);
-            panel.addView(detail);
+            detail.setMaxLines(4);
+            reasonCol.addView(detail);
+            int ranked=row.optInt("origin_rank",0);
+            if(unselected&&ranked>0){
+                int peers=row.optInt("cohort_size",0);
+                TextView rankText=text("상대 순위  "+ranked+
+                    (peers>0?" / "+peers:"")+"  ·  "+row.optString("unselected_reason",""),12);
+                rankText.setTextColor(Color.rgb(250,202,125));
+                rankText.setMaxLines(3);
+                reasonCol.addView(rankText);
+            }
+
+            double entry=num(row,"buy_price","virtual_buy_price","limit_price","official_d1_open");
+            double targetPrice=num(row,"first_target","target","observed_target_price");
+            String entryText=finite(entry)&&entry>0?money(entry):"미기록";
+            String goalText=finite(targetPrice)&&targetPrice>0?money(targetPrice):"미기록";
+            TextView priceFacts=text("매수·기준가 "+entryText+"  |  목표·관측가 "+goalText,12);
+            priceFacts.setTextColor(Color.rgb(167,196,220));
+            priceFacts.setMaxLines(3);
+            observedCol.addView(priceFacts);
             // These measurements are EXE-observed price excursions, not P&L.
             double maxObs=num(row,"observed_max_gain_pct","observed_mfe_pct");
             double minObs=num(row,"observed_min_gain_pct","observed_mae_pct");
@@ -3040,38 +3071,48 @@ public final class UnifiedVisualActivity extends Activity {
             if(!finite(maxObs)&&finite(finalObs))maxObs=finalObs;
             if(!finite(minObs)&&finite(finalObs))minObs=finalObs;
             if(finite(maxObs)||finite(minObs)){
-                TextView observed=text("후속가격  최고 "+signedPct(maxObs)+
-                    "  /  최저 "+signedPct(minObs),13);
+                TextView observed=text("후속 관측  최고 "+signedPct(maxObs)+
+                    "  /  최저 "+signedPct(minObs),12);
                 observed.setTextColor(Color.rgb(188,209,227));
-                observed.setPadding(dp(2),dp(5),0,0);
-                panel.addView(observed);
-                // Actual min/max points define the geometry; no invented bars.
+                observed.setMaxLines(3);
+                observedCol.addView(observed);
                 TradeRangeView range=new TradeRangeView(this,minObs,maxObs);
-                panel.addView(range,new LinearLayout.LayoutParams(-1,dp(25)));
+                observedCol.addView(range,new LinearLayout.LayoutParams(-1,dp(25)));
             }
-            int ranked=row.optInt("origin_rank",0);
-            if(unselected&&ranked>0){
-                int peers=row.optInt("cohort_size",0);
-                TextView rankText=text("선정 당시 순위  "+ranked+
-                    (peers>0?" / "+peers:"")+"  ·  "+row.optString("unselected_reason",""),12);
-                rankText.setTextColor(Color.rgb(250,202,125));
-                rankText.setMaxLines(2);
-                panel.addView(rankText);
-            }
-            // Research observations are NOT fills. Only actual recorded
-            // executions produce these extra buy/sell time and reason rows.
-            Object buyAt=firstValue(row,"buy_at","buy_filled_at","entry_at","entry_ts");
+            // Only originally recorded position/fill timestamps prove a trade.
+            Object buyAt=firstValue(row,"buy_at");
             if(actualEntry&&buyAt!=null){
-                TextView bought=text("매수 체결 · "+TradeExplanation.kst(buyAt,false),12);
-                bought.setTextColor(PremiumUi.MUTED);panel.addView(bought);
+                TextView bought=text(("gmo".equals(item.source)?"PAPER 매수":"원장 매수")+
+                    " · "+researchMoment(buyAt),12);
+                bought.setTextColor(PremiumUi.MUTED);
+                identityCol.addView(bought);
             }
-            Object sellAt=firstValue(row,"sell_at","paper_last_exit_at","sold_at","exit_at");
-            if(actualEntry&&sellAt!=null){
-                TextView sold=text("매도 체결 · "+TradeExplanation.kst(sellAt,false),12);
-                sold.setTextColor(PremiumUi.MUTED);panel.addView(sold);
-                TextView exit=text("매도 원인 · "+tradeReasonOf(row,"매도"),13);
-                exit.setTextColor(PremiumUi.TEXT);panel.addView(exit);
+            Object sellAt=firstValue(row,"sell_at");
+            if(actualEntry&&sellAt!=null&&!row.optString("sell_evidence","").isEmpty()){
+                TextView sold=text(("gmo".equals(item.source)?"PAPER 매도":"원장 매도")+
+                    " · "+researchMoment(sellAt),12);
+                sold.setTextColor(PremiumUi.MUTED);observedCol.addView(sold);
+                TextView exit=text("매도 원인 · "+tradeReasonOf(row,"매도"),12);
+                exit.setTextColor(PremiumUi.TEXT);exit.setMaxLines(3);
+                observedCol.addView(exit);
             }
+            if(wideEvidence){
+                researchEvidenceColumns.addView(identityCol,
+                    new LinearLayout.LayoutParams(0,-2,1.25f));
+                LinearLayout.LayoutParams reasonWeight=
+                    new LinearLayout.LayoutParams(0,-2,1.55f);
+                reasonWeight.setMargins(dp(9),0,0,0);
+                researchEvidenceColumns.addView(reasonCol,reasonWeight);
+                LinearLayout.LayoutParams observedWeight=
+                    new LinearLayout.LayoutParams(0,-2,1.65f);
+                observedWeight.setMargins(dp(9),0,0,0);
+                researchEvidenceColumns.addView(observedCol,observedWeight);
+            }else{
+                researchEvidenceColumns.addView(identityCol,new LinearLayout.LayoutParams(-1,-2));
+                researchEvidenceColumns.addView(reasonCol,new LinearLayout.LayoutParams(-1,-2));
+                researchEvidenceColumns.addView(observedCol,new LinearLayout.LayoutParams(-1,-2));
+            }
+            panel.addView(researchEvidenceColumns,new LinearLayout.LayoutParams(-1,-2));
             LinearLayout.LayoutParams itemLp=new LinearLayout.LayoutParams(-1,-2);
             itemLp.setMargins(0,0,0,dp(6));content.addView(panel,itemLp);
         }
