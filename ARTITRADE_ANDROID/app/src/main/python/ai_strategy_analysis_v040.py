@@ -429,10 +429,15 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
                      "hold_market_avg":hold_avg,"hold_market_n":hold_n})
     # If a source DB has not arrived on the phone but position snapshots were
     # captured previously, still count open holdings without fabricating P&L.
+    # Never count the same original DB position twice when its snapshot is also
+    # present in the append-only research journal.
+    existing_position_ids={
+        journal._key(item["raw"],strategy,"position") for item in rows
+        if item.get("raw") and item["key"] and not str(item["key"]).startswith("archived:")}
     for row in archive.get("positions",[]):
         if row.get("frame") not in (FRAMES+("gmo",)):continue
         key=row.get("position_key","")
-        if any(key and key in str(t["key"]) for t in rows):continue
+        if key in existing_position_ids:continue
         if row.get("status") in ("CLOSED","DONE","SOLD"):continue
         # The same position can have dozens of periodic journal rows.
         older=next((r for r in rows if r.get("archive_key")==key),None)
