@@ -293,13 +293,19 @@ def rebuild(root,market,strategy,positions,now=None,executions=()):
     with journal._connect(root,market) as conn:
         events=_asof_scores(root,market,conn)
         filled_exits={}
+        filled_buys={}
         for fill in executions or ():
             if not isinstance(fill,dict):continue
-            if str(fill.get("side") or "").upper() not in ("SELL","S"):continue
             id_=fill.get("position_id")
-            stamp=_when(fill,("fill_at","filled_at","time","ts","at","sell_at"))
-            if id_ is not None and stamp is not None:
-                filled_exits[str(id_)]=max(stamp,filled_exits.get(str(id_),0))
+            if id_ is None:continue
+            stamp=_when(fill,("fill_at","filled_at","time","ts","at","buy_at","sell_at"))
+            if stamp is None:continue
+            identity=str(id_)
+            side=str(fill.get("side") or fill.get("action") or "").upper()
+            if side in ("SELL","S"):
+                filled_exits[identity]=max(stamp,filled_exits.get(identity,0))
+            elif side in ("BUY","B"):
+                filled_buys[identity]=min(stamp,filled_buys.get(identity,stamp))
         candles_cache={};inds_cache={};positions_cache={}
         output=[]
         latest={}
@@ -322,7 +328,14 @@ def rebuild(root,market,strategy,positions,now=None,executions=()):
                     for k,v in row.items():
                         if k.endswith("at") or k.endswith("ts") or k.startswith("exit_"):
                             if v is not None:existing[k]=v
-        for row in list(latest.values())[:20000]:
+        for original in list(latest.values())[:20000]:
+            row=dict(original)
+            # Use actual BUY fill, never a matching same-ticker different
+            # purchase date, when the position did not store entry_at.
+            pos_id=str(row.get("id") or row.get("position_id") or "")
+            if (_when(row,("entry_at","entry_ts","buy_at","buy_ts","filled_at","time"))
+                    is None and pos_id in filled_buys):
+                row["entry_ts"]=filled_buys[pos_id]
             result=_rollup_one(root,market,strategy,row,conn,events,
                                candles_cache,inds_cache,positions_cache,now,
                                filled_exits.get(str(row.get("id"))))
