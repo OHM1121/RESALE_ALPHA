@@ -2937,13 +2937,17 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams klp=new LinearLayout.LayoutParams(-1,dp(68));
         klp.setMargins(0,dp(7),0,0);content.addView(kpis,klp);
 
-        TextView section=text("시간봉 × 점수대  |  실제 / 가상 목표도달률",17);
+        TextView section=text("시간봉 × 점수대  |  실제 / 가상 목표도달률 · 점수 구간 더블탭 → 종목 상세",17);
         section.setTypeface(null,Typeface.BOLD);
         section.setTextColor(Color.rgb(207,226,247));
         section.setPadding(dp(2),dp(9),dp(2),dp(5));content.addView(section);
 
-        String[] frames=StrategyDashboardScope.showFrameCharts(scope)
-            ?new String[]{"5m","30m","60m","day"}:new String[]{scope};
+        String[] frames=combined
+            ?("stock".equals(market)
+                ?new String[]{"5m","30m","60m","day","gmo","close"}
+                :new String[]{"5m","30m","60m","day"})
+            :StrategyDashboardScope.showFrameCharts(scope)
+                ?new String[]{"5m","30m","60m","day"}:new String[]{scope};
         boolean matrixColumns=getResources().getConfiguration().screenWidthDp>=720;
         LinearLayout matrixPair=null;
         int matrixInRow=0,maxRowHeight=0;
@@ -2953,6 +2957,8 @@ public final class UnifiedVisualActivity extends Activity {
             String label="gmo".equals(tf)?"수급매매":"close".equals(tf)?"종가베팅":tfLabel(tf);
             ResearchScoreMatrixView matrix=new ResearchScoreMatrixView(this);
             matrix.setGrid(grid,tf,label);
+            matrix.setOnBandDoubleTapListener((matrixFrame,scoreBand)->
+                showResearchBandPopup(matrixFrame,scoreBand));
             int height=grid.cell(tf,ResearchScoreGrid.NO_SCORE).signals>0?246:218;
             matrix.setContentDescription(label+" 점수대별 실제·가상 목표도달률");
             if(!matrixColumns){
@@ -2978,7 +2984,8 @@ public final class UnifiedVisualActivity extends Activity {
                 params.height=dp(height);matrixPair.setLayoutParams(params);
             }
         }
-        TextView note=text("확정 기록만 집계 · 관측 중/미진입 제외 · 자료 없음 —",12);
+        TextView note=text("점수 구간을 두 번 터치하면 해당 종목·D일·매수·목표도달 근거 표시 · "+
+            "확정기록만 비율 집계 · 미진입/관측 중은 제외",12);
         note.setTextColor(Color.rgb(150,170,195));
         note.setPadding(dp(3),dp(7),dp(3),dp(4));content.addView(note);
 
