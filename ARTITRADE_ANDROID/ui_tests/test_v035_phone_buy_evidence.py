@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]/"app/src/main/python"))
 from phone_buy_evidence_v035 import (attach_buy_evidence,attach_gmo_buy_evidence,
-                                    store_buy_evidence)
+                                    store_buy_evidence,read_at_open_buy_fills)
 
 class PhoneBuyEvidence(unittest.TestCase):
     def test_coin_base_and_ma_evidence_is_from_matching_phone_buy_fill(self):
@@ -85,6 +85,24 @@ class PhoneBuyEvidence(unittest.TestCase):
         other=[{"id":-1,"tf":"gmo","code":"278650"}]
         self.assertEqual(attach_gmo_buy_evidence(other,fills,
             {"278650":"2026-11-05"}),[])
+
+    def test_old_at_open_position_buy_fill_not_lost_after_350_new_fills(self):
+        with tempfile.TemporaryDirectory() as d:
+            db=Path(d)/"stock"/"ARTITRADE_D.sqlite3"
+            db.parent.mkdir(parents=True)
+            with sqlite3.connect(db) as con:
+                con.execute("CREATE TABLE positions(id INT,code TEXT,status TEXT)")
+                con.execute("INSERT INTO positions VALUES(7,'278650','OPEN')")
+                con.execute("CREATE TABLE executions(id INT,position_id INT,side TEXT,reason TEXT,ts TEXT)")
+                con.execute("INSERT INTO executions VALUES(1,7,'BUY','HLB_PHONE_ORIGINAL','20261103105232')")
+                con.executemany("INSERT INTO executions VALUES(?,99,'SELL','OTHER','20261114000000')",
+                    [(i,) for i in range(2,502)])
+            fills=read_at_open_buy_fills(db)
+            self.assertEqual(len(fills),1)
+            self.assertEqual(fills[0]["reason"],"HLB_PHONE_ORIGINAL")
+            holding=[{"id":7,"tf":"60m","code":"278650"}]
+            attach_buy_evidence(holding,fills,[],market="stock",strategy="at")
+            self.assertEqual(holding[0]["buy_reason"],"HLB_PHONE_ORIGINAL")
 
     def test_phone_audit_is_idempotent_and_original_ledger_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as d:
