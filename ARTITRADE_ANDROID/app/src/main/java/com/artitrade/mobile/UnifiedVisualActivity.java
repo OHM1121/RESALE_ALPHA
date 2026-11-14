@@ -1721,6 +1721,171 @@ public final class UnifiedVisualActivity extends Activity {
         else renderMore();
     }
 
+    private LinearLayout marketEvidenceCard(JSONObject factor,boolean crypto){
+        LinearLayout tile=card();
+        tile.setPadding(dp(9),dp(7),dp(8),dp(6));
+        tile.setOrientation(LinearLayout.VERTICAL);
+        TextView name=text(factor.optString("name","근거 미기록"),11);
+        name.setTextColor(Color.rgb(168,193,219));
+        name.setMaxLines(2);
+        tile.addView(name);
+        double value=factor.optDouble("value",Double.NaN);
+        String display=finite(value)?(crypto?
+            String.format(Locale.KOREA,"%.1f / 100",value):
+            String.format(Locale.KOREA,"%+.2f%%",value)):"미기록";
+        TextView metric=text(display,15);
+        metric.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        metric.setTextColor(Color.rgb(229,237,253));
+        tile.addView(metric);
+        return tile;
+    }
+
+    private LinearLayout marketResearchPanel(String which,JSONObject snapshot){
+        boolean crypto="coin".equals(which);
+        LinearLayout panel=card();
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(11),dp(9),dp(11),dp(9));
+        TextView heading=text(crypto?"코인 시장":"주식 시장",19);
+        heading.setTypeface(null,Typeface.BOLD);
+        heading.setTextColor(PremiumUi.TEXT);
+        panel.addView(heading);
+        if(snapshot==null)snapshot=new JSONObject();
+        final JSONObject data=snapshot;
+        String status=data.optString("status","수집 대기");
+        TextView state=text(status,12);
+        state.setTextColor(Color.rgb(159,191,225));
+        state.setMaxLines(2);
+        panel.addView(state);
+        MarketRegimeGraphicView gauge=new MarketRegimeGraphicView(this);
+        gauge.setScore(data);
+        panel.addView(gauge,new LinearLayout.LayoutParams(-1,dp(164)));
+        long at=data.optLong("asof",0L);
+        double coverage=data.optDouble("coverage",Double.NaN);
+        String info=(at>0?"기록시각 "+formatKst(at*1000L):"시장점수 원장 미기록")+
+            (finite(coverage)?"  |  자료완성도 "+Math.round(coverage*100)+"%":"");
+        TextView provenance=text(info,11);
+        provenance.setTextColor(Color.rgb(157,175,197));
+        provenance.setMaxLines(3);
+        panel.addView(provenance);
+        TextView source=text(crypto?
+            "업비트 공개 KRW 시세·BTC/ETH 일봉 · 자체 구성 실험점수":
+            "주식 EXE 시황 평가 가중치 이관 · 공개 지수/글로벌 지표 (키움 수급 미연동)",11);
+        source.setTextColor(PremiumUi.MUTED);
+        source.setMaxLines(3);
+        source.setPadding(0,dp(3),0,dp(8));
+        panel.addView(source);
+        TextView bandTitle=text("점수 구간별 보유종목 수익률 변화",14);
+        bandTitle.setTypeface(null,Typeface.BOLD);
+        panel.addView(bandTitle);
+        TextView guide=text("기준점 대비 %p · 같은 구간에서 기존 보유종목만 추적 · 수수료 반영 손익 아님",11);
+        guide.setTextColor(PremiumUi.MUTED);
+        guide.setMaxLines(3);
+        panel.addView(guide);
+
+        JSONArray groups=data.optJSONArray("bands");
+        for(String band:new String[]{"0~50","51~60","61~70","71~80","81~90","91~100"}){
+            JSONObject found=null;
+            if(groups!=null)for(int j=0;j<groups.length();j++){
+                JSONObject g=groups.optJSONObject(j);
+                if(g!=null&&band.equals(g.optString("band"))){found=g;break;}
+            }
+            boolean active=band.equals(data.optString("active_band",""));
+            int n=found==null?0:found.optInt("count",0);
+            Double diff=found==null||found.isNull("avg_change_pp")?null:
+                found.optDouble("avg_change_pp");
+            LinearLayout line=new LinearLayout(this);
+            line.setOrientation(LinearLayout.HORIZONTAL);
+            line.setGravity(Gravity.CENTER_VERTICAL);
+            line.setBackground(bg(active?PremiumUi.SURFACE_HIGH:
+                Color.TRANSPARENT,active?PremiumUi.LINE:Color.TRANSPARENT,6));
+            TextView label=text(band+(active?" ●":""),12);
+            label.setTextColor(active?Color.rgb(122,220,181):Color.rgb(176,193,213));
+            line.addView(label,new LinearLayout.LayoutParams(dp(81),dp(32)));
+            MarketBandDeltaView bar=new MarketBandDeltaView(this,diff);
+            line.addView(bar,new LinearLayout.LayoutParams(0,dp(31),1));
+            String measured=diff==null?"미집계":
+                String.format(Locale.KOREA,"%+.2f%%p",diff);
+            TextView avg=text(measured,13);
+            avg.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+            avg.setTextColor(diff==null?PremiumUi.MUTED:
+                diff>0?Color.rgb(98,224,181):diff<0?
+                    Color.rgb(255,134,146):PremiumUi.TEXT);
+            avg.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            line.addView(avg,new LinearLayout.LayoutParams(dp(82),dp(32)));
+            TextView count=text(n+"개",11);
+            count.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            count.setTextColor(PremiumUi.MUTED);
+            line.addView(count,new LinearLayout.LayoutParams(dp(34),dp(32)));
+            panel.addView(line,new LinearLayout.LayoutParams(-1,dp(34)));
+        }
+        TextView method=text("시장평가 지표 (모두 관측값, 주문조건과 무관)",13);
+        method.setTextColor(Color.rgb(161,203,240));
+        method.setPadding(0,dp(9),0,dp(5));
+        panel.addView(method);
+        JSONArray factors=data.optJSONArray("factors");
+        if(factors==null||factors.length()==0){
+            TextView no=text("지표 수신 대기 · 신호나 가상 점수를 생성하지 않음",12);
+            no.setTextColor(PremiumUi.MUTED);
+            panel.addView(no);
+        }else{
+            for(int i=0;i<Math.min(factors.length(),12);i+=2){
+                LinearLayout row=new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                JSONObject first=factors.optJSONObject(i);
+                JSONObject second=factors.optJSONObject(i+1);
+                if(first!=null){
+                    row.addView(marketEvidenceCard(first,crypto),
+                        new LinearLayout.LayoutParams(0,-2,1));
+                }
+                if(second!=null){
+                    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+                    lp.setMargins(dp(5),0,0,0);
+                    row.addView(marketEvidenceCard(second,crypto),lp);
+                }else{
+                    row.addView(space(),new LinearLayout.LayoutParams(0,dp(1),1));
+                }
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+                lp.setMargins(0,dp(5),0,0);
+                panel.addView(row,lp);
+            }
+        }
+        return panel;
+    }
+
+    private void renderMarket(){
+        TextView title=text("시장 · 주식 / 코인 흐름 연구",21);
+        title.setTypeface(null,Typeface.BOLD);
+        content.addView(title);
+        TextView note=text("원본 시황점수와 공개 시세로 평가한 연구지표임. "+
+            "점수 변화 시 보유종목의 당시 수익률을 고정하고 이후 변화폭(%p)을 추적함. "+
+            "주문·자동매매 판정에는 사용하지 않음.",12);
+        note.setTextColor(Color.rgb(174,193,216));
+        note.setPadding(0,dp(5),0,dp(8));
+        note.setMaxLines(4);
+        content.addView(note);
+        JSONObject local=uiSnapshot.packet.optJSONObject("local_records");
+        JSONObject research=local==null?null:local.optJSONObject("market_research");
+        JSONObject stock=research==null?null:research.optJSONObject("stock");
+        JSONObject coin=research==null?null:research.optJSONObject("coin");
+        boolean wide=getResources().getConfiguration().screenWidthDp>=720;
+        LinearLayout panels=new LinearLayout(this);
+        panels.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+        LinearLayout first=marketResearchPanel("stock",stock);
+        LinearLayout second=marketResearchPanel("coin",coin);
+        if(wide){
+            panels.addView(first,new LinearLayout.LayoutParams(0,-2,1));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+            lp.setMargins(dp(7),0,0,0);
+            panels.addView(second,lp);
+        }else{
+            panels.addView(first,new LinearLayout.LayoutParams(-1,-2));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+            lp.setMargins(0,dp(7),0,0);
+            panels.addView(second,lp);
+        }
+        content.addView(panels,new LinearLayout.LayoutParams(-1,-2));
+    }
+
     private void renderHome(){
         Stats selected=stats(market,strategy);
         if("stock".equals(market)&&"gmo".equals(strategy)&&
