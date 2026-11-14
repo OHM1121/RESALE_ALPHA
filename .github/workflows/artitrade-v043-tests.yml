@@ -1,0 +1,23 @@
+name: ARTITRADE v043 RSI Mode Unit and Import Checks
+on:
+  push:
+    branches: [feature-artitrade-v043-market-trend-rsi20-20261114]
+    paths:
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/artitrade-v043-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-v043:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python and test new market-trend
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/market_trend_v043.py ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v043.py ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v043_*.py' -v
