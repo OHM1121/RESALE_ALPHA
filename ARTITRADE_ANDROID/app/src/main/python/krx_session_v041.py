@@ -8,9 +8,7 @@ No broker connection or orders are changed.
 from __future__ import annotations
 
 import datetime as dt
-from zoneinfo import ZoneInfo
-
-KST=ZoneInfo("Asia/Seoul")
+KST=dt.timezone(dt.timedelta(hours=9),"KST")
 CLOSED_2026={
     "2026-01-01","2026-02-16","2026-02-17","2026-02-18",
     "2026-03-02","2026-05-01","2026-05-05","2026-05-25",
