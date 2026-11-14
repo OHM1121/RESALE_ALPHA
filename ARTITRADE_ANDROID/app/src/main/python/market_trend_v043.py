@@ -206,6 +206,7 @@ class TrendPosition:
         self.original_qty=float(qty);self.qty=float(qty);self.stage=0
         self.target1=None;self.target2=None;self.peak=float(entry)
         self.above_entry=False;self.bar_key=str(bar_key)
+        self.tp1_sold=0.0;self.tp2_sold=0.0
         self.closed_seq=-1;self.last_closed_bar=None
         self.last_action="";self.last_price=float(entry)
         self.deadline=hold_deadline(self.entry_at,frame,market)
@@ -252,12 +253,14 @@ class TrendPosition:
             if self.above_entry and p<=self.entry:
                 return ("MT_ENTRY_RETOUCH",1.0)
             if self.target1 is not None and p>=self.target1:
-                return ("MT_TP1",min(1.0,self.original_qty*.30/self.qty))
+                due=(max(1,int(round(self.original_qty*.30))) if self.market=="stock" else self.original_qty*.30)
+                return ("MT_TP1",min(1.0,max(0,due-self.tp1_sold)/self.qty))
         elif self.stage==1:
             if self.target1 is not None and p<=self.target1:
                 return ("MT_TP1_RETOUCH",1.0)
             if self.target2 is not None and p>=self.target2:
-                return ("MT_TP2",min(1.0,self.original_qty*.35/self.qty))
+                due=(max(1,int(round(self.original_qty*.35))) if self.market=="stock" else self.original_qty*.35)
+                return ("MT_TP2",min(1.0,max(0,due-self.tp2_sold)/self.qty))
         elif self.stage>=2:
             if (self.target2 is not None and p<=self.target2) or p<=self.peak*.96:
                 return ("MT_TP3_TRAIL",1.0)
@@ -270,10 +273,15 @@ class TrendPosition:
         self.last_price=float(filled_price)
         self.last_action=str(reason)
         if reason=="MT_TP1" and self.qty>0:
-            self.stage=max(1,self.stage)
+            self.tp1_sold+=qty
+            target=max(1,int(round(self.original_qty*.30))) if self.market=="stock" else self.original_qty*.30
+            if self.tp1_sold>=target-1e-7:self.stage=max(1,self.stage)
         elif reason=="MT_TP2" and self.qty>0:
-            self.stage=max(2,self.stage)
-            self.peak=float(filled_price)
+            self.tp2_sold+=qty
+            target=max(1,int(round(self.original_qty*.35))) if self.market=="stock" else self.original_qty*.35
+            if self.tp2_sold>=target-1e-7:
+                self.stage=max(2,self.stage)
+                self.peak=float(filled_price)
         if self.qty<=1e-8:self.qty=0.0
 
     def to_dict(self):
