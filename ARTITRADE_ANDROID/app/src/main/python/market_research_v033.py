@@ -465,98 +465,187 @@ def _public_json(url,params):
 
 
 def _fetch_stock():
-    changes={};history={}
+    changes={};history={};failed=[]
     for name,symbol in _PUBLIC.items():
-        try:
-            result=_public_json(
-                "https://query1.finance.yahoo.com/v8/finance/chart/"+quote(symbol,safe=""),
-                {"interval":"1d","range":"2mo"})
-            data=result["chart"]["result"][0]
-            closes=[finite(v) for v in (data["indicators"]["quote"][0].get("close") or [])]
-            vals=[v for v in closes if v is not None and v>0]
-            if len(vals)<2:continue
-            changes[name]=round((vals[-1]/vals[-2]-1)*100,4)
-            history[name]=vals
-        except Exception:continue
-    vals=history.get("KOSPI") or []
-    if len(vals)>=6:changes["KOSPI5"]=(vals[-1]/vals[-6]-1)*100
+        prices=None
+        for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+            try:
+                result=_public_json(
+                    "https://"+host+"/v8/finance/chart/"+quote(symbol,safe=""),
+                    {"interval":"1d","range":"2mo"})
+                data=result["chart"]["result"][0]
+                closes=[finite(v) for v in (
+                    data["indicators"]["quote"][0].get("close") or [])]
+                prices=[v for v in closes if v is not None and v>0]
+                if len(prices)>=2:
+                    break
+            except Exception:
+                prices=None
+        if not prices or len(prices)<2:
+            failed.append(name)
+            continue
+        changes[name]=round((prices[-1]/prices[-2]-1)*100,4)
+        history[name]=prices
+    kospi=history.get("KOSPI") or []
+    if len(kospi)>=6:
+        changes["KOSPI5"]=round((kospi[-1]/kospi[-6]-1)*100,4)
     scored=stock_score(changes,{})
-    scored["source"]="EXE d_market_briefing _evidence weights; Yahoo public closes; flows pending"
+    scored["source"]="Yahoo Finance public chart latest available daily closes"
+    scored["received"]=sorted(changes)
+    scored["missing"]=failed
+    if scored["score"] is None:
+        scored["status"]="코스피·코스닥 지표 미수신 · 다음 조회 재시도"
     return scored
+
+
+def _upbit_tickers():
+    """Use Upbit KRW all-quote endpoint, fallback to documented per-pair ticker."""
+    err=""
+    try:
+        rows=_public_json("https://api.upbit.com/v1/ticker/all",
+                          {"quote_currencies":"KRW"})
+        if isinstance(rows,list) and len(rows)>=10:
+            return rows
+        err="시장 전체 시세 표본 부족"
+    except Exception as exc:
+        err=type(exc).__name__
+    markets=_public_json("https://api.upbit.com/v1/market/all",
+                         {"isDetails":"false"})
+    codes=[str(x.get("market") or "") for x in markets if isinstance(x,dict)
+           and str(x.get("market") or "").startswith("KRW-")
+           and str(x.get("market") or "") not in ("KRW-USDT","KRW-USDC")]
+    if len(codes)<10:
+        raise ValueError("KRW 거래종목 목록 미수신 ("+err+")")
+    result=[]
+    for i in range(0,len(codes),80):
+        one=_public_json("https://api.upbit.com/v1/ticker",
+                         {"markets":",".join(codes[i:i+80])})
+        if not isinstance(one,list):
+            raise ValueError("KRW 종목별 현재가 형식 오류")
+        result.extend(one)
+    if len(result)<10:
+        raise ValueError("KRW 현재가 표본 부족 ("+err+")")
+    return result
 
 
 def _fetch_coin():
     try:
-        tickers=_public_json("https://api.upbit.com/v1/ticker/all",
-                             {"quote_currencies":"KRW"})
+        tickers=_upbit_tickers()
         btc=_public_json("https://api.upbit.com/v1/candles/days",
-                          {"market":"KRW-BTC","count":35})
+                         {"market":"KRW-BTC","count":35})
         eth=_public_json("https://api.upbit.com/v1/candles/days",
-                          {"market":"KRW-ETH","count":12})
+                         {"market":"KRW-ETH","count":12})
         scored=coin_score(tickers,btc,eth)
     except Exception as exc:
         scored={"score":None,"coverage":0,"factors":[],
-                "status":"업비트 시세 미수신: "+type(exc).__name__}
-    scored["source"]="Upbit public ticker/all and daily candles; ARTITRADE experimental score"
+                "status":"업비트 시세 확인 실패: "+type(exc).__name__}
+    scored["source"]="Upbit KRW public tickers and BTC/ETH daily candles"
     return scored
 
 
 class _MarketWorker:
+    """Independent 24h crypto polling, never held behind slow stock API calls."""
     def __init__(self,root):
         self.root=Path(root)
         self._cache_lock=threading.RLock()
-        self._cache={"stock":{"score":None,"status":"시장 데이터 초기화"},
-                     "coin":{"score":None,"status":"시장 데이터 초기화"}}
+        self._cache={"stock":{"score":None,"status":"주식 시세 확인 중"},
+                     "coin":{"score":None,"status":"코인 시세 확인 중"}}
         self._pending=None
-        self._last_poll=0
         self._last_failure={}
+        self._stop=threading.Event()
+        self._fetch_threads=[]
         self._thread=threading.Thread(target=self._loop,daemon=True,
-            name="artitrade-market-score-observe-only")
+            name="artitrade-market-ledger-v038")
         self._thread.start()
 
     def offer(self,records):
-        with self._cache_lock:self._pending=records
+        with self._cache_lock:
+            self._pending=records
 
     def snapshot(self):
         with self._cache_lock:
             return dict(self._cache)
 
+    def stop(self):
+        """Used by deterministic regression tests; app daemon normally remains alive."""
+        self._stop.set()
+        self._thread.join(timeout=8)
+
+    def _fetch_loop(self,ledger,market,fetch):
+        # Stock 3min, crypto 60sec even on weekends/holidays.
+        interval=60 if market=="coin" else 180
+        while not self._stop.is_set():
+            try:
+                with self._cache_lock:
+                    pending=self._pending
+                positions=_extract_positions(pending or {})[market]
+                evidence=fetch()
+                score=finite(evidence.get("score"))
+                if score is not None:
+                    ledger.record_score(market,score,int(time.time()),
+                                        holding_returns(positions),evidence)
+                    self._last_failure.pop(market,None)
+                else:
+                    self._last_failure[market]=evidence.get(
+                        "status","시장자료 미수신")
+            except Exception as exc:
+                self._last_failure[market]="시세 수집 오류: "+type(exc).__name__
+            try:
+                snapshot=display_snapshot(market,ledger.snapshot(market),
+                            poll_error=self._last_failure.get(market))
+                with self._cache_lock:
+                    self._cache[market]=snapshot
+            except Exception as exc:
+                with self._cache_lock:
+                    self._cache[market]={"score":None,
+                        "status":"시장점수 원장 오류: "+type(exc).__name__}
+            self._stop.wait(interval)
+
     def _loop(self):
         ledger=None
         try:
             ledger=ScoreLedger(self.root/"market_research_v033.sqlite3")
-            while True:
-                now=time.time()
-                with self._cache_lock:pending=self._pending
-                positions=_extract_positions(pending or {})
-                cohorts={m:holding_returns(x) for m,x in positions.items()}
-                if now-self._last_poll>=180:
-                    self._last_poll=now
-                    for market,fetch in (("stock",_fetch_stock),("coin",_fetch_coin)):
-                        try:
-                            evidence=fetch()
-                            if finite(evidence.get("score")) is not None:
-                                ledger.record_score(market,evidence["score"],int(time.time()),
-                                    cohorts[market],evidence)
-                            if finite(evidence.get("score")) is None:
-                                self._last_failure[market]=evidence.get("status","자료 미수신")
-                            else:
-                                self._last_failure.pop(market,None)
-                        except Exception as exc:
-                            self._last_failure[market]="시장원장 오류: "+type(exc).__name__
-                for market in ("stock","coin"):
-                    ledger.observe_positions(market,cohorts[market],int(time.time()))
-                    snapshot=display_snapshot(market,ledger.snapshot(market),
-                        poll_error=self._last_failure.get(market))
-                    with self._cache_lock:self._cache[market]=snapshot
-                time.sleep(12)
+            # Deliver retained scores immediately; score collection is independent
+            # and can be slower than the first user-visible dashboard frame.
+            for market in ("coin","stock"):
+                with self._cache_lock:
+                    self._cache[market]=display_snapshot(
+                        market,ledger.snapshot(market))
+            for market,fetch in (("coin",_fetch_coin),("stock",_fetch_stock)):
+                thread=threading.Thread(target=self._fetch_loop,
+                    args=(ledger,market,fetch),daemon=True,
+                    name="artitrade-"+market+"-market-score-v038")
+                self._fetch_threads.append(thread)
+                thread.start()
+            while not self._stop.is_set():
+                with self._cache_lock:
+                    pending=self._pending
+                holdings=_extract_positions(pending or {})
+                for market in ("coin","stock"):
+                    try:
+                        ledger.observe_positions(market,
+                            holding_returns(holdings[market]),int(time.time()))
+                        current=display_snapshot(
+                            market,ledger.snapshot(market),
+                            poll_error=self._last_failure.get(market))
+                        with self._cache_lock:
+                            self._cache[market]=current
+                    except Exception as exc:
+                        with self._cache_lock:
+                            self._cache[market]={"score":None,
+                                "status":"시장점수 처리 오류: "+type(exc).__name__}
+                self._stop.wait(12)
         except Exception as exc:
             with self._cache_lock:
                 for market in ("stock","coin"):
                     self._cache[market]={"score":None,
-                        "status":"시장연구 엔진 오류: "+type(exc).__name__}
+                        "status":"시장분석 엔진 오류: "+type(exc).__name__}
         finally:
-            if ledger is not None:ledger.close()
+            self._stop.set()
+            for thread in self._fetch_threads:
+                thread.join(timeout=8)
+            if ledger is not None:
+                ledger.close()
 
 
 _WORKERS={}
