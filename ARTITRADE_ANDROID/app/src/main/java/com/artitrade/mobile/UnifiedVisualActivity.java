@@ -631,6 +631,10 @@ public final class UnifiedVisualActivity extends Activity {
         String mserverMsg;
         if(!authOk&&("unauthorized".equals(authError)||authHttp==401))mserverMsg="MSERVER 인증 실패 · 연결 토큰 불일치";
         else if(!authOk&&authError.startsWith("UNREACHABLE:"))mserverMsg="MSERVER 연결 실패 · 모바일 서버 실행상태 확인";
+        else if(!getSharedPreferences("artitrade_pc_live_sync_v1",MODE_PRIVATE)
+                .getBoolean("enabled",false) &&
+                (syncProgress==null||!"RETRY".equals(syncProgress.optString("stage",""))))
+            mserverMsg="PC 실시간연동 OFF · 휴대폰 원장은 계속 저장됨";
         else if(syncProgress!=null&&syncProgress.optBoolean("complete",false))mserverMsg="폰 기준원장 → MSERVER 게시 완료";
         else if(failed>0)mserverMsg="MSERVER 원장 게시 실패 · "+failed+"건 (아래 원인 확인)";
         else mserverMsg="MSERVER 원장 게시 진행/대기";
@@ -759,8 +763,14 @@ public final class UnifiedVisualActivity extends Activity {
         tools.addView(button("MSERVER 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
         LinearLayout.LayoutParams importLp=new LinearLayout.LayoutParams(-1,dp(43));importLp.setMargins(0,dp(7),0,0);
         tools.addView(button("PC 원장 적용 · 실제 데이터 재검증",true,this::requestPcMigrationApply),importLp);
+        boolean pcSyncEnabled=getSharedPreferences("artitrade_pc_live_sync_v1",
+            MODE_PRIVATE).getBoolean("enabled",false);
+        LinearLayout.LayoutParams liveLp=new LinearLayout.LayoutParams(-1,dp(43));
+        liveLp.setMargins(0,dp(7),0,0);
+        tools.addView(button(pcSyncEnabled?"PC와 실시간연동 ON · 중지":"PC와 실시간연동 OFF · 시작",
+            pcSyncEnabled,this::togglePcLiveSync),liveLp);
         LinearLayout.LayoutParams retryLp=new LinearLayout.LayoutParams(-1,dp(43));retryLp.setMargins(0,dp(7),0,0);
-        tools.addView(button("원장 다시 게시 · 연결 재확인",true,this::requestLedgerRepublish),retryLp);
+        tools.addView(button("원장 1회 전송 · 연결 재확인",false,this::requestLedgerRepublish),retryLp);
         LinearLayout.LayoutParams backupLp=new LinearLayout.LayoutParams(-1,dp(43));
         backupLp.setMargins(0,dp(7),0,0);
         tools.addView(button("전체 원장 백업 · SQLite/수급/리서치",false,
@@ -3254,6 +3264,31 @@ public final class UnifiedVisualActivity extends Activity {
                 }catch(Throwable e){new RuntimeCrashStore(this).add("pc_migration_apply_ui",e);}
             }).show();
     }
+    private void togglePcLiveSync(){
+        boolean current=getSharedPreferences("artitrade_pc_live_sync_v1",
+            MODE_PRIVATE).getBoolean("enabled",false);
+        boolean enable=!current;
+        try{
+            Intent i=new Intent(this,UnifiedTradingService.class);
+            i.setAction(UnifiedTradingService.SET_PC_SYNC);
+            i.putExtra("enabled",enable);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+            new AlertDialog.Builder(this)
+                .setTitle(enable?"PC와 실시간연동 시작":"PC와 실시간연동 중지")
+                .setMessage(enable?
+                    "현재 휴대폰 원장을 MSERVER로 전송하고, 이후 변경된 원장만 갱신합니다. "+
+                    "PC에서는 읽기 전용 실시간 수신기를 실행해야 합니다. 매매·주문 설정에는 영향이 없습니다.":
+                    "MSERVER 자동 전송을 중지합니다. 휴대폰 내부 원장 저장과 매매 기능은 계속 유지됩니다.")
+                .setPositiveButton("확인",null).show();
+            main.postDelayed(()->{
+                refresh(false);
+                if(drawerOverlay!=null){closeSettingsDrawer();main.postDelayed(this::openSettingsDrawer,220);}
+            },650);
+        }catch(Throwable e){
+            new RuntimeCrashStore(this).add("pc_live_sync_toggle",e);
+        }
+    }
+
     private void requestLedgerRepublish(){
         try{
             Intent intent=new Intent(this,UnifiedTradingService.class);
@@ -3294,7 +3329,7 @@ public final class UnifiedVisualActivity extends Activity {
                             main.post(()->{
                                 refresh(false);
                                 if(ok){
-                                    requestLedgerRepublish();
+                                    // Pairing does not imply consent to continuous or one-shot transfer.
                                     new AlertDialog.Builder(this).setTitle("MSERVER 인증 정상")
                                         .setMessage("토큰 저장 및 인증이 완료되었습니다.\n이 값은 기기 로컬 보안저장소에 유지됩니다.")
                                         .setPositiveButton("확인",null).show();
