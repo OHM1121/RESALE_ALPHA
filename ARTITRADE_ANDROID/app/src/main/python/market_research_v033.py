@@ -233,7 +233,7 @@ class ScoreLedger:
                 CREATE TABLE IF NOT EXISTS band_time_slices(
                     market TEXT NOT NULL,minute_ts INTEGER NOT NULL,
                     band TEXT NOT NULL,seconds REAL NOT NULL,
-                    PRIMARY KEY(market,minute_ts));
+                    PRIMARY KEY(market,minute_ts,band));
                 CREATE INDEX IF NOT EXISTS idx_band_times
                     ON band_time_slices(market,band);
             """)
@@ -340,7 +340,7 @@ class ScoreLedger:
             self.conn.execute("""
                 INSERT INTO band_time_slices(market,minute_ts,band,seconds)
                 VALUES(?,?,?,?)
-                ON CONFLICT(market,minute_ts) DO UPDATE SET
+                ON CONFLICT(market,minute_ts,band) DO UPDATE SET
                   seconds=MIN(60.0,seconds+excluded.seconds)
                 WHERE band_time_slices.band=excluded.band
             """,(market,minute,band,float(seconds)))
