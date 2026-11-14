@@ -497,6 +497,71 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
     return rows
 
 
+def band_scope_statistics(root,market,strategy,frame):
+    """Observed score band vs same strategy/timeframe holding return deltas.
+
+    Duration is distinct *market-time*, not position-minutes or poll counts.
+    The delta is the average segment endpoint change, not a proof that the
+    market score caused a profitable/losing trade.
+    """
+    db=Path(root)/"market_research_v033.sqlite3"
+    if not db.is_file():return []
+    label=f"{market}/{strategy}/{frame}/%"
+    try:
+        with sqlite3.connect(db.resolve().as_uri()+"?mode=ro",
+                             uri=True,timeout=4) as conn:
+            conn.row_factory=sqlite3.Row
+            data=conn.execute("""
+                SELECT s.band AS band,COUNT(*) AS sample_n,
+                       AVG(p.latest_return-p.start_return) AS avg_delta_pp
+                FROM cohort_segments s
+                JOIN cohort_positions p ON s.id=p.segment_id
+                WHERE s.market=? AND p.identity LIKE ?
+                GROUP BY s.band""",(market,label)).fetchall()
+            clock=conn.execute("""
+                SELECT band,SUM(seconds) AS observed_seconds
+                FROM band_time_slices WHERE market=? GROUP BY band
+            """,(market,)).fetchall()
+            hours={r["band"]:(r["observed_seconds"] or 0.)/3600.
+                   for r in clock}
+        return [{"band":r["band"],"avg_change_pp":round(r["avg_delta_pp"],3),
+                 "position_segments":r["sample_n"],
+                 "observed_hours":round(hours.get(r["band"],0.),3)}
+                for r in data if r["avg_delta_pp"] is not None]
+    except (OSError,sqlite3.Error):
+        return []
+
+
+def attach_market_band_research(frame_result,band_data):
+    """Use *observed* market regime to rank exploratory strategy hypotheses."""
+    frame_result["market_band_data"]=band_data
+    frame_result["market_band_hypothesis"]=None
+    if not band_data:return frame_result
+    positive=max(band_data,key=lambda x:x["avg_change_pp"])
+    worst=min(band_data,key=lambda x:x["avg_change_pp"])
+    frame_result["market_band_best"]=positive
+    frame_result["market_band_worst"]=worst
+    if worst["avg_change_pp"]<0 and worst["position_segments"]>0:
+        # A historical segment gain removed by a hypothetical zero-change
+        # exit; no fees, trade execution or predictive validation implied.
+        estimated=-worst["avg_change_pp"]
+        frame_result["market_band_hypothesis"]={
+            "band":worst["band"],"exposure_n":worst["position_segments"],
+            "observed_hours":worst["observed_hours"],
+            "observed_return_pp":worst["avg_change_pp"],
+            "hypothetical_avoidance_pp":round(estimated,3),
+            "validated":False}
+        if frame_result.get("improvement") is None:
+            frame_result["proposal"]=("시장점수 "+worst["band"]+
+                " 구간 신규진입 축소 가설")
+            frame_result["finding"]=("시장구간 "+worst["band"]+
+                " 평균 "+f"{worst['avg_change_pp']:+.2f}"+"%p")
+            frame_result["finding_basis"]="구간별 실제 보유가격 변화"
+            if frame_result.get("status")=="LIVE_OBSERVATION":
+                frame_result["status"]="LIVE_OBSERVATION"
+    return frame_result
+
+
 def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     if (market,strategy) not in SCOPES:
         return json.dumps({"ok":False,"message":"선택 전략 확인 필요"},ensure_ascii=False)
@@ -536,7 +601,9 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
             if value is not None:signal["features"]["market_score"]=value
     trades=_build_trades(raw,ledger,signals,archive,market,strategy,now,events)
     available=["gmo"] if strategy=="gmo" else (["day"] if strategy=="close" else list(FRAMES))
-    frames=[_frame_summary(f,signals,trades,archive,events,now,raw["source"])
+    frames=[attach_market_band_research(
+                _frame_summary(f,signals,trades,archive,events,now,raw["source"]),
+                band_scope_statistics(root,market,strategy,f))
             for f in available]
     report={
         "ok":True,"schema":"ARTITRADE_AI_V040",
