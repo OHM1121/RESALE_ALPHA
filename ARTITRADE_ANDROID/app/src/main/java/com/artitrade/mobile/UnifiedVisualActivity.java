@@ -3870,6 +3870,30 @@ public final class UnifiedVisualActivity extends Activity {
         lp.setMargins(0,dp(7),0,0);
         parent.addView(panel,lp);
     }
+    private void addTrendResearchCard(JSONObject report){
+        JSONObject rsiTrend=report.optJSONObject("market_trend_rsi20");
+        if(rsiTrend!=null&&rsiTrend.optInt("signals",0)>0){
+            LinearLayout rsiCard=card();
+            TextView rsiTitle=text("마켓트렌드 RSI(20) 분석",17);
+            rsiTitle.setTextColor(Color.rgb(110,218,185));
+            rsiCard.addView(rsiTitle);
+            int signalCount=rsiTrend.optInt("signals",0);
+            int filledCount=rsiTrend.optInt("filled",0);
+            int virtualCount=rsiTrend.optInt("virtual",0);
+            int stopCount=rsiTrend.optInt("stop_exits",0);
+            TextView rsiEvidence=text("관측 신호 "+signalCount+"건 · 거래체결 "+filledCount+
+                "건 · 미매수 가상 "+virtualCount+"건",13);
+            rsiEvidence.setPadding(0,dp(7),0,dp(3));
+            rsiCard.addView(rsiEvidence);
+            TextView risk=text("−9% 강제손절 "+stopCount+
+                "회 · 실거래·가상매매 성과 별도 집계",12);
+            risk.setTextColor(PremiumUi.MUTED);
+            rsiCard.addView(risk);
+            content.addView(rsiCard,new LinearLayout.LayoutParams(-1,-2));
+        }
+
+    }
+
     private void aiFrameCard(LinearLayout parent,JSONObject frame){
         LinearLayout tile=card();
         tile.setPadding(dp(12),dp(10),dp(12),dp(12));
@@ -3974,26 +3998,7 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject report=aiAnalysisReport;
         if(!scope.equals(report.optString("scope","")))return;
 
-        JSONObject rsiTrend=report.optJSONObject("market_trend_rsi20");
-        if(rsiTrend!=null&&rsiTrend.optInt("signals",0)>0){
-            LinearLayout rsiCard=card();
-            TextView rsiTitle=text("마켓트렌드 RSI(20) 분석",17);
-            rsiTitle.setTextColor(Color.rgb(110,218,185));
-            rsiCard.addView(rsiTitle);
-            int signalCount=rsiTrend.optInt("signals",0);
-            int filledCount=rsiTrend.optInt("filled",0);
-            int virtualCount=rsiTrend.optInt("virtual",0);
-            int stopCount=rsiTrend.optInt("stop_exits",0);
-            TextView rsiEvidence=text("관측 신호 "+signalCount+"건 · 거래체결 "+filledCount+
-                "건 · 미매수 가상 "+virtualCount+"건",13);
-            rsiEvidence.setPadding(0,dp(7),0,dp(3));
-            rsiCard.addView(rsiEvidence);
-            TextView risk=text("−9% 강제손절 "+stopCount+
-                "회 · 실거래·가상매매 성과 별도 집계",12);
-            risk.setTextColor(PremiumUi.MUTED);
-            rsiCard.addView(risk);
-            content.addView(rsiCard,new LinearLayout.LayoutParams(-1,-2));
-        }
+        addTrendResearchCard(report);
 
         JSONArray frames=report.optJSONArray("frames");
         if(frames==null||frames.length()==0)return;
