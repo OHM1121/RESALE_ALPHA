@@ -13,7 +13,7 @@ class ResearchLayoutContract(unittest.TestCase):
         self.assertIn('private void showResearchBandPopup(',ui)
         self.assertIn('ResearchBandSelection.matches(',ui)
         self.assertIn('setPositiveButton("닫기"',ui)
-        self.assertIn('getDoubleTap',matrix if 'getDoubleTap' in matrix else 'getDoubleTap')
+        self.assertIn('new GestureDetector(',matrix)
         self.assertIn('onDoubleTap(MotionEvent event)',matrix)
         self.assertIn('new String[]{"5m","30m","60m","day","gmo","close"}',ui)
 
@@ -25,7 +25,7 @@ class ResearchLayoutContract(unittest.TestCase):
                       '"observed_target_price"','"first_observed_target_after_touch"'):
             self.assertIn(field,ui)
         self.assertIn('new android.widget.BaseAdapter()',ui)
-        self.assertIn('getView(int position,View convertView,android.view.ViewGroup parent)',ui)
+        self.assertRegex(ui,r'getView\(int position,\s*View convertView,\s*android\.view\.ViewGroup parent\)')
 
     def test_research_scores_errors_policy_and_operation_use_weighted_columns(self):
         ui=UI.read_text(encoding="utf8")
