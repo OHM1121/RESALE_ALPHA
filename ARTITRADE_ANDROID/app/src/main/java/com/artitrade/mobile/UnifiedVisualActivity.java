@@ -2122,6 +2122,21 @@ public final class UnifiedVisualActivity extends Activity {
         headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
         content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
 
+        // Market-trend is a mode of the existing reference/MA strategies.
+        if("at".equals(strategy)||"general".equals(strategy)||"ma".equals(strategy)){
+            JSONObject local=uiSnapshot.packet.optJSONObject("local_records");
+            JSONObject all=local==null?null:local.optJSONObject("market_trend_status");
+            JSONObject one=all==null?null:all.optJSONObject(market);
+            String mode=one==null?"PAUSED":one.optString("mode","PAUSED");
+            String label="MARKET_TREND".equals(mode)?"마켓트렌드":
+                         "ORIGINAL".equals(mode)?
+                            ("ma".equals(strategy)?"MA":"기준봉"):"시장점수 조회 대기 · 신규매수 중단";
+            TextView active=text("현재 적용 매매법: "+label,12);
+            active.setTextColor("PAUSED".equals(mode)?
+                Color.rgb(255,201,94):Color.rgb(119,229,180));
+            content.addView(active,new LinearLayout.LayoutParams(-1,dp(23)));
+        }
+
         String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"업비트 · KRW TOP35";
         content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(46)));
 
