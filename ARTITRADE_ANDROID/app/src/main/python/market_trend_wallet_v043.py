@@ -118,6 +118,9 @@ class TrendWallet:
                    for x in self.journal.open_positions())
 
     def _order_fill(self,market,strategy,symbol,side,qty,price,event_key,reason):
+        # Respect the same broker-uncertainty hard stop as original strategies.
+        if getattr(self.rt,"_halted",{}).get(market):
+            raise UnsafeFill("BROKER_MARKET_HALTED")
         if not self.rt.live_enabled(market):
             return {"qty":qty,"price":price,"order_id":"","mode":"PAPER"}
         broker=self.rt.kiwoom if market=="stock" else self.rt.upbit
