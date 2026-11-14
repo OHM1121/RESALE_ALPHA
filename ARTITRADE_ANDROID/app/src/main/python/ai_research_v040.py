@@ -63,9 +63,13 @@ def _number(value):
 
 
 def _timestamp(value):
-    if isinstance(value,(float,int)) and value>=1000000000:
-        return int(value/1000) if value>100000000000 else int(value)
+    # Numeric KST YYYYMMDDHHMMSS is NOT a Unix millisecond timestamp.
+    # Parse compact calendar timestamps before attempting epoch conversion.
     s=str(value or "").strip()
+    if s.endswith(".0") and s[:-2].isdigit():s=s[:-2]
+    if isinstance(value,(float,int)) and value>=1000000000 and not (
+            len(s)==14 and s[:4].isdigit() and 1990<=int(s[:4])<=2100):
+        return int(value/1000) if value>100000000000 else int(value)
     try:
         if len(s)>=14 and s[:14].isdigit():
             d=dt.datetime.strptime(s[:14],"%Y%m%d%H%M%S")
