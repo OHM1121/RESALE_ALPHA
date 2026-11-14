@@ -1615,7 +1615,8 @@ def _stock_at_ledger_v19(self):
         out['realized_pnl']=realized
         out['unrealized_pnl']=holding
         out['total_pnl']=realized+holding
-        from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+        from phone_buy_evidence_v035 import (
+            attach_buy_evidence,read_at_open_buy_fills,queue_phone_buy_evidence)
         from at_hold_diagnostic_v035 import diagnose_at_position
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -1624,7 +1625,8 @@ def _stock_at_ledger_v19(self):
             "SELECT id,tf,code,ref_ts,features,score,decision FROM signals ORDER BY id DESC LIMIT 12000")
         membership=_core._db_rows(stock_db,"SELECT position_id,signal_id FROM v19_members")
         link_map={str(m['position_id']):str(m['signal_id']) for m in membership}
-        buy_records=attach_buy_evidence(positions,out.get('executions') or [],
+        # OPEN holdings' original buys must not fall out of a capped UI feed.
+        buy_records=attach_buy_evidence(positions,read_at_open_buy_fills(stock_db),
                         source_signals,market='stock',strategy='at',linked_ids=link_map)
         queue_phone_buy_evidence(self.root,buy_records)
         now=datetime.now(ZoneInfo("Asia/Seoul"))
