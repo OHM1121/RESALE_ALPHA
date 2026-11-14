@@ -9,6 +9,7 @@ fictional time/high. This database is part of the research ZIP.
 """
 from __future__ import annotations
 import datetime as dt
+from contextlib import closing
 import json
 import math
 import sqlite3
@@ -55,7 +56,7 @@ def _json_chart(symbol,interval,span):
                 if high is not None and high>0:
                     result.append((int(stamp),high))
             if result:return result
-        except (OSError,ValueError,TypeError,KeyError,IndexError):
+        except Exception:
             continue
     return None
 
@@ -88,10 +89,13 @@ def _daily_conflicts(symbol,quotes,entry_ts,precision):
     checked=0
     for day,peak in full.items():
         if day<=entry_day:continue
-        if day in intraday:
-            checked+=1
-            if peak+0.000001*max(1,peak)<full[day]:
-                return False,False
+        # All subsequent trading sessions must be present in 1-minute/5-minute
+        # history; a single recovered candle must not certify a missing week.
+        if day not in intraday:
+            return False,False
+        checked+=1
+        if intraday[day]+0.000001*max(1,peak)<peak:
+            return False,False
     return False,True if checked or entry_day in intraday else False
 
 
@@ -201,8 +205,9 @@ def fetch_cache(root,items):
                              uri=True,timeout=3) as conn:
             conn.row_factory=sqlite3.Row
             rows=conn.execute("SELECT * FROM price_highs").fetchall()
+        lookup=set(wanted)
         return {(r["signal_id"],r["code"],r["entry_ts"]):dict(r)
-                for r in rows if (r["signal_id"],r["code"],r["entry_ts"]) in set(wanted)}
+                for r in rows if (r["signal_id"],r["code"],r["entry_ts"]) in lookup}
     except (sqlite3.Error,OSError):
         return {}
 
@@ -250,7 +255,7 @@ class _PriceWorker:
                 if not self.pending:self.signal.clear()
             if not pending:continue
             try:
-                with _db(self.root) as conn:
+                with closing(_db(self.root)) as conn:
                     now=int(time.time())
                     for sid,code,entry in pending:
                         previous=conn.execute(
