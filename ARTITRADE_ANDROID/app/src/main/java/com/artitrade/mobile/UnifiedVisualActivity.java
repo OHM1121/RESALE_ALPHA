@@ -471,17 +471,23 @@ public final class UnifiedVisualActivity extends Activity {
         marketSwitch.setOrientation(LinearLayout.HORIZONTAL);
         marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
         marketSwitch.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,14));
-        TextView stock=segmentItem("주식","stock".equals(market),()->{
+        TextView marketTab=segmentItem("시장","market".equals(page),()->{
+            page="market";persistNavigation();showShell();
+        });
+        TextView stock=segmentItem("주식","stock".equals(market)&&
+            !"market".equals(page),()->{
             if(!"stock".equals(market)){market="stock";strategy="at";resetHistoryFilter();}
-            persistNavigation();showShell();
+            page="home";persistNavigation();showShell();
         });
-        TextView coin=segmentItem("코인","coin".equals(market),()->{
+        TextView coin=segmentItem("코인","coin".equals(market)&&
+            !"market".equals(page),()->{
             if(!"coin".equals(market)){market="coin";strategy="general";resetHistoryFilter();}
-            persistNavigation();showShell();
+            page="home";persistNavigation();showShell();
         });
+        marketSwitch.addView(marketTab,new LinearLayout.LayoutParams(dp(49),dp(33)));
         marketSwitch.addView(stock,new LinearLayout.LayoutParams(dp(49),dp(33)));
         marketSwitch.addView(coin,new LinearLayout.LayoutParams(dp(49),dp(33)));
-        top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(104),dp(39)));
+        top.addView(marketSwitch,new LinearLayout.LayoutParams(dp(155),dp(39)));
 
         clockText=text("",12);
         clockText.setTextColor(PremiumUi.MUTED);
@@ -497,14 +503,17 @@ public final class UnifiedVisualActivity extends Activity {
 
         HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);sh.setFillViewport(true);
         strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(11),dp(3),dp(11),dp(3));
-        sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(40)));
-        buildStrategyBar();
+        sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));if(!"market".equals(page)){
+            shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(40)));
+            buildStrategyBar();
+        }
 
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(PremiumUi.BG);
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(7),dp(5),dp(7),dp(8));
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
-            if("operation".equals(page)||"errors".equals(page))return false;
+            if("operation".equals(page)||"errors".equals(page)||
+               "market".equals(page)||"policyHistory".equals(page))return false;
             if(e.getAction()==MotionEvent.ACTION_DOWN){
                 swipeX=e.getX();swipeY=e.getY();
             }else if(e.getAction()==MotionEvent.ACTION_CANCEL){
@@ -1086,7 +1095,8 @@ public final class UnifiedVisualActivity extends Activity {
                 }
                 updateHeader();
                 if(!"operation".equals(page)
-                    &&(ledgerChanged||"home".equals(page)||"errors".equals(page)))render();
+                    &&(ledgerChanged||"home".equals(page)||"errors".equals(page)||
+                        "market".equals(page)))render();
             });
         });
     }
@@ -1698,7 +1708,8 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void render(){
         if(content==null)return;content.removeAllViews();updateHeader();
-        if("home".equals(page))renderHome();
+        if("market".equals(page))renderMarket();
+        else if("home".equals(page))renderHome();
         else if("positions".equals(page))renderList("보유 종목",stats(market,strategy).positions,"positions");
         else if("pending".equals(page))renderList("매수 대기",stats(market,strategy).pending,"pending");
         else if("executions".equals(page))renderList("체결 이력",stats(market,strategy).executions,"executions");
