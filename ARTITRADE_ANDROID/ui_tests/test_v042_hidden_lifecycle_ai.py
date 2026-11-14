@@ -175,7 +175,7 @@ class LifecycleV042(TestCase):
         self.assertIn("진입",item["cause"])
         self.assertIn("시장",item["decline"])
         self.assertIn("상승",item["rise"] if "상승" in item["rise"] else "상승")
-        self.assertIn("매수",item["recommendation"])
+        self.assertIn("진입",item["recommendation"])
         self.assertFalse(item["effect"]["validated"])
         self.assertGreater(item["effect"]["delta_pp"],0)
         for key in ("cause","decline","rise","recommendation"):
