@@ -24,6 +24,13 @@ jobs:
       - name: Verify phone BUY provenance and hold maturity
         run: |
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v035_*.py' -v
+      - name: Verify stock and coin Korean recorded BUY reason rendering
+        run: |
+          mkdir -p /tmp/artitrade-v035-jvm
+          javac -d /tmp/artitrade-v035-jvm \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/TradeExplanation.java \
+            ARTITRADE_ANDROID/ui_tests/TradeExplanationTest.java
+          java -cp /tmp/artitrade-v035-jvm com.artitrade.mobile.TradeExplanationTest
       - name: Run existing phone trade and research tests
         run: |
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
