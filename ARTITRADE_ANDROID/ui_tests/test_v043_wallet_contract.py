@@ -24,11 +24,23 @@ class StubLedger:
     def __init__(self):self.settings=StubSettings()
 
 
+class FakeBook:
+    def available(self,symbol,venue,when,limit,quantity):
+        return ((limit,min(quantity,5000),5000,0.0),"TEST_FRESH_DEPTH")
+    def reserve(self,*args):return True
+    def available_sell(self,symbol,venue,when,bid,quantity):
+        return min(quantity,5000)
+    def reserve_sell(self,*args):return True
+
+
 class FakeRuntime:
     def __init__(self,root):
         self.root=Path(root)
         self.coin_ledger=StubLedger()
         self.coin_ma_ledger=StubLedger()
+        self.stock_runner=types.SimpleNamespace(
+            market_map={"005930":("KOSPI","TEST")},
+            engine=types.SimpleNamespace(book=FakeBook()))
         self.halts=[]
     def live_enabled(self,market):return False
     def halt_market(self,market,stage,error):
