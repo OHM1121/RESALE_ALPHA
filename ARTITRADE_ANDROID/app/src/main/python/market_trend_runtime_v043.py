@@ -531,7 +531,7 @@ class Coordinator:
                         bar3_preclose=bool(p.__dict__.get("bar3_preclose")))
             if result:
                 try:
-                    sold,status=self.wallet.sell(p,q["bid"],now,result[0])
+                    sold,status=self.wallet.sell(p,q["bid"],now,result[0],bid_size=q["bid_size"])
                     if sold and p.qty<=0:self._positions.pop(key,None)
                 except Exception as exc:
                     self._last_fetch_error[market]="SELL:"+type(exc).__name__
