@@ -27,7 +27,7 @@ jobs:
       - name: Pure score and policy scope regression
         run: |
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
-          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v033_market_research.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v033_*.py' -v
           mkdir -p /tmp/artitrade-v033
           javac -d /tmp/artitrade-v033 \
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/PolicyHistoryScope.java \
