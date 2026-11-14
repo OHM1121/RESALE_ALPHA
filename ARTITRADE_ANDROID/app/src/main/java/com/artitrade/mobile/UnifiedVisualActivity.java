@@ -1750,67 +1750,64 @@ public final class UnifiedVisualActivity extends Activity {
         panel.addView(state);
         MarketRegimeGraphicView gauge=new MarketRegimeGraphicView(this);
         gauge.setScore(data);
-        panel.addView(gauge,new LinearLayout.LayoutParams(-1,dp(164)));
+        panel.addView(gauge,new LinearLayout.LayoutParams(-1,dp(105)));
         long at=data.optLong("asof",0L);
-        double coverage=data.optDouble("coverage",Double.NaN);
-        String info=(at>0?"기록시각 "+formatKst(at*1000L):"시장점수 원장 미기록")+
-            (finite(coverage)?"  |  자료완성도 "+Math.round(coverage*100)+"%":"");
-        TextView provenance=text(info,11);
-        provenance.setTextColor(Color.rgb(157,175,197));
-        provenance.setMaxLines(3);
-        panel.addView(provenance);
-        TextView source=text(crypto?
-            "업비트 공개 KRW 시세·BTC/ETH 일봉 · 자체 구성 실험점수":
-            "주식 EXE 시황 평가 가중치 이관 · 공개 지수/글로벌 지표 (키움 수급 미연동)",11);
-        source.setTextColor(PremiumUi.MUTED);
-        source.setMaxLines(3);
-        source.setPadding(0,dp(3),0,dp(8));
-        panel.addView(source);
-        TextView bandTitle=text("점수 구간별 보유종목 수익률 변화",14);
+        if(at>0){
+            TextView updated=text("갱신 "+formatKst(at*1000L),11);
+            updated.setTextColor(PremiumUi.MUTED);
+            panel.addView(updated);
+        }
+        TextView bandTitle=text("점수 구간",14);
         bandTitle.setTypeface(null,Typeface.BOLD);
+        bandTitle.setPadding(0,dp(8),0,dp(3));
         panel.addView(bandTitle);
-        TextView guide=text("기준점 대비 %p · 같은 구간에서 기존 보유종목만 추적 · 수수료 반영 손익 아님",11);
-        guide.setTextColor(PremiumUi.MUTED);
-        guide.setMaxLines(3);
-        panel.addView(guide);
 
         JSONArray groups=data.optJSONArray("bands");
-        for(String band:new String[]{"-100~-51","-50~-1","0~50","51~60","61~70","71~80","81~90","91~100"}){
-            JSONObject found=null;
+        String[] marketBands={
+            "-100~-81","-80~-61","-60~-41","-40~-21","-20~-1",
+            "0~19","20~39","40~59","60~79","80~100"
+        };
+        int maxN=0;
+        if(groups!=null)for(int j=0;j<groups.length();j++){
+            JSONObject g=groups.optJSONObject(j);
+            if(g!=null)maxN=Math.max(maxN,g.optInt("count",0));
+        }
+        for(String band:marketBands){
+            int count=0;
             if(groups!=null)for(int j=0;j<groups.length();j++){
                 JSONObject g=groups.optJSONObject(j);
-                if(g!=null&&band.equals(g.optString("band"))){found=g;break;}
+                if(g!=null&&band.equals(g.optString("band"))){
+                    count=g.optInt("count",0);
+                    break;
+                }
             }
             boolean active=band.equals(data.optString("active_band",""));
-            int n=found==null?0:found.optInt("count",0);
-            Double diff=found==null||found.isNull("avg_change_pp")?null:
-                found.optDouble("avg_change_pp");
-            LinearLayout line=new LinearLayout(this);
-            line.setOrientation(LinearLayout.HORIZONTAL);
-            line.setGravity(Gravity.CENTER_VERTICAL);
-            line.setBackground(bg(active?PremiumUi.SURFACE_HIGH:
+            LinearLayout row=new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackground(bg(active?PremiumUi.SURFACE_HIGH:
                 Color.TRANSPARENT,active?PremiumUi.LINE:Color.TRANSPARENT,6));
             TextView label=text(band+(active?" ●":""),12);
             label.setTextColor(active?Color.rgb(122,220,181):Color.rgb(176,193,213));
-            line.addView(label,new LinearLayout.LayoutParams(dp(81),dp(32)));
-            MarketBandDeltaView bar=new MarketBandDeltaView(this,diff);
-            line.addView(bar,new LinearLayout.LayoutParams(0,dp(31),1));
-            String measured=diff==null?"미집계":
-                String.format(Locale.KOREA,"%+.2f%%p",diff);
-            TextView avg=text(measured,13);
-            avg.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
-            avg.setTextColor(diff==null?PremiumUi.MUTED:
-                diff>0?Color.rgb(98,224,181):diff<0?
-                    Color.rgb(255,134,146):PremiumUi.TEXT);
-            avg.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-            line.addView(avg,new LinearLayout.LayoutParams(dp(82),dp(32)));
-            TextView count=text(n+"개",11);
-            count.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-            count.setTextColor(PremiumUi.MUTED);
-            line.addView(count,new LinearLayout.LayoutParams(dp(34),dp(32)));
-            panel.addView(line,new LinearLayout.LayoutParams(-1,dp(34)));
+            row.addView(label,new LinearLayout.LayoutParams(dp(88),dp(30)));
+            ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+            bar.setMax(Math.max(1,maxN));
+            bar.setProgress(count);
+            if(Build.VERSION.SDK_INT>=21){
+                bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent()));
+                bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                    Color.rgb(41,46,62)));
+            }
+            LinearLayout.LayoutParams barLp=new LinearLayout.LayoutParams(0,dp(9),1);
+            barLp.setMargins(dp(6),0,dp(9),0);
+            row.addView(bar,barLp);
+            TextView n=text(count+"회",12);
+            n.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            n.setTextColor(PremiumUi.MUTED);
+            row.addView(n,new LinearLayout.LayoutParams(dp(44),dp(30)));
+            panel.addView(row,new LinearLayout.LayoutParams(-1,dp(32)));
         }
-        TextView method=text("시장평가 지표 (모두 관측값, 주문조건과 무관)",13);
+        TextView method=text("평가 항목",13);
         method.setTextColor(Color.rgb(161,203,240));
         method.setPadding(0,dp(9),0,dp(5));
         panel.addView(method);
@@ -1845,16 +1842,9 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderMarket(){
-        TextView title=text("시장 · 주식 / 코인 흐름 연구",21);
+        TextView title=text("시장 점수",21);
         title.setTypeface(null,Typeface.BOLD);
         content.addView(title);
-        TextView note=text("원본 시황점수와 공개 시세로 평가한 연구지표임. "+
-            "점수 변화 시 보유종목의 당시 수익률을 고정하고 이후 변화폭(%p)을 추적함. "+
-            "주문·자동매매 판정에는 사용하지 않음.",12);
-        note.setTextColor(Color.rgb(174,193,216));
-        note.setPadding(0,dp(5),0,dp(8));
-        note.setMaxLines(4);
-        content.addView(note);
         JSONObject local=uiSnapshot.packet.optJSONObject("local_records");
         JSONObject research=local==null?null:local.optJSONObject("market_research");
         JSONObject stock=research==null?null:research.optJSONObject("stock");
