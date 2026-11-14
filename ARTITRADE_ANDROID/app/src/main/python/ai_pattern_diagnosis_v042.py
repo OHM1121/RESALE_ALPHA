@@ -150,8 +150,17 @@ def _best_pattern(observed,cohort,prefer_loss,allow_hold=True):
                     "보유 중 관측 포함"}
 
 
+# A holding-phase change cannot be used as an entry-time filter.
+# Its exit benefit requires timestamped trigger and executable fill evidence,
+# not a retrospective "we would not have bought" assumption.
+ENTRY_FILTERS=frozenset({
+    "market_weak","market_volume","heat_chase","volatility_risk",
+    "thin_bid","excess_gap"
+})
+
 def _scenario(closed,pattern):
     if not pattern or not closed:return None
+    if pattern["code"] not in ENTRY_FILTERS:return None
     matched=[r for r in closed if pattern["code"] in r["precursors"]]
     if not matched:return None
     # Same-trade-count opportunity average with skipped trades set to 0.
