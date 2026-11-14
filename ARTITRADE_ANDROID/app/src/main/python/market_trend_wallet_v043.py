@@ -283,6 +283,11 @@ class TrendWallet:
                 pos.__dict__["entry_mode"]="MARKET_TREND"
                 pos.__dict__["rsi20_live"]=rsi20_live
                 pos.__dict__["bar_finalized"]=False
+                if market=="stock":
+                    identity=(self.rt.stock_runner.market_map or {}).get(symbol)
+                    if identity and identity[0] in ("KOSPI","KOSDAQ"):
+                        pos.__dict__["market_id"]=identity[0]
+                        pos.__dict__["company_name"]=identity[1]
                 self.journal.save_position(pos,pid)
                 self.journal.event(event_key+":FILLED",market,strategy,frame,symbol,
                      "ACTUAL" if fill["mode"]=="LIVE" else "PAPER","MT_BUY_FILLED",
