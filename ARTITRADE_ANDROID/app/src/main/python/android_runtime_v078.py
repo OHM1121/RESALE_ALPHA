@@ -1626,6 +1626,17 @@ def _hub_records_v078(self):
             out['market_research']=offer_records(self.root,out)
         except Exception as score_error:
             self._err('market_research_v033',score_error)
+    # Always publish the score worker snapshot on the NORMAL successful path.
+    # v037 accidentally only called this inside exception/recovery branches;
+    # Android read local_records.market_research and therefore saw no scores.
+    try:
+        from market_research_v033 import offer_records
+        out['market_research']=offer_records(self.root,out)
+    except Exception as score_error:
+        self._err('market_research_v038',score_error)
+        out['market_research']={
+            'stock':{'score':None,'status':'시장점수 처리 오류'},
+            'coin':{'score':None,'status':'시장점수 처리 오류'}}
     return json.dumps(out,ensure_ascii=False,default=str)
 
 def _stock_at_ledger_v19(self):
