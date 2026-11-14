@@ -1502,7 +1502,18 @@ public final class UnifiedVisualActivity extends Activity {
         double remoteWin=num(l,"win_rate","win_rate_pct");if(finite(remoteWin))st.win=remoteWin;
 
         JSONObject actual=l.optJSONObject("actual_target");
-        if(actual!=null)st.target=num(actual,"rate_pct");
+        if(actual!=null){
+            double confirmed=num(actual,"hit");
+            // A conditional 1/1 among completed positions is not 100%
+            // of the 10 positions which entered. Outstanding target statuses
+            // are denominator entries, never assumed MISS or SUCCESS.
+            int pending=actual.optInt("pending",0);
+            int decided=actual.optInt("evaluated",
+                actual.optInt("hit",0)+actual.optInt("miss",0));
+            int eligible=actual.optInt("eligible",decided+pending);
+            if(finite(confirmed)&&eligible>0)st.target=100.0*confirmed/eligible;
+            else st.target=num(actual,"rate_pct");
+        }
         st.flowPending=st.pending.length();st.flowHolding=st.positions.length();st.flowBought=buy;st.flowSold=sell;
         JSONObject perf=l.optJSONObject("performance_by_frame");
         if(perf!=null){
@@ -1903,11 +1914,11 @@ public final class UnifiedVisualActivity extends Activity {
 
         LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout winCard=card();DonutMetricView win=new DonutMetricView(this);
-        win.setMetric("실제 승률",selected.win,pct(selected.win));
+        win.setMetric("실현손익 승률",selected.win,pct(selected.win));
         winCard.addView(win,new LinearLayout.LayoutParams(-1,-1));
         hero.addView(winCard,new LinearLayout.LayoutParams(0,-1,1));
         LinearLayout hitCard=card();DonutMetricView hit=new DonutMetricView(this);
-        hit.setMetric("목표도달률",selected.target,pct(selected.target));
+        hit.setMetric("목표확인 비중",selected.target,pct(selected.target));
         hitCard.addView(hit,new LinearLayout.LayoutParams(-1,-1));
         LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(0,-1,1);
         hp.setMargins(dp(6),0,0,0);hero.addView(hitCard,hp);
@@ -1954,7 +1965,7 @@ public final class UnifiedVisualActivity extends Activity {
                     q.flowPending,q.flowBought,q.flowHolding,q.flowSold);
                 flow.setContentDescription(tfLabel(tf)+" 누적손익 "+money(q.total)+
                     ", 실현손익 "+money(q.realized)+", 평가손익 "+money(q.unrealized)+
-                    ", 승률 "+pct(q.win)+", 목표도달률 "+pct(q.target)+
+                    ", 실현 승률 "+pct(q.win)+", 목표확인 비중 "+pct(q.target)+
                     ", 대기 "+q.flowPending+", 매수 "+q.flowBought+
                     ", 보유 "+q.flowHolding+", 매도 "+q.flowSold);
                 if(!sideBySide){
