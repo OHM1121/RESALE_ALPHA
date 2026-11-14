@@ -23,7 +23,7 @@ final class MarketResearchScoreLookup {
                     Long.toString(Math.max(0,ts-900))})){
             if(!c.moveToFirst()||c.isNull(0))return null;
             double score=c.getDouble(0);
-            return Double.isFinite(score)&&score>=0&&score<=100?score:null;
+            return SignedMarketScore.isValid(score)?score:null;
         }catch(Exception error){
             // Both a missing DB and an EXE-imported record without market
             // observations must display "미기록", never a synthetic 50.
