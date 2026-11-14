@@ -115,6 +115,10 @@ final class TradeExplanation {
             return "가상매매 관측 기록";
         if(has(x,"SELL_FILL","SELL_EXECUTED"))return "매도주문 체결";
         if(has(x,"BUY_FILL","BUY_EXECUTED"))return "매수주문 체결";
+        // These are literal BUY execution reasons written by the phone's
+        // EXE-derived stock/coin engines. Preserve their actual Korean wording.
+        if("매수".equals(event)&&raw.contains("호가")&&raw.contains("체결"))
+            return raw.length()>108?raw.substring(0,105)+"…":raw;
         if(raw.contains("도달")||raw.contains("이탈")||raw.contains("돌파")||
             raw.contains("선정")||raw.contains("조건")||raw.contains("하락")||
             raw.contains("상승")||raw.contains("매수")||raw.contains("매도")){
