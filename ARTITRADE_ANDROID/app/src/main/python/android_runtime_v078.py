@@ -1773,6 +1773,10 @@ _core.Runtime._stock_at_ledger = _stock_at_ledger_v19
 _core.Runtime.hub_records = _hub_records_v078
 _core.Runtime.stop = _patched_stop
 
+# v0.7.43: market trend is an AT/MA entry mode, never an independent account.
+from market_trend_runtime_v043 import install as _install_market_trend_v043
+_install_market_trend_v043(_core)
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 
