@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import contextlib
 import sqlite3
 import threading
 import time
@@ -236,11 +237,11 @@ class TrendPosition:
         self.last_price=p
         if p<=self.entry*.91:
             return ("MT_STOP_9PCT",1.0)
+        if now>=self.deadline:
+            return ("MT_HOLD_DEADLINE",1.0)
         if not bar_finished:return None
         if bar3_preclose and self.closed_seq==2:
             return ("MT_RSI_3_BARS",1.0)
-        if now>=self.deadline:
-            return ("MT_HOLD_DEADLINE",1.0)
         self.peak=max(self.peak,p)
         if self.stage==0:
             if p>self.entry:self.above_entry=True
@@ -275,6 +276,12 @@ class TrendPosition:
         d=dict(self.__dict__)
         for key in ("entry_at","deadline"):d[key]=d[key].isoformat()
         return d
+
+
+class _AutoClosingSqlite(sqlite3.Connection):
+    def __exit__(self,exc_type,exc,tb):
+        try:return super().__exit__(exc_type,exc,tb)
+        finally:self.close()
 
 
 class TrendJournal:
@@ -313,7 +320,7 @@ class TrendJournal:
             """)
 
     def connect(self):
-        c=sqlite3.connect(str(self.path),timeout=10)
+        c=sqlite3.connect(str(self.path),timeout=10,factory=_AutoClosingSqlite)
         c.row_factory=sqlite3.Row
         c.execute("PRAGMA busy_timeout=10000")
         return c
