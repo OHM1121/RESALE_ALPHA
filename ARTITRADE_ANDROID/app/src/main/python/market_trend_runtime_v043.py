@@ -358,31 +358,81 @@ class Coordinator:
         return closed
 
     def _process_closed(self,market):
+        """Advance latches only on new bars and replay held-position RSI safely.
+
+        The original chart may have 80 old bars; processing them as fresh
+        signals on every preload can exhaust SQLite and misassign buy H/L.
+        """
+        now=dt.datetime.now(mt.KST)
         with self.lock:
             histories=[(key,list(rows)) for key,rows in self._history.items()
                        if key[0]==market]
         for key,rows in histories:
             _,code,frame=key
-            prev=self._last_closed.get(key)
-            for row in rows:
+            if len(rows)<21:continue
+            rows=sorted(rows,key=lambda x:x["end"])
+            last=self._last_closed.get(key)
+            new_rows=rows[-1:] if last is None else [
+                row for row in rows if last<row["end"]<=now]
+            for row in new_rows:
+                if row["end"]>now:continue
                 stamp=row["end"].isoformat()
-                if prev and row["end"]<=prev:continue
-                v=mt.rsi20([a["close"] for a in rows if a["end"]<=row["end"]])
+                v=mt.rsi20([x["close"] for x in rows if x["end"]<=row["end"]])
                 if v is None:continue
                 latch=self.journal.latch(market,code,frame)
                 latch.completed(stamp,v)
                 self.journal.save_latch(market,code,frame,latch)
-                for p in list(self._positions.values()):
-                    if p.market!=market or p.symbol!=code or p.frame!=frame or p.qty<=0:continue
-                    if row["end"]<=p.entry_at:continue
-                    if not p.__dict__.get("bar_finalized"):
-                        p.close_entry_bar(p.bar_key,row["high"],row["low"],v)
-                        p.__dict__["bar_finalized"]=True
-                    else:p.close_next_bar(stamp,v)
-                    p.__dict__["rsi20_closed"]=v
-                    self.journal.save_position(p,p.position_id)
                 self._last_closed[key]=row["end"]
-                prev=row["end"]
+
+            held=[p for p in tuple(self._positions.values())
+                  if p.market==market and p.symbol==code and
+                     p.frame==frame and p.qty>0]
+            for p in held:
+                changed=False
+                if not p.__dict__.get("bar_finalized"):
+                    entrybar=next((row for row in rows
+                                   if row["end"].isoformat()==p.bar_key),None)
+                    if entrybar is not None and entrybar["end"]<=now:
+                        rsi=mt.rsi20([x["close"] for x in rows
+                                      if x["end"]<=entrybar["end"]])
+                        p.close_entry_bar(p.bar_key,entrybar["high"],
+                                          entrybar["low"],rsi)
+                        p.__dict__["bar_finalized"]=True
+                        p.__dict__["rsi20_closed"]=rsi
+                        changed=True
+                if p.__dict__.get("bar_finalized"):
+                    for row in rows:
+                        stamp=row["end"].isoformat()
+                        if row["end"]>now or row["end"]<=p.entry_at:continue
+                        if p.last_closed_bar is not None and stamp<=p.last_closed_bar:
+                            continue
+                        rsi=mt.rsi20([x["close"] for x in rows
+                                      if x["end"]<=row["end"]])
+                        if rsi is not None:
+                            p.close_next_bar(stamp,rsi)
+                            p.__dict__["rsi20_closed"]=rsi
+                            changed=True
+                if changed:self.journal.save_position(p,p.position_id)
+            for v in tuple(self._virtual.values()):
+                if v.market!=market or v.symbol!=code or v.frame!=frame:
+                    continue
+                if not v.__dict__.get("bar_finalized"):
+                    entrybar=next((row for row in rows
+                                   if row["end"].isoformat()==v.bar_key),None)
+                    if entrybar is not None and entrybar["end"]<=now:
+                        rsi=mt.rsi20([x["close"] for x in rows
+                                      if x["end"]<=entrybar["end"]])
+                        v.close_entry_bar(v.bar_key,entrybar["high"],entrybar["low"],rsi)
+                        v.__dict__["bar_finalized"]=True
+                if v.__dict__.get("bar_finalized"):
+                    for row in rows:
+                        stamp=row["end"].isoformat()
+                        if row["end"]>now or row["end"]<=v.entry_at:continue
+                        if v.last_closed_bar is not None and stamp<=v.last_closed_bar:
+                            continue
+                        rsi=mt.rsi20([x["close"] for x in rows
+                                      if x["end"]<=row["end"]])
+                        if rsi is not None:v.close_next_bar(stamp,rsi)
 
     def _preclose_candidates(self,market,now):
         if self.mode(market)!="MARKET_TREND":return
@@ -510,8 +560,14 @@ class Coordinator:
     def start(self):
         self._start_score_worker()
         coin=self.rt.coin_runner
-        if coin is not None and not isinstance(coin.latest_prices,_PriceMemory):
-            coin.latest_prices=_PriceMemory(coin.latest_prices,self.observe_coin_tick)
+        if coin is not None:
+            # The property was installed after the original coin runner was
+            # constructed: migrate its existing live price dictionary.
+            earlier=coin.__dict__.pop("latest_prices",None)
+            if earlier is not None:
+                coin.latest_prices=earlier
+            elif not isinstance(coin.latest_prices,_PriceMemory):
+                coin.latest_prices=coin.latest_prices
         if coin is not None:
             orig=coin._both_watched_codes
             def watched():
