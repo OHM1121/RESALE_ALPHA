@@ -2590,9 +2590,9 @@ public final class UnifiedVisualActivity extends Activity {
                 }
                 fullLedgerExportResult(true,
                     ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
-                    " 연구이력 "+parts.length()+"개 ZIP 저장 완료\\n"+
-                    "각 파일 500MB 이하 · 원본 SQLite/JSON 전체 포함\\n"+
-                    "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\\n"+
+                    " 연구이력 "+parts.length()+"개 ZIP 저장 완료\n"+
+                    "각 파일 500MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
                     "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",true);
             }catch(Throwable e){
                 // A failed multi-file transfer must not masquerade as a complete export.
