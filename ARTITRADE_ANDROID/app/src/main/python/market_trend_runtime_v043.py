@@ -180,7 +180,7 @@ class Coordinator:
         self.scores[market]=score
         self.mode_details[market]=str(result.get("status") or "")
         if mode!=prior:
-            if prior!="PAUSED" and mode!="PAUSED":
+            if mode=="MARKET_TREND":
                 self._cancel_native_pending(market)
             # On unknown score, existing pending orders remain as requested.
             with self.journal.lock,self.journal.connect() as c:
@@ -191,7 +191,7 @@ class Coordinator:
     def _cancel_native_pending(self,market):
         # FOK new-mode order is not a persistent unfilled broker order.
         # Existing original pending only expire when original is disabled.
-        if self.modes.get(market)=="ORIGINAL":
+        if True:
             parent=_parent(market)
             for strategy in parent:
                 try:
@@ -225,14 +225,18 @@ class Coordinator:
         if market=="stock":
             runner=self.rt.stock_runner
             if runner is None:return None
-            with runner.engine.book.lock if hasattr(runner.engine.book,"lock") else contextlib.nullcontext():
+            with runner.engine.book._lock:
                 book=runner.engine.book._items.get((code,"KRX"))
+                bid_record=runner.engine.book._bid_depth.get((code,"KRX"))
             if not book:return None
             ask,bid,ask_size,seen=book
             if (dt.datetime.now(mt.KST)-seen).total_seconds()>3:return None
             if not (ask>=bid>0 and float(ask_size)>0):return None
+            bid_size=0
+            if bid_record and bid_record[0]==bid and abs((dt.datetime.now(mt.KST)-bid_record[2]).total_seconds())<=3:
+                bid_size=int(bid_record[1])
             return {"trade":price,"ask":float(ask),"bid":float(bid),
-                    "ask_size":float(ask_size),"bid_size":float("inf")}
+                    "ask_size":float(ask_size),"bid_size":float(bid_size)}
         runner=self.rt.coin_runner
         if runner is None:return None
         with runner._lock:
@@ -269,6 +273,9 @@ class Coordinator:
             with self.lock:
                 self._candidates[market]=dict(picked)
                 self._last_rank[market]=time.monotonic()
+            if market=="coin" and runner is not None:
+                with runner._lock:
+                    runner.tracked=sorted(set(runner.tracked)|set(self._candidates["coin"]))
         except Exception as exc:
             self._last_fetch_error[market]="RANK:"+type(exc).__name__
             if time.monotonic()-self._last_rank[market]>600:
@@ -482,15 +489,23 @@ class Coordinator:
         while not self.stop_event.is_set():
             try:
                 self._update_score(market)
-                if self.mode(market)=="MARKET_TREND":
-                    self._refresh_rank(market)
-                    self._preclose_candidates(market,dt.datetime.now(mt.KST))
                 self._process_closed(market)
+                if self.mode(market)=="MARKET_TREND":
+                    self._preclose_candidates(market,dt.datetime.now(mt.KST))
                 self._process_holds(market,dt.datetime.now(mt.KST))
             except Exception as exc:
                 self._last_fetch_error[market]="COORD:"+type(exc).__name__
                 self.modes[market]="PAUSED"
             self.stop_event.wait(.45)
+
+    def _rank_loop(self,market):
+        while not self.stop_event.is_set():
+            try:
+                if self.mode(market)=="MARKET_TREND":
+                    self._refresh_rank(market)
+            except Exception as exc:
+                self._last_fetch_error[market]="RANK_WORKER:"+type(exc).__name__
+            self.stop_event.wait(5)
 
     def start(self):
         self._start_score_worker()
@@ -507,7 +522,8 @@ class Coordinator:
                 return base
             coin._both_watched_codes=watched
         for market in ("stock","coin"):
-            for target in (lambda m=market:self._prefetch(m),
+            for target in (lambda m=market:self._rank_loop(m),
+                           lambda m=market:self._prefetch(m),
                            lambda m=market:self._loop(m)):
                 thread=threading.Thread(target=target,daemon=True,
                        name="artitrade-market-trend-v043-"+market)
@@ -615,6 +631,19 @@ def install(core):
         try:return ma_tick(self,tick,*a,**kw)
         finally:_MA_GUARD.block=False
     stock_ma_engine.StockMAService.on_tick=gated_ma_tick
+
+    # Upbit replaces latest_prices during preload. A property preserves
+    # the fresh ticker capture across each original dictionary replacement.
+    if not isinstance(getattr(d_upbit.UpbitPaperRunner,"latest_prices",None),property):
+        def mt_prices_get(obj):
+            return obj.__dict__.get("_market_trend_prices",{})
+        def mt_prices_set(obj,value):
+            def observed(code,price):
+                rt=getattr(core,"_RUNTIME",None)
+                trend=getattr(rt,"market_trend",None) if rt else None
+                if trend:trend.observe_coin_tick(code,price)
+            obj.__dict__["_market_trend_prices"]=_PriceMemory(dict(value or {}),observed)
+        d_upbit.UpbitPaperRunner.latest_prices=property(mt_prices_get,mt_prices_set)
 
     stock_tick=d_live.LivePaperRunner._new_tick
     def tracker_stock_tick(self,tick):
