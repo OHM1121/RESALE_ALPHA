@@ -15,7 +15,7 @@ public final class ResearchPopupV036Test {
         eq("actual",ResearchBandSelection.tapSide(125,330,1.0f),"actual column");
         eq("virtual",ResearchBandSelection.tapSide(275,330,1.0f),"virtual column");
         check(ResearchBandSelection.tapSide(38,330,1.0f)==null,"score cell should not open a mixed popup");
-        check(ResearchBandSelection.tapSide(173,330,1.0f)==null,"column gap should not open mixed");
+        check(ResearchBandSelection.tapSide(202,330,1.0f)==null,"column gap should not open mixed");
         check(ResearchBandSelection.includeInPopup(true,true,"actual"),"real purchase");
         check(!ResearchBandSelection.includeInPopup(false,true,"actual"),"exclude virtual from actual");
         check(ResearchBandSelection.includeInPopup(false,true,"virtual"),"virtual entry observed");
