@@ -317,6 +317,21 @@ class ScoreLedger:
         }
 
 
+def display_snapshot(market,snapshot,now=None,poll_error=None):
+    """A historical last score is not necessarily a live quote."""
+    output=dict(snapshot or {})
+    stamp=finite(output.get("asof"))
+    now=time.time() if now is None else now
+    limit=3600 if market=="stock" else 900
+    stale=stamp is not None and now-stamp>limit
+    output["stale"]=bool(stale)
+    if stale:
+        output["status"]=str(output.get("status") or "시장점수") + " · 마지막 관측 오래됨"
+    if poll_error:
+        output["status"]=str(poll_error) + (" · 마지막 점수 표시" if stamp else "")
+    return output
+
+
 def _extract_positions(records):
     result={"stock":{},"coin":{}}
     if not isinstance(records,dict):return result
@@ -404,6 +419,7 @@ class _MarketWorker:
                      "coin":{"score":None,"status":"시장 데이터 초기화"}}
         self._pending=None
         self._last_poll=0
+        self._last_failure={}
         self._thread=threading.Thread(target=self._loop,daemon=True,
             name="artitrade-market-score-observe-only")
         self._thread.start()
@@ -432,17 +448,16 @@ class _MarketWorker:
                             if finite(evidence.get("score")) is not None:
                                 ledger.record_score(market,evidence["score"],int(time.time()),
                                     cohorts[market],evidence)
-                            snapshot=ledger.snapshot(market)
                             if finite(evidence.get("score")) is None:
-                                snapshot["status"]=evidence.get("status","자료 미수신")
-                            with self._cache_lock:self._cache[market]=snapshot
+                                self._last_failure[market]=evidence.get("status","자료 미수신")
+                            else:
+                                self._last_failure.pop(market,None)
                         except Exception as exc:
-                            with self._cache_lock:
-                                self._cache[market]={"score":None,
-                                     "status":"시장원장 오류: "+type(exc).__name__}
+                            self._last_failure[market]="시장원장 오류: "+type(exc).__name__
                 for market in ("stock","coin"):
                     ledger.observe_positions(market,cohorts[market],int(time.time()))
-                    snapshot=ledger.snapshot(market)
+                    snapshot=display_snapshot(market,ledger.snapshot(market),
+                        poll_error=self._last_failure.get(market))
                     with self._cache_lock:self._cache[market]=snapshot
                 time.sleep(12)
         except Exception as exc:
