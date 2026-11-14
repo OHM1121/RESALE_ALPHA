@@ -12,6 +12,7 @@ import math
 from collections import Counter
 from urllib.parse import urlencode
 import android_live_bridge as _core
+from android_sqlite_reader import db_rows
 import d_live as _stock_feed_core
 
 # Preserve the original EXE state machines. Only observe the transport progress
@@ -223,19 +224,19 @@ def _research_record(items, score_items=None):
 
 def _stock_at_research(root):
     db=Path(root)/'stock'/'ARTITRADE_D.sqlite3'
-    candidates=_core._db_rows(db, """SELECT signal_id,tf,code,name,signal_ts AS at,ref_ts,
+    candidates=db_rows(db, """SELECT signal_id,tf,code,name,signal_ts AS at,ref_ts,
         diverse_11_score AS score,limit_price,first_target FROM candidate_snapshots
         ORDER BY signal_id DESC LIMIT 3000""")
-    positions=_core._db_rows(db,"SELECT tf,code,ref_ts,status,peak,entry_ts,first_sold FROM positions")
-    shadows={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
+    positions=db_rows(db,"SELECT tf,code,ref_ts,status,peak,entry_ts,first_sold FROM positions")
+    shadows={int(x.get('signal_id') or 0):x for x in db_rows(db,
         "SELECT signal_id,state,entry_ts,entry_price,peak,realized_net_krw,sold_at FROM stock_shadow_trials")}
-    target_fills={int(x.get('signal_id') or 0) for x in _core._db_rows(db,
+    target_fills={int(x.get('signal_id') or 0) for x in db_rows(db,
         "SELECT DISTINCT signal_id FROM stock_shadow_fills WHERE reason='FIRST_TARGET_40PCT'")}
     actual={(str(x.get('tf')),str(x.get('code')),str(x.get('ref_ts'))):x for x in positions}
-    decisions={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
+    decisions={int(x.get('signal_id') or 0):x for x in db_rows(db,
         "SELECT signal_id,decision_at_evaluation,reason_at_evaluation,origin_10_rank,"
         "diverse_11_rank FROM candidate_cohort_decisions")}
-    forward={int(r.get('signal_id') or 0):r for r in _core._db_rows(db,
+    forward={int(r.get('signal_id') or 0):r for r in db_rows(db,
         "SELECT signal_id,minute_count,unobserved_session_minutes,last_close,"
         "min_price,max_price,first_limit_touch_ts,first_target_after_touch_ts,"
         "observation_basis,last_ts FROM candidate_forward")}
@@ -283,8 +284,8 @@ def _stock_at_research(root):
 
 def _stock_ma_research(root):
     db=Path(root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
-    candidates=_core._db_rows(db,"SELECT id,tf,code,name,ref_ts,created_at AS at,score,status,target,features FROM candidates ORDER BY id DESC LIMIT 3000")
-    positions=_core._db_rows(db,"SELECT id,candidate_id,tf,code,name,status,first_sold,peak,target,entry_at FROM positions")
+    candidates=db_rows(db,"SELECT id,tf,code,name,ref_ts,created_at AS at,score,status,target,features FROM candidates ORDER BY id DESC LIMIT 3000")
+    positions=db_rows(db,"SELECT id,candidate_id,tf,code,name,status,first_sold,peak,target,entry_at FROM positions")
     pos={int(x.get('candidate_id') or 0):x for x in positions if x.get('candidate_id') is not None}
     items=[]
     for x in candidates:
@@ -302,21 +303,41 @@ def _stock_ma_research(root):
             'candidate_id':x.get('id'),'decision':x.get('status'),
              'features':x.get('features'),
             'reason':x.get('status') or '판단 근거 별도 저장'})
-    return _research_record(items,candidates)
+    # The original EXE records *every* examined reference in 'research',
+    # including rejected signals which never enter the candidates table.
+    # Treat the independent research row as evidence, not as a paper fill.
+    recorded={(str(x.get('tf') or ''),str(x.get('code') or ''),
+               str(x.get('ref_ts') or '')) for x in candidates}
+    decisions=db_rows(db, "SELECT id,ts AS at,tf,code,ref_ts,verdict,detail "
+        "FROM research ORDER BY id DESC LIMIT 3000")
+    for d in decisions:
+        key=(str(d.get('tf') or ''),str(d.get('code') or ''),
+             str(d.get('ref_ts') or ''))
+        if key in recorded:
+            continue
+        items.append({'at':d.get('at'),'tf':d.get('tf'),'strategy':'MA',
+            'code':d.get('code'),'ref_ts':d.get('ref_ts'),
+            'score':None,'bought':False,'entry_observed':False,'closed':False,
+            'outcome':'PENDING','target_hit':None,'entry_status':'RESEARCH_UNSELECTED',
+            'unselected':True,'unselected_reason':d.get('verdict'),
+            'decision':d.get('verdict'),'reason':d.get('detail') or d.get('verdict'),
+            'research_id':d.get('id'),'evidence_source':'EXE_MA_RESEARCH'})
+    items.sort(key=lambda x:str(x.get('at') or ''),reverse=True)
+    return _research_record(items[:3000],decisions)
 
 
 def _coin_research(root,which):
     db=Path(root)/'coin'/which/'upbit_paper.sqlite3'
-    candidates=_core._db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,created_at AS at,score,limit_price,target,reason FROM candidates ORDER BY id DESC LIMIT 3000")
-    positions=_core._db_rows(db,"SELECT * FROM positions")
+    candidates=db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,created_at AS at,score,limit_price,target,reason FROM candidates ORDER BY id DESC LIMIT 3000")
+    positions=db_rows(db,"SELECT * FROM positions")
     actual={(str(x.get('tf')),str(x.get('market')),str(x.get('ref_at'))):x for x in positions if str(x.get('status') or '')!='RESET_B_V1'}
-    shadows={int(x.get('candidate_id') or 0):x for x in _core._db_rows(db,
+    shadows={int(x.get('candidate_id') or 0):x for x in db_rows(db,
         "SELECT candidate_id,state,entry_at,entry_price,peak,realized_net,sell_at FROM coin_shadow_trials")}
     decisions={}
-    for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY id DESC"):
+    for decision in db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY id DESC"):
         decisions.setdefault(int(decision.get('candidate_id') or 0),decision)
     target_fills=set()
-    for x in _core._db_rows(db,"SELECT candidate_id,side,reason FROM coin_shadow_fills WHERE side='SELL'"):
+    for x in db_rows(db,"SELECT candidate_id,side,reason FROM coin_shadow_fills WHERE side='SELL'"):
         reason=str(x.get('reason') or '').upper()
         if 'FIRST_TARGET' in reason or '1차 목표' in reason or 'FIRST' in reason and 'TARGET' in reason:
             target_fills.add(int(x.get('candidate_id') or 0))
@@ -352,12 +373,12 @@ def _coin_research(root,which):
 
 def _close_full(self):
     db=Path(self.root)/'stock'/'close'/'AT_CLOSE_PAPER.sqlite3'
-    wallets=_core._db_rows(db,"SELECT * FROM wallets")
-    positions=_core._db_rows(db,"SELECT * FROM positions WHERE status='OPEN' ORDER BY id DESC LIMIT 300")
-    all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
-    executions=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 3000")
+    wallets=db_rows(db,"SELECT * FROM wallets")
+    positions=db_rows(db,"SELECT * FROM positions WHERE status='OPEN' ORDER BY id DESC LIMIT 300")
+    all_positions=db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
+    executions=db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 3000")
     day=_core.datetime.now(_core.timezone(_core.timedelta(hours=9))).date().isoformat()
-    pending=_core._db_rows(db, """SELECT s.id AS signal_id,s.ts AS ref_ts,s.ts AS at,s.strategy,s.code,s.name,
+    pending=db_rows(db, """SELECT s.id AS signal_id,s.ts AS ref_ts,s.ts AS at,s.strategy,s.code,s.name,
         s.decision,s.rank_no,s.trading_value_krw,s.price,s.feature_json AS reason
         FROM signals s WHERE s.decision='BUY' AND substr(s.ts,1,10)=?
           AND (s.entry_result IS NULL OR s.entry_result NOT LIKE 'BOUGHT %')
@@ -383,10 +404,12 @@ def _close_full(self):
 
 def _close_research(root):
     db=Path(root)/'stock'/'close'/'AT_CLOSE_PAPER.sqlite3'
-    signals=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,entry_result,feature_json,reason_json FROM signals ORDER BY id DESC LIMIT 3000")
-    positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
+    signals=db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,entry_result,feature_json,reason_json FROM signals ORDER BY id DESC LIMIT 3000")
+    positions=db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     by_signal={int(x.get('signal_id') or 0):x for x in positions if x.get('signal_id') is not None}
-    followups=_core._db_rows(db,"SELECT source_signal_id,source_candidate_id,horizon,return_pct,mfe_pct,mae_pct,status,observed_price,observed_ts FROM research_followups ORDER BY id DESC LIMIT 16000")
+    # SELECT * keeps pre-upgrade EXE followup files readable: mfe_pct and
+    # mae_pct were added later, and their absence is not a missing ledger.
+    followups=db_rows(db,"SELECT * FROM research_followups ORDER BY id DESC LIMIT 16000")
     by_signal_followup={};by_candidate_followup={}
     for f in followups:
         sid=f.get('source_signal_id');cid=f.get('source_candidate_id')
@@ -413,7 +436,7 @@ def _close_research(root):
              'observed_price':follow.get('observed_price'),
              'observed_at':follow.get('observed_ts'),
              'reason':x.get('reason_json') or x.get('entry_result') or x.get('decision')})
-    score_rows=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,near_signal,feature_json,reason_json FROM research_candidates ORDER BY id DESC LIMIT 3000")
+    score_rows=db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,near_signal,feature_json,reason_json FROM research_candidates ORDER BY id DESC LIMIT 3000")
     # The EXE separately saves rejected and near-qualifying CLOSE candidates.
     # Their forward prices are research evidence, never simulated fills.
     sig_keys={(str(r.get('strategy')),str(r.get('code')),str(r.get('at'))) for r in signals}
@@ -573,8 +596,8 @@ def _stock_ma_full(self):
     snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
     perf=snap.get('performance_by_frame') or {}
     db=Path(self.root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
-    all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
-    full_exec=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 10000")
+    all_positions=db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
+    full_exec=db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 10000")
     # The original MA snapshot omits positions.entry_at and candidate.created_at.
     # Restore the *recorded* timestamps, not the reference candle time.
     full_by_id={str(row.get('id')):row for row in all_positions}
@@ -586,7 +609,7 @@ def _stock_ma_full(self):
         if item.get('entry_price') in (None,''):
             original_entry=_first_existing(item.get('entry'),original.get('entry'))
             if original_entry is not None:item['entry_price']=original_entry
-    pending_by_id={str(row.get('id')):row for row in _core._db_rows(
+    pending_by_id={str(row.get('id')):row for row in db_rows(
         db,"SELECT id,created_at,ref_ts,features FROM candidates ORDER BY id DESC LIMIT 10000")}
     for item in snap.get('pending') or []:
         original=pending_by_id.get(str(item.get('signal_id') or item.get('id'))) or {}
@@ -833,6 +856,8 @@ def _research_history(self, out):
         rel,primary,evidence=roots[source]
         audit=_research_source_audit(Path(self.root)/rel,primary,evidence)
         try:
+            if audit['source_status']!='OK':
+                raise RuntimeError(source+': '+audit['source_status'])
             result=loader()
             if not isinstance(result,dict):
                 raise TypeError('research result is not a dict')
@@ -855,6 +880,11 @@ def _research_history(self, out):
                     'load_status':'ERROR','load_error':source,'loaded_items':0,
                     'items':[],'score_items':[],'bands':[]}
             result.update(audit)
+            # Report absent files/tables honestly instead of replacing them
+            # with a generic exception status or a fabricated empty history.
+            if audit['source_status']!='OK':
+                result['load_status']=audit['source_status']
+                result['load_error']=source+': '+audit['source_status']
             return result
     stock=out.setdefault('stock',{}).setdefault('at',{})
     stock['research']=read('AT',lambda:_stock_at_research(self.root))
