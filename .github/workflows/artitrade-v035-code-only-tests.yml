@@ -1,0 +1,41 @@
+name: ARTITRADE v035 stock hold and phone BUY reason code-only
+on:
+  push:
+    branches: [artitrade-v035-buy-reasons-at-hold-diagnostics-code-only-20261114]
+    paths:
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/artitrade-v035-code-only-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: artitrade-v035-code-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Verify phone BUY provenance and hold maturity
+        run: |
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v035_*.py' -v
+      - name: Run existing phone trade and research tests
+        run: |
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v034_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v033_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v031_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v029_research_loaders.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v028_trade_record_parity.py' -v
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Compile unified Android Java only - no APK
+        run: |
+          cd ARTITRADE_ANDROID
+          gradle --no-daemon :app:compileUnifiedDebugJavaWithJavac
+          test ! -d app/build/outputs/apk
