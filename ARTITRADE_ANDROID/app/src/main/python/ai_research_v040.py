@@ -168,6 +168,42 @@ def compute_candle_indicators(bars):
         if total>0:out["vwap"]=round(sum(x[3]*x[4] for x in observed)/total,6)
     if len(bars)>=6 and bars[-6][3]>0:
         out["return_5bars_pct"]=round(100*(close/bars[-6][3]-1),4)
+    if len(bars)>=21:
+        closes=[r[3] for r in bars]
+        avg20=sum(closes[-20:])/20
+        if avg20>0:
+            sigma=(sum((v-avg20)**2 for v in closes[-20:])/20)**.5
+            out["bollinger_bandwidth_pct"]=round(100*4*sigma/avg20,4)
+            out["ma20_gap_pct"]=round(100*(close/avg20-1),4)
+        if closes[-21]>0:
+            out["return_20bars_pct"]=round(100*(close/closes[-21]-1),4)
+        returns=[(closes[i]/closes[i-1]-1)*100 for i in range(-20,0)
+                 if closes[i-1]>0]
+        if len(returns)>=15:
+            center=sum(returns)/len(returns)
+            out["market_volatility"]=round(
+                (sum((r-center)**2 for r in returns)/len(returns))**.5,4)
+        if all(x[4] is not None for x in bars[-20:]):
+            obv=sum((1 if bars[i][3]>bars[i-1][3] else
+                     -1 if bars[i][3]<bars[i-1][3] else 0)*bars[i][4]
+                    for i in range(-19,0))
+            out["obv"]=round(obv,4)
+            pos=neg=0.
+            for i in range(-14,0):
+                prev=(bars[i-1][1]+bars[i-1][2]+bars[i-1][3])/3
+                today=(bars[i][1]+bars[i][2]+bars[i][3])/3
+                volume=bars[i][4]
+                if today>prev:pos+=today*volume
+                elif today<prev:neg+=today*volume
+            out["mfi"]=round(100 if neg==0 and pos>0 else
+                50 if neg==0 else 100-100/(1+pos/neg),4)
+        if len(bars)>=35:
+            def ema(values,span):
+                alpha=2/(span+1)
+                result=values[0]
+                for item in values[1:]:result=alpha*item+(1-alpha)*result
+                return result
+            out["macd"]=round(ema(closes,12)-ema(closes,26),6)
     return out
 
 
