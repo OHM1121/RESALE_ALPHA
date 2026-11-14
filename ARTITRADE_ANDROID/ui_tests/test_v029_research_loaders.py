@@ -54,7 +54,9 @@ class FiveStrategyResearchLedgerTests(unittest.TestCase):
                       "'20261114100100','20261114102200','OBSERVED_ONLY','20261114102200')")
         row=ns["_stock_at_research"](self.root)["items"][0]
         self.assertFalse(row["bought"])
-        self.assertIsNone(row["observed_max_price"])\n        self.assertEqual(row["observed_max_unverified"],1150)\n        self.assertEqual(row["forward_high_status"],"UNVERIFIED_NO_SOURCE_BAR")
+        self.assertIsNone(row["observed_max_price"])
+        self.assertEqual(row["observed_max_unverified"],1150)
+        self.assertEqual(row["forward_high_status"],"UNVERIFIED_NO_SOURCE_BAR")
         self.assertEqual(row["outcome"],"PENDING")
         self.assertIsNone(row["target_hit"])
 
