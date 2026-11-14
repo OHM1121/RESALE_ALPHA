@@ -2619,7 +2619,7 @@ public final class UnifiedVisualActivity extends Activity {
             Double recorded=MarketResearchScoreLookup.scoreAt(
                 ledgerRoot,market,item.at);
             policyHistoryCell(row,recorded==null?"미기록":
-                String.format(Locale.KOREA,"%.1f / 100",recorded),
+                String.format(Locale.KOREA,"%+.1f / ±100",recorded),
                 1.05f,recorded==null?Color.rgb(235,189,113):
                     Color.rgb(145,213,246),false);
             LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(79));
