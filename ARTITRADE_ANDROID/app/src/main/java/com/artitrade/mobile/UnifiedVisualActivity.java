@@ -295,6 +295,7 @@ public final class UnifiedVisualActivity extends Activity {
         t.setTextSize(Math.max(12,sp));
         t.setTextColor(colorByStatus(value,PremiumUi.TEXT));
         t.setGravity(Gravity.CENTER_VERTICAL);
+        t.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG);
         t.setIncludeFontPadding(false);
         t.setLineSpacing(dp(2),1.0f);
         return t;
@@ -325,7 +326,8 @@ public final class UnifiedVisualActivity extends Activity {
         b.setBackground(PremiumUi.rounded(this,
             active?accent():PremiumUi.SURFACE_HIGH,
             active?accent():dangerous?PremiumUi.LOSS:PremiumUi.LINE,12));
-        b.setPadding(dp(10),0,dp(10),0);
+        b.setPadding(dp(8),0,dp(8),0);
+        b.setGravity(Gravity.CENTER);
         b.setMinHeight(0);b.setMinimumHeight(0);
         b.setOnClickListener(v->action.run());
         PremiumUi.tapMotion(b);
@@ -446,7 +448,13 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        return integratedMode?"v0.7.42 · 통합":("stock".equals(market)?"v0.7.42 · 주식":"v0.7.42 · 코인");
+        // The installed APK is the source of truth after an in-place update.
+        String version="0.7.44";
+        try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}
+        if(version==null||version.isEmpty())version="버전 확인 중";
+        int dash=version.indexOf('-');
+        if(dash>0)version=version.substring(0,dash);
+        return "v"+version+" · "+(integratedMode?"통합":("stock".equals(market)?"주식":"코인"));
     }
 
     private void showShell(){
@@ -2560,13 +2568,17 @@ public final class UnifiedVisualActivity extends Activity {
         tile.setPadding(dp(9),dp(5),dp(7),dp(5));
         tile.setBackground(bg(Color.rgb(18,24,33),Color.rgb(39,52,69),10));
         TextView key=text(label,11);
+        key.setGravity(Gravity.CENTER);
+        key.setSingleLine(true);
         key.setTextColor(Color.rgb(151,172,195));
         tile.addView(key,new LinearLayout.LayoutParams(-1,dp(18)));
         TextView amount=text(value,16);
         amount.setTypeface(null,Typeface.BOLD);
         amount.setTextColor(highlight?Color.rgb(227,239,252):Color.rgb(205,219,236));
         amount.setSingleLine(true);
-        autoSingle(amount,13,16);
+        amount.setGravity(Gravity.CENTER);
+        amount.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        autoSingle(amount,12,16);
         tile.addView(amount,new LinearLayout.LayoutParams(-1,dp(24)));
         LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(54),1);
         if(row.getChildCount()>0)cell.setMargins(dp(5),0,0,0);
@@ -2618,6 +2630,8 @@ public final class UnifiedVisualActivity extends Activity {
             new LinearLayout.LayoutParams(dp(116),dp(42)));
         TextView h=text(title+" · "+total+"건",18);
         h.setTypeface(null,Typeface.BOLD);
+        h.setSingleLine(true);
+        h.setEllipsize(android.text.TextUtils.TruncateAt.END);
         header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
         Button arrange=button("정렬·필터",false,()->
             tableOptionsDialog(tableId,query,this::render));
@@ -2669,6 +2683,7 @@ public final class UnifiedVisualActivity extends Activity {
                 HistorySelection.strategyTag(source,marketWide?item.frame:timeFrameOf(r)),16);
             symbol.setTypeface(null,Typeface.BOLD);
             symbol.setSingleLine(true);
+            symbol.setEllipsize(android.text.TextUtils.TruncateAt.END);
             bindSymbolFourTap(symbol,r,market);
             LinearLayout.LayoutParams sym=new LinearLayout.LayoutParams(0,dp(36),1);
             sym.setMargins(dp(8),0,dp(8),0);
@@ -2677,12 +2692,17 @@ public final class UnifiedVisualActivity extends Activity {
                 finite(rate)?signedPct(rate):"—";
             TextView net=text(value,19);
             net.setTypeface(null,Typeface.BOLD);
-            net.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            net.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
+            net.setSingleLine(true);
             autoSingle(net,16,19);
             if(finite(profit))paintProfit(net,profit);
             else if(finite(rate))paintProfit(net,rate);
             else net.setTextColor(PremiumUi.MUTED);
-            top.addView(net,new LinearLayout.LayoutParams(-2,dp(38)));
+            // Reserve a bounded cell for P/L so long values cannot push
+            // the symbol name outside the viewport on narrow devices.
+            int screenDp=getResources().getConfiguration().screenWidthDp;
+            int netWidth=Math.max(92,Math.min(142,(screenDp-58)*39/100));
+            top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
             panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
 
             LinearLayout figures=new LinearLayout(this);
