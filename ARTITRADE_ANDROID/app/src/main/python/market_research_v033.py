@@ -464,8 +464,27 @@ def _public_json(url,params):
     return response.json()
 
 
+def _domestic_index_fallback(name):
+    """Independent Korean index source if Yahoo daily chart is unreachable."""
+    code={"KOSPI":"KOSPI","KOSDAQ":"KOSDAQ"}.get(name)
+    if not code:
+        return None
+    try:
+        obj=_public_json("https://m.stock.naver.com/api/index/"+code+"/basic",{})
+        if isinstance(obj,dict):
+            raw=obj.get("fluctuationsRatio")
+            if raw is None and isinstance(obj.get("result"),dict):
+                raw=obj["result"].get("fluctuationsRatio")
+            if raw is not None:
+                return finite(str(raw).replace(",","").replace("%","")
+                              .replace("−","-"))
+    except Exception:
+        pass
+    return None
+
+
 def _fetch_stock():
-    changes={};history={};failed=[]
+    changes={};history={};failed=[];naver_used=[]
     for name,symbol in _PUBLIC.items():
         prices=None
         for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
@@ -482,6 +501,13 @@ def _fetch_stock():
             except Exception:
                 prices=None
         if not prices or len(prices)<2:
+            # Fallback is only for the two mandatory domestic indices.
+            # Never manufacture index quotes from unrelated symbols.
+            backup=_domestic_index_fallback(name)
+            if backup is not None:
+                changes[name]=round(backup,4)
+                naver_used.append(name)
+                continue
             failed.append(name)
             continue
         changes[name]=round((prices[-1]/prices[-2]-1)*100,4)
@@ -492,6 +518,7 @@ def _fetch_stock():
     scored=stock_score(changes,{})
     scored["source"]="Yahoo Finance public chart latest available daily closes"
     scored["received"]=sorted(changes)
+    scored["naver_fallback"]=naver_used
     scored["missing"]=failed
     if scored["score"] is None:
         scored["status"]="코스피·코스닥 지표 미수신 · 다음 조회 재시도"
