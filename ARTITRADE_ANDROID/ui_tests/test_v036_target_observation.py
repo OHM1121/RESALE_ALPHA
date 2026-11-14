@@ -22,6 +22,18 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(b,"NO_OBSERVATIONS")
         self.assertEqual(m.observation_status({"observation_minutes":10}),"OBSERVING")
 
+    def test_original_coin_upbit_book_bid_observation_after_virtual_entry(self):
+        rows=[
+          {"source":"UPBIT_BOOK_BID","first_at":"2026-11-03T11:03:00",
+           "last_at":"2026-11-03T11:03:59","bid_high":"105"},
+          {"source":"UPBIT_BOOK_BID","first_at":"2026-11-03T11:02:00",
+           "last_at":"2026-11-03T11:02:40","bid_high":"102"}]
+        target=m.coin_shadow_observed_target(rows,104,"2026-11-03T11:00:00")
+        self.assertEqual(target["observed_target_price"],104.0)
+        self.assertEqual(target["observed_target_at"],"2026-11-03T11:03:59")
+        self.assertEqual(target["observed_target_evidence"],"COIN_BOOK_BID_HIGH_NOT_FILL")
+        self.assertIsNone(m.coin_shadow_observed_target(rows,110,"2026-11-03T11:00:00"))
+
     def test_high_target_is_never_a_buy_or_sell_fill(self):
         r=m.from_at_forward({"first_target":100,
             "first_observed_target_after_touch":None,
