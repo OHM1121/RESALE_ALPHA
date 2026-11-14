@@ -313,9 +313,13 @@ class TrendWallet:
                     fee=_money(gross*(STOCK_FEE if market=="stock" else COIN_FEE))
                     tax=_money(gross*STOCK_SELL_TAX) if market=="stock" else 0
                     entry=float(row["entry_price"] if market=="stock" and strategy=="at" else row["entry"])
-                    buyfee=int(row["entry_fee"])
                     original_qty=float(row["entry_qty"] if market=="stock" and strategy=="at" else
                         row["qty0"])
+                    # MA positions have no entry_fee column in the original schema.
+                    if market=="stock" and strategy=="ma":
+                        buyfee=_money(original_qty*entry*STOCK_FEE)
+                    else:
+                        buyfee=int(row["entry_fee"])
                     realized=gross-_money(float(filled)*entry)-fee-tax-_money(buyfee*float(filled)/original_qty)
                     stamp=at.isoformat(timespec="seconds");compact=at.strftime("%Y%m%d%H%M%S")
                     if market=="stock" and strategy=="at":
