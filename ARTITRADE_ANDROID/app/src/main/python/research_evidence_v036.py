@@ -65,3 +65,20 @@ def coin_shadow_observed_target(rows,goal,entry_at):
     return {"observed_target_price":first[1],
             "observed_target_at":first[0],
             "observed_target_evidence":"COIN_BOOK_BID_HIGH_NOT_FILL"}
+
+
+
+def attach_coin_virtual_goal(row,book_observation):
+    """An observed bid crossing target is a virtual RESEARCH hit only.
+
+    It does not create any exchange order or actual/virtual SELL fill.
+    """
+    if not isinstance(row,dict) or not isinstance(book_observation,dict):
+        return row
+    row.update(book_observation)
+    if not row.get("bought") and row.get("entry_observed") and (
+            book_observation.get("observed_target_at") and
+            book_observation.get("observed_target_evidence")):
+        row["outcome"]="HIT"
+        row["target_hit"]=True
+    return row
