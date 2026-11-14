@@ -188,9 +188,15 @@ def _research_scope(items):
     virtual_done=[x for x in virtual_entered if x.get('outcome') in ('HIT','MISS')]
     def summary(rows,all_rows):
         h=sum(1 for x in rows if x.get('outcome')=='HIT')
-        return {'evaluated':len(rows),'hit':h,'miss':len(rows)-h,
+        m=len(rows)-h
+        # Previous rate_pct was HIT/(HIT+MISS), so one HIT plus nine PENDING
+        # displayed an unjustified 100%. Show verified-hit share of all entries
+        # and separately expose conditional decided rate as an audit statistic.
+        return {'evaluated':len(rows),'hit':h,'miss':m,
                 'pending':max(0,len(all_rows)-len(rows)),
-                'rate_pct':round(h*100.0/len(rows),2) if rows else None}
+                'eligible':len(all_rows),
+                'decided_rate_pct':round(h*100.0/len(rows),2) if rows else None,
+                'rate_pct':round(h*100.0/len(all_rows),2) if all_rows else None}
     out={'signals':len(items),'bought':len(actual),'not_bought':len(virtual),
          'virtual_entry':len(virtual_entered)}
     out['actual_summary']=summary(actual_done,actual)
@@ -311,6 +317,7 @@ def _stock_at_research(root):
         ORDER BY signal_id DESC LIMIT 3000""")
     positions=_core._db_rows(db,"SELECT * FROM positions")
     first_target_sells=_research_first_target_fills(db)
+    from research_evidence_v036 import from_at_forward
     shadows={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
         "SELECT signal_id,state,entry_ts,entry_price,peak,realized_net_krw,sold_at FROM stock_shadow_trials")}
     shadow_target_sales={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
@@ -364,6 +371,7 @@ def _stock_at_research(root):
             'diverse_rank':decision.get('diverse_11_rank'),
             'reason':decision.get('reason_at_evaluation') or '선정 근거 원본 별도 저장'})
         item=items[-1]
+        item.update(from_at_forward(item))
         if bought:
             item.update({'buy_price':p.get('entry_price'),'buy_at':p.get('entry_ts'),
                          'buy_evidence':'ORIGINAL_POSITION'})
