@@ -34,7 +34,8 @@ class ResearchLayoutContract(unittest.TestCase):
             self.assertIn(marker,ui)
         # v033 replaces the old generic policy columns with an explicit
         # five-field, full-width table; do not require a removed local name.
-        self.assertIn('policyHistoryCell(headings,"당시 시장점수"',ui)
+        self.assertIn('"당시 시장점수"',ui)
+        self.assertIn('tableHeaderCell(headings,label,column,',ui)
         self.assertIn('new LinearLayout.LayoutParams(-1,dp(79))',ui)
         self.assertIn('new LinearLayout.LayoutParams(0,-2,',ui)
         self.assertIn('getConfiguration().screenWidthDp',ui)
