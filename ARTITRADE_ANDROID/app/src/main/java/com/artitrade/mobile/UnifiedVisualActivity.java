@@ -3926,6 +3926,14 @@ public final class UnifiedVisualActivity extends Activity {
         marketScore.setTypeface(null,Typeface.BOLD);
         marketLine.addView(marketScore);
         tile.addView(marketLine,new LinearLayout.LayoutParams(-1,dp(35)));
+        String sellCause=frame.optString("exit_trigger","").trim();
+        if(!sellCause.isEmpty()){
+            aiTitle(tile,"실제 매도 사유",6);
+            TextView cause=text(sellCause,16);
+            cause.setTextColor(Color.rgb(236,192,139));
+            cause.setMaxLines(2);
+            tile.addView(cause);
+        }
 
         JSONArray patterns=frame.optJSONArray("patterns");
         if(patterns!=null&&patterns.length()>0){
