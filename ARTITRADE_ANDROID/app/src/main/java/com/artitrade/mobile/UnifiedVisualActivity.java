@@ -3827,6 +3827,24 @@ public final class UnifiedVisualActivity extends Activity {
         if(obj==null||obj.isNull(key)||!obj.has(key))return "—";
         return String.format(Locale.KOREA,"%+.1f",obj.optDouble(key));
     }
+    private void aiMarketBandMetric(LinearLayout parent,String title,String band,
+                                    double delta,double hours,boolean good){
+        LinearLayout tile=new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setPadding(dp(8),dp(7),dp(8),dp(7));
+        tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,8));
+        TextView label=text(title+" · "+band,14);
+        label.setTextColor(PremiumUi.MUTED);tile.addView(label);
+        TextView change=text(String.format(Locale.KOREA,"%+.2f%%",delta),23);
+        change.setTypeface(null,Typeface.BOLD);
+        change.setTextColor(delta>=0?Color.rgb(93,225,179):Color.rgb(255,131,149));
+        tile.addView(change);
+        TextView observed=text(String.format(Locale.KOREA,"%.1f시간",hours),13);
+        observed.setTextColor(PremiumUi.MUTED);tile.addView(observed);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(93),1);
+        if(parent.getChildCount()>0)lp.setMargins(dp(7),0,0,0);
+        parent.addView(tile,lp);
+    }
     private void aiFrameCard(LinearLayout parent,JSONObject frame){
         LinearLayout tile=card();
         tile.setPadding(dp(12),dp(10),dp(12),dp(12));
@@ -3918,6 +3936,22 @@ public final class UnifiedVisualActivity extends Activity {
         marketScore.setTypeface(null,Typeface.BOLD);
         marketLine.addView(marketScore);
         tile.addView(marketLine,new LinearLayout.LayoutParams(-1,dp(35)));
+        JSONObject weakest=frame.optJSONObject("market_band_worst");
+        JSONObject strongest=frame.optJSONObject("market_band_best");
+        if(weakest!=null&&strongest!=null){
+            aiTitle(tile,"시장점수 구간별 보유수익률 변화",11);
+            LinearLayout bandRow=new LinearLayout(this);
+            bandRow.setOrientation(LinearLayout.HORIZONTAL);
+            aiMarketBandMetric(bandRow,"최저",
+                weakest.optString("band",""),
+                weakest.optDouble("avg_change_pp",0),
+                weakest.optDouble("observed_hours",0),false);
+            aiMarketBandMetric(bandRow,"최고",
+                strongest.optString("band",""),
+                strongest.optDouble("avg_change_pp",0),
+                strongest.optDouble("observed_hours",0),true);
+            tile.addView(bandRow,new LinearLayout.LayoutParams(-1,dp(95)));
+        }
         String sellCause=frame.optString("exit_trigger","").trim();
         if(!sellCause.isEmpty()){
             aiTitle(tile,"실제 매도 사유",6);
