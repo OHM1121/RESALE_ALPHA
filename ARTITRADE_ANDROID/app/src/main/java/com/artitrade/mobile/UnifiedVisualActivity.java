@@ -3045,6 +3045,27 @@ public final class UnifiedVisualActivity extends Activity {
         return new String[]{"매도 / 목표관측 미기록","일자 미기록"};
     }
 
+    private boolean researchGoalVerified(HistoryRow source){
+        JSONObject r=source.row;
+        String outcome=r.optString("outcome","").toUpperCase(Locale.ROOT);
+        if("MISS".equals(outcome)){
+            return bool(r,"closed")||bool(r,"horizon_complete")||
+                "NOT_TOUCHED_15_FINAL_DAYS".equals(
+                    r.optString("research_5pct_status",""));
+        }
+        if(!"HIT".equals(outcome))return false;
+        if(bool(r,"bought","actually_bought","filled")){
+            // Original first_sold / first_target_filled is set after a real
+            // account/PAPER first target sale, even if price is missing.
+            return bool(r,"target_hit","first_target_filled")||
+                !r.optString("sell_evidence","").isEmpty();
+        }
+        return !r.optString("virtual_sell_evidence","").isEmpty()||
+               !r.optString("observed_target_evidence","").isEmpty()||
+               "TOUCHED_HIGH_NOT_FILL".equals(
+                   r.optString("research_5pct_status",""));
+    }
+
     private View researchBandPopupRow(HistoryRow item,int position){
         JSONObject r=item.row;
         boolean bought=bool(r,"bought","actually_bought","filled");
@@ -3068,11 +3089,16 @@ public final class UnifiedVisualActivity extends Activity {
         researchPopupCell(row,sell[0]+"\n"+sell[1],2.40f,false,
             sell[0].contains("미체결")||sell[0].contains("미기록")?
                 Color.rgb(245,189,111):Color.rgb(92,224,176));
+        String symbol=ResearchBandSelection.goalSymbol(
+            r.optString("outcome",""),researchGoalVerified(item));
+        researchPopupCell(row,symbol,0.85f,false,
+            "O".equals(symbol)?Color.rgb(83,221,173):
+            "X".equals(symbol)?Color.rgb(255,124,147):PremiumUi.MUTED);
         row.setMinimumHeight(dp(83));
         return row;
     }
 
-    private void showResearchBandPopup(String frame,String band){
+    private void showResearchBandPopup(String frame,String band,String entrySide){
         java.util.List<HistoryRow> all=selectedHistory("research");
         java.util.ArrayList<HistoryRow> selected=new java.util.ArrayList<>();
         for(HistoryRow item:all){
@@ -3082,7 +3108,11 @@ public final class UnifiedVisualActivity extends Activity {
             if(candidateFrame.isEmpty())candidateFrame=item.source;
             double score=num(r,"score","gmo_score_at_signal",
                 "original_score","signal_score");
-            if(ResearchBandSelection.matches(candidateFrame,score,frame,band))
+            boolean actuallyBought=bool(r,"bought","actually_bought","filled");
+            boolean virtualEntered=bool(r,"entry_observed","virtual_entered","shadow_entered");
+            if(ResearchBandSelection.matches(candidateFrame,score,frame,band)
+                && ResearchBandSelection.includeInPopup(
+                   actuallyBought,virtualEntered,entrySide))
                 selected.add(item);
         }
         String section="gmo".equals(frame)?"수급매매":"close".equals(frame)?
@@ -3092,8 +3122,9 @@ public final class UnifiedVisualActivity extends Activity {
         body.setOrientation(LinearLayout.VERTICAL);
         body.setBackgroundColor(PremiumUi.BG);
         body.setPadding(dp(7),dp(2),dp(7),dp(3));
-        TextView note=text(section+" · "+bandLabel+" · "+selected.size()+
-            "건 (화면에 사전로딩된 연구 원장 기준, 더블탭 상세조회)",13);
+        String entryLabel="actual".equals(entrySide)?"실제 매매":"가상 진입·관측";
+        TextView note=text(section+" · "+bandLabel+" · "+entryLabel+" "+selected.size()+
+            "건 · 미진입 후보는 제외",13);
         note.setTextColor(Color.rgb(174,204,232));
         note.setPadding(dp(6),dp(5),dp(4),dp(6));
         body.addView(note);
@@ -3104,6 +3135,7 @@ public final class UnifiedVisualActivity extends Activity {
         researchPopupCell(header,"조건충족일 (D일)",1.65f,true,PremiumUi.TEXT);
         researchPopupCell(header,"매수가 (일자)",2.15f,true,PremiumUi.TEXT);
         researchPopupCell(header,"매도가 / 목표관측 (일자)",2.40f,true,PremiumUi.TEXT);
+        researchPopupCell(header,"목표달성",0.85f,true,PremiumUi.TEXT);
         body.addView(header,new LinearLayout.LayoutParams(-1,dp(43)));
         android.widget.ListView list=new android.widget.ListView(this);
         list.setDividerHeight(dp(4));
@@ -3122,7 +3154,7 @@ public final class UnifiedVisualActivity extends Activity {
             dp(90)*Math.max(1,Math.min(selected.size(),8)));
         body.addView(list,new LinearLayout.LayoutParams(-1,listHeight));
         if(selected.isEmpty()){
-            TextView emptyNote=text("해당 점수구간에 로드된 종목이 없습니다. "
+            TextView emptyNote=text("해당 점수구간·"+entryLabel+"에 로드된 종목이 없습니다. "
                 +"원본 전체 기록은 연구이력 ZIP을 확인하십시오.",12);
             emptyNote.setTextColor(PremiumUi.MUTED);
             body.addView(emptyNote);
@@ -3133,7 +3165,7 @@ public final class UnifiedVisualActivity extends Activity {
         footer.setPadding(dp(6),dp(7),dp(5),dp(4));
         body.addView(footer);
         AlertDialog dialog=new AlertDialog.Builder(this)
-            .setTitle(section+" · "+bandLabel+" 연구 종목")
+            .setTitle(section+" · "+bandLabel+" · "+entryLabel+" 종목")
             .setView(body)
             .setPositiveButton("닫기",null)
             .create();
@@ -3237,17 +3269,19 @@ public final class UnifiedVisualActivity extends Activity {
         double actualRate=tally.actualRate(),virtualRate=tally.virtualRate();
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout actualCard=card();DonutMetricView actual=new DonutMetricView(this);
-        actual.setMetric("실제 목표도달률",actualRate,pct(actualRate));
+        actual.setMetric("실제 확인도달 비중",tally.actualConfirmedShare(),
+            pct(tally.actualConfirmedShare()));
         actualCard.addView(actual,new LinearLayout.LayoutParams(-1,dp(93)));
-        TextView a=text(tally.actualHit+"/"+(tally.actualHit+tally.actualMiss)+
-            "  · 대기 "+tally.actualPending,12);
+        TextView a=text(tally.actualHit+"/"+tally.actualCount+
+            "  · 판정보류 "+tally.actualPending,12);
         a.setGravity(Gravity.CENTER);actualCard.addView(a,new LinearLayout.LayoutParams(-1,dp(21)));
         summary.addView(actualCard,new LinearLayout.LayoutParams(0,dp(131),1));
         LinearLayout virtualCard=card();DonutMetricView v=new DonutMetricView(this);
-        v.setMetric("가상 목표도달률",virtualRate,pct(virtualRate));
+        v.setMetric("가상 확인도달 비중",tally.virtualConfirmedShare(),
+            pct(tally.virtualConfirmedShare()));
         virtualCard.addView(v,new LinearLayout.LayoutParams(-1,dp(93)));
-        TextView vCounts=text(tally.virtualHit+"/"+(tally.virtualHit+tally.virtualMiss)+
-            "  · 대기 "+tally.virtualPending,12);
+        TextView vCounts=text(tally.virtualHit+"/"+tally.virtualEntered+
+            "  · 판정보류 "+tally.virtualPending,12);
         vCounts.setGravity(Gravity.CENTER);
         virtualCard.addView(vCounts,new LinearLayout.LayoutParams(-1,dp(21)));
         LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(0,dp(131),1);
@@ -3262,7 +3296,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams klp=new LinearLayout.LayoutParams(-1,dp(68));
         klp.setMargins(0,dp(7),0,0);content.addView(kpis,klp);
 
-        TextView section=text("시간봉 × 점수대  |  실제 / 가상 목표도달률 · 점수 구간 더블탭 → 종목 상세",17);
+        TextView section=text("시간봉 × 점수대  |  달성 확인 건수 / 진입종목 · 실제·가상 열 더블탭",17);
         section.setTypeface(null,Typeface.BOLD);
         section.setTextColor(Color.rgb(207,226,247));
         section.setPadding(dp(2),dp(9),dp(2),dp(5));content.addView(section);
@@ -3282,8 +3316,8 @@ public final class UnifiedVisualActivity extends Activity {
             String label="gmo".equals(tf)?"수급매매":"close".equals(tf)?"종가베팅":tfLabel(tf);
             ResearchScoreMatrixView matrix=new ResearchScoreMatrixView(this);
             matrix.setGrid(grid,tf,label);
-            matrix.setOnBandDoubleTapListener((matrixFrame,scoreBand)->
-                showResearchBandPopup(matrixFrame,scoreBand));
+            matrix.setOnBandDoubleTapListener((matrixFrame,scoreBand,entrySide)->
+                showResearchBandPopup(matrixFrame,scoreBand,entrySide));
             int height=grid.cell(tf,ResearchScoreGrid.NO_SCORE).signals>0?246:218;
             matrix.setContentDescription(label+" 점수대별 실제·가상 목표도달률");
             if(!matrixColumns){
@@ -3309,8 +3343,8 @@ public final class UnifiedVisualActivity extends Activity {
                 params.height=dp(height);matrixPair.setLayoutParams(params);
             }
         }
-        TextView note=text("점수 구간을 두 번 터치하면 해당 종목·D일·매수·목표도달 근거 표시 · "+
-            "확정기록만 비율 집계 · 미진입/관측 중은 제외",12);
+        TextView note=text("실제 열 더블탭 → 실제 진입만 / 가상 열 → 가상 진입만 표시 · "+
+            "확인도달 비중=목표확인 건수÷전체 진입 건수 (판정보류는 실패로 간주하지 않음)",12);
         note.setTextColor(Color.rgb(150,170,195));
         note.setPadding(dp(3),dp(7),dp(3),dp(4));content.addView(note);
 
