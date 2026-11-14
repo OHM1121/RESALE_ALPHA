@@ -291,9 +291,8 @@ class Coordinator:
             with self.lock:
                 self._candidates[market]=dict(picked)
                 self._last_rank[market]=time.monotonic()
-            if market=="coin" and runner is not None:
-                with runner._lock:
-                    runner.tracked=sorted(set(runner.tracked)|set(self._candidates["coin"]))
+            # Coin ticker subscription is augmented dynamically by the tracked
+            # property; do not permanently add every past candidate to base.
         except Exception as exc:
             self._last_fetch_error[market]="RANK:"+type(exc).__name__
             if time.monotonic()-self._last_rank[market]>600:
@@ -767,6 +766,51 @@ def install(core):
                 if trend:trend.observe_coin_tick(code,price)
             obj.__dict__["_market_trend_prices"]=_PriceMemory(dict(value or {}),observed)
         d_upbit.UpbitPaperRunner.latest_prices=property(mt_prices_get,mt_prices_set)
+
+    # Preserve original KRX rank priority, but pin any live trend holding
+    # before low-priority ranked symbols so it keeps 0B/0D exit coverage.
+    original_pinned=d_live.LivePaperRunner._pinned_stocks
+    def trend_pinned(self):
+        result=dict(original_pinned(self))
+        rt=getattr(core,"_RUNTIME",None)
+        co=getattr(rt,"market_trend",None) if rt else None
+        if co is not None:
+            for p in tuple(co._positions.values()):
+                if p.market!="stock" or p.qty<=0:continue
+                identity=(self.market_map or {}).get(p.symbol)
+                if identity is None:
+                    market_id=p.__dict__.get("market_id","")
+                    name=p.__dict__.get("company_name",p.symbol)
+                    if market_id in ("KOSPI","KOSDAQ"):
+                        identity=(market_id,name)
+                if identity and identity[0] in ("KOSPI","KOSDAQ"):
+                    if len(result)<200 or p.symbol in result:
+                        result.setdefault(p.symbol,identity)
+                    else:
+                        co._last_fetch_error["stock"]="STOCK_SUBSCRIPTION_LIMIT_FOR_HELD"
+                else:
+                    co._last_fetch_error["stock"]="HELD_MARKET_IDENTITY_MISSING"
+        return result
+    d_live.LivePaperRunner._pinned_stocks=trend_pinned
+
+    # Upbit's original WS builds ticker subscriptions from 'tracked', and
+    # orderbook subscriptions separately from _both_watched_codes. Include
+    # selected and held trend coins in both, even after universe refresh.
+    if not isinstance(getattr(d_upbit.UpbitPaperRunner,"tracked",None),property):
+        def trend_tracked_get(obj):
+            base=set(obj.__dict__.get("_mt43_original_tracked",[]))
+            rt=getattr(core,"_RUNTIME",None)
+            co=getattr(rt,"market_trend",None) if rt else None
+            if co is not None:
+                with co.lock:
+                    base.update(co._candidates.get("coin",{}))
+                    base.update(p.symbol for p in tuple(co._positions.values())
+                                if p.market=="coin" and p.qty>0)
+            return sorted(base)
+        def trend_tracked_set(obj,value):
+            obj.__dict__["_mt43_original_tracked"]=list(value or [])
+        d_upbit.UpbitPaperRunner.tracked=property(
+            trend_tracked_get,trend_tracked_set)
 
     stock_tick=d_live.LivePaperRunner._new_tick
     def tracker_stock_tick(self,tick):
