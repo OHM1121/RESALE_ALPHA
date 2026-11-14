@@ -135,6 +135,7 @@ public final class UnifiedVisualActivity extends Activity {
     private int consecutiveSymbolTaps=0;
     private long lastSymbolTapMs=0L;
     private float swipeX=Float.NaN;
+    private float swipeY=Float.NaN;
     private View drawerOverlay;
     private static final long DRAWER_PROGRESS_REFRESH_MS=750L;
     private static final class DrawerProgressViews {
@@ -465,10 +466,18 @@ public final class UnifiedVisualActivity extends Activity {
         scroll.addView(content,new ScrollView.LayoutParams(-1,-2));
         scroll.setOnTouchListener((v,e)->{
             if("operation".equals(page)||"errors".equals(page))return false;
-            if(e.getAction()==MotionEvent.ACTION_DOWN)swipeX=e.getX();
-            else if(e.getAction()==MotionEvent.ACTION_UP&&!Float.isNaN(swipeX)){
-                float dx=e.getX()-swipeX;swipeX=Float.NaN;
-                if(Math.abs(dx)>dp(78)){switchStrategy(dx<0?1:-1);return true;}
+            if(e.getAction()==MotionEvent.ACTION_DOWN){
+                swipeX=e.getX();swipeY=e.getY();
+            }else if(e.getAction()==MotionEvent.ACTION_CANCEL){
+                swipeX=Float.NaN;swipeY=Float.NaN;
+            }else if(e.getAction()==MotionEvent.ACTION_UP
+                &&!Float.isNaN(swipeX)&&!Float.isNaN(swipeY)){
+                float dx=e.getX()-swipeX,dy=e.getY()-swipeY;
+                swipeX=Float.NaN;swipeY=Float.NaN;
+                if(StrategySwipeThreshold.shouldSwitch(dx,dy,dp(112))){
+                    switchStrategy(dx<0?1:-1);
+                    return true;
+                }
             }
             return false;
         });
