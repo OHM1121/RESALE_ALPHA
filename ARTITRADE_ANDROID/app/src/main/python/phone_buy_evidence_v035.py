@@ -139,6 +139,24 @@ def attach_buy_evidence(positions,executions,candidates=(),*,market,strategy,
     return result
 
 
+def read_at_open_buy_fills(path):
+    """Read only BUY executions attached to currently OPEN original AT positions.
+
+    Unlike the 350-fill UI screen limit, this preserves an old open holding's
+    real saved BUY reason even after thousands of later executions.
+    """
+    db=Path(path)
+    if not db.is_file():return []
+    with sqlite3.connect(db.resolve().as_uri()+"?mode=ro",uri=True,timeout=4) as c:
+        c.row_factory=sqlite3.Row
+        c.execute("PRAGMA query_only=ON")
+        return [dict(row) for row in c.execute(
+            """SELECT e.* FROM executions AS e
+               JOIN positions AS p ON p.id=e.position_id
+               WHERE p.status='OPEN' AND e.side='BUY'
+               ORDER BY e.id DESC""")]
+
+
 def attach_gmo_buy_evidence(positions,executions,entry_dates):
     """GMO phone holdings use shared id=-1. Match strictly code + BUY day.
 
