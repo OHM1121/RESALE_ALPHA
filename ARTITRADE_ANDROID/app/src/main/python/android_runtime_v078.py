@@ -375,12 +375,22 @@ def _stock_at_research(root):
              'observation_minutes':trail.get('minute_count',0),
              'missing_observation_minutes':trail.get('unobserved_session_minutes',0),
              'observed_last_price':trail.get('last_close'),
-             'observed_max_price':trail.get('max_price'),
-             'observed_min_price':trail.get('min_price'),
+             # max_price is an aggregate with NO timestamp for the peak.
+             # candidate_forward.last_ts is the LAST observed tick, not the
+             # peak's timestamp. Never claim a 5,450 KRW max occurred that day.
+             # Keep source values for audit only, not user-visible high prices.
+             'observed_max_unverified':trail.get('max_price'),
+             'observed_min_unverified':trail.get('min_price'),
+             'observed_max_price':None,
+             'observed_min_price':None,
+             'observed_max_evidence':'AGGREGATE_NO_PEAK_TIMESTAMP',
+             'forward_high_status':'UNVERIFIED_NO_SOURCE_BAR',
              'first_observed_limit_touch':trail.get('first_limit_touch_ts'),
              'first_observed_target_after_touch':trail.get('first_target_after_touch_ts'),
              'observation_provenance':trail.get('observation_basis'),
              'last_observed_at':trail.get('last_ts'),
+             'observed_max_at':None,
+             'observation_last_at_is_not_peak_at':True,
              'signal_id':x.get('signal_id'),
             'decision':decision.get('decision_at_evaluation'),
             'origin_rank':decision.get('origin_10_rank'),
