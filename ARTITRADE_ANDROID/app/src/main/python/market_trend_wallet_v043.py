@@ -214,7 +214,7 @@ class TrendWallet:
                     else:
                         price=float(ask)
                         limit=_coin_qty(min(Decimal(str(ask_size))*.5,
-                           Decimal(str(budget))/(Decimal(str(price))*(Decimal(1)+Decimal(str(COIN_FEE)))))
+                           Decimal(str(budget))/(Decimal(str(price))*(Decimal(1)+Decimal(str(COIN_FEE))))))
                         qty=limit
                         if qty<=0 or float(qty)*price<MIN_COIN_KRW:
                             return None,"INSUFFICIENT_DEPTH_OR_CASH"
