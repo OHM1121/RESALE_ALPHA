@@ -227,6 +227,80 @@ def _research_record(items, score_items=None):
             'actual_rate_pct':a['rate_pct'],'virtual_rate_pct':v['rate_pct']}
 
 
+def _research_first_target_fills(db):
+    """Recorded FIRST-target SELL executions only; never use candle highs.
+
+    The result is a per-position first observed actual account/PAPER fill.
+    Missing columns or missing DB tables cannot create a fictitious sale.
+    """
+    fills={}
+    try:
+        records=_core._db_rows(db, "SELECT * FROM executions ORDER BY id DESC LIMIT 30000")
+    except Exception:
+        raise
+    for row in reversed(records):
+        side=str(row.get('side') or '').upper()
+        if side not in ('SELL','S','매도'):
+            continue
+        reason=str(row.get('reason') or '').upper().replace('-','_')
+        if not any(mark in reason for mark in
+                   ('FIRST_TARGET','FIRST_TP','TP_FIRST','TP1','1차 목표','1차_목표')):
+            continue
+        try:
+            position_id=int(row.get('position_id') or 0)
+            price=float(row.get('price') or 0)
+        except (ValueError,TypeError):
+            continue
+        at=row.get('ts') or row.get('at')
+        if position_id>0 and price>0 and at:
+            fills[position_id]={'sell_price':row.get('price'),
+                'sell_at':at,'sell_evidence':'ORIGINAL_FIRST_TARGET_EXECUTION'}
+    return fills
+
+
+def _gmo_fill_evidence(candidate, research, buys, sells):
+    """Use only PAPER fills linked to the D+1 entry; avoid later rebuys."""
+    if not research.get('paper_bought'):
+        return {}
+    code=str(candidate.get('code') or '')
+    entry=str(research.get('entry_date') or candidate.get('entry_date') or '')
+    if len(entry)>=8 and entry[:8].isdigit():
+        entry=entry[:4]+'-'+entry[4:6]+'-'+entry[6:8]
+    entry=entry[:10]
+    all_buys=sorted((x for x in buys if str(x.get('code') or '')==code and
+                     x.get('time') and x.get('qty')),key=lambda x:str(x.get('time')))
+    matched=[x for x in all_buys if str(x['time'])[:10]==entry]
+    if not matched:
+        return {}
+    start=max(str(x['time']) for x in matched)
+    next_buy=min((str(x['time']) for x in all_buys
+                  if str(x['time'])>start),default=None)
+    out={'buy_price':research.get('paper_buy_price'),'buy_at':start,
+         'buy_evidence':'GMO_PAPER_BUY_FILL'}
+    if not research.get('paper_first_target_filled'):
+        return out
+    attributed=[]
+    for x in sells:
+        when=str(x.get('time') or '')
+        if str(x.get('code') or '')!=code or not when or when<start or (
+                next_buy is not None and when>=next_buy):
+            continue
+        purpose=str(x.get('purpose') or '').upper()
+        if not (purpose.startswith('TP') and ('FIRST' in purpose or 'SMALL_FULL' in purpose)):
+            continue
+        try:
+            if float(x.get('price') or 0)<=0 or float(x.get('qty') or 0)<=0:
+                continue
+        except (ValueError,TypeError):
+            continue
+        attributed.append(x)
+    if attributed:
+        first=min(attributed,key=lambda x:str(x.get('time')))
+        out.update({'sell_price':first['price'],'sell_at':first['time'],
+                    'sell_evidence':'GMO_PAPER_FIRST_TARGET_FILL'})
+    return out
+
+
 def _stock_at_research(root):
     db=Path(root)/'stock'/'ARTITRADE_D.sqlite3'
     candidates=_core._db_rows(db, """SELECT signal_id,tf,code,name,signal_ts AS at,ref_ts,
