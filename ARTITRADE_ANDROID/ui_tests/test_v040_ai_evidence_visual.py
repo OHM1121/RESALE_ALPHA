@@ -196,12 +196,13 @@ class EvidenceV040(unittest.TestCase):
         self.assertIn('final String chosenMarket=market,chosenStrategy=strategy;',VISUAL)
         self.assertIn('scope.equals(report.optString("scope",""))',VISUAL)
         self.assertIn('private void renderAiAnalysis()',VISUAL)
-        for label in ("개선효과 비교","지표 축적률","원인 후보 / 공통패턴","개선 전략",
-                      "연구 신호","현재 보유"):
+        for label in ("손실 선행조건","반복 하락패턴","반복 상승패턴","개선 전략",
+                      "정량 개선효과"):
             self.assertIn(label,VISUAL)
-        for cls in ("AiEvidenceMeterV040","AiReturnCompareV040"):
-            self.assertIn(cls,VISUAL)
-            self.assertIn("final class "+cls,CHART)
+        self.assertNotIn("지표 축적률",VISUAL)
+        self.assertNotIn("AiEvidenceMeterV040",VISUAL+CHART)
+        self.assertIn("AiReturnCompareV040",VISUAL)
+        self.assertIn("final class AiReturnCompareV040",CHART)
         self.assertNotIn('aiLine(note,"분석 기준"',VISUAL)
         self.assertNotIn('"1. 현황"',VISUAL)
 
