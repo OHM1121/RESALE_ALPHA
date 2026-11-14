@@ -131,6 +131,9 @@ public final class UnifiedVisualActivity extends Activity {
     private ProgressBar startupProgress;
     private TextView startupStage;
     private String market="stock";
+    private String policyTargetCode="";
+    private String policyTargetStrategy="";
+    private String policyTargetMarket="";
     private String strategy="at";
     private String page="home";
     private String historyFilterStock="current",historyFilterCoin="current";
@@ -251,7 +254,7 @@ public final class UnifiedVisualActivity extends Activity {
         if(!validStrategy)strategy="stock".equals(market)?"at":"general";
         java.util.HashSet<String> validPages=new java.util.HashSet<>(
             java.util.Arrays.asList("home","positions","pending","executions",
-                "research","operation","scores","errors","policyHistory","more"));
+                "research","operation","scores","errors","policyHistory","market","more"));
         if(!validPages.contains(page))page="home";
     }
 
@@ -638,7 +641,10 @@ public final class UnifiedVisualActivity extends Activity {
         TextView scoreRow=text("엔진 점수 비교   ·   미선정 후보 포함",12);scoreRow.setTypeface(null,Typeface.BOLD);scoreRow.setPadding(dp(4),dp(7),dp(4),dp(7));scoreRow.setOnClickListener(v->{page="scores";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(scoreRow,new LinearLayout.LayoutParams(-1,dp(44)));
         TextView policyRow=text("정책이력   ·   실제 체결과 매도 판단 근거",12);
         policyRow.setPadding(dp(4),dp(7),dp(4),dp(7));
-        policyRow.setOnClickListener(v->{page="policyHistory";closeSettingsDrawer();main.postDelayed(this::showShell,190);});
+        policyRow.setOnClickListener(v->{
+            policyTargetCode="";policyTargetStrategy="";policyTargetMarket="";
+            page="policyHistory";closeSettingsDrawer();main.postDelayed(this::showShell,190);
+        });
         manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         manage.addView(policyRow,new LinearLayout.LayoutParams(-1,dp(44)));
         panel.addView(manage);
@@ -2283,7 +2289,7 @@ public final class UnifiedVisualActivity extends Activity {
                 sell.setTextSize(12);
                 actions.addView(sell,new LinearLayout.LayoutParams(0,dp(35),1));
                 Button policy=button("정책이력",false,()->{
-                    page="policyHistory";persistNavigation();render();
+                    openPolicyForPosition(r,source);
                 });
                 policy.setTextSize(12);
                 LinearLayout.LayoutParams pl=new LinearLayout.LayoutParams(0,dp(35),1);
@@ -2319,6 +2325,24 @@ public final class UnifiedVisualActivity extends Activity {
         }
         addHistoryPager(kind,total);
     }
+    /** A holding's policy button must open ONLY that same market/strategy/symbol. */
+    private void openPolicyForPosition(JSONObject position,String sourceStrategy){
+        String selected=PolicyHistoryScope.symbol(position.optString("code",
+            position.optString("market","")));
+        if(selected.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("정책이력 확인 불가")
+                .setMessage("이 보유종목의 원본 코드가 없어 다른 종목 이력을 표시하지 않습니다.")
+                .setPositiveButton("닫기",null).show();
+            return;
+        }
+        policyTargetCode=selected;
+        policyTargetStrategy=sourceStrategy;
+        policyTargetMarket=market;
+        page="policyHistory";
+        historyContext="";historyOffset=0;
+        persistNavigation();render();
+    }
+
     private void showManualSellInfo(JSONObject position){
         String identity=nameOf(position);
         new AlertDialog.Builder(this).setTitle(identity+" · 강제매도")
