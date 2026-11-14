@@ -21,3 +21,29 @@ jobs:
         run: |
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/market_trend_v043.py ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v043.py ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v043_*.py' -v
+
+      - name: Smoke import original EXE core with market-trend Android overlay
+        run: |
+          python3 -m pip install -q requests websockets certifi
+          python3 - <<'PY'
+          import base64,gzip,io,sys,tempfile,zipfile
+          from pathlib import Path
+          root=Path("ARTITRADE_ANDROID/app/src/main")
+          with tempfile.TemporaryDirectory() as temp:
+              chunks=b"".join((root/"assets/strategy_v070"/("part_%02d.txt"%i)).read_bytes() for i in range(22))
+              with zipfile.ZipFile(io.BytesIO(base64.b64decode(chunks))) as z:
+                  z.extractall(temp)
+              overlay=b"".join((root/"assets/live_bridge_v071"/("part_%02d.txt"%i)).read_bytes() for i in range(8))
+              (Path(temp)/"android_live_bridge.py").write_bytes(gzip.decompress(base64.b64decode(overlay)))
+              sys.path.insert(0,temp)
+              sys.path.insert(0,str(root/"python"))
+              import android_runtime_v078
+              import android_live_bridge as core
+              import d_upbit
+              assert hasattr(core.Runtime,"start")
+              assert isinstance(d_upbit.UpbitPaperRunner.latest_prices,property)
+              from market_trend_runtime_v043 import Coordinator
+              from market_trend_v043 import rsi20
+              assert rsi20([100]*21)==50.0
+              print("MARKET_TREND_IMPORT_SMOKE_PASS")
+          PY
