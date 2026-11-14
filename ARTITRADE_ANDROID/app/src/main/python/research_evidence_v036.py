@@ -51,9 +51,11 @@ def coin_shadow_observed_target(rows,goal,entry_at):
     if target<=0:return None
     matches=[]
     for r in rows or ():
-        if not isinstance(r,dict) or str(r.get("source") or "")!="BOOK_BID":
+        if not isinstance(r,dict) or str(r.get("source") or "")!="UPBIT_BOOK_BID":
             continue
-        when=str(r.get("first_at") or r.get("last_at") or "")
+        # 1m bucket high has no exact tick instant; bucket's last_at is
+        # the earliest conservative time at which that HIGH is known.
+        when=str(r.get("last_at") or "")
         try:high=float(r.get("bid_high"))
         except (TypeError,ValueError):continue
         if when and when>=str(entry_at) and high>=target:
