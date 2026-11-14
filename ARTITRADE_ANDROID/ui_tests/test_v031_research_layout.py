@@ -30,8 +30,12 @@ class ResearchLayoutContract(unittest.TestCase):
     def test_research_scores_errors_policy_and_operation_use_weighted_columns(self):
         ui=UI.read_text(encoding="utf8")
         for marker in ('researchEvidenceColumns','scoreCandidateColumns',
-                       'errorHistoryColumns','policyHistoryColumns','operationFrameColumns'):
+                       'errorHistoryColumns','operationFrameColumns'):
             self.assertIn(marker,ui)
+        # v033 replaces the old generic policy columns with an explicit
+        # five-field, full-width table; do not require a removed local name.
+        self.assertIn('policyHistoryCell(headings,"당시 시장점수"',ui)
+        self.assertIn('new LinearLayout.LayoutParams(-1,dp(79))',ui)
         self.assertIn('new LinearLayout.LayoutParams(0,-2,',ui)
         self.assertIn('getConfiguration().screenWidthDp',ui)
 
