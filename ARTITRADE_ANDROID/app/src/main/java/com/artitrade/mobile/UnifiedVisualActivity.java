@@ -2349,44 +2349,108 @@ public final class UnifiedVisualActivity extends Activity {
             .setMessage("이 버전에서는 강제매도 버튼이 실제 주문을 발행하지 않습니다. 현재 EXE의 가상 수동매도와 Android 실거래 주문 상태머신이 동일한 결과를 보장하는지 확인되지 않았습니다.\n\n오주문 방지를 위해 강제매도를 차단합니다. 실거래 중에는 증권사/거래소 앱에서 직접 매도하십시오.")
             .setPositiveButton("확인",null).show();
     }
+    private void policyHistoryCell(LinearLayout row,String content,float weight,
+                                    int color,boolean header){
+        TextView cell=text(content,header?12:12);
+        cell.setTextColor(color);
+        cell.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
+        cell.setPadding(dp(8),dp(3),dp(5),dp(3));
+        cell.setMaxLines(header?2:4);
+        cell.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        if(header)cell.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        row.addView(cell,new LinearLayout.LayoutParams(0,-1,weight));
+    }
+
     private void renderPolicyHistory(){
-        TextView h=text(strategyName(market,strategy)+" · 정책이력",21);h.setTypeface(null,Typeface.BOLD);content.addView(h);
-        TextView guide=text("실제 체결·매도 근거로 확인 가능한 정책 판단 기록임. 정책 버전 적용시각은 내부 기록에서 관리함.",12);
-        guide.setTextColor(Color.rgb(145,166,191));guide.setPadding(0,dp(5),0,dp(12));content.addView(guide);
-        JSONArray executions=stats(market,strategy).executions;
-        if(executions.length()==0){empty("기록된 체결·매도 정책 판단 없음");return;}
-        int first=historyStart("policyHistory",executions.length());
-        int last=HistoryPager.end(first,executions.length());
-        addHistoryPager("policyHistory",executions.length());
-        for(int i=first;i<last;i++){
-            JSONObject r=executions.optJSONObject(i);if(r==null)continue;
-            LinearLayout c=card();
-            TextView name=text(nameOf(r)+" · "+r.optString("side",
-                r.optString("type","체결")),15);
-            name.setTypeface(null,Typeface.BOLD);name.setMaxLines(3);
-            String side=tradeSideOf(r);
-            TextView time=text(side+" 체결\n"+fillTimeOf(r,"executions",strategy),12);
-            time.setTextColor(PremiumUi.MUTED);time.setMaxLines(3);
-            TextView why=text(side+" 원인\n"+tradeReasonOf(r,side),13);
-            why.setTextColor(PremiumUi.TEXT);why.setMaxLines(4);
-            LinearLayout policyHistoryColumns=new LinearLayout(this);
-            boolean widePolicy=getResources().getConfiguration().screenWidthDp>=700;
-            policyHistoryColumns.setOrientation(widePolicy?
-                LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
-            policyHistoryColumns.addView(name,new LinearLayout.LayoutParams(
-                widePolicy?0:-1,-2,widePolicy?1.5f:0f));
-            LinearLayout.LayoutParams whenLp=new LinearLayout.LayoutParams(
-                widePolicy?0:-1,-2,widePolicy?1.65f:0f);
-            if(widePolicy)whenLp.setMargins(dp(10),0,0,0);
-            policyHistoryColumns.addView(time,whenLp);
-            LinearLayout.LayoutParams whyLp=new LinearLayout.LayoutParams(
-                widePolicy?0:-1,-2,widePolicy?2.25f:0f);
-            if(widePolicy)whyLp.setMargins(dp(10),0,0,0);
-            policyHistoryColumns.addView(why,whyLp);
-            c.addView(policyHistoryColumns,new LinearLayout.LayoutParams(-1,-2));
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(6));content.addView(c,lp);
+        boolean scoped=!policyTargetCode.isEmpty() &&
+            market.equals(policyTargetMarket);
+        String scopeStrategy=scoped?policyTargetStrategy:"all";
+        String key=market+"/"+scopeStrategy+"/executions/all";
+        java.util.List<HistoryRow> src=uiSnapshot.histories.get(key);
+        if(src==null)src=java.util.Collections.emptyList();
+        java.util.ArrayList<HistoryRow> entries=new java.util.ArrayList<>();
+        for(HistoryRow item:src){
+            JSONObject row=item.row;
+            if(row==null)continue;
+            String rowCode=row.optString("code",row.optString("market",""));
+            if(!scoped||PolicyHistoryScope.matches(policyTargetMarket,
+                policyTargetStrategy,policyTargetCode,
+                market,item.source,rowCode))
+                entries.add(item);
         }
-        addHistoryPager("policyHistory",executions.length());
+        LinearLayout titleRow=new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        String title=scoped?policyTargetCode+" · 종목별 정책이력":
+            ("stock".equals(market)?"주식":"코인")+" · 전체 정책이력";
+        TextView heading=text(title+" · "+entries.size()+"건",19);
+        heading.setTypeface(null,Typeface.BOLD);
+        heading.setTextColor(PremiumUi.TEXT);
+        titleRow.addView(heading,new LinearLayout.LayoutParams(0,dp(40),1));
+        if(scoped){
+            Button all=button("전체 이력",false,()->{
+                policyTargetCode="";policyTargetMarket="";policyTargetStrategy="";
+                historyContext="";historyOffset=0;render();
+            });
+            all.setTextSize(12);
+            titleRow.addView(all,new LinearLayout.LayoutParams(dp(100),dp(37)));
+        }
+        content.addView(titleRow,new LinearLayout.LayoutParams(-1,dp(44)));
+        TextView note=text("각 행은 원장에 기록된 실제 매수·매도 체결 기준임. "+
+            "시장점수는 체결 당시 이전 15분 이내의 실측 점수가 있을 때만 표시함.",12);
+        note.setTextColor(Color.rgb(158,179,202));
+        note.setPadding(dp(4),dp(3),0,dp(9));
+        content.addView(note);
+        if(entries.isEmpty()){
+            empty(scoped?"선택한 종목의 확인 가능한 정책·체결 기록 없음":
+                "주식/코인 실제 체결 원장 기록 없음");
+            return;
+        }
+        LinearLayout headings=new LinearLayout(this);
+        headings.setOrientation(LinearLayout.HORIZONTAL);
+        headings.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,7));
+        policyHistoryCell(headings,"종목명",1.5f,PremiumUi.TEXT,true);
+        policyHistoryCell(headings,"매수 / 매도",0.85f,PremiumUi.TEXT,true);
+        policyHistoryCell(headings,"매수 / 매도 근거",2.6f,PremiumUi.TEXT,true);
+        policyHistoryCell(headings,"매수 / 매도 체결 시점",1.75f,PremiumUi.TEXT,true);
+        policyHistoryCell(headings,"당시 시장점수",1.05f,PremiumUi.TEXT,true);
+        content.addView(headings,new LinearLayout.LayoutParams(-1,dp(44)));
+
+        int first=historyStart("policyHistory",entries.size());
+        int last=HistoryPager.end(first,entries.size());
+        addHistoryPager("policyHistory",entries.size());
+        File ledgerRoot=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+        for(int i=first;i<last;i++){
+            HistoryRow item=entries.get(i);
+            JSONObject record=item.row;
+            if(record==null)continue;
+            String side=tradeSideOf(record);
+            LinearLayout row=new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackground(bg(i%2==0?PremiumUi.SURFACE:PremiumUi.SURFACE_HIGH,
+                PremiumUi.LINE,5));
+            String symbol=nameOf(record)+"\n"+
+                HistorySelection.strategyTag(item.source,item.frame);
+            policyHistoryCell(row,symbol,1.5f,PremiumUi.TEXT,false);
+            policyHistoryCell(row,side,0.85f,
+                "매수".equals(side)?Color.rgb(113,222,181):
+                "매도".equals(side)?Color.rgb(255,156,167):PremiumUi.MUTED,false);
+            policyHistoryCell(row,tradeReasonOf(record,side),2.6f,
+                Color.rgb(190,209,226),false);
+            policyHistoryCell(row,fillTimeOf(record,"executions",item.source),1.75f,
+                Color.rgb(166,186,214),false);
+            Double recorded=MarketResearchScoreLookup.scoreAt(
+                ledgerRoot,market,item.at);
+            policyHistoryCell(row,recorded==null?"미기록":
+                String.format(Locale.KOREA,"%.1f / 100",recorded),
+                1.05f,recorded==null?Color.rgb(235,189,113):
+                    Color.rgb(145,213,246),false);
+            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(79));
+            rp.setMargins(0,dp(3),0,0);
+            content.addView(row,rp);
+        }
+        addHistoryPager("policyHistory",entries.size());
     }
 
     private void zipPut(ZipOutputStream zip,String name,String text)throws Exception{
