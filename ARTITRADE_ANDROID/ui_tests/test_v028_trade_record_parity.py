@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).parents[1]
 RUNTIME=ROOT/"app/src/main/python/android_runtime_v078.py"
-NAMES={"_attach_fill_cost","_first_existing","_stock_at_research","_close_research",
+NAMES={"_research_first_target_fills","_attach_fill_cost","_first_existing","_stock_at_research","_close_research",
        "_coin_research","_research_scope","_research_bands","_research_record"}
 tree=ast.parse(RUNTIME.read_text(encoding="utf-8"))
 selected=[x for x in tree.body if isinstance(x,ast.FunctionDef) and x.name in NAMES]
