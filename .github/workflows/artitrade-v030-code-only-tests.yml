@@ -14,7 +14,7 @@ permissions:
 jobs:
   code-only:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,6 +41,14 @@ jobs:
             ARTITRADE_ANDROID/ui_tests/StrategySwipeThresholdTest.java
           java -cp /tmp/artitrade-v030-jvm com.artitrade.mobile.PcLiveSyncPolicyTest
           java -cp /tmp/artitrade-v030-jvm com.artitrade.mobile.StrategySwipeThresholdTest
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Compile Android native code without packaging an APK
+        run: |
+          cd ARTITRADE_ANDROID
+          gradle --no-daemon :app:compileUnifiedDebugJavaWithJavac
+          test ! -d app/build/outputs/apk
       - name: Confirm no Android installer artifacts created
         run: |
           test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
