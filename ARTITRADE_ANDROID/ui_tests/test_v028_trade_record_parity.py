@@ -98,7 +98,9 @@ class OriginalExeRecordParity(unittest.TestCase):
             record=ctx["_stock_at_research"](tmp)["items"][0]
             self.assertFalse(record["bought"])
             self.assertEqual(record["origin_rank"],3)
-            self.assertEqual(record["observed_max_price"],1120)
+            self.assertIsNone(record["observed_max_price"])
+        self.assertEqual(record["observed_max_unverified"],1120)
+        self.assertEqual(record["forward_high_status"],"UNVERIFIED_NO_SOURCE_BAR")
             self.assertEqual(record["observation_minutes"],21)
             self.assertEqual(record["missing_observation_minutes"],2)
             self.assertEqual(record["entry_status"],"UNSELECTED")
