@@ -478,7 +478,7 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     available=["gmo"] if strategy=="gmo" else (["day"] if strategy=="close" else list(FRAMES))
     frames=[_frame_summary(f,signals,trades,archive,events,now,raw["source"])
             for f in available]
-    return json.dumps({
+    report={
         "ok":True,"schema":"ARTITRADE_AI_V040",
         "market":market,"strategy":strategy,"title":TITLES[market,strategy],
         "generated_at_epoch":now,
@@ -490,4 +490,9 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         "feature_snapshots":len(archive["features"]),
         "position_snapshots":len(archive["positions"]),
         "error":raw.get("errors",[]),
-    },ensure_ascii=False,allow_nan=False)
+    }
+    try:
+        journal.save_report(root,market,strategy,report,now)
+    except (OSError,sqlite3.Error,ValueError):
+        pass
+    return json.dumps(report,ensure_ascii=False,allow_nan=False)
