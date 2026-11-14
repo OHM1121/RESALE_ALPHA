@@ -314,6 +314,12 @@ class TrendJournal:
                 observed_bucket INTEGER NOT NULL,rsi20_live REAL,
                 price REAL NOT NULL,bar_key TEXT NOT NULL,
                 PRIMARY KEY(market,symbol,frame,observed_bucket));
+              CREATE TABLE IF NOT EXISTS virtual_position_state(
+                signal_key TEXT PRIMARY KEY, market TEXT NOT NULL,
+                strategy TEXT NOT NULL, frame TEXT NOT NULL, symbol TEXT NOT NULL,
+                payload TEXT NOT NULL, status TEXT NOT NULL, updated_at REAL NOT NULL);
+              CREATE INDEX IF NOT EXISTS ix_virtual_scope
+                ON virtual_position_state(market,strategy,frame,status);
               CREATE TABLE IF NOT EXISTS gate_events(
                 at REAL NOT NULL,market TEXT NOT NULL,old_mode TEXT NOT NULL,
                 new_mode TEXT NOT NULL,reason TEXT NOT NULL);
@@ -372,7 +378,64 @@ class TrendJournal:
             rows=c.execute("SELECT * FROM position_state WHERE status='OPEN'").fetchall()
         return [dict(x) for x in rows]
 
+
+    def save_virtual(self,key,pos):
+        raw=json.dumps(pos.to_dict(),ensure_ascii=False,separators=(",",":"),default=str)
+        with self.lock,self.connect() as c:
+            c.execute("""INSERT INTO virtual_position_state
+              (signal_key,market,strategy,frame,symbol,payload,status,updated_at)
+              VALUES(?,?,?,?,?,?,?,?)
+              ON CONFLICT(signal_key) DO UPDATE SET
+                payload=excluded.payload,status=excluded.status,
+                updated_at=excluded.updated_at""",
+              (str(key),pos.market,pos.strategy,pos.frame,pos.symbol,raw,
+               "OPEN" if pos.qty>0 else "CLOSED",time.time()))
+
+    def virtual_open(self):
+        with self.lock,self.connect() as c:
+            return [dict(x) for x in c.execute(
+                "SELECT * FROM virtual_position_state WHERE status='OPEN'")]
+
     def events_recent(self,limit=120):
         with self.lock,self.connect() as c:
             return [dict(x) for x in c.execute(
                 "SELECT * FROM events ORDER BY at DESC LIMIT ?",(int(limit),))]
+
+def rsi_research_summary(root,market,strategy):
+    """Research-only evidence for the existing AI analysis tab.
+
+    Distinguishes executed/paper buys from no-fill shadow observations.
+    Never merges hypothetical returns into realized profits.
+    """
+    path=Path(root)/"market_trend_v043.sqlite3"
+    empty={"signals":0,"filled":0,"virtual":0,"stop_exits":0,
+           "watched":0,"entry_rsi_mean":None,"frames":{}}
+    if not path.is_file():return empty
+    try:
+        with sqlite3.connect(str(path),timeout=3) as c:
+            signals=c.execute("""SELECT frame,reason,rsi20_live,mode
+                FROM events WHERE market=? AND strategy=?
+                  AND event_key LIKE 'MT43:SIG:%'""",(market,strategy)).fetchall()
+            filled=int(c.execute("""SELECT COUNT(*) FROM events
+                WHERE market=? AND strategy=? AND reason='MT_BUY_FILLED'
+                  AND mode IN ('ACTUAL','PAPER')""",(market,strategy)).fetchone()[0])
+            stopped=int(c.execute("""SELECT COUNT(*) FROM events
+                WHERE market=? AND strategy=? AND reason='MT_STOP_9PCT'
+                  AND mode IN ('ACTUAL','PAPER')""",(market,strategy)).fetchone()[0])
+            watched=int(c.execute("""SELECT COUNT(*) FROM watch_observations
+                WHERE market=?""",(market,)).fetchone()[0])
+        frames={}
+        rsi=[]
+        for frame,reason,value,mode in signals:
+            entry=frames.setdefault(frame,{"signals":0,"filled":0,"virtual":0})
+            entry["signals"]+=1
+            if mode=="VIRTUAL":entry["virtual"]+=1
+            else:entry["filled"]+=1
+            if _finite(value) is not None:rsi.append(float(value))
+        return {"signals":len(signals),"filled":filled,
+                "virtual":sum(1 for x in signals if x[3]=="VIRTUAL"),
+                "stop_exits":stopped,"watched":watched,
+                "entry_rsi_mean":round(sum(rsi)/len(rsi),2) if rsi else None,
+                "frames":frames}
+    except sqlite3.Error:
+        return empty
