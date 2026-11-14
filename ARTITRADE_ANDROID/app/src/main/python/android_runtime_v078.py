@@ -339,7 +339,7 @@ def _coin_research(root,which):
     shadows={int(x.get('candidate_id') or 0):x for x in _core._db_rows(db,
         "SELECT candidate_id,state,entry_at,entry_price,peak,realized_net,sell_at FROM coin_shadow_trials")}
     decisions={}
-    for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY id DESC"):
+    for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY rowid DESC"):
         decisions.setdefault(int(decision.get('candidate_id') or 0),decision)
     target_fills=set()
     for x in _core._db_rows(db,"SELECT candidate_id,side,reason FROM coin_shadow_fills WHERE side='SELL'"):
