@@ -30,10 +30,13 @@ jobs:
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchScoreGrid.java \
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchBandSelection.java \
             ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ColumnQueryV036.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SyncStatusV036.java \
             ARTITRADE_ANDROID/ui_tests/ResearchPopupV036Test.java \
-            ARTITRADE_ANDROID/ui_tests/ColumnQueryV036Test.java
+            ARTITRADE_ANDROID/ui_tests/ColumnQueryV036Test.java \
+            ARTITRADE_ANDROID/ui_tests/SyncStatusV036Test.java
           java -cp /tmp/artitrade-v036 com.artitrade.mobile.ResearchPopupV036Test
           java -cp /tmp/artitrade-v036 com.artitrade.mobile.ColumnQueryV036Test
+          java -cp /tmp/artitrade-v036 com.artitrade.mobile.SyncStatusV036Test
       - name: Existing strategies remain intact
         run: |
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
