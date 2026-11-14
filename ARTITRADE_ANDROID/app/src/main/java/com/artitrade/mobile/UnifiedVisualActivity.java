@@ -3510,14 +3510,17 @@ public final class UnifiedVisualActivity extends Activity {
         // broker or PAPER SELL. But they must not be hidden as '미기록'.
         double observed=num(row,"observed_target_price");
         Object observedAt=firstValue(row,"observed_target_at");
-        if(finite(observed)&&observed>0&&observedAt!=null&&
+        // AT candidate_forward is a summary, not independently cross-checked
+        // one-minute bars. Keep source observations in research records but
+        // never advertise them as a verified intraday high or target touch.
+        if(!"at".equals(source.source)&&finite(observed)&&observed>0&&observedAt!=null&&
            !row.optString("observed_target_evidence","").isEmpty()){
             return new String[]{"목표 고가관측  "+money(observed)+" (매도 체결 아님)",
                 researchMoment(observedAt)};
         }
         Object touched=firstValue(row,"first_observed_target_after_touch");
         double threshold=num(row,"first_target","target");
-        if(touched!=null&&finite(threshold)&&threshold>0)
+        if(!"at".equals(source.source)&&touched!=null&&finite(threshold)&&threshold>0)
             return new String[]{"목표가격 관측  "+money(threshold)+" (매도 체결 아님)",
                 researchMoment(touched)};
         // The original GMO engine records PAPER last-exit time separately from
