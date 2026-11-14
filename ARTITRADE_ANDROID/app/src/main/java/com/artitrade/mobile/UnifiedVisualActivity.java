@@ -563,10 +563,17 @@ public final class UnifiedVisualActivity extends Activity {
         int pct=state==null?0:Math.max(0,Math.min(100,state.optInt("percent",0)));
         views.percent.setText(pct+"%");
         views.bar.setProgress(pct,true);
-        String stage=state==null?"대기":state.optString("stage","대기");
-        String current=state==null?"":state.optString("current",state.optString("detail",""));
-        String eta=etaText(state);
-        views.detail.setText(stage+(current.isEmpty()?"":" · "+current)+(eta.isEmpty()?"":" · "+eta));
+        String stage=state==null?"":state.optString("stage","");
+        boolean error=state!=null&&(state.optInt("failed",0)>0||
+            stage.toUpperCase(Locale.ROOT).contains("FAILED")||
+            stage.toUpperCase(Locale.ROOT).contains("ERROR"));
+        int done=state==null?0:state.optInt("processed",state.optInt("done",0));
+        int total=state==null?0:state.optInt("total",0);
+        boolean active=total>0||(!stage.isEmpty()&&
+            !"IDLE".equalsIgnoreCase(stage)&&!"WAIT".equalsIgnoreCase(stage));
+        views.detail.setText(SyncStatusV036.phase(
+            state!=null&&state.optBoolean("complete",false),
+            error,done,total,active));
     }
 
     private DrawerProgressViews addProgressBlock(LinearLayout parent,String title,JSONObject state,int accent){
@@ -630,6 +637,30 @@ public final class UnifiedVisualActivity extends Activity {
         drawerImportProgress=null;
     }
 
+    private void logMserverIssue(String key,String original){
+        if(original==null||original.trim().isEmpty())return;
+        String clean=original.trim();
+        String previous=getSharedPreferences("artitrade_mserver_issues_v036",MODE_PRIVATE)
+            .getString(key,"");
+        if(clean.equals(previous))return;
+        getSharedPreferences("artitrade_mserver_issues_v036",MODE_PRIVATE)
+            .edit().putString(key,clean).apply();
+        new RuntimeCrashStore(this).add("mserver_"+key,
+            new IllegalStateException(clean.length()>900?clean.substring(0,900):clean));
+    }
+
+    private void advancedServerTools(){
+        String[] actions={"전체 원장 백업","절전 예외 설정","실시간 엔진 재연결"};
+        new AlertDialog.Builder(this).setTitle("추가 관리 도구")
+            .setItems(actions,(d,w)->{
+                if(w==0)requestFullLedgerBackup();
+                else if(w==1){
+                    try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}
+                    catch(Exception e){new RuntimeCrashStore(this).add("battery_settings",e);}
+                }else if(w==2)restartFeeds();
+            }).setNegativeButton("닫기",null).show();
+    }
+
     private void openSettingsDrawer(){
         if(drawerOverlay!=null)return;
         FrameLayout overlay=new FrameLayout(this);overlay.setBackgroundColor(Color.argb(125,0,0,0));
@@ -668,168 +699,100 @@ public final class UnifiedVisualActivity extends Activity {
         ar.addView(button(brokerName+" 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(44),1));
         LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(44),1);prp.setMargins(dp(8),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
 
-        TextView srvTitle=text("MSERVER · 기준원장 동기화",11);srvTitle.setTypeface(null,Typeface.BOLD);srvTitle.setTextColor(Color.rgb(145,170,200));srvTitle.setPadding(0,dp(16),0,dp(7));panel.addView(srvTitle);
+        TextView srvTitle=text("MSERVER",14);
+        srvTitle.setTypeface(null,Typeface.BOLD);
+        srvTitle.setTextColor(Color.rgb(161,192,231));
+        srvTitle.setPadding(0,dp(15),0,dp(7));
+        panel.addView(srvTitle);
         LinearLayout tools=card();
         JSONObject snapshot=copyCache();
         JSONObject hubPub=snapshot.optJSONObject("hub_publish");
-        JSONObject mAuth=snapshot.optJSONObject("mserver_auth");
-        JSONObject syncProgress=snapshot.optJSONObject("mserver_sync");
-        JSONObject importProgress=effectiveImportProgress(snapshot.optJSONObject("pc_import_progress"),snapshot);
-        JSONObject migrationServer=snapshot.optJSONObject("mserver_migration");
-        int failed=hubPub==null?0:hubPub.optInt("failed",0);int okPub=hubPub==null?0:hubPub.optInt("ok",0);int preserved=hubPub==null?0:hubPub.optInt("preserved",0);
-        boolean authOk=mAuth!=null&&mAuth.optBoolean("ok",false);
-        String authError=mAuth==null?"":mAuth.optString("error","");
-        int authHttp=mAuth==null?0:mAuth.optInt("http_status",0);
-
-        String mserverMsg;
-        if(!authOk&&("unauthorized".equals(authError)||authHttp==401))mserverMsg="MSERVER 인증 실패 · 연결 토큰 불일치";
-        else if(!authOk&&authError.startsWith("UNREACHABLE:"))mserverMsg="MSERVER 연결 실패 · 모바일 서버 실행상태 확인";
-        else if(!getSharedPreferences("artitrade_pc_live_sync_v1",MODE_PRIVATE)
-                .getBoolean("enabled",false) &&
-                (syncProgress==null||!"RETRY".equals(syncProgress.optString("stage",""))))
-            mserverMsg="PC 실시간연동 OFF · 휴대폰 원장은 계속 저장됨";
-        else if(syncProgress!=null&&syncProgress.optBoolean("complete",false))mserverMsg="폰 기준원장 → MSERVER 게시 완료";
-        else if(failed>0)mserverMsg="MSERVER 원장 게시 실패 · "+failed+"건 (아래 원인 확인)";
-        else mserverMsg="MSERVER 원장 게시 진행/대기";
-        TextView mserverState=text(mserverMsg,12);
-        boolean bad=!authOk||failed>0;
-        mserverState.setTextColor(bad?Color.rgb(255,119,133):syncProgress!=null&&syncProgress.optBoolean("complete",false)?Color.rgb(86,214,170):Color.rgb(255,194,91));
-        mserverState.setPadding(dp(2),0,dp(2),dp(5));tools.addView(mserverState);
-        if(!authOk&&!authError.isEmpty()){
-            TextView ae=text("인증/연결: "+authError+(authHttp>0?" · HTTP "+authHttp:""),10);ae.setTextColor(Color.rgb(210,151,161));ae.setPadding(dp(2),0,dp(2),dp(5));tools.addView(ae);
-        }
-        drawerPublishProgress=addProgressBlock(tools,"① 폰 기준원장 → MSERVER 게시",syncProgress,Color.rgb(0,196,164));
-        if(syncProgress!=null&&syncProgress.optInt("total",0)>0){
-            int processed=syncProgress.optInt("processed",syncProgress.optInt("done",0));
-            int successful=syncProgress.optInt("successful",Math.max(0,processed-syncProgress.optInt("failed",0)));
-            int all=syncProgress.optInt("total",0);
-            TextView audit=text("전체 "+all+"건 · 처리 "+processed+"건 · 성공 "+successful+
-                "건 · 실패 "+syncProgress.optInt("failed",0)+"건",11);
-            audit.setTextColor(syncProgress.optInt("failed",0)>0?Color.rgb(255,153,164):Color.rgb(168,186,209));
-            audit.setPadding(dp(2),0,0,dp(8));tools.addView(audit);
-        }
-        if(failed>0&&hubPub!=null){
-            String detail=hubPub.optString("last_error","");
-            String where=hubPub.optString("last_market","")+"/"+hubPub.optString("last_strategy","")+"/"+hubPub.optString("last_bucket","");
-            String explanation=mserverErrorHelp(detail);
-            TextView he=text("게시 실패 위치: "+(where.equals("//")?"서버 인증 단계":where)+"\n"
-                +"원인: "+explanation+"\n"+"진단 코드: "+detail,12);
-            he.setTextColor(Color.rgb(255,163,172));he.setPadding(dp(2),dp(5),dp(2),dp(9));
-            he.setMaxLines(6);tools.addView(he);
-        }
-
-        UiSnapshot readyState=uiSnapshot;
-        TextView preloadNote=text("화면 사전로딩: "+
-            (readyState.reused?"기존 결과 재사용":"전략별 집계")+
-            " · "+readyState.preloadMs+"ms · 화면용 기록 "+readyState.preloadRows+
-            "건 · 전략 "+readyState.totals.size()+"개",10);
-        preloadNote.setTextColor(readyState.preloadRows>0?Color.rgb(62,224,181):
-            Color.rgb(255,194,91));
-        preloadNote.setPadding(dp(2),dp(6),dp(2),dp(6));
-        tools.addView(preloadNote);
-        TextView preloadExplain=text("※ 이 시간은 화면 표시자료 준비시간이며 PC SQLite 전체 검증시간이 아님",9);
-        preloadExplain.setTextColor(Color.rgb(141,159,183));tools.addView(preloadExplain);
-
-        JSONObject migState=snapshot.optJSONObject("pc_ledger_migration");
-        drawerImportProgress=addProgressBlock(tools,"② 기존 PC EXE 원장 → S21+ 승계",importProgress,Color.rgb(77,124,254));
-
-        if(migState!=null&&migState.length()>0){
-            String ms=migState.optString("status","");
-            String mt="IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms)?"기존 PC EXE 원장 복원·엔진 반영 확인":
-                "FILES_INSTALLED".equals(ms)||"LOCAL_FILES_PRESENT".equals(ms)?"PC DB 설치됨 · 엔진 반영 확인 중":
-                "PHONE_HAS_REAL_FILLS".equals(ms)?"실제 브로커 체결 존재 · 자동 원장교체 차단":
-                "RUNTIME_VERIFY_FAILED".equals(ms)?"PC DB 존재하나 전략엔진 반영 실패":
-                "IMPORT_FAILED".equals(ms)?"기존 PC EXE 원장 승계 실패":
-                "MSERVER_UNREACHABLE".equals(ms)?"MSERVER 연결 불가 · 원장 승계 대기":
-                "PHONE_LEDGER_VERIFY_FAILED".equals(ms)?"기존 폰 원장 보존 · 재검증 실패":
-                "PC_IMPORT_CHECKPOINT_INCOMPLETE".equals(ms)?"설치된 원장 검증정보 불일치 · 덮어쓰기 금지":
-                "NO_PC_ARCHIVE".equals(ms)?"기존 PC EXE 원장 승계자료 대기":"기존 PC EXE 원장: "+ms;
-            TextView mv=text(mt,11);
-            mv.setTextColor(("IMPORTED".equals(ms)||"ALREADY_IMPORTED".equals(ms))?Color.rgb(86,214,170):
-                ("PHONE_HAS_REAL_FILLS".equals(ms)||"IMPORT_FAILED".equals(ms))?Color.rgb(255,119,133):Color.rgb(147,160,185));
-            mv.setPadding(dp(2),dp(3),dp(2),dp(7));tools.addView(mv);
-            JSONObject verification=migState.optJSONObject("verification");
-            if(verification!=null){
-                TextView counts=text("원본 기록 "+verification.optLong("source_rows",0)+"건 · 검증된 DB/파일 "+
-                    verification.optInt("files_verified",0)+"개 · 엔진 반영 "+
-                    verification.optLong("runtime_rows",0)+"건",11);
-                counts.setTextColor(Color.rgb(162,181,209));counts.setPadding(dp(2),0,0,dp(5));tools.addView(counts);
-                JSONObject strategyCounts=verification.optJSONObject("by_strategy");
-                if(strategyCounts!=null){
-                    for(String k:new String[]{"stock/at","stock/ma","stock/close","stock/gmo","coin/general","coin/ma"}){
-                        JSONObject row=strategyCounts.optJSONObject(k);if(row==null)continue;
-                        TextView detail=text(k+" · PC "+row.optLong("pc_rows",0)+"건 / 엔진 "+
-                            row.optLong("runtime_rows",0)+"건",10);
-                        detail.setTextColor(row.optLong("pc_rows",0)>0&&row.optLong("runtime_rows",0)==0
-                            ?Color.rgb(255,143,158):Color.rgb(160,183,210));
-                        tools.addView(detail);
-                    }
-                }
-            }
-            String importError=migState.optString("message","");
-            if(migState.optBoolean("close_path_conflict_preserved",false)){
-                TextView warn=text("과거/현재 종가베팅 원장이 모두 존재 · 원본을 보존하고 자동 덮어쓰기 차단",10);
-                warn.setTextColor(Color.rgb(255,184,119));tools.addView(warn);
-            }
-            JSONObject dbAudit=migState.optJSONObject("python_db_audit");
-            if(dbAudit==null&&verification!=null)dbAudit=verification.optJSONObject("python_db_audit");
-            if(dbAudit!=null&&!dbAudit.optBoolean("ok",true)){
-                TextView check=text("SQLite 전략검증: "+dbAudit.optString("message","원본과 실제 DB 비교 실패"),10);
-                check.setTextColor(Color.rgb(255,153,164));check.setMaxLines(3);tools.addView(check);
-            }
-            if(!importError.isEmpty()){
-                TextView issue=text("복원 검증: "+importError,10);
-                issue.setTextColor(Color.rgb(255,153,164));issue.setPadding(dp(2),0,0,dp(8));tools.addView(issue);
-            }
-        }
-        if("stock".equals(market)){
-            JSONObject gmo=ledger(snapshot,"stock","gmo");
-            JSONObject gmoDiagnostic=gmo.optJSONObject("load_diagnostic");
-            long pcGmoRows=0,engineGmoRows=0;
-            JSONObject mv=migState==null?null:migState.optJSONObject("verification");
-            JSONObject byStrategy=mv==null?null:mv.optJSONObject("by_strategy");
-            JSONObject gmoVerify=byStrategy==null?null:byStrategy.optJSONObject("stock/gmo");
-            if(gmoVerify!=null){
-                pcGmoRows=gmoVerify.optLong("pc_rows",0);
-                engineGmoRows=gmoVerify.optLong("runtime_rows",0);
-            }
-            Stats localGmo=uiSnapshot.totals.get("stock/gmo");
-            int shown=localGmo==null?0:localGmo.positions.length()+
-                localGmo.executions.length()+localGmo.research.length();
-            String phase=gmoDiagnostic==null?"":gmoDiagnostic.optString("stage","");
-            String gmoMessage="PC 수급매매 승계 확인: 원본 "+pcGmoRows+
-                "건 · 검증된 엔진 "+engineGmoRows+"건 · 화면 "+shown+"건"+
-                (phase.isEmpty()?"":" · "+phase);
-            TextView gm=text(gmoMessage,11);
-            gm.setTextColor(pcGmoRows>0&&shown==0?Color.rgb(255,119,133):
-                shown>0?Color.rgb(62,224,181):Color.rgb(255,194,91));
-            gm.setPadding(dp(2),dp(7),dp(2),dp(7));
-            tools.addView(gm);
-        }
-        TextView explain=text("※ 'MSERVER 게시 완료'와 'PC 과거원장 승계 완료'는 서로 다른 상태임.",10);
-        explain.setTextColor(Color.rgb(255,194,91));explain.setPadding(dp(2),0,dp(2),dp(7));tools.addView(explain);
-        JSONObject pairState=copyCache().optJSONObject("hub_pairing");
-        if(pairState!=null){
-            String ps=pairState.optBoolean("saved",false)?"연결 토큰 기기 저장됨 · "+pairState.optString("masked",""):"연결 토큰 미저장";
-            TextView pst=text(ps,11);pst.setTextColor(pairState.optBoolean("saved",false)?Color.rgb(86,214,170):Color.rgb(255,176,92));pst.setPadding(dp(2),0,dp(2),dp(8));tools.addView(pst);
-        }
-        tools.addView(button("MSERVER 연결 토큰 등록",false,this::pair),new LinearLayout.LayoutParams(-1,dp(40)));
-        LinearLayout.LayoutParams importLp=new LinearLayout.LayoutParams(-1,dp(43));importLp.setMargins(0,dp(7),0,0);
-        tools.addView(button("PC 원장 적용 · 실제 데이터 재검증",true,this::requestPcMigrationApply),importLp);
+        JSONObject auth=snapshot.optJSONObject("mserver_auth");
+        JSONObject sync=snapshot.optJSONObject("mserver_sync");
+        JSONObject migration=snapshot.optJSONObject("pc_ledger_migration");
+        JSONObject importProgress=effectiveImportProgress(
+            snapshot.optJSONObject("pc_import_progress"),snapshot);
+        boolean authOk=auth!=null&&auth.optBoolean("ok",false);
+        String authError=auth==null?"":auth.optString("error","");
         boolean pcSyncEnabled=getSharedPreferences("artitrade_pc_live_sync_v1",
             MODE_PRIVATE).getBoolean("enabled",false);
-        LinearLayout.LayoutParams liveLp=new LinearLayout.LayoutParams(-1,dp(43));
-        liveLp.setMargins(0,dp(7),0,0);
-        tools.addView(button(pcSyncEnabled?"PC와 실시간연동 ON · 중지":"PC와 실시간연동 OFF · 시작",
-            pcSyncEnabled,this::togglePcLiveSync),liveLp);
-        LinearLayout.LayoutParams retryLp=new LinearLayout.LayoutParams(-1,dp(43));retryLp.setMargins(0,dp(7),0,0);
-        tools.addView(button("원장 1회 전송 · 연결 재확인",false,this::requestLedgerRepublish),retryLp);
-        LinearLayout.LayoutParams backupLp=new LinearLayout.LayoutParams(-1,dp(43));
-        backupLp.setMargins(0,dp(7),0,0);
-        tools.addView(button("전체 원장 백업 · SQLite/수급/리서치",false,
-            this::requestFullLedgerBackup),backupLp);
-        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(40));bp.setMargins(0,dp(7),0,0);tools.addView(button("절전 예외 설정",false,()->{try{startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}catch(Exception ignored){}}),bp);
-        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(40));rp.setMargins(0,dp(7),0,0);tools.addView(button("실시간 엔진 재연결",false,this::restartFeeds),rp);panel.addView(tools);
+        boolean failedPublish=(hubPub!=null&&hubPub.optInt("failed",0)>0)||
+            (sync!=null&&sync.optInt("failed",0)>0);
+        boolean importFailed=migration!=null&&(
+            migration.optString("status","").contains("FAILED")||
+            "IMPORT_FAILED".equals(migration.optString("status","")));
+        if(failedPublish&&hubPub!=null)
+            logMserverIssue("publisher",hubPub.optString("last_error","게시 실패"));
+        if(importFailed&&migration!=null)
+            logMserverIssue("migration",migration.toString());
+        if(!authOk&&!authError.isEmpty())
+            logMserverIssue("auth",authError);
+
+        LinearLayout stateRow=new LinearLayout(this);
+        stateRow.setOrientation(LinearLayout.HORIZONTAL);
+        stateRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView connection=text("연결",13);
+        connection.setTextColor(PremiumUi.TEXT);
+        stateRow.addView(connection,new LinearLayout.LayoutParams(0,dp(31),1));
+        String connectionState=authOk?"완료":!authError.isEmpty()?"오류":"미완료";
+        TextView connectValue=text(connectionState,14);
+        connectValue.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        connectValue.setTextColor(authOk?Color.rgb(92,222,177):
+            !authError.isEmpty()?Color.rgb(250,125,149):Color.rgb(239,197,120));
+        stateRow.addView(connectValue,new LinearLayout.LayoutParams(dp(80),dp(31)));
+        tools.addView(stateRow,new LinearLayout.LayoutParams(-1,dp(31)));
+
+        LinearLayout syncStateRow=new LinearLayout(this);
+        syncStateRow.setOrientation(LinearLayout.HORIZONTAL);
+        syncStateRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView syncCaption=text("PC 실시간연동",13);
+        syncCaption.setTextColor(PremiumUi.TEXT);
+        syncStateRow.addView(syncCaption,new LinearLayout.LayoutParams(0,dp(31),1));
+        TextView syncCaptionState=text(pcSyncEnabled?"진행중":"미완료",13);
+        syncCaptionState.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        syncCaptionState.setTextColor(pcSyncEnabled?Color.rgb(91,221,169):PremiumUi.MUTED);
+        syncStateRow.addView(syncCaptionState,new LinearLayout.LayoutParams(dp(80),dp(31)));
+        tools.addView(syncStateRow,new LinearLayout.LayoutParams(-1,dp(31)));
+
+        drawerPublishProgress=addProgressBlock(tools,"휴대전화 원장 전송",
+            sync,Color.rgb(0,196,164));
+        drawerImportProgress=addProgressBlock(tools,"PC 원장 승계",
+            importProgress,Color.rgb(77,124,254));
+        // Detailed counts, source DB names, HTTP codes, thread/preload timing
+        // and per-strategy raw verification stay in the diagnostic store.
+        // Never put them in the user-facing MSERVER drawer.
+        LinearLayout firstActions=new LinearLayout(this);
+        firstActions.setOrientation(LinearLayout.HORIZONTAL);
+        Button toggle=button(pcSyncEnabled?"실시간연동 중지":"실시간연동 시작",
+            pcSyncEnabled,this::togglePcLiveSync);
+        toggle.setTextSize(12);
+        firstActions.addView(toggle,new LinearLayout.LayoutParams(0,dp(41),1));
+        Button send=button("원장 전송",false,this::requestLedgerRepublish);
+        send.setTextSize(12);
+        LinearLayout.LayoutParams sendLp=new LinearLayout.LayoutParams(0,dp(41),1);
+        sendLp.setMargins(dp(6),0,0,0);
+        firstActions.addView(send,sendLp);
+        tools.addView(firstActions,new LinearLayout.LayoutParams(-1,dp(42)));
+
+        LinearLayout secondActions=new LinearLayout(this);
+        secondActions.setOrientation(LinearLayout.HORIZONTAL);
+        Button pairing=button("연결 토큰",false,this::pair);
+        pairing.setTextSize(12);
+        secondActions.addView(pairing,new LinearLayout.LayoutParams(0,dp(41),1));
+        Button verify=button("PC 승계 재검증",false,this::requestPcMigrationApply);
+        verify.setTextSize(12);
+        LinearLayout.LayoutParams verifyLp=new LinearLayout.LayoutParams(0,dp(41),1);
+        verifyLp.setMargins(dp(6),0,0,0);
+        secondActions.addView(verify,verifyLp);
+        LinearLayout.LayoutParams secondLp=new LinearLayout.LayoutParams(-1,dp(43));
+        secondLp.setMargins(0,dp(5),0,0);
+        tools.addView(secondActions,secondLp);
+        Button advanced=button("기타 관리 도구",false,this::advancedServerTools);
+        advanced.setTextSize(12);
+        LinearLayout.LayoutParams advancedLp=new LinearLayout.LayoutParams(-1,dp(37));
+        advancedLp.setMargins(0,dp(5),0,0);
+        tools.addView(advanced,advancedLp);
+        panel.addView(tools);
 
         FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(width,-1,Gravity.END);overlay.addView(scroll,pp);
         drawerOverlay=overlay;root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
