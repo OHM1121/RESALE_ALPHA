@@ -227,6 +227,15 @@ class ScoreLedger:
                     PRIMARY KEY(segment_id,identity));
                 CREATE INDEX IF NOT EXISTS idx_scores_time
                     ON score_events(market,ts);
+                CREATE TABLE IF NOT EXISTS band_clock(
+                    market TEXT PRIMARY KEY,last_ts INTEGER NOT NULL,
+                    band TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS band_time_slices(
+                    market TEXT NOT NULL,minute_ts INTEGER NOT NULL,
+                    band TEXT NOT NULL,seconds REAL NOT NULL,
+                    PRIMARY KEY(market,minute_ts));
+                CREATE INDEX IF NOT EXISTS idx_band_times
+                    ON band_time_slices(market,band);
             """)
             self._upgrade_signed_scale_if_needed()
             self._upgrade_20point_bands_if_needed()
@@ -322,11 +331,59 @@ class ScoreLedger:
         return self.conn.execute("SELECT id,band,start_ts FROM cohort_segments "
             "WHERE market=? AND end_ts IS NULL ORDER BY id DESC LIMIT 1",(market,)).fetchone()
 
-    def _update(self,segment,positions,ts):
+    def _credit_band_seconds(self,market,band,start,end):
+        """Only actual continuous app observation, never a weekend/data gap."""
+        if end<=start or end-start>120:return
+        for minute in range(start//60*60,(end-1)//60*60+1,60):
+            seconds=max(0,min(end,minute+60)-max(start,minute))
+            if seconds<=0:continue
+            self.conn.execute("""
+                INSERT INTO band_time_slices(market,minute_ts,band,seconds)
+                VALUES(?,?,?,?)
+                ON CONFLICT(market,minute_ts) DO UPDATE SET
+                  seconds=MIN(60.0,seconds+excluded.seconds)
+                WHERE band_time_slices.band=excluded.band
+            """,(market,minute,band,float(seconds)))
+
+    def _advance_clock(self,market,band,ts):
+        prev=self.conn.execute("SELECT last_ts,band FROM band_clock WHERE market=?",
+                               (market,)).fetchone()
+        if prev is not None and ts>=prev["last_ts"]:
+            # The interval up to the score change belongs to the OLD band.
+            self._credit_band_seconds(market,prev["band"],prev["last_ts"],ts)
+        self.conn.execute("""INSERT INTO band_clock(market,last_ts,band) VALUES(?,?,?)
+            ON CONFLICT(market) DO UPDATE SET last_ts=excluded.last_ts,
+                    band=excluded.band""",(market,int(ts),band))
+
+    def close_market(self,market):
+        """Freeze an open market segment at its last real tick, not at midnight."""
+        with self.lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                previous=self.conn.execute(
+                    "SELECT last_ts FROM band_clock WHERE market=?",(market,)
+                ).fetchone()
+                if previous:
+                    self.conn.execute(
+                        "UPDATE cohort_segments SET end_ts=? WHERE market=? "
+                        "AND end_ts IS NULL",(previous["last_ts"],market))
+                self.conn.execute("DELETE FROM band_clock WHERE market=?",(market,))
+                self.conn.execute("COMMIT")
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
+
+    def _update(self,segment,positions,ts,add_new=False):
         if segment is None:return
         for identity,v in (positions or {}).items():
             n=finite(v)
             if n is None:continue
+            if add_new:
+                # New purchases can join a band hours after it started.
+                # Entry return is the first observed mark, not zero at day open.
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO cohort_positions VALUES(?,?,?,?,?)",
+                    (segment["id"],str(identity),n,n,int(ts)))
             self.conn.execute("UPDATE cohort_positions SET latest_return=?,last_ts=? "
                 "WHERE segment_id=? AND identity=? AND last_ts<=?",
                 (n,int(ts),segment["id"],str(identity),int(ts)))
@@ -360,7 +417,8 @@ class ScoreLedger:
                 elif not active:
                     self._start(market,band,positions,ts)
                 else:
-                    self._update(active,positions,ts)
+                    self._update(active,positions,ts,add_new=True)
+                self._advance_clock(market,band,int(ts))
                 self.conn.execute("INSERT OR REPLACE INTO score_events VALUES(?,?,?,?,?)",
                     (market,int(ts),float(score),band,
                     json.dumps(meta or {},ensure_ascii=False)))
@@ -377,19 +435,8 @@ class ScoreLedger:
             try:
                 active=self._active(market)
                 if active and int(ts)>=active["start_ts"]:
-                    # First valid holding snapshot after score initialized:
-                    # no retrospective return is invented for missing initial data.
-                    present=int(self.conn.execute(
-                        "SELECT COUNT(*) FROM cohort_positions WHERE segment_id=?",
-                        (active["id"],)).fetchone()[0])
-                    if present==0 and int(ts)-active["start_ts"]<=600:
-                        for key,val in (positions or {}).items():
-                            n=finite(val)
-                            if n is not None:
-                                self.conn.execute(
-                                    "INSERT OR IGNORE INTO cohort_positions VALUES(?,?,?,?,?)",
-                                    (active["id"],str(key),n,n,int(ts)))
-                    self._update(active,positions,ts)
+                    self._update(active,positions,ts,add_new=True)
+                    self._advance_clock(market,active["band"],int(ts))
                 self.conn.execute("COMMIT")
             except Exception:
                 self.conn.execute("ROLLBACK")
@@ -408,9 +455,19 @@ class ScoreLedger:
             active=self._active(market)
             last=self.conn.execute("SELECT score,ts,meta FROM score_events "
                 "WHERE market=? ORDER BY ts DESC LIMIT 1",(market,)).fetchone()
-            groups=self.conn.execute(
-                "SELECT band,COUNT(*) AS n FROM score_events "
-                "WHERE market=? GROUP BY band",(market,)).fetchall()
+            # Score-point counts are NOT an observation duration. Accumulate
+            # actual clock seconds and per-position gain within each band.
+            groups=self.conn.execute("""
+                SELECT band,SUM(seconds) AS duration_seconds
+                FROM band_time_slices WHERE market=? GROUP BY band
+            """,(market,)).fetchall()
+            deltas=self.conn.execute("""
+                SELECT s.band,COUNT(*) AS position_segments,
+                    AVG(p.latest_return-p.start_return) AS avg_change_pp
+                FROM cohort_segments s
+                JOIN cohort_positions p ON p.segment_id=s.id
+                WHERE s.market=? GROUP BY s.band
+            """,(market,)).fetchall()
             active_data=self.conn.execute("""
                 SELECT COUNT(*) AS n,AVG(latest_return-start_return) AS avg_pp
                 FROM cohort_positions WHERE segment_id=?
@@ -418,6 +475,9 @@ class ScoreLedger:
             rows=self.conn.execute(
                 "SELECT ts,score,band FROM score_events WHERE market=? ORDER BY ts DESC LIMIT 720",
                 (market,)).fetchall()
+        duration={row["band"]:row["duration_seconds"] or 0.0 for row in groups}
+        delta={row["band"]:{"avg_change_pp":row["avg_change_pp"],
+                           "n":row["position_segments"]} for row in deltas}
         metadata=json.loads(last["meta"]) if last else {}
         return {"market":market,"score":last["score"] if last else None,
             "asof":last["ts"] if last else None,
@@ -425,8 +485,14 @@ class ScoreLedger:
             "active_since":active["start_ts"] if active else None,
             "active_count":active_data["n"] if active else 0,
             "active_avg_change_pp":active_data["avg_pp"] if active else None,
-            "bands":[{"band":row["band"],"count":row["n"]}
-                     for row in groups],
+            "bands":[{
+                "band":band,
+                "observed_seconds":round(duration.get(band,0.0),2),
+                "observed_minutes":round(duration.get(band,0.0)/60.0,2),
+                "observed_hours":round(duration.get(band,0.0)/3600.0,3),
+                "avg_change_pp":delta.get(band,{}).get("avg_change_pp"),
+                "position_segments":delta.get(band,{}).get("n",0)}
+                for band in BANDS],
             "recent_scores":[dict(row) for row in reversed(rows)],
             "coverage":metadata.get("coverage"),
             "factors":metadata.get("factors",[]),
@@ -438,17 +504,30 @@ class ScoreLedger:
 
 
 def display_snapshot(market,snapshot,now=None,poll_error=None):
-    """A historical last score is not necessarily a live quote."""
+    """Never present an old KRX value as a live weekend/holiday score."""
     output=dict(snapshot or {})
     stamp=finite(output.get("asof"))
-    now=time.time() if now is None else now
-    limit=3600 if market=="stock" else 900
-    stale=stamp is not None and now-stamp>limit
+    now=time.time() if now is None else float(now)
+    if market=="stock":
+        from krx_session_v041 import status as krx_status
+        trading,reason=krx_status(now)
+        if not trading:
+            output["score"]=None
+            output["active_band"]=None
+            output["status"]=reason
+            output["market_open"]=False
+            output["stale"]=True
+            return output
+        output["market_open"]=True
+    limit=600 if market=="stock" else 900
+    stale=(stamp is None or now-stamp>limit or now<stamp-30)
     output["stale"]=bool(stale)
     if stale:
-        output["status"]=str(output.get("status") or "시장점수") + " · 마지막 관측 오래됨"
-    if poll_error:
-        output["status"]=str(poll_error) + (" · 마지막 점수 표시" if stamp else "")
+        output["score"]=None
+        output["active_band"]=None
+        output["status"]="현재 시황 수집 중" if not poll_error else str(poll_error)
+    elif poll_error:
+        output["status"]=str(poll_error)
     return output
 
 
@@ -632,6 +711,18 @@ class _MarketWorker:
         # Stock 3min, crypto 60sec even on weekends/holidays.
         interval=60 if market=="coin" else 180
         while not self._stop.is_set():
+            # Block stale KRX scores and API requests outside regular trading
+            # sessions, independently of 24h Upbit processing.
+            if market=="stock":
+                from krx_session_v041 import status as krx_status
+                opened,reason=krx_status()
+                if not opened:
+                    ledger.close_market("stock")
+                    with self._cache_lock:
+                        self._cache["stock"]=display_snapshot(
+                            "stock",ledger.snapshot("stock"))
+                    self._stop.wait(30)
+                    continue
             try:
                 with self._cache_lock:
                     pending=self._pending
@@ -680,6 +771,14 @@ class _MarketWorker:
                 holdings=_extract_positions(pending or {})
                 for market in ("coin","stock"):
                     try:
+                        if market=="stock":
+                            from krx_session_v041 import is_regular_open
+                            if not is_regular_open():
+                                ledger.close_market(market)
+                                with self._cache_lock:
+                                    self._cache[market]=display_snapshot(
+                                        market,ledger.snapshot(market))
+                                continue
                         ledger.observe_positions(market,
                             holding_returns(holdings[market]),int(time.time()))
                         current=display_snapshot(
