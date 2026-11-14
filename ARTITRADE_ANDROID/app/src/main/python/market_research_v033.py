@@ -373,6 +373,25 @@ class ScoreLedger:
                 self.conn.execute("ROLLBACK")
                 raise
 
+    def _close_disconnected(self,market,ts):
+        # An app reboot, feed outage or overnight gap must not be assigned
+        # to the same band segment. No gap P&L movement is research evidence.
+        active=self._active(market)
+        if active is None:return False
+        clock=self.conn.execute(
+            "SELECT last_ts FROM band_clock WHERE market=?",(market,)).fetchone()
+        if clock is not None and 0<=int(ts)-int(clock["last_ts"])<=120:
+            return False
+        frozen=(int(clock["last_ts"]) if clock else
+                self.conn.execute(
+                    "SELECT COALESCE(MAX(last_ts),?) FROM cohort_positions "
+                    "WHERE segment_id=?",(active["start_ts"],active["id"])
+                ).fetchone()[0])
+        self.conn.execute("UPDATE cohort_segments SET end_ts=? WHERE id=?",
+                          (int(frozen),active["id"]))
+        self.conn.execute("DELETE FROM band_clock WHERE market=?",(market,))
+        return True
+
     def _update(self,segment,positions,ts,add_new=False):
         if segment is None:return
         for identity,v in (positions or {}).items():
@@ -405,6 +424,7 @@ class ScoreLedger:
         with self.lock:
             self.conn.execute("BEGIN IMMEDIATE")
             try:
+                self._close_disconnected(market,int(ts))
                 active=self._active(market)
                 if active and int(ts)<active["start_ts"]:
                     self.conn.execute("ROLLBACK")
@@ -433,6 +453,11 @@ class ScoreLedger:
         with self.lock:
             self.conn.execute("BEGIN IMMEDIATE")
             try:
+                # On a gap, freeze old segment; do not retroactively
+                # attribute the resumed price change to the previous band.
+                if self._close_disconnected(market,int(ts)):
+                    self.conn.execute("COMMIT")
+                    return
                 active=self._active(market)
                 if active and int(ts)>=active["start_ts"]:
                     self._update(active,positions,ts,add_new=True)
@@ -779,8 +804,14 @@ class _MarketWorker:
                                     self._cache[market]=display_snapshot(
                                         market,ledger.snapshot(market))
                                 continue
-                        ledger.observe_positions(market,
-                            holding_returns(holdings[market]),int(time.time()))
+                        now=int(time.time())
+                        fresh=ledger.score_at(market,now,
+                            max_age_seconds=600 if market=="stock" else 180)
+                        if fresh is None:
+                            ledger.close_market(market)
+                        else:
+                            ledger.observe_positions(market,
+                                holding_returns(holdings[market]),now)
                         current=display_snapshot(
                             market,ledger.snapshot(market),
                             poll_error=self._last_failure.get(market))
