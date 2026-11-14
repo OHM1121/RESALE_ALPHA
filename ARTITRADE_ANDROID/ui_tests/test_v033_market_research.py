@@ -12,7 +12,7 @@ class MarketRegimeTests(unittest.TestCase):
         a=m.stock_score({'KOSPI':1.5,'KOSDAQ':2.0,'NASDAQ':1.8}, {})
         self.assertEqual(a['score'],100)
         b=m.stock_score({'KOSPI':-1.5,'KOSDAQ':-2.0,'NASDAQ':-1.8}, {})
-        self.assertEqual(b['score'],0)
+        self.assertEqual(b['score'],-100)
         self.assertLess(a['coverage'],1.0)
         self.assertIsNone(m.stock_score({}, {})['score'])
 
