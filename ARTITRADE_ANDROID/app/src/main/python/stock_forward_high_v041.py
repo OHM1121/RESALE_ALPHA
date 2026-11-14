@@ -219,7 +219,13 @@ def enrich(root,items):
         key=_row_key(row)
         if key is None:continue
         result=source.get(key)
-        if not result or result.get("state")!="OK":continue
+        if result is None:
+            row["forward_high_status"]="API_QUERY_QUEUED"
+            continue
+        if result.get("state")!="OK":
+            row["forward_high_status"]=result.get("state","API_QUERY_QUEUED")
+            row["forward_high_error"]=result.get("reason")
+            continue
         row["observed_max_price"]=result["high_price"]
         row["observed_max_at"]=result["high_at"]
         row["observed_max_evidence"]="VERIFIED_MINUTE_BAR"
