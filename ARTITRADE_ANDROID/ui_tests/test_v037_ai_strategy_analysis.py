@@ -22,9 +22,10 @@ class ReportContract(unittest.TestCase):
         self.assertIn('getModule("ai_strategy_analysis_v040")', src)
         self.assertIn('final String chosenMarket=market,chosenStrategy=strategy;', src)
         self.assertIn('if(scope.equals(aiAnalysisScope))', src)
-        for item in ("연구 신호", "실제 진입", "매도 완료", "현재 보유",
-                     "지표 축적률", "원인 후보 / 공통패턴", "개선 전략"):
+        for item in ("손실 선행조건", "반복 하락패턴", "반복 상승패턴",
+                     "개선 전략", "정량 개선효과"):
             self.assertIn(item, src)
+        self.assertNotIn("지표 축적률", src)
         self.assertNotIn("callAttr(\"apply_settings\"", src[src.index("private void runAiAnalysis()"):
                                                      src.index("private void renderResearch()")])
 
