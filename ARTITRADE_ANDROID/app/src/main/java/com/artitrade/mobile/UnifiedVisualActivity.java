@@ -2639,6 +2639,185 @@ public final class UnifiedVisualActivity extends Activity {
         exportFullLedgerToDocument(data.getData(),reports);
     }
 
+    /** A date-only D-day is not a UTC instant and must not shift calendar day. */
+    private String researchMoment(Object value){
+        if(value==null||value==JSONObject.NULL)return "미기록";
+        String raw=String.valueOf(value).trim();
+        if(raw.isEmpty()||"null".equalsIgnoreCase(raw))return "미기록";
+        if(raw.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}"))return raw;
+        if(raw.matches("[0-9]{8}"))return raw.substring(0,4)+"-"+
+            raw.substring(4,6)+"-"+raw.substring(6,8);
+        return formatKst(value);
+    }
+
+    private void researchPopupCell(LinearLayout row,String value,float weight,boolean header,int color){
+        TextView t=text(value,header?12:12);
+        t.setTextColor(color);
+        t.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
+        t.setPadding(dp(7),dp(4),dp(4),dp(4));
+        t.setMaxLines(header?2:4);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        row.addView(t,new LinearLayout.LayoutParams(0,-1,weight));
+    }
+
+    private String[] researchBuyCell(HistoryRow source){
+        JSONObject row=source.row;
+        boolean bought=bool(row,"bought","actually_bought","filled");
+        boolean observed=bool(row,"entry_observed","virtual_entered","shadow_entered");
+        double price=num(row,"buy_price");
+        Object at=firstValue(row,"buy_at");
+        if(bought){
+            String prefix="gmo".equals(source.source)?"PAPER 매수":"원장 매수";
+            return new String[]{prefix+"  "+(finite(price)&&price>0?money(price):"미기록"),
+                researchMoment(at)};
+        }
+        double virtual=num(row,"virtual_buy_price");
+        if(observed&&finite(virtual)&&virtual>0){
+            String prefix="gmo".equals(source.source)?"D+1 공식시가":"가상 진입가";
+            return new String[]{prefix+"  "+money(virtual),
+                researchMoment(firstValue(row,"virtual_buy_at","first_observed_limit_touch"))};
+        }
+        double reference=num(row,"limit_price","buy_reference_price");
+        if(finite(reference)&&reference>0)
+            return new String[]{"매수 기준가  "+money(reference)+" (미체결)",
+                "체결일 없음"};
+        return new String[]{"매수가 미기록","체결일 없음"};
+    }
+
+    /** Only an original recorded SELL price may be displayed as a filled sale. */
+    private String[] researchSellCell(HistoryRow source){
+        JSONObject row=source.row;
+        boolean bought=bool(row,"bought","actually_bought","filled");
+        double sold=num(row,"sell_price");
+        Object at=firstValue(row,"sell_at");
+        String evidence=row.optString("sell_evidence","");
+        if(bought&&!evidence.isEmpty()&&finite(sold)&&sold>0&&at!=null){
+            String tag="gmo".equals(source.source)?"PAPER 매도":"원장 매도";
+            return new String[]{tag+"  "+money(sold),researchMoment(at)};
+        }
+        double virtual=num(row,"virtual_sell_price");
+        Object virtualAt=firstValue(row,"virtual_sell_at");
+        if(!bought&&!row.optString("virtual_sell_evidence","").isEmpty()&&
+           finite(virtual)&&virtual>0&&virtualAt!=null)
+            return new String[]{"가상매도  "+money(virtual)+" (모의체결)",
+                researchMoment(virtualAt)};
+
+        // An unselected research candidate may reach its target HIGH without a BUY
+        // or a SELL fill. Label the original OHLC observation explicitly as such.
+        if(!bought){
+            double observed=num(row,"observed_target_price");
+            Object observedAt=firstValue(row,"observed_target_at");
+            if(finite(observed)&&observed>0&&observedAt!=null)
+                return new String[]{"고가 관측  "+money(observed)+" (미체결)",
+                    researchMoment(observedAt)};
+            Object touched=firstValue(row,"first_observed_target_after_touch");
+            double threshold=num(row,"first_target","target");
+            if(touched!=null&&finite(threshold)&&threshold>0)
+                return new String[]{"목표 기준가  "+money(threshold)+" (관측·미체결)",
+                    researchMoment(touched)};
+        }
+        if(bought&&"HIT".equalsIgnoreCase(row.optString("outcome","")))
+            return new String[]{"목표도달 판정 · 매도가 미기록","체결일 미기록"};
+        return new String[]{"매도 / 목표관측 미기록","일자 미기록"};
+    }
+
+    private View researchBandPopupRow(HistoryRow item,int position){
+        JSONObject r=item.row;
+        boolean bought=bool(r,"bought","actually_bought","filled");
+        boolean virtual=bool(r,"entry_observed","virtual_entered","shadow_entered");
+        LinearLayout row=new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(bg(position%2==0?PremiumUi.SURFACE:PremiumUi.SURFACE_HIGH,0,5));
+        String frame=item.frame.isEmpty()?item.source:item.frame;
+        String identity=nameOf(r)+"\n"+HistorySelection.strategyTag(item.source,frame)+
+            " · "+ResearchBandSelection.eventType(bought,virtual);
+        String dayLabel="gmo".equals(item.source)?"D일 ":"신호일 ";
+        Object signal="gmo".equals(item.source)
+            ?firstValue(r,"gmo_event_date","event_date","at")
+            :firstValue(r,"at","signal_ts","created_at","ref_ts");
+        String[] buy=researchBuyCell(item);
+        String[] sell=researchSellCell(item);
+        researchPopupCell(row,identity,2.05f,false,PremiumUi.TEXT);
+        researchPopupCell(row,dayLabel+researchMoment(signal),1.65f,false,Color.rgb(172,195,220));
+        researchPopupCell(row,buy[0]+"\n"+buy[1],2.15f,false,Color.rgb(145,208,247));
+        researchPopupCell(row,sell[0]+"\n"+sell[1],2.40f,false,
+            sell[0].contains("미체결")||sell[0].contains("미기록")?
+                Color.rgb(245,189,111):Color.rgb(92,224,176));
+        row.setMinimumHeight(dp(83));
+        return row;
+    }
+
+    private void showResearchBandPopup(String frame,String band){
+        java.util.List<HistoryRow> all=selectedHistory("research");
+        java.util.ArrayList<HistoryRow> selected=new java.util.ArrayList<>();
+        for(HistoryRow item:all){
+            JSONObject r=item.row;
+            if(r==null)continue;
+            String candidateFrame=timeFrameOf(r);
+            if(candidateFrame.isEmpty())candidateFrame=item.source;
+            double score=num(r,"score","gmo_score_at_signal",
+                "original_score","signal_score");
+            if(ResearchBandSelection.matches(candidateFrame,score,frame,band))
+                selected.add(item);
+        }
+        String section="gmo".equals(frame)?"수급매매":"close".equals(frame)?
+            "종가베팅":tfLabel(frame);
+        LinearLayout body=new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setBackgroundColor(PremiumUi.BG);
+        body.setPadding(dp(7),dp(2),dp(7),dp(3));
+        TextView note=text(section+" · "+band+"점 · "+selected.size()+
+            "건 (화면에 사전로딩된 연구 원장 기준, 더블탭 상세조회)",13);
+        note.setTextColor(Color.rgb(174,204,232));
+        note.setPadding(dp(6),dp(5),dp(4),dp(6));
+        body.addView(note);
+        LinearLayout header=new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,5));
+        researchPopupCell(header,"종목명 / 전략",2.05f,true,PremiumUi.TEXT);
+        researchPopupCell(header,"조건충족일 (D일)",1.65f,true,PremiumUi.TEXT);
+        researchPopupCell(header,"매수가 (일자)",2.15f,true,PremiumUi.TEXT);
+        researchPopupCell(header,"매도가 / 목표관측 (일자)",2.40f,true,PremiumUi.TEXT);
+        body.addView(header,new LinearLayout.LayoutParams(-1,dp(43)));
+        android.widget.ListView list=new android.widget.ListView(this);
+        list.setDividerHeight(dp(4));
+        list.setCacheColorHint(Color.TRANSPARENT);
+        list.setSelector(android.R.color.transparent);
+        list.setAdapter(new android.widget.BaseAdapter(){
+            @Override public int getCount(){return selected.size();}
+            @Override public Object getItem(int position){return selected.get(position);}
+            @Override public long getItemId(int position){return position;}
+            @Override public View getView(int position,View convertView,
+                                          android.view.ViewGroup parent){
+                return researchBandPopupRow(selected.get(position),position);
+            }
+        });
+        int listHeight=Math.min((int)(getResources().getDisplayMetrics().heightPixels*.57f),
+            dp(90)*Math.max(1,Math.min(selected.size(),8)));
+        body.addView(list,new LinearLayout.LayoutParams(-1,listHeight));
+        if(selected.isEmpty()){
+            TextView emptyNote=text("해당 점수구간에 로드된 종목이 없습니다. "
+                +"원본 전체 기록은 연구이력 ZIP을 확인하십시오.",12);
+            emptyNote.setTextColor(PremiumUi.MUTED);
+            body.addView(emptyNote);
+        }
+        TextView footer=text("원장 매도·PAPER 매도·가상 시세관측은 서로 다른 기록임. "
+            +"미기록은 가격이나 일자를 임의 추정하지 않은 항목임.",11);
+        footer.setTextColor(Color.rgb(174,179,194));
+        footer.setPadding(dp(6),dp(7),dp(5),dp(4));
+        body.addView(footer);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle(section+" · "+band+"점 연구 종목")
+            .setView(body)
+            .setPositiveButton("닫기",null)
+            .create();
+        dialog.show();
+        if(dialog.getWindow()!=null)
+            dialog.getWindow().setLayout(
+                (int)(getResources().getDisplayMetrics().widthPixels*.93f),-2);
+    }
+
     private void renderResearch(){
         String filter=activeHistoryFilter();
         String scope="gmo".equals(filter)||"close".equals(filter)?filter:strategy;
