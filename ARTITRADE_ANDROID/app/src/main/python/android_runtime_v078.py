@@ -501,6 +501,13 @@ def _close_full(self):
     positions=_core._db_rows(db,"SELECT * FROM positions WHERE status='OPEN' ORDER BY id DESC LIMIT 300")
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     executions=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 3000")
+    # Original phone BUY fills contain the actual executed rule and time.
+    from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+    original_signals=_core._db_rows(db,
+        "SELECT id,strategy,code,ts AS ref_ts,reason_json AS reason,feature_json AS features FROM signals ORDER BY id DESC LIMIT 12000")
+    buy_records=attach_buy_evidence(positions,executions,original_signals,
+                                   market='stock',strategy='close')
+    queue_phone_buy_evidence(self.root,buy_records)
     day=_core.datetime.now(_core.timezone(_core.timedelta(hours=9))).date().isoformat()
     pending=_core._db_rows(db, """SELECT s.id AS signal_id,s.ts AS ref_ts,s.ts AS at,s.strategy,s.code,s.name,
         s.decision,s.rank_no,s.trading_value_krw,s.price,s.feature_json AS reason
@@ -767,6 +774,15 @@ def _stock_ma_full(self):
                          'realized_pnl':(perf.get(tf) or {}).get('realized_won',0),
                          'unrealized_pnl':(perf.get(tf) or {}).get('holding_won',0),
                          'max_positions':w.get('max_positions',4)})
+    from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+    # MA fills carry position_id, while selected reference is linked by
+    # candidate_id. No symbol-only guessing across wallets.
+    ma_candidates=_core._db_rows(db,
+        "SELECT id,tf,code,ref_ts,score,features FROM candidates ORDER BY id DESC LIMIT 12000")
+    ma_positions=snap.get('positions') or []
+    buy_records=attach_buy_evidence(ma_positions,full_exec,ma_candidates,
+                                    market='stock',strategy='ma')
+    queue_phone_buy_evidence(self.root,buy_records)
     out=dict(snap)
     out['executions']=full_exec
     out['performance_by_frame']=perf
@@ -946,6 +962,16 @@ def _coin_full(ledger):
         _attach_policy_symbol(e,all_by_id.get(str(e.get('position_id'))))
         e['net_profit']=e.get('net_pnl');e['strategy']=e.get('tf')
         _attach_fill_cost(e,all_by_id.get(str(e.get('position_id'))))
+    from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+    account_variant=str(getattr(ledger,'account_variant','original') or 'original')
+    source_variant='ma' if account_variant=='ma' else 'base'
+    # candidates are immutable original strategy research rows, not imported
+    # hypothetical stock prices. Requiring both reference ID and position BUY.
+    coin_candidates=_core._db_rows(ledger.path,
+        "SELECT id,tf,market,ref_at,reason,score,features FROM candidates ORDER BY id DESC LIMIT 12000")
+    buy_records=attach_buy_evidence(positions,executions,coin_candidates,
+                                   market='coin',strategy=source_variant)
+    queue_phone_buy_evidence(Path(ledger.path).parents[2],buy_records)
     realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
     holding=sum(float(x.get('unrealized_pnl') or 0) for x in accounts)
     win_rate=_closed_position_win_rate(all_positions,executions)
@@ -1579,6 +1605,26 @@ def _stock_at_ledger_v19(self):
         out['realized_pnl']=realized
         out['unrealized_pnl']=holding
         out['total_pnl']=realized+holding
+        from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+        from at_hold_diagnostic_v035 import diagnose_at_position
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        stock_db=Path(self.root)/'stock'/'ARTITRADE_D.sqlite3'
+        source_signals=_core._db_rows(stock_db,
+            "SELECT id,tf,code,ref_ts,features,score,decision FROM signals ORDER BY id DESC LIMIT 12000")
+        membership=_core._db_rows(stock_db,"SELECT position_id,signal_id FROM v19_members")
+        link_map={str(m['position_id']):str(m['signal_id']) for m in membership}
+        buy_records=attach_buy_evidence(positions,out.get('executions') or [],
+                        source_signals,market='stock',strategy='at',linked_ids=link_map)
+        queue_phone_buy_evidence(self.root,buy_records)
+        now=datetime.now(ZoneInfo("Asia/Seoul"))
+        for position in positions:
+            # Saved hold_days is authoritative; these diagnostics are not
+            # scheduled sell actions and never imply a broker fill.
+            if not isinstance(position,dict):continue
+            detail=diagnose_at_position(position,now,root=store.root)
+            position['hold_diagnostic']=detail
+            position['hold_exit_diagnostic']=detail['exit_scenario']
     except Exception as exc:
         self._err('stock_at_v19_wallet_snapshot',exc)
     return out
