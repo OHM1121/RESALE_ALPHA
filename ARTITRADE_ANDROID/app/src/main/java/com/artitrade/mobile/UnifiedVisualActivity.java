@@ -3901,20 +3901,55 @@ public final class UnifiedVisualActivity extends Activity {
         return out;
     }
 
+    private Map<String,String> errorListValues(HistoryRow item){
+        JSONObject r=item.row;
+        Map<String,String> out=new HashMap<>();
+        out.put("stage",r.optString("stage",
+            r.optString("error_type",r.optString("code","오류"))));
+        out.put("reason",r.optString("message",r.optString("detail","")));
+        out.put("when",formatKst(r.opt("at")));
+        out.put("status",r.optString("status",r.optString("result","ERROR")));
+        return out;
+    }
+
     private void renderErrors(){
         JSONArray all=marketErrors();
-        TextView h=text(("stock".equals(market)?"주식":"코인")+" 전체 오류이력",18);h.setTypeface(null,Typeface.BOLD);content.addView(h);
+        java.util.ArrayList<HistoryRow> errorRows=new java.util.ArrayList<>();
+        for(int i=0;i<all.length();i++){
+            JSONObject r=all.optJSONObject(i);
+            if(r!=null)errorRows.add(new HistoryRow(r,"errors","",rowTimestamp(r)));
+        }
+        String tableId="errors/"+market;
+        ColumnQueryV036 query=tableQuery(tableId,
+            "stage","reason","when","status");
+        filterAndSortHistory(errorRows,query,this::errorListValues);
+        LinearLayout errorsHead=new LinearLayout(this);
+        errorsHead.setOrientation(LinearLayout.HORIZONTAL);
+        errorsHead.setGravity(Gravity.CENTER_VERTICAL);
+        TextView h=text(("stock".equals(market)?"주식":"코인")+
+            " 오류이력 · "+errorRows.size(),18);
+        h.setTypeface(null,Typeface.BOLD);
+        errorsHead.addView(h,new LinearLayout.LayoutParams(0,dp(44),1));
+        Button filter=button("정렬·필터",false,()->
+            tableOptionsDialog(tableId,query,this::render));
+        filter.setTextSize(11);
+        errorsHead.addView(filter,new LinearLayout.LayoutParams(dp(87),dp(37)));
+        content.addView(errorsHead,new LinearLayout.LayoutParams(-1,dp(45)));
         TextView note=text("선택 전략과 무관하게 해당 시장의 실시간·전략·주문·원장 오류를 통합 표시",10);note.setTextColor(Color.rgb(135,160,190));note.setPadding(0,dp(3),0,dp(9));content.addView(note);
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
         addKpi(summary,"전체",String.valueOf(all.length()));
         int auth=0,feed=0,order=0;
         for(int i=0;i<all.length();i++){JSONObject r=all.optJSONObject(i);String x=r==null?"":r.toString().toLowerCase(Locale.ROOT);if(x.contains("auth")||x.contains("token")||x.contains("key")||x.contains("oauth"))auth++;if(x.contains("websocket")||x.contains("feed")||x.contains("0b")||x.contains("0d"))feed++;if(x.contains("order")||x.contains("fill")||x.contains("체결")||x.contains("주문"))order++;}
         addKpi(summary,"인증",String.valueOf(auth));addKpi(summary,"실시간",String.valueOf(feed));addKpi(summary,"주문/체결",String.valueOf(order));content.addView(summary);
-        if(all.length()==0){empty("기록된 오류 없음");return;}
-        int first=historyStart("errors",all.length()),last=HistoryPager.end(first,all.length());
-        addHistoryPager("errors",all.length());
+        if(errorRows.isEmpty()){
+            empty(all.length()==0?"기록된 오류 없음":"필터 조건에 해당하는 오류 없음");
+            return;
+        }
+        int first=historyStart("errors",errorRows.size()),
+            last=HistoryPager.end(first,errorRows.size());
+        addHistoryPager("errors",errorRows.size());
         for(int i=first;i<last;i++){
-            JSONObject r=all.optJSONObject(i);if(r==null)continue;LinearLayout c=card();
+            JSONObject r=errorRows.get(i).row;if(r==null)continue;LinearLayout c=card();
             TextView n=text(r.optString("stage",
                 r.optString("error_type",r.optString("code","오류 기록"))),13);
             n.setTypeface(null,Typeface.BOLD);n.setTextColor(Color.rgb(255,145,155));
@@ -3940,7 +3975,7 @@ public final class UnifiedVisualActivity extends Activity {
             c.addView(errorHistoryColumns,new LinearLayout.LayoutParams(-1,-2));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,0,0,dp(7));content.addView(c,lp);
         }
-        addHistoryPager("errors",all.length());
+        addHistoryPager("errors",errorRows.size());
     }
 
     private JSONObject defaultOperationSettings(){
