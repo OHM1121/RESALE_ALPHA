@@ -34,6 +34,21 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(target["observed_target_evidence"],"COIN_BOOK_BID_HIGH_NOT_FILL")
         self.assertIsNone(m.coin_shadow_observed_target(rows,110,"2026-11-03T11:00:00"))
 
+    def test_coin_book_target_row_verdict_keeps_virtual_vs_actual_evidence(self):
+        a={"bought":False,"entry_observed":True,"outcome":"PENDING","target_hit":None}
+        b=m.attach_coin_virtual_goal(a,{"observed_target_at":"2026-11-03T12:00",
+            "observed_target_price":104.0,
+            "observed_target_evidence":"COIN_BOOK_BID_HIGH_NOT_FILL"})
+        self.assertEqual(b["outcome"],"HIT")
+        self.assertTrue(b["target_hit"])
+        self.assertFalse(b.get("virtual_sell_evidence"))
+        c={"bought":True,"entry_observed":True,"outcome":"PENDING","target_hit":None}
+        m.attach_coin_virtual_goal(c,{"observed_target_at":"2026-11-03T12:00",
+            "observed_target_price":104.0,
+            "observed_target_evidence":"COIN_BOOK_BID_HIGH_NOT_FILL"})
+        self.assertEqual(c["outcome"],"PENDING")
+        self.assertIsNone(c["target_hit"])
+
     def test_high_target_is_never_a_buy_or_sell_fill(self):
         r=m.from_at_forward({"first_target":100,
             "first_observed_target_after_touch":None,
