@@ -412,6 +412,15 @@ def _stock_at_research(root):
                     item.update({'virtual_sell_price':virtual.get('price'),
                                  'virtual_sell_at':virtual.get('minute_ts'),
                                  'virtual_sell_evidence':'STOCK_SHADOW_1M_FILL'})
+    # Exact source stock code + actual (or shadow-observed) entry timestamp.
+    # API queries are queued off the hub/trading thread and keep their own
+    # stock/forward_high_v041.sqlite3 research cache.
+    try:
+        from stock_forward_high_v041 import queue as queue_forward_high, enrich
+        queue_forward_high(root,items)
+        enrich(root,items)
+    except Exception:
+        pass
     return _research_record(items,candidates)
 
 
