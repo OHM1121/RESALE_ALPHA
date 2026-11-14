@@ -204,9 +204,12 @@ def _frame_summary(frame,signals,trades,archive,events,now,source):
     feature_set=("atr_pct","volume_ratio","williams_r","rsi",
                  "market_score","score","spread_pct","gap_pct")
     cover={}
-    combined=candidates if candidates else group
+    # Report indicator availability from both entry-time snapshots and LIVE
+    # holding telemetry. Current features never become entry-time causes.
+    combined=candidates+group
     for feature in feature_set:
-        n=sum(feature in x["features"] for x in combined)
+        n=sum(feature in (x.get("features") or x.get("current_features") or {})
+              for x in combined)
         cover[feature]=round(100*n/len(combined),1) if combined else 0
     signal_count=len(candidates)
     average=_mean(x["closed_roi"] for x in completed) if completed else None
@@ -218,8 +221,9 @@ def _frame_summary(frame,signals,trades,archive,events,now,source):
     for feature,title in (("atr_pct","ATR"),("volume_ratio","거래량"),
                           ("williams_r","Williams %R"),("rsi","RSI"),
                           ("market_score","진입 시장점수")):
-        vals=[x["features"][feature] for x in combined
-              if feature in x["features"]]
+        vals=[(x.get("features") or x.get("current_features") or {})[feature]
+              for x in combined
+              if feature in (x.get("features") or x.get("current_features") or {})]
         if vals:
             patterns.append({"name":title,"median":round(statistics.median(vals),2),
                              "n":len(vals),"coverage":round(100*len(vals)/max(1,len(combined)))})
@@ -258,9 +262,11 @@ def _frame_summary(frame,signals,trades,archive,events,now,source):
     # positions, but do NOT claim the exposure caused a loss.
     open_risk=[]
     for feature,operator,threshold,name,advice in RULES:
-        hits=sum(1 for x in open_items if feature in x["features"] and
-                 (x["features"][feature]>=threshold if operator==">=" else
-                  x["features"][feature]<=threshold))
+        hits=sum(1 for x in open_items
+                 if feature in (x.get("features") or x.get("current_features") or {})
+                 and (((x.get("features") or x.get("current_features") or {})[feature]>=threshold)
+                      if operator==">=" else
+                      ((x.get("features") or x.get("current_features") or {})[feature]<=threshold)))
         if hits:
             open_risk.append({"name":name,"label":advice,
                               "hits":hits,"factor":feature})
@@ -385,6 +391,12 @@ def _matches_symbol(p,a):
 def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
     original=raw.get("positions") or []
     live=[r for r in ledger.get("positions",[]) if isinstance(r,dict)]
+    executions=[r for r in (raw.get("executions") or ledger.get("executions") or [])
+                if isinstance(r,dict)]
+    fills_by_position=defaultdict(list)
+    for fill in executions:
+        if fill.get("position_id") is not None:
+            fills_by_position[str(fill["position_id"])].append(fill)
     rows=[]
     seen=set()
     for row in original+live:
@@ -406,7 +418,7 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
             pass
         entry=_row_time(row,("entry_at","entry_ts","buy_at","time","entry_date"))
         exit_ts=_row_time(row,("exit_at","closed_at","sold_at","sell_at"))
-        result,state=_returns(row,[])  # Only original net position records.
+        result,state=_returns(row,fills_by_position.get(str(row.get("id")),[]))
         open_roi=_unrealized_pct(row)
         if not _is_closed(row):state="OPEN"
         hold_avg,hold_n=_market_interval(*events,entry,exit_ts or now)
@@ -456,6 +468,12 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     raw=old._read_source(root,market,strategy)
     events=old._market_events(root,market)
     signals=_signal_rows(raw,research,market,strategy,archive)
+    # Chronological score at signal time is available for recent signals even
+    # when the original strategy did not persist a market_score column.
+    for signal in signals:
+        if "market_score" not in signal["features"]:
+            value=old._point_in_time_market(*events,signal["signal_ts"],market)
+            if value is not None:signal["features"]["market_score"]=value
     trades=_build_trades(raw,ledger,signals,archive,market,strategy,now,events)
     available=["gmo"] if strategy=="gmo" else (["day"] if strategy=="close" else list(FRAMES))
     frames=[_frame_summary(f,signals,trades,archive,events,now,raw["source"])
