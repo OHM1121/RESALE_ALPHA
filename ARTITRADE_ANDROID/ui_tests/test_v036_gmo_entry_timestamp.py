@@ -20,7 +20,7 @@ class GmoEntryTimeTest(unittest.TestCase):
                                         [{"code":"005930","time":"2026-11-03T10:00:00","qty":2}]))
     def test_raw_exe_state_json_has_verified_fill_time(self):
         state={"positions":{"005930":{"qty":7,"entry_date":"2026-11-03"}},
-               "buy_fills":[{"code":"005930","time":"2026-11-03T10:52:32+09:00","qty":7,"purpose":"GMO_PAPER"}]}
+               "buy_fills":[{"code":"005930","time":"2026-11-03T10:52:32+09:00","qty":7,"price":200,"purpose":"GMO_PAPER"}]}
         report=m.enrich_positions([{"code":"005930","qty":7,"tf":"gmo"}],state)
         self.assertEqual(report[0]["entry_at"],"2026-11-03T10:52:32+09:00")
         self.assertEqual(report[0]["buy_reason"],"GMO_PAPER")
