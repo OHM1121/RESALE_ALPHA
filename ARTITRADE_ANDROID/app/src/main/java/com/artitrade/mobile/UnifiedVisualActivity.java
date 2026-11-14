@@ -758,7 +758,7 @@ public final class UnifiedVisualActivity extends Activity {
             sync,Color.rgb(0,196,164));
         drawerImportProgress=addProgressBlock(tools,"PC 원장 승계",
             importProgress,Color.rgb(77,124,254));
-        // Detailed counts, source DB names, HTTP codes, thread/preload timing
+        // Detailed counts, source DB names, network codes, thread/preload timing
         // and per-strategy raw verification stay in the diagnostic store.
         // Never put them in the user-facing MSERVER drawer.
         LinearLayout firstActions=new LinearLayout(this);
