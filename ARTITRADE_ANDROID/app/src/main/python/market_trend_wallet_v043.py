@@ -140,13 +140,18 @@ class TrendWallet:
         compact=at.astimezone(KST).strftime("%Y%m%d%H%M%S")
         cost=_money(float(qty)*float(price));spent=cost+fee
         if market=="stock" and strategy=="at":
+            stock_map=getattr(getattr(self.rt,"stock_runner",None),"market_map",{})
+            native_market=(stock_map.get(symbol) or ("",))[0]
+            if native_market not in ("KOSPI","KOSDAQ"):
+                raise UnsafeFill("MARKET_IDENTITY_UNVERIFIED")
             c.execute("UPDATE v19_accounts SET cash=cash-?,last_update=? WHERE tf=?",
+
                       (spent,compact,frame))
             p=c.execute("""INSERT INTO positions(tf,code,market,name,ref_ts,ref_low,
                ref_high,ref_bodytop,entry_ts,entry_price,entry_qty,qty,
                first_sell_qty,peak,hold_days,entry_fee,last_price,status)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-               (frame,symbol,"KOSPI",name,compact,price,price,price,compact,
+               (frame,symbol,native_market,name,compact,price,price,price,compact,
                 int(price),int(qty),int(qty),max(1,int(qty*.30)),
                 int(price),90,fee,int(price),"TREND_OPEN"))
             pid=int(p.lastrowid)
@@ -208,6 +213,11 @@ class TrendWallet:
                         return None,"FRAME_MAX_POSITIONS"
                     budget=min(cash,seed//maximum)
                     if market=="stock":
+                        if strategy=="at":
+                            run=getattr(self.rt,"stock_runner",None)
+                            identity=(getattr(run,"market_map",{}) or {}).get(symbol) if run else None
+                            if not identity or identity[0] not in ("KOSPI","KOSDAQ"):
+                                return None,"UNVERIFIED_STOCK_MARKET"
                         price=int(math.ceil(float(ask)))
                         qty=min(int(budget//(price*(1+STOCK_FEE))),
                                 max(0,int(float(ask_size))))
