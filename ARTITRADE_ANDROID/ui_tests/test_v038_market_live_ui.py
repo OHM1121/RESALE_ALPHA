@@ -84,7 +84,7 @@ class MarketV038(unittest.TestCase):
             score=m._fetch_coin()
         self.assertIsInstance(score["score"],float)
         self.assertTrue(-100<=score["score"]<=100)
-        self.assertEqual(len(score["factors"]),5)
+        self.assertEqual(len(score["factors"]),6)
 
     def test_coin_quote_fallback_if_all_ticker_fails(self):
         def source(url,params):
