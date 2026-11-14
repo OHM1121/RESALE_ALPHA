@@ -2533,95 +2533,120 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderPolicyHistory(){
-        boolean scoped=!policyTargetCode.isEmpty() &&
-            market.equals(policyTargetMarket);
+        boolean scoped=!policyTargetCode.isEmpty()&&market.equals(policyTargetMarket);
         String scopeStrategy=scoped?policyTargetStrategy:"all";
         String key=market+"/"+scopeStrategy+"/executions/all";
         java.util.List<HistoryRow> src=uiSnapshot.histories.get(key);
         if(src==null)src=java.util.Collections.emptyList();
         java.util.ArrayList<HistoryRow> entries=new java.util.ArrayList<>();
         for(HistoryRow item:src){
-            JSONObject row=item.row;
-            if(row==null)continue;
+            JSONObject row=item.row;if(row==null)continue;
             String rowCode=row.optString("code",row.optString("market",""));
             if(!scoped||PolicyHistoryScope.matches(policyTargetMarket,
-                policyTargetStrategy,policyTargetCode,
-                market,item.source,rowCode))
+                policyTargetStrategy,policyTargetCode,market,item.source,rowCode))
                 entries.add(item);
         }
+        String id="policy/"+market+"/"+scopeStrategy;
+        ColumnQueryV036 query=tableQuery(id,"identity","side","reason","when","score");
+        File root=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+        java.util.NavigableMap<Long,Double> marketScores=
+            MarketResearchScoreLookup.scoreTimeline(root,market);
+        final Map<HistoryRow,Map<String,String>> cached=new HashMap<>();
+        for(HistoryRow item:entries){
+            JSONObject record=item.row;
+            Map<String,String> values=new HashMap<>();
+            values.put("identity",nameOf(record)+"\n"+
+                HistorySelection.strategyTag(item.source,item.frame));
+            values.put("side",tradeSideOf(record));
+            values.put("reason",tradeReasonOf(record,tradeSideOf(record)));
+            values.put("when",fillTimeOf(record,"executions",item.source));
+            Double recorded=MarketResearchScoreLookup.atTime(marketScores,item.at);
+            values.put("score",recorded==null?"미기록":
+                String.format(Locale.KOREA,"%+.1f",recorded));
+            cached.put(item,values);
+        }
+        filterAndSortHistory(entries,query,cached::get);
         LinearLayout titleRow=new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        String title=scoped?policyTargetCode+" · 종목별 정책이력":
-            ("stock".equals(market)?"주식":"코인")+" · 전체 정책이력";
-        TextView heading=text(title+" · "+entries.size()+"건",19);
+        TextView heading=text(scoped?policyTargetCode+" · 정책이력":
+            ("stock".equals(market)?"주식":"코인")+" · 정책이력",19);
         heading.setTypeface(null,Typeface.BOLD);
-        heading.setTextColor(PremiumUi.TEXT);
-        titleRow.addView(heading,new LinearLayout.LayoutParams(0,dp(40),1));
+        titleRow.addView(heading,new LinearLayout.LayoutParams(0,dp(41),1));
+        Button prefs=button("열 · 필터",false,()->
+            tableOptionsDialog(id,query,this::render));
+        prefs.setTextSize(11);
+        titleRow.addView(prefs,new LinearLayout.LayoutParams(dp(89),dp(36)));
         if(scoped){
-            Button all=button("전체 이력",false,()->{
+            Button all=button("전체",false,()->{
                 policyTargetCode="";policyTargetMarket="";policyTargetStrategy="";
                 historyContext="";historyOffset=0;render();
             });
-            all.setTextSize(12);
-            titleRow.addView(all,new LinearLayout.LayoutParams(dp(100),dp(37)));
+            all.setTextSize(11);
+            LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(dp(51),dp(36));
+            ap.setMargins(dp(5),0,0,0);titleRow.addView(all,ap);
         }
         content.addView(titleRow,new LinearLayout.LayoutParams(-1,dp(44)));
-        TextView note=text("각 행은 원장에 기록된 실제 매수·매도 체결 기준임. "+
-            "시장점수는 체결 당시 이전 15분 이내의 실측 점수가 있을 때만 표시함.",12);
-        note.setTextColor(Color.rgb(158,179,202));
-        note.setPadding(dp(4),dp(3),0,dp(9));
+        TextView note=text("표시 "+entries.size()+"건 · 열 터치: 정렬 / 길게 누르기: 필터·열 이동",11);
+        note.setTextColor(PremiumUi.MUTED);note.setPadding(dp(3),0,0,dp(6));
         content.addView(note);
         if(entries.isEmpty()){
-            empty(scoped?"선택한 종목의 확인 가능한 정책·체결 기록 없음":
-                "주식/코인 실제 체결 원장 기록 없음");
+            empty(scoped?"해당 종목의 기록 없음 / 적용한 필터 확인":
+                "조건에 맞는 실제 체결 기록 없음");
             return;
         }
         LinearLayout headings=new LinearLayout(this);
         headings.setOrientation(LinearLayout.HORIZONTAL);
         headings.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,7));
-        policyHistoryCell(headings,"종목명",1.5f,PremiumUi.TEXT,true);
-        policyHistoryCell(headings,"매수 / 매도",0.85f,PremiumUi.TEXT,true);
-        policyHistoryCell(headings,"매수 / 매도 근거",2.6f,PremiumUi.TEXT,true);
-        policyHistoryCell(headings,"매수 / 매도 체결 시점",1.75f,PremiumUi.TEXT,true);
-        policyHistoryCell(headings,"당시 시장점수",1.05f,PremiumUi.TEXT,true);
-        content.addView(headings,new LinearLayout.LayoutParams(-1,dp(44)));
-
+        Runnable redraw=this::render;
+        for(String column:query.visibleColumns()){
+            String label="identity".equals(column)?"종목명":
+                "side".equals(column)?"매수 / 매도":
+                "reason".equals(column)?"판단 근거":
+                "when".equals(column)?"체결 시점":"당시 시장점수";
+            tableHeaderCell(headings,label,column,
+                policyColumnWeight(column),id,query,redraw);
+        }
+        content.addView(headings,new LinearLayout.LayoutParams(-1,dp(47)));
         int first=historyStart("policyHistory",entries.size());
         int last=HistoryPager.end(first,entries.size());
         addHistoryPager("policyHistory",entries.size());
-        File ledgerRoot=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
         for(int i=first;i<last;i++){
             HistoryRow item=entries.get(i);
-            JSONObject record=item.row;
-            if(record==null)continue;
-            String side=tradeSideOf(record);
+            Map<String,String> values=cached.get(item);
+            if(values==null)continue;
             LinearLayout row=new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackground(bg(i%2==0?PremiumUi.SURFACE:PremiumUi.SURFACE_HIGH,
-                PremiumUi.LINE,5));
-            String symbol=nameOf(record)+"\n"+
-                HistorySelection.strategyTag(item.source,item.frame);
-            policyHistoryCell(row,symbol,1.5f,PremiumUi.TEXT,false);
-            policyHistoryCell(row,side,0.85f,
-                "매수".equals(side)?Color.rgb(113,222,181):
-                "매도".equals(side)?Color.rgb(255,156,167):PremiumUi.MUTED,false);
-            policyHistoryCell(row,tradeReasonOf(record,side),2.6f,
-                Color.rgb(190,209,226),false);
-            policyHistoryCell(row,fillTimeOf(record,"executions",item.source),1.75f,
-                Color.rgb(166,186,214),false);
-            Double recorded=MarketResearchScoreLookup.scoreAt(
-                ledgerRoot,market,item.at);
-            policyHistoryCell(row,recorded==null?"미기록":
-                String.format(Locale.KOREA,"%+.1f / ±100",recorded),
-                1.05f,recorded==null?Color.rgb(235,189,113):
-                    Color.rgb(145,213,246),false);
+            row.setBackground(bg(i%2==0?PremiumUi.SURFACE:
+                PremiumUi.SURFACE_HIGH,PremiumUi.LINE,5));
+            for(String field:query.visibleColumns()){
+                String val=values.getOrDefault(field,"미기록");
+                int color="side".equals(field)?
+                    "매수".equals(val)?Color.rgb(113,222,181):
+                    "매도".equals(val)?Color.rgb(255,156,167):PremiumUi.MUTED:
+                    "score".equals(field)?Color.rgb(145,213,246):
+                    Color.rgb(190,209,226);
+                String textValue="score".equals(field)&&!"미기록".equals(val)
+                    ?val+" / ±100":val;
+                policyHistoryCell(row,textValue,policyColumnWeight(field),color,false);
+            }
             LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(79));
             rp.setMargins(0,dp(3),0,0);
             content.addView(row,rp);
         }
         addHistoryPager("policyHistory",entries.size());
+    }
+
+    private float policyColumnWeight(String key){
+        switch(key){
+            case "identity":return 1.5f;
+            case "side":return 0.85f;
+            case "reason":return 2.6f;
+            case "when":return 1.75f;
+            case "score":return 1.05f;
+            default:return 1f;
+        }
     }
 
     private void zipPut(ZipOutputStream zip,String name,String text)throws Exception{
