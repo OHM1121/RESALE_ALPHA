@@ -1,8 +1,8 @@
 """ARTITRADE market research v033, strictly independent of all order engines.
 
 Stock scoring follows EXE d_market_briefing.py _evidence impact/weight rules,
-mapped from [-100,100] to display [0,100]. Crypto is an experimental public-
-data-only rubric. No BUY/SELL or broker operation is ever performed here.
+displayed unchanged in [-100,100]. Crypto is an experimental public-
+data-only rubric with the same signed scale. No BUY/SELL or broker operation is ever performed here.
 """
 from __future__ import annotations
 
@@ -15,8 +15,9 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 
-BANDS=((0,50,"0~50"),(51,60,"51~60"),(61,70,"61~70"),
-       (71,80,"71~80"),(81,90,"81~90"),(91,100,"91~100"))
+BANDS=((-100,-50,"-100~-51"),(-50,0,"-50~-1"),(0,50,"0~50"),
+       (50,60,"51~60"),(60,70,"61~70"),(70,80,"71~80"),
+       (80,90,"81~90"),(90,100,"91~100"))
 _STOCK_FACTORS={
     "KOSPI":(1.5,False,1.30),"KOSDAQ":(2.0,False,0.90),
     "KOSPI5":(4.0,False,0.65),"S&P500":(1.5,False,0.55),
@@ -44,13 +45,17 @@ def clamp(v,low=0.0,high=100.0):
 
 
 def market_band(score):
+    """Signed EXE-compatible bands: negative bear, zero neutral, positive bull."""
     v=finite(score)
-    if v is None or v<0 or v>100:return None
-    for low,high,label in BANDS:
-        if low<=v<=high or (low==51 and 50<v<51) or (
-                low>51 and low-1<v<low):
-            return label
-    return None
+    if v is None or v<-100 or v>100:return None
+    if v < -50:return "-100~-51"
+    if v < 0:return "-50~-1"
+    if v <= 50:return "0~50"
+    if v <= 60:return "51~60"
+    if v <= 70:return "61~70"
+    if v <= 80:return "71~80"
+    if v <= 90:return "81~90"
+    return "91~100"
 
 
 def _stock_driver(name,value,scale,invert,weight):
@@ -83,7 +88,7 @@ def stock_score(changes,flows):
         return {"score":None,"raw_score":None,"coverage":coverage,
                 "factors":drivers,"status":"KOSPI/KOSDAQ 미수신"}
     raw=sum(x["impact"]*x["weight"] for x in drivers)/used
-    return {"score":round(clamp((raw+100)/2),1),
+    return {"score":round(clamp(raw,-100,100),1),
             "raw_score":round(raw,1),"coverage":coverage,"factors":drivers,
             "status":"정상" if coverage>.90 else "일부 지표 미수신"}
 
@@ -138,8 +143,12 @@ def coin_score(tickers,btc_candles,eth_candles):
         {"name":"ETH/BTC 7일 상대강도","value":round(relative,1),"weight":0.15},
         {"name":"BTC 20일 변동성 건강도","value":round(vol_health,1),"weight":0.10},
     ]
-    total=sum(x["value"]*x["weight"] for x in factors)
-    return {"score":round(clamp(total),1),"coverage":1.0,"factors":factors,
+    # Each component is reported on the same bearish/neutral/bullish scale.
+    # Raw value is retained independently as the 0~100 component observation.
+    for item in factors:
+        item["impact"]=round(clamp(2*item["value"]-100,-100,100),1)
+    total=sum(x["impact"]*x["weight"] for x in factors)
+    return {"score":round(clamp(total,-100,100),1),"coverage":1.0,"factors":factors,
         "status":"관측 완료 · 실험적 점수",
         "sample_count":len(ticks),"btc_7d_pct":round(btc7,2),
         "btc_vol20_pct":round(vol,2)}
@@ -189,6 +198,59 @@ class ScoreLedger:
                 CREATE INDEX IF NOT EXISTS idx_scores_time
                     ON score_events(market,ts);
             """)
+            self._upgrade_signed_scale_if_needed()
+
+    def _upgrade_signed_scale_if_needed(self):
+        """One-time, transactional migration of v033 0..100 score observations.
+
+        Preserve timestamps, linked holding baselines, return deltas and identity.
+        Original stock raw_score stored in meta is authoritative when present.
+        """
+        version=int(self.conn.execute("PRAGMA user_version").fetchone()[0])
+        if version>=34:
+            return
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            rows=self.conn.execute(
+                "SELECT market,ts,score,meta FROM score_events"
+            ).fetchall()
+            for row in rows:
+                try:
+                    meta=json.loads(row["meta"] or "{}")
+                    if not isinstance(meta,dict):meta={}
+                except (ValueError,TypeError):
+                    meta={}
+                legacy=finite(row["score"])
+                if legacy is None:
+                    continue
+                if row["market"]=="stock":
+                    signed=finite(meta.get("raw_score"))
+                    if signed is None:signed=2*legacy-100
+                else:
+                    signed=2*legacy-100
+                signed=round(clamp(signed,-100,100),1)
+                meta["score_scale"]="-100..+100"
+                meta["migrated_from_v033"]=True
+                self.conn.execute(
+                    "UPDATE score_events SET score=?,band=?,meta=? WHERE market=? AND ts=?",
+                    (signed,market_band(signed),json.dumps(meta,ensure_ascii=False),
+                     row["market"],row["ts"]))
+            segments=self.conn.execute(
+                "SELECT id,market,start_ts FROM cohort_segments"
+            ).fetchall()
+            for segment in segments:
+                event=self.conn.execute(
+                    "SELECT band FROM score_events WHERE market=? AND ts=?",
+                    (segment["market"],segment["start_ts"])).fetchone()
+                if event:
+                    self.conn.execute(
+                        "UPDATE cohort_segments SET band=? WHERE id=?",
+                        (event["band"],segment["id"]))
+            self.conn.execute("PRAGMA user_version=34")
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
 
     def close(self):
         with self.lock:self.conn.close()
