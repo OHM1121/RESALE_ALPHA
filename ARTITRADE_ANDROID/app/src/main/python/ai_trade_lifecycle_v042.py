@@ -291,6 +291,7 @@ def rebuild(root,market,strategy,positions,now=None,executions=()):
     if (market,strategy) not in journal.SCOPES:return []
     now=int(now or time.time())
     with journal._connect(root,market) as conn:
+        conn.row_factory=sqlite3.Row
         events=_asof_scores(root,market,conn)
         filled_exits={}
         filled_buys={}
