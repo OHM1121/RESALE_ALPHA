@@ -467,6 +467,15 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         archive={"features":[],"positions":[]}
     raw=old._read_source(root,market,strategy)
     events=old._market_events(root,market)
+    # v040 market-score journal also survives scoped stock-only or coin-only
+    # research export/restore when the original shared score DB is absent.
+    if archive.get("market_scores"):
+        merged={int(t):float(score) for t,score in zip(*events)}
+        for row in archive["market_scores"]:
+            try:merged.setdefault(int(row["score_ts"]),float(row["score"]))
+            except (ValueError,TypeError,KeyError):pass
+        events=([t for t in sorted(merged)],
+                [merged[t] for t in sorted(merged)])
     signals=_signal_rows(raw,research,market,strategy,archive)
     # Chronological score at signal time is available for recent signals even
     # when the original strategy did not persist a market_score column.
