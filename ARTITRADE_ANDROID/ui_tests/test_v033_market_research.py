@@ -36,15 +36,15 @@ class MarketRegimeTests(unittest.TestCase):
             db.record_score('stock',55,100000,a,{"source":"TEST"})
             db.observe_positions('stock', {'stock/at/5m/1':2.0,'stock/ma/30m/2':5.0},100060)
             snap=db.snapshot('stock')
-            self.assertEqual(snap['active_band'],'51~60')
+            self.assertEqual(snap['active_band'],'40~59')
             self.assertAlmostEqual(snap['active_avg_change_pp'],4.0)
             db.record_score('stock',20,100120,{'stock/at/5m/1':2.0}, {"source":"TEST"})
-            self.assertEqual(db.snapshot('stock')['active_band'],'0~50')
+            self.assertEqual(db.snapshot('stock')['active_band'],'20~39')
             self.assertAlmostEqual(db.snapshot('stock')['active_avg_change_pp'],0)
             db.observe_positions('stock', {'stock/at/5m/1':4.0},100180)
             snap=db.snapshot('stock')
             self.assertAlmostEqual(snap['active_avg_change_pp'],2.0)
-            self.assertTrue(any(row['band']=='51~60' and row['count']==2
+            self.assertTrue(any(row['band']=='40~59' and row['count']==1
                             for row in snap['bands']))
             db.close()
 
@@ -55,7 +55,7 @@ class MarketRegimeTests(unittest.TestCase):
             db.record_score('coin',59,100100,{'coin/general/5m/BTC':0}, {})
             db.observe_positions('coin', {'coin/general/5m/BTC':2,'coin/ma/5m/ETH':30},100120)
             s=db.snapshot('coin')
-            self.assertEqual(s['active_band'],'51~60')
+            self.assertEqual(s['active_band'],'40~59')
             self.assertAlmostEqual(s['active_avg_change_pp'],6.0)
             self.assertEqual(s['active_count'],1)
             db.close()
