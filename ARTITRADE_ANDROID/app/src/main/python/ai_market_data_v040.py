@@ -62,7 +62,7 @@ def fetch_candles(market,symbol,frame,now=None):
             try:
                 url="https://"+host+"/v8/finance/chart/"+quote(code+suffix)
                 result=_http(url,{"interval":FRAME_YAHOO[frame],
-                                  "range":"1mo" if frame=="5m" else "3mo"})
+                                  "range":"3mo" if frame=="day" else "1mo"})
                 chart=result["chart"]["result"][0]
                 candles=chart["indicators"]["quote"][0]
                 timestamps=chart.get("timestamp") or []
@@ -157,7 +157,7 @@ def refresh_packet(root,packet,now=None,max_calls=4):
         research,ledger=_records(data,market,strategy)
         signals=_rows(research,("items","candidates","signals"))
         holdings=_rows(ledger,("positions","holdings"))
-        for source in (holdings,signals[-40:]):
+        for source in (holdings,signals[:40]):
             for row in source:
                 if not isinstance(row,dict):continue
                 symbol=str(row.get("code") or row.get("market") or "")
