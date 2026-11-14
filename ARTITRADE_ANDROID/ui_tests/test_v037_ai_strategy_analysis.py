@@ -19,11 +19,11 @@ class ReportContract(unittest.TestCase):
         self.assertIn('else if("analysis".equals(page))renderAiAnalysis();', src)
         self.assertIn('private void runAiAnalysis()', src)
         self.assertIn('private void renderAiAnalysis()', src)
-        self.assertIn('getModule("ai_strategy_analysis_v037")', src)
+        self.assertIn('getModule("ai_strategy_analysis_v040")', src)
         self.assertIn('final String chosenMarket=market,chosenStrategy=strategy;', src)
         self.assertIn('if(scope.equals(aiAnalysisScope))', src)
-        for item in ("1. 현황", "2. 문제점·원인 가설", "3. 공통패턴",
-                     "4. 개선점", "5. 전략", "6. 정량 예상 개선효과"):
+        for item in ("연구 신호", "실제 진입", "매도 완료", "현재 보유",
+                     "지표 축적률", "원인 후보 / 공통패턴", "개선 전략"):
             self.assertIn(item, src)
         self.assertNotIn("callAttr(\"apply_settings\"", src[src.index("private void runAiAnalysis()"):
                                                      src.index("private void renderResearch()")])
