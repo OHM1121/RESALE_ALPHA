@@ -283,6 +283,25 @@ def _connect(root,market):
         score_ts INTEGER NOT NULL PRIMARY KEY,
         score REAL NOT NULL,source TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS position_factor_events_v042(
+        strategy TEXT NOT NULL,position_key TEXT NOT NULL,
+        frame TEXT NOT NULL,symbol TEXT NOT NULL,
+        observed_minute INTEGER NOT NULL,entry_ts INTEGER,exit_ts INTEGER,
+        status TEXT NOT NULL,price REAL,volume REAL,market_score REAL,
+        features_json TEXT NOT NULL,source TEXT NOT NULL,
+        PRIMARY KEY(strategy,position_key,observed_minute)
+      );
+      CREATE INDEX IF NOT EXISTS v042_factor_by_symbol
+        ON position_factor_events_v042(strategy,frame,symbol,observed_minute);
+      CREATE TABLE IF NOT EXISTS position_lifecycle_v042(
+        strategy TEXT NOT NULL,position_key TEXT NOT NULL,
+        frame TEXT NOT NULL,symbol TEXT NOT NULL,
+        entry_ts INTEGER NOT NULL,exit_ts INTEGER,last_computed INTEGER NOT NULL,
+        summary_json TEXT NOT NULL,
+        PRIMARY KEY(strategy,position_key)
+      );
+      CREATE INDEX IF NOT EXISTS v042_lifecycle_frame
+        ON position_lifecycle_v042(strategy,frame,entry_ts);
       CREATE TABLE IF NOT EXISTS analysis_runs(
         strategy TEXT NOT NULL,
         generated_at INTEGER NOT NULL,
@@ -349,6 +368,19 @@ def capture_scope(root,market,strategy,research,ledger,now=None,market_score=Non
                        if _number(row.get(x)) is not None),None)
             extra=extract_features(row,now)
             if market_score is not None:extra["current_market_score"]=market_score
+            # Private research-only observation. Preserve incoming facts,
+            # never backdate currently visible indicators to the buy moment.
+            from ai_trade_lifecycle_v042 import (
+                captured_event_features, event_record)
+            symbol=str(row.get("code") or row.get("market") or "")
+            technical,indicator_origin=captured_event_features(
+                conn,strategy,frame,symbol,now)
+            observed=dict(technical)
+            observed.update(extra)
+            event_record(conn,strategy,frame,key,symbol,now,entry_ts,exit_ts,
+                         status,market_score,mark,
+                         observed.get("volume"),observed,
+                         indicator_origin or "PHONE_POSITION_OBSERVATION")
             conn.execute("""INSERT INTO position_observations
                 (strategy,frame,position_key,observed_minute,entry_ts,exit_ts,
                  status,mark,entry_price,quantity,pnl,market_score,extra_json)
@@ -384,7 +416,13 @@ def capture_packet(root,packet,now=None):
             pass
     for market,strategy in SCOPES:
         research,ledger=_records(data,market,strategy)
-        score=_number(_json_obj(scores.get(market)).get("score"))
+        evidence=_json_obj(scores.get(market))
+        score=_number(evidence.get("score"))
+        asof=_timestamp(evidence.get("asof"))
+        # A stale weekend/closed-market quote is NOT a present observation.
+        if asof is None or now-asof<0 or now-asof>(
+                600 if market=="stock" else 180):
+            score=None
         try:
             result=capture_scope(root,market,strategy,research,ledger,now,score)
             for name in totals:totals[name]+=result[name]
