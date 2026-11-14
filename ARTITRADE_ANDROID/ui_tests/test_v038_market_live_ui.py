@@ -54,7 +54,7 @@ class MarketV038(unittest.TestCase):
             records=second.conn.execute("SELECT identity,start_return,latest_return FROM cohort_positions "
                                         "ORDER BY segment_id").fetchall()
             self.assertEqual([(x[0],x[1],x[2]) for x in records],[("S",-12,-5),("S",-5,-5)])
-            self.assertEqual({x["band"]:x["count"] for x in second.snapshot("stock")["bands"]},
+            self.assertEqual({x["band"]:x["position_segments"] for x in second.snapshot("stock")["bands"] if x["position_segments"]},
                              {"-100~-81":1,"40~59":1})
             second.close()
 
@@ -116,7 +116,8 @@ class MarketV038(unittest.TestCase):
                     "factors":[],"source":"UPBIT_TEST"}
         with tempfile.TemporaryDirectory() as root, \
              patch.object(m,"_fetch_stock",side_effect=stock),\
-             patch.object(m,"_fetch_coin",side_effect=coin):
+             patch.object(m,"_fetch_coin",side_effect=coin),\
+             patch("krx_session_v041.status",return_value=(True,"장중")):
             worker=m._MarketWorker(root)
             try:
                 self.assertTrue(held.wait(2),"stock request did not begin")
@@ -143,7 +144,8 @@ class MarketV038(unittest.TestCase):
         self.assertNotIn("현 구간 보유수익률 변화",gauge)
         self.assertIn('TextView title=text("시장 점수",21);',visual)
         for band in m.BANDS:self.assertIn('"'+band+'"',visual)
-        self.assertIn('TextView n=text(count+"회",12);',visual)
+        self.assertIn('TextView hoursView=text(hourText,14);',visual)
+        self.assertNotIn('TextView method=text("평가 항목"',visual)
 
     def test_normal_hub_result_publishes_market_score(self):
         source=(BASE/"app/src/main/python/android_runtime_v078.py").read_text()
