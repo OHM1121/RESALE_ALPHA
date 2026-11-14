@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.content.ContentValues;
 import android.util.Base64;
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -78,6 +79,22 @@ final class SyncStore extends SQLiteOpenHelper {
             if(!c.moveToFirst())return obj("ok",true,"exists",false,"revision",0,"updated_at",0);
             return obj("ok",true,"exists",true,"revision",c.getInt(0),"updated_at",c.getLong(1));
         }
+    }
+
+    /** Small, authenticated, read-only revision listing for the PC receiver. */
+    synchronized JSONObject recordIndex(){
+        JSONArray records=new JSONArray();
+        try(Cursor c=getReadableDatabase().rawQuery(
+                "SELECT market,strategy,bucket,revision,updated FROM records ORDER BY market,strategy,bucket",
+                null)){
+            while(c.moveToNext()){
+                String market=c.getString(0),strategy=c.getString(1),bucket=c.getString(2);
+                if(!validStrategy(market,strategy)||!validBucket(bucket))continue;
+                records.put(obj("market",market,"strategy",strategy,"bucket",bucket,
+                    "revision",c.getInt(3),"updated_at",c.getLong(4)));
+            }
+        }
+        return obj("ok",true,"records",records);
     }
 
     synchronized JSONObject putRecord(String market,String strategy,String bucket,int expected,JSONObject data){
