@@ -147,7 +147,7 @@ class WalletV043(TestCase):
     def test_coin_general_original_account_and_stop(self):
         pos,state=self._buy("coin","general","5m","KRW-BTC")
         self.assertEqual(state,"BOUGHT")
-        qty,status=self.w.sell(pos,9000,self.now+dt.timedelta(seconds=1),"MT_STOP_9PCT")
+        qty,status=self.w.sell(pos,9000,self.now+dt.timedelta(seconds=1),"MT_STOP_9PCT",bid_size=100)
         self.assertGreater(qty,0)
         self.assertEqual(status,"SOLD")
         self.assertEqual(pos.qty,0.0)
