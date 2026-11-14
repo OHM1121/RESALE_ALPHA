@@ -124,6 +124,11 @@ public final class UnifiedVisualActivity extends Activity {
     private volatile boolean refreshRunning=false;
     private volatile boolean runtimeStartIssued=false;
     private volatile boolean brokerProbeIssued=false;
+    // Keep the first visible frame as a real preparation screen, not an empty main UI.
+    private volatile boolean preloadScreenReady=false;
+    private long preloadStartedAt=0L;
+    private ProgressBar startupProgress;
+    private TextView startupStage;
     private String market="stock";
     private String strategy="at";
     private String page="home";
@@ -209,19 +214,20 @@ public final class UnifiedVisualActivity extends Activity {
             root=new FrameLayout(this);
             root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
+            preloadStartedAt=android.os.SystemClock.elapsedRealtime();
             showBoot();
-            // Guarantee a native first frame before any server/Python/broker work.
+            // First frame is the real preloader. Service and all UI model parsing
+            // happen asynchronously while the main dashboard stays hidden.
             main.postDelayed(()->{
                 try{
-                    showShell();
-                    refresh(true);
+                    updateStartupProgress(12,"백그라운드 전략엔진 시작");
                     startRuntimeLater();
-                    main.postDelayed(this::autoProbeBroker,900);
+                    refresh(true);
                 }catch(Throwable e){
-                    new RuntimeCrashStore(this).add("native_shell",e);
+                    new RuntimeCrashStore(this).add("native_preload",e);
                     showFatal(e);
                 }
-            },350);
+            },120);
         }catch(Throwable e){
             try{new RuntimeCrashStore(this).add("native_onCreate",e);}catch(Throwable ignored){}
             showFatal(e);
@@ -386,10 +392,38 @@ public final class UnifiedVisualActivity extends Activity {
         p.setBackgroundColor(PremiumUi.BG);
         TextView brand=text("ARTITRADE",28);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.12f);p.addView(brand);
         TextView sub=text("S21+ PHONE MAIN · NATIVE SAFEBOOT",12);sub.setTextColor(Color.rgb(139,164,194));sub.setPadding(0,dp(8),0,dp(18));p.addView(sub);
-        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setIndeterminate(true);
-        p.addView(bar,new LinearLayout.LayoutParams(dp(320),dp(10)));
-        TextView note=text("화면을 먼저 구성한 뒤 API · 전략엔진을 지연 시작합니다.",11);note.setTextColor(Color.rgb(116,143,178));note.setPadding(0,dp(14),0,0);p.addView(note);
+        startupProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+        startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(5);
+        p.addView(startupProgress,new LinearLayout.LayoutParams(dp(320),dp(10)));
+        startupStage=text("원장 · 전략별 요약 · 화면 자료를 준비 중",12);
+        startupStage.setTextColor(Color.rgb(116,143,178));
+        startupStage.setPadding(0,dp(14),0,0);p.addView(startupStage);
+        TextView note=text("거래·시세·원장 상태를 백그라운드에서 준비한 뒤 메인화면을 엽니다.",11);
+        note.setTextColor(PremiumUi.MUTED);note.setPadding(0,dp(7),0,0);p.addView(note);
         root.addView(p,new FrameLayout.LayoutParams(-1,-1));
+    }
+
+    private void updateStartupProgress(int percent,String stage){
+        main.post(()->{
+            if(preloadScreenReady)return;
+            if(startupProgress!=null)
+                startupProgress.setProgress(Math.max(startupProgress.getProgress(),
+                    Math.min(98,Math.max(0,percent))));
+            if(startupStage!=null)startupStage.setText(stage);
+        });
+    }
+
+    private void finishPreload(boolean engineReady){
+        if(preloadScreenReady)return;
+        preloadScreenReady=true;
+        if(startupProgress!=null)startupProgress.setProgress(100);
+        startupProgress=null;startupStage=null;
+        showShell();
+        updateHeader();
+        render();
+        if(!engineReady && statusText!=null)
+            statusText.setText("원장 초기화 대기 · 백그라운드 연결 확인");
+        main.postDelayed(this::autoProbeBroker,900);
     }
 
     private String marketVersionLabel(){
@@ -893,7 +927,8 @@ public final class UnifiedVisualActivity extends Activity {
                 long now=android.os.SystemClock.elapsedRealtime();
                 boolean hubResponding=packet.optJSONObject("status")!=null
                     &&packet.optJSONObject("status").optBoolean("ok",false);
-                boolean pollGaps=hubResponding&&now-lastHubGapPollMs>=25_000L;
+                boolean pollGaps=preloadScreenReady&&hubResponding&&
+                    now-lastHubGapPollMs>=25_000L;
                 if(pollGaps)lastHubGapPollMs=now;
                 boolean anyHub=false;
                 for(String[] k:RECORDS){
@@ -973,6 +1008,7 @@ public final class UnifiedVisualActivity extends Activity {
                 }catch(Exception e){packet.put("mserver_auth",new JSONObject());}
                 packet.put("records",records);packet.put("loaded_at",System.currentTimeMillis());
             }catch(Exception e){try{packet.put("refresh_error",e.getClass().getSimpleName()+": "+e.getMessage());}catch(Exception ignored){}}
+            if(!preloadScreenReady)updateStartupProgress(52,"전략별 원장 데이터 확인 · 집계 중");
             long preloadStart=android.os.SystemClock.elapsedRealtime();
             UiSnapshot previous=uiSnapshot;
             Map<String,Stats> preparedTotals=new HashMap<>();
@@ -1006,6 +1042,7 @@ public final class UnifiedVisualActivity extends Activity {
                     }
                 }
             }
+            if(!preloadScreenReady)updateStartupProgress(76,"주식·코인 전략별 화면 자료 사전 계산");
             boolean ledgerChanged=preparedTotals!=previous.totals;
             Map<String,java.util.List<HistoryRow>> histories=ledgerChanged
                 ?prepareHistories(preparedTotals):previous.histories;
@@ -1021,6 +1058,21 @@ public final class UnifiedVisualActivity extends Activity {
             // Home has live feed indicators; historical pages need not recreate
             // hundreds of views when the ledger version has not changed.
             main.post(()->{
+                if(!preloadScreenReady){
+                    boolean engineReady=packet.optLong("local_records_at",0L)>0 &&
+                        uiSnapshot.totals.size()>=6;
+                    boolean timedOut=android.os.SystemClock.elapsedRealtime()-
+                        preloadStartedAt>=16000L;
+                    if(engineReady||timedOut){
+                        // A disconnected broker must not make the phone unusable.
+                        // Timeouts are explicitly displayed as engine-waiting, not success.
+                        finishPreload(engineReady);
+                    }else{
+                        updateStartupProgress(88,"원장 생성 및 엔진 상태 확인 중");
+                        main.postDelayed(()->refresh(true),850);
+                    }
+                    return;
+                }
                 updateHeader();
                 if(!"operation".equals(page)
                     &&(ledgerChanged||"home".equals(page)||"errors".equals(page)))render();
@@ -3434,7 +3486,7 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void startRuntimeLater(){
         if(runtimeStartIssued)return;runtimeStartIssued=true;
-        main.postDelayed(()->{try{Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.START);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Throwable e){new RuntimeCrashStore(this).add("native_runtime_start",e);}},1800);
+        main.postDelayed(()->{try{Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.START);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Throwable e){new RuntimeCrashStore(this).add("native_runtime_start",e);}},140);
     }
 
     private void showFatal(Throwable e){
