@@ -1,0 +1,57 @@
+name: ARTITRADE v038 Market Score Polling, 20-Point Bands and Legacy Regression
+on:
+  push:
+    branches: [artitrade-v038-market-score-live-20bands-20261114]
+    paths:
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/artitrade-v038-code-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: artitrade-v038-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Run v036 source evidence regression
+        run: |
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v038_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v037_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v036_*.py' -v
+          mkdir -p /tmp/artitrade-v036
+          javac -d /tmp/artitrade-v036 \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchScoreGrid.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchBandSelection.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ColumnQueryV036.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SyncStatusV036.java \
+            ARTITRADE_ANDROID/ui_tests/ResearchPopupV036Test.java \
+            ARTITRADE_ANDROID/ui_tests/ColumnQueryV036Test.java \
+            ARTITRADE_ANDROID/ui_tests/SyncStatusV036Test.java
+          java -cp /tmp/artitrade-v036 com.artitrade.mobile.ResearchPopupV036Test
+          java -cp /tmp/artitrade-v036 com.artitrade.mobile.ColumnQueryV036Test
+          java -cp /tmp/artitrade-v036 com.artitrade.mobile.SyncStatusV036Test
+      - name: Existing strategies remain intact
+        run: |
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v035_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v034_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v033_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v031_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v029_research_loaders.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v028_trade_record_parity.py' -v
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Compile unified Android Java (no APK or EXE)
+        run: |
+          cd ARTITRADE_ANDROID
+          gradle --no-daemon :app:compileUnifiedDebugJavaWithJavac
+          test ! -d app/build/outputs/apk
