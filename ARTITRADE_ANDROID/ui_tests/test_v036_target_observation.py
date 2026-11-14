@@ -11,6 +11,23 @@ sys.path.insert(0,str(Path(__file__).parents[1]/"app/src/main/python"))
 import research_evidence_v036 as m
 
 class EvidenceTests(unittest.TestCase):
+    def test_home_timeframe_target_rate_is_confirmed_over_all_positions(self):
+        source=Path(__file__).parents[1]/"app/src/main/python/android_runtime_v078.py"
+        tree=ast.parse(source.read_text())
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef)
+                and n.name=="_target_summary")
+        ns={}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),"exec"),ns)
+        holdings=[{"id":1,"status":"OPEN","first_sold":1,"qty":5}]+[
+            {"id":i,"status":"OPEN","first_sold":0,"qty":4}
+            for i in range(2,11)]
+        result=ns["_target_summary"](holdings,"stock_at")
+        self.assertEqual(result["hit"],1)
+        self.assertEqual(result["pending"],9)
+        self.assertEqual(result["eligible"],10)
+        self.assertEqual(result["rate_pct"],10.0)
+        self.assertEqual(result["decided_rate_pct"],100.0)
+
     def test_first_target_sell_fill_survives_over_30000_unrelated_fills(self):
         from android_sqlite_reader import db_rows
         source=Path(__file__).parents[1]/"app/src/main/python/android_runtime_v078.py"
