@@ -6,7 +6,8 @@ import unittest
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]/"app/src/main/python"))
-from phone_buy_evidence_v035 import attach_buy_evidence, store_buy_evidence
+from phone_buy_evidence_v035 import (attach_buy_evidence,attach_gmo_buy_evidence,
+                                    store_buy_evidence)
 
 class PhoneBuyEvidence(unittest.TestCase):
     def test_coin_base_and_ma_evidence_is_from_matching_phone_buy_fill(self):
@@ -70,6 +71,20 @@ class PhoneBuyEvidence(unittest.TestCase):
               "at":"20261103110000","reason":"INITIAL_BUY"}]
         attach_buy_evidence(p,exe,[],market="coin",strategy="base")
         self.assertEqual(p[0]["buy_reason"],"INITIAL_BUY")
+
+    def test_mobile_gmo_buy_fill_links_by_code_and_entry_date_not_shared_negative_id(self):
+        positions=[{"id":-1,"tf":"gmo","code":"278650","entry_price":1090}]
+        fills=[{"code":"278650","side":"BUY","ts":"2026-11-03 10:52:32",
+                "price":1090,"reason":"수급 조건 점수 68 · 매수가 체결"},
+               {"code":"278650","side":"BUY","ts":"2026-11-11 10:52:32",
+                "price":1300,"reason":"다른 거래의 나중 매수"}]
+        out=attach_gmo_buy_evidence(positions,fills,{"278650":"2026-11-03"})
+        self.assertEqual(positions[0]["buy_reason"],fills[0]["reason"])
+        self.assertEqual(out[0]["buy_at"],"2026-11-03 10:52:32")
+        self.assertEqual(out[0]["position_id"],"278650:2026-11-03")
+        other=[{"id":-1,"tf":"gmo","code":"278650"}]
+        self.assertEqual(attach_gmo_buy_evidence(other,fills,
+            {"278650":"2026-11-05"}),[])
 
     def test_phone_audit_is_idempotent_and_original_ledger_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as d:
