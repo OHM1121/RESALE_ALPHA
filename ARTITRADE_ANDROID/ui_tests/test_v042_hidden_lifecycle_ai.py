@@ -87,7 +87,7 @@ class LifecycleV042(TestCase):
                 c.execute("""INSERT INTO candle_observations
                     (strategy,frame,symbol,bar_ts,high,low,close,volume,origin)
                     VALUES(?,?,?,?,?,?,?,?,?)""",
-                    ("ma","5m",symbol,exit_at+3600,999999,1,2000,1e9,"FUTURE"))
+                    ("ma","5m",symbol,exit_at+7200,999999,1,2000,1e9,"FUTURE"))
             second=lifecycle.rebuild(root,"stock","ma",[row],now=exit_at+7200)[0]
             self.assertEqual(first["entry_features"],second["entry_features"])
             self.assertEqual(first["exit_features"],second["exit_features"])
