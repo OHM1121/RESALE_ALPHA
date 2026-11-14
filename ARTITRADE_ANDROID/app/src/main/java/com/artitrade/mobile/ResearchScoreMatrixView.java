@@ -17,7 +17,7 @@ final class ResearchScoreMatrixView extends View {
     private ResearchScoreGrid grid=new ResearchScoreGrid();
     private String frame="",title="";
     private float density=1f;
-    interface OnBandDoubleTapListener { void onBandDoubleTap(String frame,String band); }
+    interface OnBandDoubleTapListener { void onBandDoubleTap(String frame,String band,String side); }
     private OnBandDoubleTapListener bandDoubleTapListener;
     private final GestureDetector tapDetector;
     ResearchScoreMatrixView(Context c){
@@ -30,9 +30,11 @@ final class ResearchScoreMatrixView extends View {
                 int rowCount=grid.any(frame)&&grid.cell(frame,ResearchScoreGrid.NO_SCORE).signals>0?6:5;
                 String band=ResearchBandSelection.bandAtY(event.getY(),getHeight(),
                     density,rowCount);
-                if(band==null)return false;
+                String side=ResearchBandSelection.tapSide(
+                    event.getX(),getWidth(),density);
+                if(band==null||side==null)return false;
                 performClick();
-                bandDoubleTapListener.onBandDoubleTap(frame,band);
+                bandDoubleTapListener.onBandDoubleTap(frame,band,side);
                 return true;
             }
         });
@@ -66,12 +68,12 @@ final class ResearchScoreMatrixView extends View {
         return rate>=60?Color.rgb(74,217,161):rate>=40?Color.rgb(245,186,100):Color.rgb(248,107,123);
     }
     private void rate(Canvas c,ResearchScoreGrid.Cell q,boolean actual,float left,float right,float baseline){
-        double value=actual?q.actualRate():q.virtualRate();
+        double value=actual?q.actualConfirmedShare():q.virtualConfirmedShare();
         int hit=actual?q.actualHit:q.virtualHit;
         int miss=actual?q.actualMiss:q.virtualMiss;
         int pending=actual?q.actualPending:q.virtualPending;
         String pct=Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.0f%%",value);
-        String detail=hit+"/"+(hit+miss)+(pending>0?" · "+pending:"");
+        String detail=hit+"/"+(hit+miss+pending)+(pending>0?" · 대기"+pending:"");
         float available=right-left-dp(8);
         p.setTextSize(sp(11));
         if(p.measureText(detail)>available)detail=hit+"/"+(hit+miss);
@@ -110,8 +112,8 @@ final class ResearchScoreMatrixView extends View {
         float colW=(w-scoreRight-pad-gap*2)/2f;
         float actualX=scoreRight+gap,virtualX=actualX+colW+gap;
         line(c,"점수",pad,dp(48),12,PremiumUi.MUTED,Paint.Align.LEFT,false);
-        line(c,"실제",actualX+dp(2),dp(48),12,Color.rgb(168,199,236),Paint.Align.LEFT,false);
-        line(c,"가상",virtualX+dp(2),dp(48),12,Color.rgb(154,212,189),Paint.Align.LEFT,false);
+        line(c,"실제 · 도달/전체",actualX+dp(2),dp(48),11,Color.rgb(168,199,236),Paint.Align.LEFT,false);
+        line(c,"가상 · 도달/전체",virtualX+dp(2),dp(48),11,Color.rgb(154,212,189),Paint.Align.LEFT,false);
         int rows=grid.any(frame)&&grid.cell(frame,ResearchScoreGrid.NO_SCORE).signals>0?6:5;
         float rowH=(h-dp(58)-pad)/rows;
         for(int i=0;i<rows;i++){
