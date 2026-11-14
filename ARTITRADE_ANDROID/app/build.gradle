@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 44
-            versionName '0.7.37-AI-RESEARCH-REPORT'
+            versionCode 45
+            versionName '0.7.38-MARKET-LIVE-20BANDS'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
