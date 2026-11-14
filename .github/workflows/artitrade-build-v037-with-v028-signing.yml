@@ -1,0 +1,128 @@
+name: ARTITRADE v0.7.37 AI Analysis Signed Unified APK using Original Signing Cache
+# v037 manual AI analysis; original v036 trade evidence parity retained.
+on:
+  push:
+    branches:
+      - artitrade-phone-main-v070-live-orders-20261112
+    paths:
+      - 'ARTITRADE_ANDROID/**'
+      - '.github/workflows/artitrade-build-v036-with-v028-signing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artitrade-v037-original-signing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  signed-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 8228912652862baba6e3034150eb4a81813afba0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Recover original update signing key
+        id: signing
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Refuse different key (do not break existing phone ledger)
+        run: |
+          test "${{ steps.signing.outputs.cache-hit }}" = "true" || { echo "STABLE_SIGNING_CACHE_MISSING"; exit 1; }
+          test -f "$HOME/.android/debug.keystore"
+          EXPECTED="37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+          ACTUAL="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$ACTUAL" = "$EXPECTED" || { echo "ORIGINAL_CERTIFICATE_MISMATCH"; exit 1; }
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify v037 AI analysis, source evidence and UI regression
+        run: |
+          mkdir -p /tmp/artitrade-v036-jvm
+          javac -d /tmp/artitrade-v036-jvm \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchScoreGrid.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchBandSelection.java \
+            ARTITRADE_ANDROID/ui_tests/ResearchBandSelectionTest.java \
+            ARTITRADE_ANDROID/ui_tests/ResearchScoreGridTest.java
+          java -cp /tmp/artitrade-v036-jvm com.artitrade.mobile.ResearchBandSelectionTest
+          javac -d /tmp/artitrade-v036-jvm \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ColumnQueryV036.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SyncStatusV036.java \
+            ARTITRADE_ANDROID/ui_tests/ColumnQueryV036Test.java \
+            ARTITRADE_ANDROID/ui_tests/SyncStatusV036Test.java
+          java -cp /tmp/artitrade-v036-jvm com.artitrade.mobile.ColumnQueryV036Test
+          java -cp /tmp/artitrade-v036-jvm com.artitrade.mobile.SyncStatusV036Test
+          javac -d /tmp/artitrade-v036-jvm \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchBandSelection.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchScoreGrid.java \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java \
+            ARTITRADE_ANDROID/ui_tests/ResearchPopupV036Test.java
+          java -cp /tmp/artitrade-v036-jvm com.artitrade.mobile.ResearchPopupV036Test
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v037_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v036_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v035_*.py' -v
+          javac -d /tmp/artitrade-v036-jvm ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SignedMarketScore.java ARTITRADE_ANDROID/ui_tests/SignedMarketScoreTest.java
+          java -cp /tmp/artitrade-v036-jvm com.artitrade.mobile.SignedMarketScoreTest
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v031_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v029_research_loaders.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v028_trade_record_parity.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v030_*.py' -v
+      - name: Compile and sign unified stock+coin APK
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Validate package, version, compatible signature and stock+coin engine
+        run: |
+          APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" > /tmp/artitrade_v036_badging.txt
+          cat /tmp/artitrade_v036_badging.txt | head -n 15
+          grep -F "package: name='com.artitrade.unified.s21dex' versionCode='44'" /tmp/artitrade_v036_badging.txt
+          "$SIGNER" verify --print-certs "$APK" > /tmp/artitrade_v036_signing.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/artitrade_v036_signing.txt
+          grep -F 'market","coin"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java || true
+          grep -F '"gmo","close"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'ResearchBandSelection.matches' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          test -f ARTITRADE_ANDROID/app/src/main/python/ai_strategy_analysis_v037.py
+          grep -F 'bottomNavItem("analysis"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          test -f ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py
+          test -f ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          test -f ARTITRADE_ANDROID/app/src/main/python/market_research_v033.py
+          test -f ARTITRADE_ANDROID/app/src/main/python/research_evidence_v036.py
+          test -f ARTITRADE_ANDROID/app/src/main/python/gmo_entry_time_v036.py
+          test -f ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ColumnQueryV036.java
+          test -f ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SyncStatusV036.java
+          test -f ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/MarketRegimeGraphicView.java
+          grep -F 'marketTab=segmentItem("시장"' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          grep -F 'PolicyHistoryScope.matches' ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+          cp "$APK" ARTITRADE_UNIFIED_v0.7.37_20261114.apk
+          sha256sum ARTITRADE_UNIFIED_v0.7.37_20261114.apk > ARTITRADE_UNIFIED_v0.7.37_20261114.sha256
+          cat ARTITRADE_UNIFIED_v0.7.37_20261114.sha256
+      - name: Upload standalone signed unified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.37_20261114
+          path: |
+            ARTITRADE_UNIFIED_v0.7.37_20261114.apk
+            ARTITRADE_UNIFIED_v0.7.37_20261114.sha256
+          if-no-files-found: error
+          retention-days: 14
