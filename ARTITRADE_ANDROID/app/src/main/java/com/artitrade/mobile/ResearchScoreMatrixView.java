@@ -6,6 +6,8 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.View;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
 
 import java.util.Locale;
 
@@ -15,7 +17,37 @@ final class ResearchScoreMatrixView extends View {
     private ResearchScoreGrid grid=new ResearchScoreGrid();
     private String frame="",title="";
     private float density=1f;
-    ResearchScoreMatrixView(Context c){super(c);density=getResources().getDisplayMetrics().density;}
+    interface OnBandDoubleTapListener { void onBandDoubleTap(String frame,String band); }
+    private OnBandDoubleTapListener bandDoubleTapListener;
+    private final GestureDetector tapDetector;
+    ResearchScoreMatrixView(Context c){
+        super(c);
+        density=getResources().getDisplayMetrics().density;
+        tapDetector=new GestureDetector(c,new GestureDetector.SimpleOnGestureListener(){
+            @Override public boolean onDown(MotionEvent event){return true;}
+            @Override public boolean onDoubleTap(MotionEvent event){
+                if(bandDoubleTapListener==null || getWidth()<dp(190))return false;
+                int rowCount=grid.any(frame)&&grid.cell(frame,ResearchScoreGrid.NO_SCORE).signals>0?6:5;
+                String band=ResearchBandSelection.bandAtY(event.getY(),getHeight(),
+                    density,rowCount);
+                if(band==null)return false;
+                performClick();
+                bandDoubleTapListener.onBandDoubleTap(frame,band);
+                return true;
+            }
+        });
+        setClickable(true);
+    }
+    void setOnBandDoubleTapListener(OnBandDoubleTapListener listener){
+        bandDoubleTapListener=listener;
+    }
+    @Override public boolean onTouchEvent(MotionEvent event){
+        return tapDetector.onTouchEvent(event)||super.onTouchEvent(event);
+    }
+    @Override public boolean performClick(){
+        super.performClick();
+        return true;
+    }
     void setGrid(ResearchScoreGrid src,String frame,String title){
         this.grid=src==null?new ResearchScoreGrid():src;
         this.frame=frame==null?"":frame;
