@@ -633,6 +633,19 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         "position_lifecycle_count":len(lifecycle),
         "error":raw.get("errors",[]),
     }
+    if strategy in ("at","general","ma"):
+        # Point-in-time RSI20 entry and missed-buy evidence remains distinct
+        # from existing RSI14 and actual broker realized performance.
+        try:
+            from market_trend_v043 import rsi_research_summary
+            trend=rsi_research_summary(root,market,strategy)
+            report["market_trend_rsi20"]=trend
+            for item in frames:
+                frame_name=str(item.get("frame") or item.get("tf") or "")
+                item["market_trend_rsi20"]=trend.get("frames",{}).get(frame_name,{})
+        except (ImportError,sqlite3.Error,ValueError,OSError,TypeError):
+            report["market_trend_rsi20"]={"status":"연구자료 조회 대기"}
+
     try:
         journal.save_report(root,market,strategy,report,now)
     except (OSError,sqlite3.Error,ValueError):
