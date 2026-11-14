@@ -13,9 +13,12 @@ import sqlite3
 import tempfile
 import unittest
 import zipfile
+import sys
 from pathlib import Path
 
 ROOT=Path(__file__).parents[1]
+# Isolated AST reader now imports the verified EXE 1m observation helper.
+sys.path.insert(0,str(ROOT/"app/src/main/python"))
 RUNTIME=ROOT/"app/src/main/python/android_runtime_v078.py"
 NAMES={"_research_first_target_fills","_attach_fill_cost","_first_existing","_stock_at_research","_close_research",
        "_coin_research","_research_scope","_research_bands","_research_record"}
