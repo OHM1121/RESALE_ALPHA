@@ -11,7 +11,9 @@ public final class ResearchBandSelectionTest {
         check(ResearchBandSelection.matches("gmo",55,"gmo","41~60"),"stock GMO");
         check(ResearchBandSelection.matches("close",Double.NaN,"close","점수 없음"),"close unscored");
         check(ResearchBandSelection.matches("day",79,"day","61~80"),"daily");
-        float h=218,scale=1,rows=5,rowHeight=(h-68)/rows;
+        float h=218,scale=1;
+        int rows=5;
+        float rowHeight=(h-68)/rows;
         check("41~60".equals(ResearchBandSelection.bandAtY(59+rowHeight*2.5f,h,scale,rows)),
             "third painted band must be 41~60");
         check(ResearchBandSelection.bandAtY(30,h,scale,rows)==null,"header not a band");
