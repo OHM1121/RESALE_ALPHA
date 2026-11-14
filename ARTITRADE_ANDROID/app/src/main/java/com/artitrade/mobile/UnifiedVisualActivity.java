@@ -3758,8 +3758,8 @@ public final class UnifiedVisualActivity extends Activity {
         if(aiAnalysisRunning)return;
         final String chosenMarket=market,chosenStrategy=strategy;
         final String scope=chosenMarket+"/"+chosenStrategy;
-        final String researchJson=research(chosenMarket,chosenStrategy).toString();
-        final String ledgerJson=ledger(chosenMarket,chosenStrategy).toString();
+        final JSONObject researchPacket=research(chosenMarket,chosenStrategy);
+        final JSONObject ledgerPacket=ledger(chosenMarket,chosenStrategy);
         aiAnalysisRunning=true;
         aiAnalysisScope=scope;
         aiAnalysisReport=null;
@@ -3774,7 +3774,8 @@ public final class UnifiedVisualActivity extends Activity {
                 File folder=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
                 String raw=Python.getInstance().getModule("ai_strategy_analysis_v040")
                     .callAttr("analyze",folder.getAbsolutePath(),
-                        chosenMarket,chosenStrategy,researchJson,ledgerJson).toString();
+                        chosenMarket,chosenStrategy,
+                        researchPacket.toString(),ledgerPacket.toString()).toString();
                 report=new JSONObject(raw);
                 if(!report.optBoolean("ok",false)||
                     !scope.equals(report.optString("scope","")))
