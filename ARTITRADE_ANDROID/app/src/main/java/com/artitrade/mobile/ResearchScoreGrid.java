@@ -18,6 +18,14 @@ final class ResearchScoreGrid {
             int decided=virtualHit+virtualMiss;
             return decided==0?Double.NaN:100.0*virtualHit/decided;
         }
+        // Pending entries remain in this denominator: confirmed successes
+        // among all entries, NOT a claim that their targets failed.
+        double actualConfirmedShare(){
+            return actualCount==0?Double.NaN:100.0*actualHit/actualCount;
+        }
+        double virtualConfirmedShare(){
+            return virtualEntered==0?Double.NaN:100.0*virtualHit/virtualEntered;
+        }
     }
     private final Map<String,Cell> cells=new LinkedHashMap<>();
     private final Cell total=new Cell();
