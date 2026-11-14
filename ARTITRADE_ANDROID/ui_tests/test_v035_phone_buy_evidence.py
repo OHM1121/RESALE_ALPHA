@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]/"app/src/main/python"))
 from phone_buy_evidence_v035 import (attach_buy_evidence,attach_gmo_buy_evidence,
-                                    store_buy_evidence,read_at_open_buy_fills)
+                                    store_buy_evidence,read_at_open_buy_fills,
+                                    read_open_signal_evidence)
 
 class PhoneBuyEvidence(unittest.TestCase):
     def test_coin_base_and_ma_evidence_is_from_matching_phone_buy_fill(self):
@@ -85,6 +86,39 @@ class PhoneBuyEvidence(unittest.TestCase):
         other=[{"id":-1,"tf":"gmo","code":"278650"}]
         self.assertEqual(attach_gmo_buy_evidence(other,fills,
             {"278650":"2026-11-05"}),[])
+
+    def test_open_candidate_queries_limit_to_held_positions_but_not_recent_id_window(self):
+        templates=[
+            ("stock","at",["CREATE TABLE positions(id INT,signal_id INT,status TEXT)",
+                "CREATE TABLE v19_members(position_id INT,signal_id INT)",
+                "CREATE TABLE signals(id INT,tf TEXT,code TEXT,ref_ts TEXT,features TEXT,score REAL,decision TEXT)",
+                "INSERT INTO positions VALUES(10,1,'OPEN')",
+                "INSERT INTO v19_members VALUES(10,1)",
+                "INSERT INTO signals VALUES(1,'60m','278650','20261103100000','{}',55,'BUY')",
+                "INSERT INTO signals VALUES(2,'60m','111111','20261103100000','{}',90,'BUY')"],"278650"),
+            ("stock","ma",["CREATE TABLE positions(id INT,candidate_id INT,status TEXT)",
+                "CREATE TABLE candidates(id INT,tf TEXT,code TEXT,ref_ts TEXT,score REAL,features TEXT)",
+                "INSERT INTO positions VALUES(10,1,'OPEN')",
+                "INSERT INTO candidates VALUES(1,'60m','278650','R',55,'{}')",
+                "INSERT INTO candidates VALUES(2,'60m','111111','R',90,'{}')"],"278650"),
+            ("stock","close",["CREATE TABLE positions(id INT,signal_id INT,status TEXT)",
+                "CREATE TABLE signals(id INT,strategy TEXT,code TEXT,ts TEXT,reason_json TEXT,feature_json TEXT)",
+                "INSERT INTO positions VALUES(10,1,'OPEN')",
+                "INSERT INTO signals VALUES(1,'CLOSE','278650','R','RULE','{}')",
+                "INSERT INTO signals VALUES(2,'CLOSE','111111','R','RULE','{}')"],"278650"),
+            ("coin","base",["CREATE TABLE positions(id INT,tf TEXT,market TEXT,ref_at TEXT,status TEXT)",
+                "CREATE TABLE candidates(id INT,tf TEXT,market TEXT,ref_at TEXT,reason TEXT,score REAL,features TEXT)",
+                "INSERT INTO positions VALUES(10,'60m','KRW-BTC','REF','OPEN')",
+                "INSERT INTO candidates VALUES(1,'60m','KRW-BTC','REF','BUY',55,'{}')",
+                "INSERT INTO candidates VALUES(2,'60m','KRW-ETH','REF','BUY',90,'{}')"],"KRW-BTC")]
+        with tempfile.TemporaryDirectory() as d:
+            for market,strategy,statements,wanted in templates:
+                db=Path(d)/(market+strategy+".sqlite3")
+                with sqlite3.connect(db) as con:
+                    for stmt in statements:con.execute(stmt)
+                rows=read_open_signal_evidence(db,market,strategy)
+                self.assertEqual(len(rows),1,msg=(market,strategy))
+                self.assertEqual(rows[0].get("code",rows[0].get("market")),wanted)
 
     def test_old_at_open_position_buy_fill_not_lost_after_350_new_fills(self):
         with tempfile.TemporaryDirectory() as d:
