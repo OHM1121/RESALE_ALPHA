@@ -433,6 +433,7 @@ def capture_scope(root,market,strategy,research,ledger,now=None,market_score=Non
 
 
 def capture_packet(root,packet,now=None):
+    now=int(time.time() if now is None else now)
     data=_json_obj(packet)
     scores=_json_obj(data.get("market_research"))
     totals={"signals":0,"positions":0}
@@ -537,6 +538,11 @@ class _EvidenceWorker:
             if packet is None:continue
             try:capture_packet(self.root,packet)
             except Exception:pass
+            try:
+                from ai_entry_context_v047 import capture_packet_pending
+                capture_packet_pending(self.root,packet)
+            except (OSError,sqlite3.Error,ValueError,TypeError):
+                pass
             # Network collection runs ONLY here, never on trading or UI
             # callbacks. Cap at three instrument/timeframe queries per cycle.
             try:

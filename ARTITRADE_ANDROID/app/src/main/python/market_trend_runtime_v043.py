@@ -774,36 +774,77 @@ class Coordinator:
             return result
 
     def attach_history(self,raw):
-        """Expose mode inside original AT/MA tabs and send research-only signals."""
+        """Tag actual/virtual trend records without touching source cash/ledgers.
+
+        A broker/parent position and its trend state are the SAME holding,
+        not two holdings. A virtual missed buy is a research item, never
+        a broker PENDING order or a balance reservation.
+        """
         try:out=json.loads(raw) if isinstance(raw,str) else dict(raw)
         except (ValueError,TypeError):return raw
         out["market_trend_status"]=self.snapshot()
-        for p in self._positions.values():
+        trend_research={"stock":[],"coin":[]}
+        with self.lock:
+            current=tuple(self._positions.values())
+            virtual=tuple(self._virtual.items())
+        def target_ledger(market,strategy):
+            if market=="stock":
+                ledger=out.get("stock",{}).get("at",{}).get("ledger",{})
+                return ledger.get("ma_subledger",{}) if strategy=="ma" else ledger
+            return out.get("coin",{}).get(strategy,{}).get("ledger",{})
+        for p in current:
             packet={"id":p.position_id,"strategy":p.strategy,"code":p.symbol,
               "market":p.symbol if p.market=="coin" else "KOSPI",
               "tf":p.frame,"qty":p.qty,"entry_qty":p.original_qty,
               "qty0":p.original_qty,"entry_price":p.entry,"entry":p.entry,
               "entry_at":p.entry_at.isoformat(),"last_price":p.last_price,
               "mark":p.last_price,"paper_pnl":(p.last_price-p.entry)*p.qty,
-              "status":"OPEN","entry_mode":"마켓트렌드",
+              "status":"TREND_OPEN","entry_mode":"MARKET_TREND",
               "rsi20_live":p.__dict__.get("rsi20_live"),
               "rsi20_closed":p.__dict__.get("rsi20_closed")}
-            if p.market=="stock":
-                node=out.get("stock",{}).get("at",{}).get("ledger",{})
-                if p.strategy=="ma":node=node.get("ma_subledger",{})
-            else:node=out.get("coin",{}).get(p.strategy,{}).get("ledger",{})
-            if isinstance(node,dict):
-                node.setdefault("positions",[]).append(packet)
-        for x in self.journal.events_recent(250):
-            if x["reason"] in ("BROKER_ORDER_PREPARE",):continue
+            node=target_ledger(p.market,p.strategy)
+            if not isinstance(node,dict):continue
+            positions=node.setdefault("positions",[])
+            found=False
+            for x in positions if isinstance(positions,list) else ():
+                if not isinstance(x,dict):continue
+                if (str(x.get("id"))==str(p.position_id) and
+                    str(x.get("tf") or x.get("frame"))==p.frame and
+                    str(x.get("code") or x.get("market"))==p.symbol):
+                    x["entry_mode"]="MARKET_TREND"
+                    found=True;break
+            if not found and isinstance(positions,list):positions.append(packet)
+        for key,v in virtual:
+            node=target_ledger(v.market,v.strategy)
+            if not isinstance(node,dict):continue
+            pending=node.setdefault("pending",[])
+            if not isinstance(pending,list):continue
+            pending.append({
+                "id":"MT43:VIRTUAL:"+json.dumps(key,ensure_ascii=False),
+                "tf":v.frame,"code":v.symbol,
+                "market":v.symbol if v.market=="coin" else "KRX",
+                "strategy":v.strategy,"entry_mode":"MARKET_TREND",
+                "entry_at":v.entry_at.isoformat(),"buy_price":v.entry,
+                "status":"VIRTUAL_RESEARCH_OPEN",
+                "virtual_entered":True,"entry_observed":True,
+                "reason":"마켓트렌드 미매수 가상추적 (브로커 미주문)",
+                "ledger_is_virtual_only":True})
+        # Only RSI20 entry decisions belong in RSI20 research.
+        # SELL and INTENT events cannot masquerade as a new BUY signal.
+        for x in self.journal.events_recent(350):
+            if not str(x["event_key"]).startswith("MT43:SIG:"):continue
             item={"id":x["event_key"],"tf":x["frame"],
                   "code":x["symbol"],"market":x["market"],
-                  "ts":x["at"],"strategy":x["strategy"],"entry_mode":"마켓트렌드",
+                  "at":x["at"],"ts":x["at"],"strategy":x["strategy"],
+                  "entry_mode":"MARKET_TREND",
                   "rsi20_live":x["rsi20_live"],"rsi20_closed":x["rsi20_closed"],
-                  "score":None,"bought":x["mode"] in ("PAPER","ACTUAL"),
-                  "reason":x["reason"],"price":x["price"]}
+                  "score":None,"bought":x["mode"]=="ACTUAL",
+                  "entry_observed":x["mode"]=="VIRTUAL",
+                  "reason":x["reason"],"price":x["price"],
+                  "outcome":"REAL_FILL" if x["mode"]=="ACTUAL" else "VIRTUAL"}
             try:info=json.loads(x["payload"]);item["score"]=info.get("score")
             except (ValueError,TypeError):pass
+            trend_research[x["market"]].append(item)
             if x["market"]=="stock":
                 target=out.get("stock",{}).get("at",{})
                 if x["strategy"]=="ma":
@@ -815,8 +856,8 @@ class Coordinator:
                 target=out.get("coin",{}).get(x["strategy"],{})
                 if isinstance(target,dict):
                     target.setdefault("research",{}).setdefault("items",[]).append(item)
+        out["market_trend_research"]=trend_research
         return json.dumps(out,ensure_ascii=False,default=str)
-
 
 def set_manual_mode(market,enabled):
     """UI bridge; changes entry selection only, not an order or ledger fill."""

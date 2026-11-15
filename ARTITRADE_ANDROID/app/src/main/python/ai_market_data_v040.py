@@ -40,7 +40,7 @@ def fetch_candles(market,symbol,frame,now=None):
         endpoint=("/v1/candles/days" if frame=="day" else
                   "/v1/candles/minutes/"+str(FRAME_UPBIT[frame]))
         data=_http("https://api.upbit.com"+endpoint,
-                   {"market":symbol,"count":120})
+                   {"market":symbol,"count":170})
         if not isinstance(data,list):return [],""
         bars=[]
         for row in data:
@@ -88,7 +88,7 @@ def fetch_candles(market,symbol,frame,now=None):
 
 
 def record(root,market,strategy,symbol,frame,bars,origin,
-           signals=(),now=None):
+           signals=(),now=None,positions=()):
     if frame not in FRAME_SECONDS or not bars:return {"bars":0,"entries":0}
     now=int(time.time() if now is None else now)
     # GMO is one daily-strategy cohort, not a fabricated fifth timeframe.
@@ -96,7 +96,7 @@ def record(root,market,strategy,symbol,frame,bars,origin,
     valid=sorted((x for x in bars if x[0]+FRAME_SECONDS[frame]<=now),
                  key=lambda x:x[0])
     if not valid:return {"bars":0,"entries":0}
-    valid=valid[-160:]  # recent complete source candles; older rows remain in DB
+    valid=valid[-170:]  # SMA120 plus preceding 30 for entry-candle evidence
     indicators=compute_candle_indicators(valid)
     with _connect(root,market) as conn:
         for ts,hi,lo,close,volume in valid:
@@ -141,6 +141,14 @@ def record(root,market,strategy,symbol,frame,bars,origin,
                 (strategy,save_frame,key,event,now,now,digest,encoded,
                  "RECONSTRUCTED_PRE_ENTRY_OHLCV"))
             reconstructed+=1
+    # After the entry candle has CLOSED, write immutable close-based SMA/volume
+    # evidence. Runs on AI worker, not any order or broker callback.
+    try:
+        from ai_entry_context_v047 import capture_events
+        capture_events(root,market,strategy,signals,positions,
+                       bars=valid,symbol=symbol,frame=frame,source=origin,now=now)
+    except (sqlite3.Error,OSError,ValueError,TypeError):
+        pass
     return {"bars":len(valid),"entries":reconstructed}
 
 
@@ -168,16 +176,17 @@ def refresh_packet(root,packet,now=None,max_calls=4):
                 if frame=="gmo":frame="day"
                 if not symbol or frame not in FRAME_SECONDS:continue
                 key=(market,strategy,symbol,frame)
-                work.append((key,signals))
+                work.append((key,signals,holdings))
     unique={}
-    for key,signals in work:unique.setdefault(key,signals)
+    for key,signals,holdings in work:
+        unique.setdefault(key,(signals,holdings))
     entries=list(unique.items())
     if entries:
         n=_ROTATION%len(entries)
         entries=entries[n:]+entries[:n]
         _ROTATION+=1
     count=0
-    for key,signals in entries:
+    for key,(signals,holdings) in entries:
         if count>=max_calls:break
         last=_LAST_ATTEMPT.get(key,0)
         if now-last<300:continue
@@ -186,7 +195,8 @@ def refresh_packet(root,packet,now=None,max_calls=4):
         try:
             bars,origin=fetch_candles(market,symbol,frame,now)
             if len(bars)>=16:
-                record(root,market,strategy,symbol,frame,bars,origin,signals,now)
+                record(root,market,strategy,symbol,frame,bars,origin,signals,now,
+                       positions=holdings)
             count+=1
         except (OSError,sqlite3.Error,ValueError,TypeError,KeyError):
             count+=1

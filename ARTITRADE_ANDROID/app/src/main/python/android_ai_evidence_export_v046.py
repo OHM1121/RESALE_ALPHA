@@ -19,7 +19,9 @@ import ai_strategy_analysis_v037 as base
 
 SCHEMA="ARTITRADE_AI_DEEP_EVIDENCE_V046"
 KST=dt.timezone(dt.timedelta(hours=9))
-SOURCE=base.SOURCE
+SOURCE=dict(base.SOURCE)
+SOURCE[("stock","trend")]=("market_trend_v043.sqlite3","events")
+SOURCE[("coin","trend")]=("market_trend_v043.sqlite3","events")
 
 
 def _read_json(value):
@@ -97,33 +99,30 @@ def _trend_metrics(root,market,strategy):
         if conn is None:return {"available":False,"reason":"TREND_JOURNAL_MISSING"}
         with closing(conn):
             result={"available":True,"market":market,"strategy":strategy,
-                    "entry_actual_vs_virtual":"Separate paper/live fill events from shadow-only missed signals"}
+                    "entry_actual_vs_virtual":"PAPER/LIVE FILLED distinct from shadow-only"}
             if _has(conn,"events"):
+                where="market=?" if strategy=="trend" else "market=? AND strategy=?"
+                params=(market,) if strategy=="trend" else (market,strategy)
                 result["decision_dispositions"]=[{
                     "frame":frame,"mode":mode,"reason":reason,"n":int(count)}
-                    for frame,mode,reason,count in conn.execute("""
-                      SELECT frame,mode,reason,COUNT(*) FROM events
-                      WHERE market=? AND strategy=? AND event_key LIKE 'MT43:SIG:%'
-                      GROUP BY frame,mode,reason ORDER BY COUNT(*) DESC""",
-                      (market,strategy)).fetchall()]
+                    for frame,mode,reason,count in conn.execute(
+                      "SELECT frame,mode,reason,COUNT(*) FROM events WHERE "+where+
+                      " AND event_key LIKE 'MT43:SIG:%' "
+                      "GROUP BY frame,mode,reason ORDER BY COUNT(*) DESC",params)]
                 result["confirmed_fills"]=[{
                     "frame":frame,"execution_mode":mode,"n":int(count)}
-                    for frame,mode,count in conn.execute("""
-                      SELECT frame,mode,COUNT(*) FROM events
-                      WHERE market=? AND strategy=? AND reason='MT_BUY_FILLED'
-                      GROUP BY frame,mode ORDER BY frame,mode""",
-                      (market,strategy)).fetchall()]
+                    for frame,mode,count in conn.execute(
+                      "SELECT frame,mode,COUNT(*) FROM events WHERE "+where+
+                      " AND reason='MT_BUY_FILLED' "
+                      "GROUP BY frame,mode ORDER BY frame,mode",params)]
                 result["exit_reasons"]=[{
                     "reason":reason,"mode":mode,"n":int(count)}
-                    for reason,mode,count in conn.execute("""
-                      SELECT reason,mode,COUNT(*) FROM events
-                      WHERE market=? AND strategy=?
-                        AND event_key LIKE 'MT43:SELL:%'
-                      GROUP BY reason,mode ORDER BY COUNT(*) DESC""",
-                      (market,strategy)).fetchall()]
+                    for reason,mode,count in conn.execute(
+                      "SELECT reason,mode,COUNT(*) FROM events WHERE "+where+
+                      " AND event_key LIKE 'MT43:SELL:%' "
+                      "GROUP BY reason,mode ORDER BY COUNT(*) DESC",params)]
                 result["events_total"]=conn.execute(
-                    "SELECT COUNT(*) FROM events WHERE market=? AND strategy=?",
-                    (market,strategy)).fetchone()[0]
+                    "SELECT COUNT(*) FROM events WHERE "+where,params).fetchone()[0]
                 result["all_events_in_original_db"]=True
             if _has(conn,"gate_events"):
                 row=conn.execute("""
@@ -320,6 +319,14 @@ def build_reports(root_path,scope,analysis_json,ui_runtime_json="{}"):
         "trend_signal_decisions":_trend_metrics(root,market,strategy),
         "source_account_counts":_account_metrics(root,market,strategy),
         "runtime_performance_snapshot":telemetry,
+        "entry_candle_methodology":{
+            "moving_average":"FINAL entry-candle closing price vs SMA(7,20,60,120)",
+            "touch":"closing price equals moving-average line (not intrabar high/low)",
+            "high_low_slopes":"OLS of previous 30 completed highs/lows, price and % per bar",
+            "volume":"final entry-candle volume vs preceding 30 completed bars",
+            "execution_strength":"only timestamped source observation at entry, else null"},
+        "entry_candle_summary":__import__("ai_entry_context_v047")
+             .summarize(root,market,None if strategy=="trend" else "ORIGINAL"),
         "quality_warnings":[
             "원본 데이터가 없으면 0으로 보정하지 않고 누락 사실을 표시",
             "수동 마켓트렌드 전환과 거래 시간봉의 역사적 매수 근거는 별도 조회",
@@ -337,6 +344,9 @@ def build_reports(root_path,scope,analysis_json,ui_runtime_json="{}"):
                         "scope":scope,"sources":_source_schema(root,market,strategy)},
                        ensure_ascii=False,indent=2,allow_nan=False),
         "analysis/AI_README_V046.txt":GUIDE,
+        "analysis/ENTRY_CANDLE_EVIDENCE_V047.json":
+            __import__("ai_entry_context_v047").export_rows(
+                 root,market,None if strategy=="trend" else "ORIGINAL"),
     }
     for name,value in outputs.items():
         if len(value.encode("utf-8"))>8*1024*1024:

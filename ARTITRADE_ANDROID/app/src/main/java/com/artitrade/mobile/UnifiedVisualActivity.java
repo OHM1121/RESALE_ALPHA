@@ -141,6 +141,8 @@ public final class UnifiedVisualActivity extends Activity {
     private JSONObject aiAnalysisReport=null;
     private String aiAnalysisScope="";
     private String aiAnalysisError="";
+    // Research/AI cohorts are exclusive; parent wallets stay unchanged.
+    private boolean aiTrendOnly=false,researchTrendOnly=false;
     private String historyFilterStock="current",historyFilterCoin="current";
     // History is never truncated; only the visible Android Views are paged.
     private String historyContext="";
@@ -1488,6 +1490,118 @@ public final class UnifiedVisualActivity extends Activity {
         return out;
     }
 
+    private boolean isTrendRow(JSONObject row){
+        if(row==null)return false;
+        String mode=row.optString("entry_mode","").toUpperCase(Locale.ROOT);
+        String status=row.optString("status","").toUpperCase(Locale.ROOT);
+        String id=row.optString("id","");
+        String reason=row.optString("reason","").toUpperCase(Locale.ROOT);
+        return mode.contains("MARKET_TREND")||mode.contains("마켓트렌드")||
+            status.startsWith("TREND_")||id.startsWith("MT43:")||
+            reason.startsWith("MARKET_TREND_");
+    }
+
+    private boolean hasTrendCohort(){
+        return ("stock".equals(market)&&("at".equals(strategy)||"ma".equals(strategy)))||
+               ("coin".equals(market)&&("general".equals(strategy)||"ma".equals(strategy)));
+    }
+
+    private String aiScope(){
+        return market+"/"+(aiTrendOnly&&hasTrendCohort()?"trend":strategy);
+    }
+
+    private void renderCohortToggle(boolean analysis){
+        if(!hasTrendCohort())return;
+        final boolean selected=analysis?aiTrendOnly:researchTrendOnly;
+        LinearLayout bar=new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setPadding(0,dp(2),0,dp(7));
+        Button original=button("기존 기준봉·MA",!selected,()->{
+            if(analysis)aiTrendOnly=false;
+            else researchTrendOnly=false;
+            render();
+        });
+        Button trend=button("마켓트렌드 RSI20",selected,()->{
+            if(analysis)aiTrendOnly=true;
+            else researchTrendOnly=true;
+            render();
+        });
+        original.setTextSize(13);
+        trend.setTextSize(13);
+        bar.addView(original,new LinearLayout.LayoutParams(0,dp(42),1));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(42),1);
+        lp.setMargins(dp(7),0,0,0);
+        bar.addView(trend,lp);
+        content.addView(bar,new LinearLayout.LayoutParams(-1,dp(51)));
+    }
+
+    private void renderTrendResearch(){
+        renderCohortToggle(false);
+        JSONObject local=copyCache().optJSONObject("local_records");
+        JSONObject trends=local==null?null:local.optJSONObject("market_trend_research");
+        JSONArray all=trends==null?null:trends.optJSONArray(market);
+        if(all==null)all=new JSONArray();
+        java.util.ArrayList<JSONObject> entries=new java.util.ArrayList<>();
+        for(int i=0;i<all.length();i++){
+            JSONObject row=all.optJSONObject(i);
+            if(row!=null&&isTrendRow(row))entries.add(row);
+        }
+        int fills=0,virtual=0;
+        java.util.Map<String,int[]> byFrame=new java.util.LinkedHashMap<>();
+        for(String frame:new String[]{"5m","30m","60m","day"})
+            byFrame.put(frame,new int[2]);
+        for(JSONObject row:entries){
+            boolean filled=row.optBoolean("bought",false);
+            int[] counts=byFrame.get(timeFrameOf(row));
+            if(counts!=null)counts[filled?0:1]++;
+            if(filled)fills++;else virtual++;
+        }
+        LinearLayout head=card();
+        TextView title=text("마켓트렌드 RSI(20) · "+("stock".equals(market)?"주식":"코인"),22);
+        title.setTypeface(null,Typeface.BOLD);
+        head.addView(title);
+        TextView label=text("실제 매수 "+fills+"건 · 가상 추적 "+virtual+
+            "건 · 화면 최근 "+entries.size()+"건 (전체 원본은 ZIP)",13);
+        label.setTextColor(PremiumUi.MUTED);
+        label.setPadding(0,dp(6),0,dp(8));
+        head.addView(label);
+        Button source=button("마켓트렌드 원본 포함 ZIP",false,
+            ()->requestCombinedResearch(market));
+        head.addView(source,new LinearLayout.LayoutParams(-1,dp(45)));
+        content.addView(head);
+        for(java.util.Map.Entry<String,int[]> e:byFrame.entrySet()){
+            LinearLayout tile=card();
+            int[] counts=e.getValue();
+            TextView t=text(tfLabel(e.getKey())+" · 실매수 "+counts[0]+
+                "건 / 미매수 가상 "+counts[1]+"건",16);
+            tile.addView(t);
+            content.addView(tile);
+        }
+        if(entries.isEmpty()){
+            empty("마켓트렌드 신호기록 없음 · 시장/전략별 원본 SQLite 확인");
+            return;
+        }
+        int offset=Math.min(Math.max(0,historyOffset),Math.max(0,entries.size()-1));
+        int last=Math.min(entries.size(),offset+40);
+        for(int i=offset;i<last;i++){
+            JSONObject row=entries.get(i);
+            LinearLayout tile=card();
+            TextView name=text(nameOf(row)+" · "+
+                tfLabel(timeFrameOf(row))+
+                (row.optBoolean("bought",false)?" · 매수체결":" · 미매수 가상"),16);
+            name.setTypeface(null,Typeface.BOLD);
+            tile.addView(name);
+            TextView detail=text("시장점수 "+row.optString("score","미기록")+
+                " · RSI20 "+row.optString("rsi20_live","미기록")+
+                " · 사유 "+row.optString("reason","미기록"),12);
+            detail.setTextColor(PremiumUi.MUTED);
+            detail.setPadding(0,dp(5),0,0);
+            tile.addView(detail);
+            content.addView(tile);
+        }
+        addHistoryPager("research",entries.size());
+    }
+
     private double num(JSONObject o,String... keys){
         for(String k:keys){
             if(o.has(k)&&!o.isNull(k)){
@@ -1577,7 +1691,11 @@ public final class UnifiedVisualActivity extends Activity {
         if(items==null&&"ma".equals(s))items=l.optJSONArray("research");
         if(items==null)items=new JSONArray();
         JSONArray filtered=new JSONArray();
-        for(int i=0;i<items.length();i++){JSONObject r=items.optJSONObject(i);if(r!=null&&("coin".equals(m)||"close".equals(s)||belongs(r,m,s)))filtered.put(r);}
+        for(int i=0;i<items.length();i++){
+            JSONObject r=items.optJSONObject(i);
+            if(r!=null&&("coin".equals(m)||"close".equals(s)||belongs(r,m,s))&&
+                !isTrendRow(r))filtered.put(r);
+        }
         st.research=filtered;
         st.candidates=rs.has("signals")?rs.optInt("signals",filtered.length()):filtered.length();
         st.bought=rs.has("bought")?rs.optInt("bought",0):0;
@@ -2089,7 +2207,8 @@ public final class UnifiedVisualActivity extends Activity {
             bindSymbolFourTap(symbol,p,holding.scopeMarket);
             top.addView(symbol,new LinearLayout.LayoutParams(0,dp(26),1));
             TextView origin=text(scopeTitle(holding.scopeMarket,holding.scopeStrategy)+
-                " "+tfLabel(timeFrameOf(p)),11);
+                " "+tfLabel(timeFrameOf(p))+
+                (isTrendRow(p)?" · 마켓트렌드":""),11);
             origin.setTextColor(PremiumUi.MUTED);
             top.addView(origin);
             tile.addView(top);
@@ -2696,7 +2815,8 @@ public final class UnifiedVisualActivity extends Activity {
             double profit=tradePnL(r,kind);
             double rate=tradeReturnPct(r,kind,profit);
             String side="executions".equals(kind)?tradeSideOf(r):
-                "pending".equals(kind)?"대기":"보유";
+                "pending".equals(kind)?
+                    (r.optBoolean("ledger_is_virtual_only",false)?"가상체결":"대기"):"보유";
             boolean isSell="매도".equals(side),isBuy="매수".equals(side);
             int chipBg=isSell?Color.rgb(79,34,46):
                 isBuy?Color.rgb(28,72,67):
@@ -2712,7 +2832,8 @@ public final class UnifiedVisualActivity extends Activity {
             TextView badge=tradeStage(side,chipBg,chipText);
             top.addView(badge,new LinearLayout.LayoutParams(dp(64),dp(36)));
             TextView symbol=text(nameOf(r)+" · "+
-                HistorySelection.strategyTag(source,marketWide?item.frame:timeFrameOf(r)),16);
+                HistorySelection.strategyTag(source,marketWide?item.frame:timeFrameOf(r))+
+                (isTrendRow(r)?" · 마켓트렌드":""),16);
             symbol.setTypeface(null,Typeface.BOLD);
             symbol.setSingleLine(true);
             symbol.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -3855,7 +3976,7 @@ public final class UnifiedVisualActivity extends Activity {
     // AI analysis export reuses the existing complete WAL-safe ledger backup.
     // No report is extracted until the user selects an Android SAF destination.
     private void requestAiEvidenceExport(){
-        final String chosenScope=market+"/"+strategy;
+        final String chosenScope=aiScope();
         if(aiAnalysisRunning||aiAnalysisReport==null||
             !chosenScope.equals(aiAnalysisScope)||
             !chosenScope.equals(aiAnalysisReport.optString("scope",""))){
@@ -3881,7 +4002,8 @@ public final class UnifiedVisualActivity extends Activity {
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         picker.putExtra(Intent.EXTRA_TITLE,
             "ARTITRADE_AI_DEEP_"+market.toUpperCase(Locale.ROOT)+"_"+
-            strategy.toUpperCase(Locale.ROOT)+"_"+stamp+".zip");
+            (aiTrendOnly&&hasTrendCohort()?"TREND":strategy.toUpperCase(Locale.ROOT))+
+            "_"+stamp+".zip");
         startActivityForResult(picker,REQUEST_EXPORT_AI_EVIDENCE);
     }
 
@@ -3889,7 +4011,8 @@ public final class UnifiedVisualActivity extends Activity {
     // order, strategy setting, exchange execution, or source database is edited.
     private void runAiAnalysis(){
         if(aiAnalysisRunning)return;
-        final String chosenMarket=market,chosenStrategy=strategy;
+        final String chosenMarket=market;
+        final String chosenStrategy=aiTrendOnly&&hasTrendCohort()?"trend":strategy;
         final String scope=chosenMarket+"/"+chosenStrategy;
         final JSONObject researchPacket=research(chosenMarket,chosenStrategy);
         final JSONObject ledgerPacket=ledger(chosenMarket,chosenStrategy);
@@ -4084,13 +4207,16 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderAiAnalysis(){
-        final String scope=market+"/"+strategy;
+        renderCohortToggle(true);
+        final String scope=aiScope();
         LinearLayout header=card();
         header.setPadding(dp(14),dp(11),dp(14),dp(11));
         TextView sub=text("AI 전략 분석",16);
         sub.setTextColor(PremiumUi.MUTED);
         header.addView(sub);
-        TextView title=text(scopeTitle(market,strategy),26);
+        TextView title=text(scope.endsWith("/trend")?
+            ("stock".equals(market)?"주식":"코인")+" · 마켓트렌드":
+            scopeTitle(market,strategy),26);
         title.setTypeface(null,Typeface.BOLD);
         title.setPadding(0,dp(3),0,dp(7));
         header.addView(title);
@@ -4170,6 +4296,11 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderResearch(){
+        if(researchTrendOnly&&hasTrendCohort()){
+            renderTrendResearch();
+            return;
+        }
+        renderCohortToggle(false);
         String filter=activeHistoryFilter();
         String scope="gmo".equals(filter)||"close".equals(filter)?filter:strategy;
         boolean combined="all".equals(filter);

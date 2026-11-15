@@ -27,6 +27,66 @@ FRAME_NAMES={"5m":"5분봉","30m":"30분봉","60m":"60분봉","day":"일봉","gm
 TITLES={("stock","at"):"주식 · 기준봉",("stock","ma"):"주식 · MA",
         ("stock","gmo"):"주식 · 수급매매",("stock","close"):"주식 · 종가베팅",
         ("coin","general"):"코인 · 기준봉",("coin","ma"):"코인 · MA"}
+def _exclude_trend_cohort(root,market,strategy,raw,research,ledger,archive):
+    """Remove RSI20 parent-ledger rows by exact original position ID.
+
+    A trend position may later have status=CLOSED; status-only filtering would
+    incorrectly leak the completed trade into native AT/MA AI results.
+    """
+    if strategy not in ("at","general","ma"):
+        return raw,research,ledger,archive
+    ids=set()
+    keys=set()
+    path=Path(root)/"market_trend_v043.sqlite3"
+    if path.is_file():
+        try:
+            with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
+                                 uri=True,timeout=3) as conn:
+                for pid,frame,symbol in conn.execute(
+                    "SELECT position_id,frame,symbol FROM position_state "
+                    "WHERE market=? AND strategy=?",(market,strategy)):
+                    ids.add((str(pid),str(frame),str(symbol)))
+                    keys.add(str(pid)+"|"+str(frame)+"|"+str(symbol))
+        except (OSError,sqlite3.Error):
+            pass
+    def trend_row(row):
+        if not isinstance(row,dict):return False
+        mode=str(row.get("entry_mode") or "").upper()
+        status=str(row.get("status") or "").upper()
+        if "MARKET_TREND" in mode or "마켓트렌드" in mode or status.startswith("TREND_"):
+            return True
+        frame=journal._frame(row.get("tf") or row.get("frame"),strategy)
+        symbol=str(row.get("code") or row.get("market") or "")
+        pid=str(row.get("id") or row.get("position_id") or "")
+        return (pid,frame,symbol) in ids
+    def trend_fill(row):
+        if trend_row(row):return True
+        reason=str(row.get("reason") or "")
+        if reason.startswith("MARKET_TREND_"):return True
+        return (str(row.get("position_id") or ""),
+                journal._frame(row.get("tf") or row.get("frame"),strategy),
+                str(row.get("code") or row.get("market") or "")) in ids
+    raw=dict(raw)
+    raw["positions"]=[r for r in raw.get("positions",[]) if not trend_row(r)]
+    raw["executions"]=[r for r in raw.get("executions",[]) if not trend_fill(r)]
+    research=dict(research)
+    research["items"]=[r for r in research.get("items",[])
+        if isinstance(r,dict) and
+        not ("MARKET_TREND" in str(r.get("entry_mode") or "").upper() or
+             "마켓트렌드" in str(r.get("entry_mode") or "") or
+             str(r.get("id") or "").startswith("MT43:"))]
+    ledger=dict(ledger)
+    ledger["positions"]=[r for r in ledger.get("positions",[]) if not trend_row(r)]
+    ledger["executions"]=[r for r in ledger.get("executions",[]) if not trend_fill(r)]
+    archive=dict(archive)
+    archive["positions"]=[r for r in archive.get("positions",[])
+        if r.get("position_key") not in keys and
+        not str(r.get("status") or "").upper().startswith("TREND_")]
+    archive["features"]=[r for r in archive.get("features",[])
+        if not str(r.get("signal_key") or "").startswith("MT43:")]
+    return raw,research,ledger,archive
+
+
 # Order-entry features only. Holding-market averages are described separately.
 RULES=(
     ("market_score","<=",-20,"시장점수 약세","약세장 매수 보류"),
@@ -584,6 +644,12 @@ def attach_market_band_research(frame_result,band_data):
 
 
 def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
+    if strategy=="trend":
+        if market not in ("stock","coin"):
+            return json.dumps({"ok":False,"message":"시장 구분 오류"},ensure_ascii=False)
+        from ai_trend_analysis_v047 import analyze as trend_analyze
+        return json.dumps(trend_analyze(root,market),ensure_ascii=False,
+                          allow_nan=False)
     if (market,strategy) not in SCOPES:
         return json.dumps({"ok":False,"message":"선택 전략 확인 필요"},ensure_ascii=False)
     from time import time
@@ -603,6 +669,8 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         archive=journal.stored(root,market,strategy)
     except (OSError,sqlite3.Error,ValueError):
         archive={"features":[],"positions":[],"market_scores":[],"candles":[],"indicators":[]}
+    raw,research,ledger,archive=_exclude_trend_cohort(
+        root,market,strategy,raw,research,ledger,archive)
     events=old._market_events(root,market)
     # v040 market-score journal also survives scoped stock-only or coin-only
     # research export/restore when the original shared score DB is absent.
@@ -663,18 +731,9 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
             "all_original_rows_in_verified_export":True},
         "error":raw.get("errors",[]),
     }
-    if strategy in ("at","general","ma"):
-        # Point-in-time RSI20 entry and missed-buy evidence remains distinct
-        # from existing RSI14 and actual broker realized performance.
-        try:
-            from market_trend_v043 import rsi_research_summary
-            trend=rsi_research_summary(root,market,strategy)
-            report["market_trend_rsi20"]=trend
-            for item in frames:
-                frame_name=str(item.get("frame") or item.get("tf") or "")
-                item["market_trend_rsi20"]=trend.get("frames",{}).get(frame_name,{})
-        except (ImportError,sqlite3.Error,ValueError,OSError,TypeError):
-            report["market_trend_rsi20"]={"status":"연구자료 조회 대기"}
+    # RSI20 history is a separate 'trend' cohort. Never attach it to
+    # original AT/MA AI analysis or historical improvement claims.
+    report["entry_mode"]="ORIGINAL"
 
     try:
         journal.save_report(root,market,strategy,report,now)
