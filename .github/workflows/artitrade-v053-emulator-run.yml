@@ -5,7 +5,7 @@ on:
     paths:
       - 'ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v053.py'
       - '.github/workflows/artitrade-v053-emulator-run.yml'
-  workflow_dispatch
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
