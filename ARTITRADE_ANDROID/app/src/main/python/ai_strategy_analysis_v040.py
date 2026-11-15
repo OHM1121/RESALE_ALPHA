@@ -49,41 +49,45 @@ def _exclude_trend_cohort(root,market,strategy,raw,research,ledger,archive):
                     keys.add(str(pid)+"|"+str(frame)+"|"+str(symbol))
         except (OSError,sqlite3.Error):
             pass
-    def trend_row(row):
+    def explicitly_trend(row):
         if not isinstance(row,dict):return False
         mode=str(row.get("entry_mode") or "").upper()
         status=str(row.get("status") or "").upper()
-        if "MARKET_TREND" in mode or "마켓트렌드" in mode or status.startswith("TREND_"):
-            return True
+        reason=str(row.get("reason") or "").upper()
+        cohort=str(row.get("strategy") or "").lower()
+        references=("id","position_id","signal_id","candidate_id",
+                    "signal_key","position_key","event_key")
+        return ("MARKET_TREND" in mode or "마켓트렌드" in mode or
+                status.startswith("TREND_") or reason.startswith("MARKET_TREND_") or
+                cohort=="trend" or any(str(row.get(k) or "").startswith(("MT43:","MT54:"))
+                                      for k in references))
+    def trend_row(row):
+        if explicitly_trend(row):return True
+        if not isinstance(row,dict):return False
         frame=journal._frame(row.get("tf") or row.get("frame"),strategy)
         symbol=str(row.get("code") or row.get("market") or "")
         pid=str(row.get("id") or row.get("position_id") or "")
         return (pid,frame,symbol) in ids
     def trend_fill(row):
         if trend_row(row):return True
-        reason=str(row.get("reason") or "")
-        if reason.startswith("MARKET_TREND_"):return True
         return (str(row.get("position_id") or ""),
                 journal._frame(row.get("tf") or row.get("frame"),strategy),
                 str(row.get("code") or row.get("market") or "")) in ids
     raw=dict(raw)
+    raw["candidates"]=[r for r in raw.get("candidates",[]) if not explicitly_trend(r)]
     raw["positions"]=[r for r in raw.get("positions",[]) if not trend_row(r)]
     raw["executions"]=[r for r in raw.get("executions",[]) if not trend_fill(r)]
     research=dict(research)
     research["items"]=[r for r in research.get("items",[])
-        if isinstance(r,dict) and
-        not ("MARKET_TREND" in str(r.get("entry_mode") or "").upper() or
-             "마켓트렌드" in str(r.get("entry_mode") or "") or
-             str(r.get("id") or "").startswith("MT43:"))]
+        if isinstance(r,dict) and not explicitly_trend(r)]
     ledger=dict(ledger)
     ledger["positions"]=[r for r in ledger.get("positions",[]) if not trend_row(r)]
     ledger["executions"]=[r for r in ledger.get("executions",[]) if not trend_fill(r)]
     archive=dict(archive)
     archive["positions"]=[r for r in archive.get("positions",[])
-        if r.get("position_key") not in keys and
-        not str(r.get("status") or "").upper().startswith("TREND_")]
+        if r.get("position_key") not in keys and not explicitly_trend(r)]
     archive["features"]=[r for r in archive.get("features",[])
-        if not str(r.get("signal_key") or "").startswith("MT43:")]
+        if not explicitly_trend(r)]
     return raw,research,ledger,archive
 
 
@@ -670,6 +674,11 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     research=journal._json_obj(research_json)
     ledger=journal._json_obj(ledger_json)
     raw=old._read_source(root,market,strategy)
+    # Filter native AT/MA research *before* snapshotting it. Some legacy
+    # original ledgers contain RSI20 entries, but the trend cohort now owns
+    # an independent AI scope. Never delete or rewrite historical source rows.
+    raw,research,ledger,_=_exclude_trend_cohort(
+        root,market,strategy,raw,research,ledger,{})
     # Inspect both the currently visible phone snapshots and the underlying
     # original EXE historical tables, rather than requiring an already-funded
     # UI research popup. The original DBs remain read-only.

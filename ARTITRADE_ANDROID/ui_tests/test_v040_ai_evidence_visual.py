@@ -194,7 +194,7 @@ class EvidenceV040(unittest.TestCase):
     def test_native_visual_contains_numeric_geometry_not_old_text_report(self):
         self.assertIn('getModule("ai_strategy_analysis_v040")',VISUAL)
         self.assertIn('final String chosenMarket=market;',VISUAL)
-        self.assertIn('final String chosenStrategy=aiTrendOnly&&hasTrendCohort()?"trend":strategy;',VISUAL)
+        self.assertIn('final String chosenStrategy=strategy;',VISUAL)
         self.assertIn('scope.equals(report.optString("scope",""))',VISUAL)
         self.assertIn('private void renderAiAnalysis()',VISUAL)
         for label in ("손실 선행조건","반복 하락패턴","반복 상승패턴","개선 전략",

@@ -1,0 +1,51 @@
+name: ARTITRADE v056 AI cohort isolation validation
+on:
+  push:
+    branches:
+      - feature-artitrade-v056-ai-scope-isolation-20261116
+    paths:
+      - '.github/workflows/artitrade-v056-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Compile Python and all affected strategy AI tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for p in test_v056_ai_scope.py 'test_v054_*.py' 'test_v053_*.py' \
+                   'test_v052_*.py' test_v047_entry_context_cohort.py \
+                   test_v040_ai_evidence_visual.py test_v037_ai_strategy_analysis.py \
+                   'test_v045_*.py' 'test_v051_*.py' test_v046_perf_evidence_ui.py \
+                   test_android_ledger_backup.py; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$p" -v
+          done
+      - name: Compile Android unified debug using non-production test key
+        working-directory: ARTITRADE_ANDROID
+        env:
+          CI: 'false'
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Assert package and upgrade version, non-production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='63'"
+          echo "TEST_ONLY_APK_NOT_FOR_INSTALL"

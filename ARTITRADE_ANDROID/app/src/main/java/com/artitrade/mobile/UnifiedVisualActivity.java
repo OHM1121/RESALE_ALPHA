@@ -142,7 +142,7 @@ public final class UnifiedVisualActivity extends Activity {
     private String aiAnalysisScope="";
     private String aiAnalysisError="";
     // Research/AI cohorts are exclusive; parent wallets stay unchanged.
-    private boolean aiTrendOnly=false,researchTrendOnly=false;
+    private boolean researchTrendOnly=false;
     private String historyFilterStock="current",historyFilterCoin="current";
     // History is never truncated; only the visible Android Views are paged.
     private String historyContext="";
@@ -1521,23 +1521,21 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String aiScope(){
-        return market+"/"+(aiTrendOnly&&hasTrendCohort()?"trend":strategy);
+        return market+"/"+strategy;
     }
 
-    private void renderCohortToggle(boolean analysis){
+    private void renderResearchCohortToggle(){
         if(!hasTrendCohort())return;
-        final boolean selected=analysis?aiTrendOnly:researchTrendOnly;
+        final boolean selected=researchTrendOnly;
         LinearLayout bar=new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setPadding(0,dp(2),0,dp(7));
         Button original=button("기존 기준봉·MA",!selected,()->{
-            if(analysis)aiTrendOnly=false;
-            else researchTrendOnly=false;
+            researchTrendOnly=false;
             render();
         });
         Button trend=button("마켓트렌드 RSI20",selected,()->{
-            if(analysis)aiTrendOnly=true;
-            else researchTrendOnly=true;
+            researchTrendOnly=true;
             render();
         });
         original.setTextSize(13);
@@ -1550,7 +1548,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderTrendResearch(){
-        renderCohortToggle(false);
+        renderResearchCohortToggle();
         JSONObject local=copyCache().optJSONObject("local_records");
         JSONObject trends=local==null?null:local.optJSONObject("market_trend_research");
         JSONArray all=trends==null?null:trends.optJSONArray(market);
@@ -4059,7 +4057,7 @@ public final class UnifiedVisualActivity extends Activity {
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         picker.putExtra(Intent.EXTRA_TITLE,
             "ARTITRADE_AI_DEEP_"+market.toUpperCase(Locale.ROOT)+"_"+
-            (aiTrendOnly&&hasTrendCohort()?"TREND":strategy.toUpperCase(Locale.ROOT))+
+            strategy.toUpperCase(Locale.ROOT)+
             "_"+stamp+".zip");
         startActivityForResult(picker,REQUEST_EXPORT_AI_EVIDENCE);
     }
@@ -4069,7 +4067,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void runAiAnalysis(){
         if(aiAnalysisRunning)return;
         final String chosenMarket=market;
-        final String chosenStrategy=aiTrendOnly&&hasTrendCohort()?"trend":strategy;
+        final String chosenStrategy=strategy;
         final String scope=chosenMarket+"/"+chosenStrategy;
         final JSONObject researchPacket=research(chosenMarket,chosenStrategy);
         final JSONObject ledgerPacket=ledger(chosenMarket,chosenStrategy);
@@ -4499,7 +4497,6 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderAiAnalysis(){
-        renderCohortToggle(true);
         final String scope=aiScope();
         LinearLayout header=card();
         header.setPadding(dp(14),dp(11),dp(14),dp(11));
@@ -4555,7 +4552,7 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject report=aiAnalysisReport;
         if(!scope.equals(report.optString("scope","")))return;
 
-        addTrendResearchCard(report);
+        if("trend".equals(strategy))addTrendResearchCard(report);
         addApprovedEvidenceCard(report);
         addComprehensiveV052Card(report);
         addPostSaleV053Card(report);
@@ -4595,7 +4592,7 @@ public final class UnifiedVisualActivity extends Activity {
             renderTrendResearch();
             return;
         }
-        renderCohortToggle(false);
+        renderResearchCohortToggle();
         String filter=activeHistoryFilter();
         String scope="gmo".equals(filter)||"close".equals(filter)?filter:strategy;
         boolean combined="all".equals(filter);
