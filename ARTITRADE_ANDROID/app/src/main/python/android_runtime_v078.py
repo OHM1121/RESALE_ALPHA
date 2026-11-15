@@ -9,16 +9,47 @@ import sqlite3
 import hashlib, hmac, json, uuid, time
 import threading
 import math
+import re
 from collections import Counter
 from urllib.parse import urlencode
 import android_live_bridge as _core
 from android_sqlite_reader import db_rows
+from android_live_position_guard_v049 import (
+    refuse_paper_sell_if_live_open, UnsafePaperExit)
 
 # Bundled original EXE bridge lacks this read-only history helper.
 # Add the accessor without modifying strategy or order state machines.
 if not hasattr(_core, '_db_rows'):
     _core._db_rows = db_rows
 import d_live as _stock_feed_core
+
+# The original execution proxy allows PAPER fills whenever LIVE is disabled.
+# A restored broker position must not be paper-closed after an MSERVER lease
+# loss. Inspect only existing broker FILLED/uncertain evidence, never invent
+# broker holdings, and block before the original SQLite execution is inserted.
+_ORIGINAL_PROXY_BEFORE = _core.LiveConnectionProxy._before
+
+def _guard_live_position_from_paper_exit(self, sql, params=()):
+    text=" ".join(str(sql).split())
+    match=re.search(
+        r"INSERT(?:\\s+OR\\s+IGNORE|\\s+OR\\s+REPLACE)?\\s+INTO\\s+executions\\s*\\((.*?)\\)",
+        text,re.IGNORECASE)
+    if match and isinstance(params,(list,tuple)):
+        columns=[x.strip().strip('"\u0060[]').lower() for x in match.group(1).split(",")]
+        if len(columns)<=len(params):
+            record=dict(zip(columns,params))
+            if str(record.get("side") or "").upper()=="SELL":
+                symbol=str(record.get("market") or record.get("code") or "")
+                market="coin" if symbol.startswith("KRW-") else "stock"
+                if not self._rt.live_enabled(market):
+                    try:
+                        refuse_paper_sell_if_live_open(self._rt.root,market,symbol)
+                    except UnsafePaperExit as unsafe:
+                        self._rt._err("paper_exit_of_live_holding_blocked",unsafe)
+                        raise
+    return _ORIGINAL_PROXY_BEFORE(self,sql,params)
+
+_core.LiveConnectionProxy._before = _guard_live_position_from_paper_exit
 
 # Preserve the original EXE state machines. Only observe the transport progress
 # which the Android bridge previously discarded, and surface fatal startup errors.
