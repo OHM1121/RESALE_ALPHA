@@ -109,6 +109,7 @@ class Tracker:
         self._queue=queue.Queue(maxsize=MAX_QUEUE)
         self._dropped=0
         self._last_scan=0.0
+        self._source_signature=None
         self._error=""
         self._last_stock_watch_gap=0
         self._last_coin_watch_gap=0
@@ -318,10 +319,36 @@ class Tracker:
             con.commit()
         return total
 
+    def _source_signature_now(self):
+        # Re-reading every candidate and order in every SQLite on a 20-second
+        # poll adds load without new evidence. WAL is part of the signature.
+        paths=("stock/ARTITRADE_D.sqlite3",
+               "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+               "stock/close/AT_CLOSE_PAPER.sqlite3",
+               "coin/base/upbit_paper.sqlite3",
+               "coin/ma/upbit_paper.sqlite3",
+               "stock/PROJECTGMO_V1.0_account_state.json",
+               "stock/PROJECTGMO_V1.0_research.sqlite3",
+               "market_trend_v043.sqlite3")
+        result=[]
+        for relative in paths:
+            source=self.root/relative
+            for tail in ("","-wal"):
+                file=Path(str(source)+tail)
+                try:
+                    info=file.stat()
+                    result.append((relative+tail,info.st_size,info.st_mtime_ns))
+                except OSError:
+                    result.append((relative+tail,None,None))
+        return tuple(result)
+
     def scan_sources(self,now=None):
         from post_exit_sources_v053 import scan
         instant=int(time.time() if now is None else now)
-        scans,problems=scan(self.root,instant)
+        signature=self._source_signature_now()
+        changed=signature!=self._source_signature
+        scans,problems=scan(self.root,instant) if changed else ([],[])
+        if changed and not problems:self._source_signature=signature
         added=0
         # Historical pre-v053 closes are preserved in the original signed
         # ledgers; there are no recorded post-sale ticks to backfill blindly.
@@ -347,7 +374,8 @@ class Tracker:
             self._last_scan=time.monotonic()
             self._error="; ".join(problems[:4])
         self._refresh_watch(instant)
-        return {"cases_seen":added,"problems":problems[:12]}
+        return {"cases_seen":added,"sources_changed":changed,
+                "problems":problems[:12]}
 
     def _run(self):
         # Separate research-only worker never waits on a brokerage order.
