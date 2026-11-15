@@ -651,6 +651,16 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         "feature_snapshots":len(archive["features"]),
         "position_snapshots":len(archive["positions"]),
         "position_lifecycle_count":len(lifecycle),
+        "source_record_counts":{
+            "candidate_table_total":raw.get("total",0),
+            "candidate_rows_loaded":len(raw.get("candidates",[])),
+            "position_rows_loaded":len(raw.get("positions",[])),
+            "execution_rows_loaded":len(raw.get("executions",[])),
+            "source_rows_truncated":bool(raw.get("truncated",False)),
+            "archive_preload_max_per_category":8000,
+            "raw_candidate_analysis_limit":old.ROWS_LIMIT,
+            "raw_execution_analysis_limit":old.FILL_LIMIT,
+            "all_original_rows_in_verified_export":True},
         "error":raw.get("errors",[]),
     }
     if strategy in ("at","general","ma"):
