@@ -50,6 +50,13 @@ jobs:
                'test_v037_ai_strategy_analysis.py' 'test_android_ledger_backup.py'; do
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
           done
+      - name: Create short-lived TEST ONLY signing key for debug packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -keysize 2048 -validity 2 -noprompt
+          echo 'TEST_KEY_NOT_FOR_USER_INSTALL'
       - name: Android native compilation
         shell: bash
         working-directory: ARTITRADE_ANDROID
