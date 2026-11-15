@@ -155,7 +155,18 @@ public final class UnifiedTradingService extends Service {
     }
 
     private boolean liveOrdersArmed(){
-        return strategy.liveEnabled("stock")||strategy.liveEnabled("coin");
+        if(strategy.liveEnabled("stock")||strategy.liveEnabled("coin"))return true;
+        // A failed OFF can leave the Python broker runtime enabled even when
+        // the UI preference is false; migration must not trust prefs alone.
+        try{
+            JSONObject runtime=strategy.snapshot();
+            JSONObject enabled=runtime.optJSONObject("live_enabled");
+            return enabled!=null&&(enabled.optBoolean("stock",false)
+                    ||enabled.optBoolean("coin",false));
+        }catch(Throwable e){
+            crashes.add("live_state_unverified",e);
+            return true;
+        }
     }
     private void saveMigrationResult(JSONObject result){
         getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
@@ -329,12 +340,20 @@ public final class UnifiedTradingService extends Service {
     }
 
     private void disarmUnverifiedMarkets(String reason){
+        JSONObject enabled=new JSONObject();
         try{
-            if((stockEpoch<=0||!lastMserverAuthOk)&&strategy.liveEnabled("stock"))
+            JSONObject state=strategy.snapshot();
+            JSONObject flags=state.optJSONObject("live_enabled");
+            if(flags!=null)enabled=flags;
+        }catch(Throwable e){crashes.add("disarm_snapshot_"+reason,e);}
+        try{
+            if((stockEpoch<=0||!lastMserverAuthOk)
+                    &&(strategy.liveEnabled("stock")||enabled.optBoolean("stock",false)))
                 strategy.setLive("stock",false);
         }catch(Throwable e){crashes.add("disarm_stock_"+reason,e);}
         try{
-            if((coinEpoch<=0||!lastMserverAuthOk)&&strategy.liveEnabled("coin"))
+            if((coinEpoch<=0||!lastMserverAuthOk)
+                    &&(strategy.liveEnabled("coin")||enabled.optBoolean("coin",false)))
                 strategy.setLive("coin",false);
         }catch(Throwable e){crashes.add("disarm_coin_"+reason,e);}
     }
