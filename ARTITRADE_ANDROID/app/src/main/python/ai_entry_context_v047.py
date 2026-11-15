@@ -134,7 +134,8 @@ def _candidate(row,strategy,role):
     # Source row's BUY event time, not analysis time or a reference candle date.
     fields=("entry_at","entry_ts","buy_at","filled_at","buy_ts",
             "virtual_buy_at","first_observed_limit_touch") if role=="ACTUAL" else (
-            "virtual_buy_at","first_observed_limit_touch","shadow_entry_at","at","ts")
+            "virtual_buy_at","first_observed_limit_touch","shadow_entry_at",
+            "entry_at","entry_ts","at","ts")
     when=next((journal._timestamp(row.get(k)) for k in fields
                if journal._timestamp(row.get(k)) is not None),None)
     if when is None:return None
@@ -288,6 +289,8 @@ def capture_packet_pending(root,packet):
         signals,ledger=journal._records(data,market,strategy)
         rows=journal._rows(signals,("items","candidates","signals"))
         holdings=journal._rows(ledger,("positions","holdings"))
+        pending=journal._rows(ledger,("pending","pending_orders","orders","candidates"))
+        rows+= [r for r in pending if r.get("ledger_is_virtual_only")]
         try:
             total+=capture_events(root,market,strategy,
                      signals=rows,positions=holdings,source="PENDING_OHLCV")
