@@ -98,7 +98,8 @@ def _safe_name(s):
 class Tracker:
     def __init__(self,root):
         self.root=Path(root)
-        self.path=self.root/"research"/FILE
+        # Root-level research journal is included in signed ZIP backup.
+        self.path=self.root/FILE
         self.path.parent.mkdir(parents=True,exist_ok=True)
         self._lock=threading.RLock()
         self._watch={"stock":set(),"coin":set()}
@@ -411,7 +412,7 @@ class Tracker:
 
 
 def report(root,market=None,strategy=None,limit=16):
-    path=Path(root)/"research"/FILE
+    path=Path(root)/FILE
     if not path.is_file():
         return {"ok":False,"schema":SCHEMA,"reason":"TRACKER_NOT_STARTED"}
     return Tracker(root).summary(market,strategy,limit)
