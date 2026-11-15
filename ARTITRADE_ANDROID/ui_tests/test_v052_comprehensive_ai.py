@@ -164,7 +164,8 @@ class ComprehensiveV052(unittest.TestCase):
                ((k[0],k[1],k[2],v) for k,v in values.items())))
         self.assertFalse(any(x[0]=="entry" and "future_alpha" in x[1] for x in values))
         self.assertTrue(any(x[0]=="unverified" and "future_alpha" in x[1] for x in values))
-        self.assertTrue(any(x[0]=="post" and "mfe_pct" in x[1] for x in values))
+        self.assertTrue(any(x[0]=="holding" and "mfe_pct" in x[1] for x in values))
+        self.assertFalse(any(x[0]=="post" and "mfe_pct" in x[1] for x in values))
 
     def test_same_ticker_reentry_with_different_position_id_not_joined(self):
         other=dict(self.raw,id=99,entry_at=dt.datetime.fromtimestamp(
