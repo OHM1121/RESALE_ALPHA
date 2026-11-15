@@ -236,6 +236,10 @@ def extract_features(row, asof=None):
 
 def _records(packet,market,strategy):
     section=_json_obj(packet.get(market))
+    if strategy=="trend":
+        independent=_json_obj(section.get("trend"))
+        return (_json_obj(independent.get("research")),
+                _json_obj(independent.get("ledger")))
     if market=="stock":
         if strategy in ("at","ma","gmo"):
             at=_json_obj(section.get("at"))
