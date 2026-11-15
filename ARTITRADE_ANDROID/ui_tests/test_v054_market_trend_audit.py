@@ -257,8 +257,8 @@ class TrendAudit(unittest.TestCase):
 
     def test_audit_release_increments_versioncode_for_in_place_upgrade(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf8')
-        self.assertRegex(gradle,r'versionCode (?:62|63|64|65|66|67)')
-        self.assertIn("versionName '0.7.60-ORIGINAL-MA-PARITY'", gradle)
+        self.assertRegex(gradle,r'versionCode (?:62|63|64|65|66|67|68)')
+        self.assertIn("versionName '0.7.61-MA-TURNPOINT'", gradle)
 
     def test_trend_ui_is_not_mislabeled_as_actual_broker_account(self):
         ui=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text('utf8')
