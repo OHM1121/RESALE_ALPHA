@@ -352,7 +352,9 @@ def capture_packet(root,packet,now=None):
             executions+=_trend_sell_rows(root,market,strategy)
         if not pending and not executions:continue
         try:
-            with jr._connect(root,market) as conn:
+            from ma_v062_ai_scope import ai_root
+            research_root=ai_root(root) if strategy=="ma" else root
+            with jr._connect(research_root,market) as conn:
                 # This local journal defaults to sqlite3 tuple rows.
                 # Sidecar dictionaries must use named rows to avoid rollback.
                 conn.row_factory=sqlite3.Row
@@ -463,7 +465,9 @@ def record_candles(root,market,strategy,symbol,frame,raw_rows,origin,now=None):
     if market not in ("coin","stock") or frame not in met.PERIOD:return 0
     bars=met._norm_bars(raw_rows)
     if not bars:return 0
-    with jr._connect(root,market) as conn:
+    from ma_v062_ai_scope import ai_root
+    research_root=ai_root(root) if strategy=="ma" else root
+    with jr._connect(research_root,market) as conn:
         conn.row_factory=sqlite3.Row
         _ensure(conn)
         conn.executemany("""INSERT INTO candle_extra_v048(
@@ -485,7 +489,8 @@ def record_candles(root,market,strategy,symbol,frame,raw_rows,origin,now=None):
         return len(linked)
 
 def _research_rows(root,market,entry_mode=None,strategy=None,limit=None):
-    db=jr.db_path(root,market)
+    from ma_v062_ai_scope import ai_root
+    db=jr.db_path(ai_root(root) if strategy=="ma" else root,market)
     if not db.is_file():return []
     with closing(sqlite3.connect(db.resolve().as_uri()+"?mode=ro",
                                  uri=True,timeout=10)) as conn:
