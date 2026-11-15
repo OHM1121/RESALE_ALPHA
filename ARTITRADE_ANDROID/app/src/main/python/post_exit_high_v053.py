@@ -450,7 +450,42 @@ class Tracker:
             "only_observed_public_prices":True}
 
 
+def _ma_v062_post_exit_report(root,market,limit):
+    """Read only post-reset MA exits; old source tracker remains intact."""
+    from ma_epoch_v062 import epoch_start
+    stamp=epoch_start(root,market)
+    if not stamp:
+        return {"ok":False,"schema":SCHEMA,"reason":"MA_NEW_EPOCH_NOT_STARTED"}
+    cutoff=int(dt.datetime.fromisoformat(stamp).timestamp())
+    path=Path(root)/FILE
+    if not path.is_file():
+        return {"ok":True,"schema":SCHEMA,"cohorts":[],"cases":[],
+                "total_cases":0,"ma_epoch_started_at":stamp,
+                "old_ma_post_exit_excluded":True}
+    with closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
+                                 uri=True,timeout=4)) as con:
+        con.row_factory=sqlite3.Row
+        rows=[dict(x) for x in con.execute("""
+          SELECT case_id,market,strategy,frame,symbol,cohort,
+            execution_mode,exit_evidence,entry_price,exit_ts,until_ts,
+            peak,peak_at,peak_pct,trough,trough_at,trough_pct,
+            sample_count,target_price,target_hit_at,status,source_ref
+          FROM cases WHERE market=? AND strategy='ma' AND exit_ts>=?
+          ORDER BY exit_ts DESC LIMIT ?""",(market,cutoff,int(limit)))]
+        counts=[dict(x) for x in con.execute("""
+          SELECT market,strategy,frame,cohort,status,COUNT(*) n
+          FROM cases WHERE market=? AND strategy='ma' AND exit_ts>=?
+          GROUP BY market,strategy,frame,cohort,status""",
+          (market,cutoff))]
+    return {"ok":True,"schema":SCHEMA,"cohorts":counts,"cases":rows,
+            "total_cases":sum(int(x["n"]) for x in counts),
+            "ma_epoch_started_at":stamp,"old_ma_post_exit_excluded":True,
+            "raw_research_db":FILE,"original_trade_databases_untouched":True}
+
+
 def report(root,market=None,strategy=None,limit=16):
+    if strategy=="ma" and market in ("coin","stock"):
+        return _ma_v062_post_exit_report(root,market,limit)
     path=Path(root)/FILE
     if not path.is_file():
         return {"ok":False,"schema":SCHEMA,"reason":"TRACKER_NOT_STARTED"}

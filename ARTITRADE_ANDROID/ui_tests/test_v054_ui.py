@@ -8,8 +8,8 @@ SCOPE=(ROOT/'app/src/main/java/com/artitrade/mobile/StrategyDashboardScope.java'
 class V054Ui(TestCase):
     def test_unified_release_is_v054_or_newer_with_incremented_versioncode(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf-8')
-        self.assertRegex(gradle,r"versionCode (?:61|62|63|64|65|66|67|68)")
-        self.assertIn("versionName '0.7.61-MA-TURNPOINT'", gradle)
+        self.assertRegex(gradle,r"versionCode (?:61|62|63|64|65|66|67|68|69)")
+        self.assertIn("versionName '0.7.62-MA-EPOCH-RESEARCH'", gradle)
         self.assertIn("applicationId 'com.artitrade.unified.s21dex'",gradle)
 
     def test_trend_is_primary_strategy_in_both_markets(self):
@@ -28,7 +28,7 @@ class V054Ui(TestCase):
     def test_native_strategies_no_longer_offer_manual_override(self):
         panel=UI.split('private void renderHome(){',1)[1].split('String feedName=',1)[0]
         self.assertNotIn('Button manualButton=',panel)
-        self.assertIn('기준봉·MA는 원래 매매조건 유지',panel)
+        self.assertIn('기준봉·MA·마켓트렌드 각각 독립 원장',panel)
 
     def test_watch_pending_has_distinct_observation_screen(self):
         self.assertIn('renderTrendWatchPending()',UI)

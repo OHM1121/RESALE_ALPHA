@@ -80,15 +80,27 @@ def _quantity(row):
     return met._num(met._first(row,"qty0","entry_qty","original_qty",
                                "initial_qty","buy_qty"))
 
+def _foreign_trend_row(row):
+    if not isinstance(row,dict):return False
+    mode=str(row.get("entry_mode") or row.get("mode") or "").upper()
+    status=str(row.get("status") or "").upper()
+    reason=str(row.get("reason") or "").upper()
+    return ("MARKET_TREND" in mode or status.startswith("TREND_") or
+            reason.startswith("MARKET_TREND_") or
+            str(row.get("id") or "").startswith(("MT43:","MT54:")))
+
+
 def _event_candidates(research,ledger,strategy):
     signals=jr._rows(research,("items","candidates","signals"))
     positions=jr._rows(ledger,("positions","holdings"))
     waiting=jr._rows(ledger,("pending","pending_orders","orders","candidates"))
     for row in positions:
+        if strategy!="trend" and _foreign_trend_row(row):continue
         e=v47._candidate(row,strategy,"ACTUAL")
         if e:yield row,e
     for row in signals+waiting:
         if not isinstance(row,dict):continue
+        if strategy!="trend" and _foreign_trend_row(row):continue
         if row.get("ledger_is_virtual_only") or row.get("virtual_entered") or (
             row.get("entry_observed") and not row.get("bought")):
             role="VIRTUAL"
@@ -334,10 +346,13 @@ def capture_packet(root,packet,now=None):
         pending={}
         for row,event in _event_candidates(research,ledger,strategy):
             pending.setdefault(event["key"],(row,event))
-        for row,role in (_trend_historical_rows(root,market,strategy)
-                         if strategy!='trend' else []):
-            observed=v47._candidate(row,strategy,role)
-            if observed:pending.setdefault(observed["key"],(row,observed))
+        # Legacy MT43 historical buys belong ONLY to the independent Trend
+        # research, never to their old parent AT/MA buckets.
+        if strategy=="trend":
+            for parent in (("at","ma") if market=="stock" else ("general","ma")):
+                for old_row,role in _trend_historical_rows(root,market,parent):
+                    observed=v47._candidate(old_row,"trend",role)
+                    if observed:pending.setdefault(observed["key"],(old_row,observed))
         wallet_positions,wallet_executions=(
             _independent_wallet_evidence(root,market) if strategy=='trend'
             else ([],[]))
@@ -348,11 +363,16 @@ def capture_packet(root,packet,now=None):
         executions+=wallet_executions
         # Trend sells are committed in the independent market-trend journal;
         # join by the same source_position_id, never merely by ticker.
-        if strategy!='trend':
-            executions+=_trend_sell_rows(root,market,strategy)
+        # Legacy MT43 verified SELL events are part of independent Trend
+        # outcomes only. Parent AT/MA never collect those executions.
+        if strategy=="trend":
+            for parent in (("at","ma") if market=="stock" else ("general","ma")):
+                executions+=_trend_sell_rows(root,market,parent)
         if not pending and not executions:continue
         try:
-            with jr._connect(root,market) as conn:
+            from ma_v062_ai_scope import ai_root
+            research_root=ai_root(root) if strategy=="ma" else root
+            with jr._connect(research_root,market) as conn:
                 # This local journal defaults to sqlite3 tuple rows.
                 # Sidecar dictionaries must use named rows to avoid rollback.
                 conn.row_factory=sqlite3.Row
@@ -463,7 +483,9 @@ def record_candles(root,market,strategy,symbol,frame,raw_rows,origin,now=None):
     if market not in ("coin","stock") or frame not in met.PERIOD:return 0
     bars=met._norm_bars(raw_rows)
     if not bars:return 0
-    with jr._connect(root,market) as conn:
+    from ma_v062_ai_scope import ai_root
+    research_root=ai_root(root) if strategy=="ma" else root
+    with jr._connect(research_root,market) as conn:
         conn.row_factory=sqlite3.Row
         _ensure(conn)
         conn.executemany("""INSERT INTO candle_extra_v048(
@@ -485,7 +507,8 @@ def record_candles(root,market,strategy,symbol,frame,raw_rows,origin,now=None):
         return len(linked)
 
 def _research_rows(root,market,entry_mode=None,strategy=None,limit=None):
-    db=jr.db_path(root,market)
+    from ma_v062_ai_scope import ai_root
+    db=jr.db_path(ai_root(root) if strategy=="ma" else root,market)
     if not db.is_file():return []
     with closing(sqlite3.connect(db.resolve().as_uri()+"?mode=ro",
                                  uri=True,timeout=10)) as conn:

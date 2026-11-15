@@ -1,0 +1,30 @@
+name: ARTITRADE v062 official KRW-NEAR September 11 replay
+on:
+  push:
+    branches: [ feature-artitrade-v062-ma-epoch-live-research-20261116 ]
+    paths: [ '.github/workflows/artitrade-v062-upbit-near-replay.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-near-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Exact official minute and hour price evidence
+        env:
+          PYTHONPATH: ARTITRADE_ANDROID/app/src/main/python
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests
+          python3 ARTITRADE_ANDROID/ui_tests/near_upbit_20260911_replay_v062.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_v062_KRW_NEAR_20260911_1m_RSI20_evidence
+          path: near_20260911_evidence_v062/*
+          if-no-files-found: error
+          retention-days: 30

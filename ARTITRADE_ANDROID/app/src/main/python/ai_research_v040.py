@@ -352,11 +352,24 @@ def _connect(root,market):
     return conn
 
 
+def _is_independent_trend(row):
+    if not isinstance(row,dict):return False
+    mode=str(row.get("entry_mode") or "").upper()
+    status=str(row.get("status") or "").upper()
+    reason=str(row.get("reason") or "").upper()
+    ref=str(row.get("id") or "")
+    return ("MARKET_TREND" in mode or status.startswith("TREND_")
+            or reason.startswith("MARKET_TREND_")
+            or ref.startswith(("MT43:","MT54:")))
+
+
 def capture_scope(root,market,strategy,research,ledger,now=None,market_score=None):
     if (market,strategy) not in SCOPES:return {"signals":0,"positions":0}
     now=int(now if now is not None else time.time())
-    featrows=_rows(_json_obj(research),("items","candidates","signals"))
-    positions=_rows(_json_obj(ledger),("positions","holdings"))
+    featrows=[x for x in _rows(_json_obj(research),("items","candidates","signals"))
+              if not _is_independent_trend(x)]
+    positions=[x for x in _rows(_json_obj(ledger),("positions","holdings"))
+               if not _is_independent_trend(x)]
     signal_count=position_count=0
     with _connect(root,market) as conn:
         for row in featrows:

@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 68
-            versionName '0.7.61-MA-TURNPOINT'
+            versionCode 69
+            versionName '0.7.62-MA-EPOCH-RESEARCH'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'

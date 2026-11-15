@@ -61,9 +61,9 @@ def enrich(runtime,payload):
     stock=(payload.get('stock') or {}).get('at') or {}
     stock_ledger=stock.get('ledger') or {}
     ma=stock_ledger.get('ma_subledger') or stock_ledger.get('ma')
-    _annotate(ma,root/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3')
+    _annotate(ma,__import__('ma_epoch_v062').stock_active(root))
     coin=(payload.get('coin') or {}).get('ma') or {}
-    _annotate(coin.get('ledger'),root/'coin'/'ma'/'upbit_paper.sqlite3')
+    _annotate(coin.get('ledger'),__import__('ma_epoch_v062').coin_active(root))
     return payload
 
 def install(core):

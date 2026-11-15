@@ -257,12 +257,12 @@ class TrendAudit(unittest.TestCase):
 
     def test_audit_release_increments_versioncode_for_in_place_upgrade(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf8')
-        self.assertRegex(gradle,r'versionCode (?:62|63|64|65|66|67|68)')
-        self.assertIn("versionName '0.7.61-MA-TURNPOINT'", gradle)
+        self.assertRegex(gradle,r'versionCode (?:62|63|64|65|66|67|68|69)')
+        self.assertIn("versionName '0.7.62-MA-EPOCH-RESEARCH'", gradle)
 
     def test_trend_ui_is_not_mislabeled_as_actual_broker_account(self):
         ui=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text('utf8')
-        self.assertIn('"trend".equals(strategy)?"● 독립 PAPER 계좌":"● 실제 계좌"',ui)
+        self.assertIn('"trend".equals(strategy)?"● 독립 마켓트렌드":"● 전략별 계좌"',ui)
         self.assertIn('"trend".equals(strategy)?"업비트 · KRW TOP40"',ui)
 
     def test_broker_overfill_cannot_exceed_requested_slot_budget(self):

@@ -456,7 +456,8 @@ def _stock_at_research(root):
 
 
 def _stock_ma_research(root):
-    db=Path(root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
+    from ma_epoch_v062 import stock_active
+    db=stock_active(root)
     candidates=_core._db_rows(db,"SELECT id,tf,code,name,ref_ts,created_at AS at,score,status,target,features FROM candidates ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions")
     first_target_sells=_research_first_target_fills(db)
@@ -506,7 +507,8 @@ def _stock_ma_research(root):
 
 
 def _coin_research(root,which):
-    db=Path(root)/'coin'/which/'upbit_paper.sqlite3'
+    from ma_epoch_v062 import coin_active
+    db=coin_active(root) if which=='ma' else Path(root)/'coin'/which/'upbit_paper.sqlite3'
     candidates=_core._db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,created_at AS at,score,limit_price,target,reason FROM candidates ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions")
     first_target_sells=_research_first_target_fills(db)
@@ -830,7 +832,8 @@ def _stock_ma_full(self):
         return {}
     snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
     perf=snap.get('performance_by_frame') or {}
-    db=Path(self.root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
+    from ma_epoch_v062 import stock_active
+    db=stock_active(self.root)
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
     full_exec=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 10000")
     # The original MA snapshot omits positions.entry_at and candidate.created_at.
@@ -1116,7 +1119,7 @@ def _research_history(self, out):
               ('candidate_events','candidate_forward','candidate_milestones',
                'candidate_cohort_decisions','candidate_research_health',
                'stock_shadow_trials','stock_shadow_fills','signals','positions','executions')),
-        'MA':('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
+        'MA':('stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
               ('positions','executions','research')),
         'CLOSE':('stock/close/AT_CLOSE_PAPER.sqlite3','signals',
                  ('research_candidates','research_followups','research_bars',
@@ -1124,7 +1127,7 @@ def _research_history(self, out):
         'COIN_BASE':('coin/base/upbit_paper.sqlite3','candidates',
                      ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
                       'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
-        'COIN_MA':('coin/ma/upbit_paper.sqlite3','candidates',
+        'COIN_MA':('coin/ma_epoch_v062/upbit_paper.sqlite3','candidates',
                    ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
                     'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
     }
@@ -1920,6 +1923,23 @@ _install_ma_v061_stock()
 from ma_v061_fast_entry import install as _install_ma_v061_fast
 _install_ma_v061_fast()
 
+# v0.7.62: MA-only cold-epoch account. The old stock/coin MA SQLite is
+# preserved read-only, and both markets begin new virtual cash/PnL at zero.
+# No physical stock/crypto broker balance or external position is reset.
+from ma_epoch_v062 import install as _install_ma_epoch_v062
+_install_ma_epoch_v062()
+
+# Feed the first eligible KRX 0B tick of a previously UNWATCHED stock
+# through the SAME MA + verified 0D/FOK transaction path. Bulk scan alone
+# cannot meet the new 5-second turnpoint deadline.
+from ma_v062_stock_live_lane import install as _install_ma_v062_stock_lane
+_install_ma_v062_stock_lane()
+
+# Start MA AI evidence from the new epoch exclusively. Other market and
+# strategy research scopes continue writing to their original repositories.
+from ma_v062_ai_scope import install as _install_ma_v062_ai_scope
+_install_ma_v062_ai_scope()
+
 # v0.7.43: market trend is an AT/MA entry mode, never an independent account.
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
@@ -1937,6 +1957,10 @@ _install_policy_reference_v059(_core)
 # substitute reference times for actual broker/PAPER BUY execution times.
 from ma_v061_packet import install as _install_ma_v061_packet
 _install_ma_v061_packet(_core)
+
+# v062 new MA strategy-only dashboard/research packet and read-only legacy.
+from ma_v062_packet import install as _install_ma_v062_packet
+_install_ma_v062_packet(_core)
 
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
