@@ -63,7 +63,7 @@ def seed_ai(db,entry):
                          "10":{"value":{"atr_pct":1.5}},
                          "11":{"value":{"vwap":51100}}}),
              json.dumps({"13":{"value":{"mfe_pct":3.2}},
-                         "14":{"value":{"sold_pct":100,"steps":[{"filled_qty":1}]}})))
+                         "14":{"value":{"sold_pct":100,"steps":[{"filled_qty":1}]}}})))
         for n in range(35):
             bar=entry-300*(35-n)
             c.execute("INSERT INTO candle_observations VALUES(?,?,?,?,?,?,?,?)",
