@@ -3023,6 +3023,10 @@ public final class UnifiedVisualActivity extends Activity {
         fields.setOrientation(LinearLayout.HORIZONTAL);
         fields.setPadding(0,dp(4),0,dp(5));
         historyEvidenceCell(fields,"매매전략",HistorySelection.strategyTag(item.source,item.frame),112);
+        if(r.has("ma_v061_kind_label")){
+            historyEvidenceCell(fields,"MA 신호유형",
+                r.optString("ma_v061_kind_label",""),143);
+        }
         historyEvidenceCell(fields,"체결시각",fillTimeOf(r,"executions",item.source),148);
         historyEvidenceCell(fields,"기준봉·D일·매수일",
             referenceTimelineOf(r,item.source),198);
@@ -3176,9 +3180,15 @@ public final class UnifiedVisualActivity extends Activity {
             }
             String time=fillTimeOf(r,kind,source);
             String phaseLine=referenceTimelineOf(r,source);
+            String maPhase=r.optString("ma_v061_kind_label","");
+            if("positions".equals(kind) && !maPhase.isEmpty()){
+                maPhase+=" · "+r.optString("ma_v061_stage_label","");
+                if("TURNPOINT".equals(r.optString("ma_v061_kind","")))
+                    maPhase+=" · 1차 +"+r.optString("ma_v061_first_target_pct","")+"%";
+            }
             TextView when=text(("executions".equals(kind)?"체결  "+time:
                 "positions".equals(kind)?"매수  "+time:"접수  "+time)+
-                "\n"+phaseLine,12);
+                "\n"+phaseLine+(maPhase.isEmpty()?"":"\n"+maPhase),12);
             when.setTextColor(Color.rgb(151,175,198));when.setMaxLines(5);
             TextView scenario=null;
             if("positions".equals(kind)){
@@ -5664,6 +5674,14 @@ public final class UnifiedVisualActivity extends Activity {
         if("trend".equals(originStrategy)){
             Object bar=firstValue(row,"bar_key","signal_bar_end");
             return "RSI 판정봉  "+(bar==null?"미기록":researchMoment(bar));
+        }
+        String maKind=row.optString("ma_v061_kind","");
+        if("TURNPOINT".equals(maKind)||"DOWN_BEAR".equals(maKind)){
+            Object pivot=firstValue(row,"ma_v061_turnpoint_at",
+                "reference_candle_at","ref_ts","ref_at","reference_ts");
+            return ("TURNPOINT".equals(maKind)?"MA 전환점 발생  ":
+                "MA 하락 음봉 발생  ")+
+                (pivot==null?"미기록":researchMoment(pivot));
         }
         Object ref=firstValue(row,"reference_candle_at","ref_ts","ref_at",
             "reference_ts","reference_at","base_candle_time","selected_ref_at");
