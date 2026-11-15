@@ -62,7 +62,7 @@ def fetch_candles(market,symbol,frame,now=None):
             try:
                 url="https://"+host+"/v8/finance/chart/"+quote(code+suffix)
                 result=_http(url,{"interval":FRAME_YAHOO[frame],
-                                  "range":"3mo" if frame=="day" else "1mo"})
+                                  "range":"1y" if frame=="day" else "1mo"})
                 chart=result["chart"]["result"][0]
                 candles=chart["indicators"]["quote"][0]
                 timestamps=chart.get("timestamp") or []
