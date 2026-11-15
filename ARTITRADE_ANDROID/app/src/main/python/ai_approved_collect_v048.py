@@ -528,7 +528,7 @@ def _fetch_yahoo_index(code,frame,now):
                 if value is not None and value>0 and int(ts)+met.PERIOD[frame]<=now:
                     candles.append((int(ts),value))
             if candles:return candles,"YAHOO_KRX_INDEX_CLOSED"
-        except (OSError,ValueError,TypeError,KeyError,IndexError):
+        except (OSError,ValueError,TypeError,KeyError,IndexError,ImportError):
             continue
     return [],""
 
@@ -556,6 +556,6 @@ def refresh_benchmark(root,market,frame,now=None):
                    "(benchmark,frame,bar_ts,close,origin,stored_at) VALUES(?,?,?,?,?,?)",
                    [(name,frame,ts,close,origin,now) for ts,close in items])
             updated+=len(items)
-        except (OSError,sqlite3.Error,ValueError,TypeError,KeyError):
+        except (OSError,sqlite3.Error,ValueError,TypeError,KeyError,ImportError):
             continue
     return updated
