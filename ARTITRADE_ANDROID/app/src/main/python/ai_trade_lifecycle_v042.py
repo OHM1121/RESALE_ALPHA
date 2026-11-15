@@ -253,6 +253,20 @@ def _rollup_one(root,market,strategy,row,conn,events,candles_cache,inds_cache,
     # before BUY/SELL. Never use current indicators as historic entries.
     if not entry_features:
         entry_features,entry_origin=_snapshot_at(indicators,entry_ts,frame)
+    # Quote factor at the actual BUY time, recorded independently of order
+    # execution. Never infer a best book from candles or later quotations.
+    try:
+        from ai_live_book_v058 import lookup as find_entry_book
+        book=find_entry_book(conn,symbol,entry_ts)
+        if book is not None:
+            mid=(book['bid']+book['ask'])/2.0
+            if mid>0:
+                entry_features=dict(entry_features,
+                                    spread_pct=round(100*(book['ask']-book['bid'])/mid,6))
+                entry_origin=(entry_origin+'+' if entry_origin else '')+(
+                    'VERIFIED_PRE_ENTRY_BEST_BOOK')
+    except (sqlite3.Error,ValueError,TypeError):
+        pass
     gap=_entry_gap(candles,entry_ts,frame)
     if gap is not None:
         entry_features=dict(entry_features,gap_pct=gap)
