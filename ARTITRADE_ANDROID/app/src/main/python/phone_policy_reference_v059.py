@@ -118,7 +118,7 @@ def enrich_packet(runtime,packet):
     if isinstance(at,dict):
         _enrich(at,root/'stock'/'ARTITRADE_D.sqlite3','at')
         ma=at.get('ma_subledger') or at.get('ma')
-        _enrich(ma,root/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3','stock_ma')
+        _enrich(ma,__import__('ma_epoch_v062').stock_active(root),'stock_ma')
         gmo=at.get('gmo') or {}
         if isinstance(gmo,dict):
             # GMO snapshot stores the true D event date by exact
