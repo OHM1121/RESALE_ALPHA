@@ -122,22 +122,34 @@ def hold_deadline(entry,frame,market,is_krx_day=None):
     return point
 
 
+def _krx_session_close(now):
+    """One source of truth for normal and KRX-announced special sessions."""
+    from krx_session_v041 import START,END,SPECIAL_SESSIONS
+    _,closing=SPECIAL_SESSIONS.get(now.date().isoformat(),(START,END))
+    return now.replace(hour=closing//60,minute=closing%60,
+                       second=0,microsecond=0)
+
+
 def preclose_due(now,bar_end,frame,market):
     """Select exactly the intended order-submission second on an aware clock."""
     now=_as_kst(now);finish=_as_kst(bar_end)
     target=finish-dt.timedelta(seconds=12)
-    if market=="stock" and finish.hour==15 and finish.minute==30 and frame in ("30m","60m","day"):
-        target=finish.replace(hour=15,minute=19,second=48,microsecond=0)
-    if market=="stock" and (now.hour>15 or (now.hour==15 and now.minute>=20)):
-        return False
+    if market=="stock":
+        session_close=_krx_session_close(now)
+        if finish==session_close and frame in ("30m","60m","day"):
+            target=session_close-dt.timedelta(minutes=10,seconds=12)
+        # Never submit a regular-market buy inside the last ten minutes.
+        if now>=session_close-dt.timedelta(minutes=10):return False
     return target<=now<target+dt.timedelta(seconds=1)
 
 
 def live_rsi_check_due(now,bar_end,frame,market):
     now=_as_kst(now);finish=_as_kst(bar_end)
     target=finish-dt.timedelta(seconds=15)
-    if market=="stock" and finish.hour==15 and finish.minute==30 and frame in ("30m","60m","day"):
-        target=finish.replace(hour=15,minute=19,second=45,microsecond=0)
+    if market=="stock":
+        session_close=_krx_session_close(now)
+        if finish==session_close and frame in ("30m","60m","day"):
+            target=session_close-dt.timedelta(minutes=10,seconds=15)
     return target<=now<target+dt.timedelta(seconds=1)
 
 

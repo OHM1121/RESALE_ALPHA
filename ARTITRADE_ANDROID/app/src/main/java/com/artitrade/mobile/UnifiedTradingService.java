@@ -155,7 +155,18 @@ public final class UnifiedTradingService extends Service {
     }
 
     private boolean liveOrdersArmed(){
-        return strategy.liveEnabled("stock")||strategy.liveEnabled("coin");
+        if(strategy.liveEnabled("stock")||strategy.liveEnabled("coin"))return true;
+        // A failed OFF can leave the Python broker runtime enabled even when
+        // the UI preference is false; migration must not trust prefs alone.
+        try{
+            JSONObject runtime=strategy.snapshot();
+            JSONObject enabled=runtime.optJSONObject("live_enabled");
+            return enabled!=null&&(enabled.optBoolean("stock",false)
+                    ||enabled.optBoolean("coin",false));
+        }catch(Throwable e){
+            crashes.add("live_state_unverified",e);
+            return true;
+        }
     }
     private void saveMigrationResult(JSONObject result){
         getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
@@ -255,9 +266,15 @@ public final class UnifiedTradingService extends Service {
                     stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
                     coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
                     checkPendingPCArchive(hub);
+                }else{
+                    // A rejected/expired hub status is not proof of execution ownership.
+                    stockEpoch=0;coinEpoch=0;
+                    disarmUnverifiedMarkets("MSERVER_STATUS_UNVERIFIED");
                 }
             }catch(Throwable e){
                 lastMserverAuthOk=false;
+                stockEpoch=0;coinEpoch=0;
+                disarmUnverifiedMarkets("MSERVER_STATUS_UNREACHABLE");
                 getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE).edit()
                     .putLong("at",System.currentTimeMillis()).putBoolean("ok",false)
                     .putString("error","UNREACHABLE:"+e.getClass().getSimpleName()+":"+String.valueOf(e.getMessage()))
@@ -288,7 +305,9 @@ public final class UnifiedTradingService extends Service {
                     stockDetail+=" · "+stockFeed.optString("stage","")+
                         " · "+stockFeed.optString("detail","");
                 live.set("stock",sc,realSubscriptions,realLastFrame,stockDetail);
-                live.set("coin",cc,cc?35:0,System.currentTimeMillis(),co==null?"전략엔진 준비":co.optString("status"));
+                // Without an actual coin subscription count and last-frame
+                // timestamp, publish unknown (0). Never claim synthetic 35/now.
+                live.set("coin",cc,0,0L,co==null?"전략엔진 준비":co.optString("status"));
                 JSONObject enabled=p.optJSONObject("live_enabled");
                 // Python fail-closed order reconciliation can disarm a market internally.
                 // Mirror that state into Android prefs so UI/notification/next boot cannot re-arm it silently.
@@ -312,12 +331,31 @@ public final class UnifiedTradingService extends Service {
                     publishPhoneLedgers(hub,localRecords);
                     lastHubPublish=now;
                 }
-                if(strategy.liveEnabled("stock")&&stockEpoch<=0)strategy.setLive("stock",false);
-                if(strategy.liveEnabled("coin")&&coinEpoch<=0)strategy.setLive("coin",false);
+                if(stockEpoch<=0||coinEpoch<=0)
+                    disarmUnverifiedMarkets("LEASE_UNCONFIRMED");
             }catch(Throwable e){crashes.add("strategy_monitor",e);}
             try{Thread.sleep(2500);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
         }
         try{releaseQuietly(hub,"stock",stockEpoch);releaseQuietly(hub,"coin",coinEpoch);}catch(Throwable ignored){}
+    }
+
+    private void disarmUnverifiedMarkets(String reason){
+        JSONObject enabled=new JSONObject();
+        try{
+            JSONObject state=strategy.snapshot();
+            JSONObject flags=state.optJSONObject("live_enabled");
+            if(flags!=null)enabled=flags;
+        }catch(Throwable e){crashes.add("disarm_snapshot_"+reason,e);}
+        try{
+            if((stockEpoch<=0||!lastMserverAuthOk)
+                    &&(strategy.liveEnabled("stock")||enabled.optBoolean("stock",false)))
+                strategy.setLive("stock",false);
+        }catch(Throwable e){crashes.add("disarm_stock_"+reason,e);}
+        try{
+            if((coinEpoch<=0||!lastMserverAuthOk)
+                    &&(strategy.liveEnabled("coin")||enabled.optBoolean("coin",false)))
+                strategy.setLive("coin",false);
+        }catch(Throwable e){crashes.add("disarm_coin_"+reason,e);}
     }
 
     private void applyTrendManual(String market,boolean enabled){
@@ -362,7 +400,10 @@ public final class UnifiedTradingService extends Service {
             if(!claim.optBoolean("ok")&&!claim.optBoolean("granted"))throw new IllegalStateException("PHONE_LEASE_DENIED:"+claim.optString("error"));
             long epoch=claim.optLong("epoch",0);
             if("stock".equals(market))stockEpoch=epoch;else coinEpoch=epoch;
-            strategy.setLive(market,true);
+            if(epoch<=0)throw new IllegalStateException("PHONE_LEASE_EPOCH_MISSING");
+            JSONObject applied=strategy.setLive(market,true);
+            if(!applied.optBoolean("ok",false))
+                throw new IllegalStateException("LIVE_RUNTIME_ARM_FAILED:"+applied);
         }catch(Throwable e){
             strategy.setLive(market,false);
             crashes.add("live_arm_"+market,e);
@@ -523,7 +564,7 @@ public final class UnifiedTradingService extends Service {
     }
 
     private long maintain(LocalHubClient hub,String market,JSONObject status,long epoch){
-        if(status==null||!status.optBoolean("ok"))return epoch;
+        if(status==null||!status.optBoolean("ok"))return 0;
         // S21+ is now the main runtime. Phone is the only supported automatic executor.
         String desired=status.optString("desired","off");
         if(!"phone".equals(desired)){
@@ -538,7 +579,7 @@ public final class UnifiedTradingService extends Service {
             }
             JSONObject c=hub.claim(market,clientId);
             return c.optBoolean("ok")?c.optLong("epoch",0):0;
-        }catch(Exception e){return epoch;}
+        }catch(Exception e){return 0;}
     }
     private void releaseQuietly(LocalHubClient hub,String market,long epoch){
         if(epoch<=0)return;try{hub.release(market,clientId,epoch);}catch(Exception ignored){}

@@ -7,6 +7,7 @@ Both paper and live executions require a fresh observed quote.
 """
 from __future__ import annotations
 import math
+import json
 import sqlite3
 import threading
 from market_trend_v043 import _AutoClosingSqlite
@@ -281,6 +282,7 @@ class TrendWallet:
                 pos.__dict__["position_id"]=pid
                 pos.__dict__["broker_order_id"]=fill.get("order_id","")
                 pos.__dict__["entry_mode"]="MARKET_TREND"
+                pos.__dict__["execution_mode"]=fill["mode"]
                 pos.__dict__["rsi20_live"]=rsi20_live
                 pos.__dict__["bar_finalized"]=False
                 if market=="stock":
@@ -297,10 +299,45 @@ class TrendWallet:
             finally:
                 self._reservations.discard((market,symbol))
 
+    def _position_fill_mode(self,pos):
+        """Never convert a broker holding to a paper sale (or vice versa).
+
+        Old journal entries already contain the original broker-vs-paper fill
+        event. Only a position-ID-matching buy can establish the provenance.
+        """
+        known=str(getattr(pos,"execution_mode","") or "").upper()
+        if known in ("LIVE","PAPER"):return known
+        if str(getattr(pos,"broker_order_id","") or ""):return "LIVE"
+        try:
+            pid=int(getattr(pos,"position_id"))
+            with self.journal.lock,self.journal.connect() as conn:
+                rows=conn.execute("""SELECT mode,payload FROM events
+                    WHERE market=? AND strategy=? AND frame=? AND symbol=?
+                      AND reason='MT_BUY_FILLED' ORDER BY at DESC""",
+                    (pos.market,pos.strategy,pos.frame,pos.symbol)).fetchall()
+            for row in rows:
+                try:data=json.loads(row["payload"] or "{}")
+                except (TypeError,ValueError):continue
+                if str(data.get("position_id"))!=str(pid):continue
+                if row["mode"]=="ACTUAL":return "LIVE"
+                if row["mode"]=="PAPER":return "PAPER"
+        except (TypeError,ValueError,sqlite3.Error,OSError):
+            pass
+        return "UNKNOWN"
+
     def sell(self,pos,price,at,reason,bid_size=None):
         """Use the existing account, prevent duplicate sell against an in-flight fill."""
         with self.order_lock:
             market,strategy,frame,symbol=pos.market,pos.strategy,pos.frame,pos.symbol
+            origin=self._position_fill_mode(pos)
+            active="LIVE" if self.rt.live_enabled(market) else "PAPER"
+            if origin!=active:
+                # A disconnected live executor must never paper-close a real
+                # broker position. Likewise a simulated holding must never
+                # submit a real SELL to an unrelated broker inventory.
+                return 0,("LIVE_POSITION_BROKER_DISABLED" if origin=="LIVE"
+                          else "PAPER_POSITION_LIVE_MODE" if origin=="PAPER"
+                          else "POSITION_FILL_MODE_UNVERIFIED")
             pid=int(getattr(pos,"position_id"))
             key="MT43:SELL:"+market+":"+strategy+":"+str(pid)+":"+reason+":"+str(int(at.timestamp()))
             with self._connect(market,strategy) as c:

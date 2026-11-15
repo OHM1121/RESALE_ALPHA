@@ -210,12 +210,19 @@ def research_rows(root,market,limit=350):
         if not key.startswith("MT43:SIG:"):continue
         try:meta=json.loads(e.get("payload") or "{}")
         except (ValueError,TypeError):meta={}
+        # Older ACTUAL signals did not distinguish paper fills from broker
+        # fills. Preserve them as unverified unless provenance is explicit.
+        origin=(("LIVE" if meta.get("execution_mode")=="ACTUAL"
+                 else "UNKNOWN_FILLED_LEDGER") if e["mode"]=="ACTUAL"
+                else "PAPER" if e["mode"]=="PAPER" else "SHADOW_UNFILLED")
         rows.append({"id":key,"strategy":e["strategy"],
             "entry_mode":"MARKET_TREND","tf":e["frame"],"code":e["symbol"],
             "at":e["at"],"price":e["price"],
-            "score":meta.get("score"),"bought":e["mode"]=="ACTUAL",
-            "entry_observed":e["mode"]=="VIRTUAL",
-            "outcome":"REAL_FILL" if e["mode"]=="ACTUAL" else "VIRTUAL",
+            "score":meta.get("score"),"bought":e["mode"] in ("ACTUAL","PAPER"),
+            "entry_observed":e["mode"]=="VIRTUAL","execution_mode":origin,
+            "outcome":"REAL_FILL" if origin=="LIVE" else
+                      "PAPER_FILL" if origin=="PAPER" else
+                      "UNVERIFIED_FILL" if origin=="UNKNOWN_FILLED_LEDGER" else "VIRTUAL",
             "reason":e["reason"],"rsi20_live":e["rsi20_live"],
             "original_mode":e["mode"],"evidence_source":"TREND_JOURNAL"})
     return rows

@@ -276,8 +276,14 @@ def validate_backup(archive_path: str) -> dict:
             raise ValueError("Backup ZIP files do not match the signed manifest")
         for rel,info in {**files,**reports}.items():
             if rel in files:
+                # Root-level research/score journals are legitimate entries
+                # produced by _candidate(). Match the writer allowlist exactly.
+                root_journals=("market_research_v033.sqlite3",
+                               "market_trend_v043.sqlite3",
+                               "phone_buy_evidence_v035.sqlite3",
+                               "ANDROID_OPERATION_V074.json")
                 if (not rel.startswith(("stock/","coin/")) and
-                        rel!="ANDROID_OPERATION_V074.json") or ".." in Path(rel).parts:
+                        rel not in root_journals) or ".." in Path(rel).parts:
                     raise ValueError("Unexpected ledger backup path")
             elif not rel.startswith("analysis/") or ".." in Path(rel).parts:
                 raise ValueError("Unexpected analysis report path")
