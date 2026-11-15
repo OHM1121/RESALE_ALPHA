@@ -157,7 +157,7 @@ def _process_exits(self,book,now,original_sell):
     try:
         stamp=int(book['timestamp'])/1000
         bid=dec(book['bid']);size=dec(book['bid_size'])
-        if abs(now.timestamp()-stamp)>3 or bid<=0 or size<=0:return
+        if abs(now.timestamp()-stamp)>3 or bid<=0 or size<0:return
     except (ValueError,TypeError,KeyError,ArithmeticError):return
     symbol=str(book['market'])
     with self.lock,self.connect() as c:
@@ -170,7 +170,6 @@ def _process_exits(self,book,now,original_sell):
         c.execute('BEGIN IMMEDIATE')
         depth=qty_floor(size*Decimal('.5'))
         for p in joined:
-            if depth<=0:break
             current=qty_floor(dec(p['qty']))
             if current<=0:continue
             forced=_verified_forced(p['tf'],symbol,bid,now)
@@ -202,7 +201,7 @@ def _process_exits(self,book,now,original_sell):
                 WHERE position_id=?""",
                 (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
             remaining=current-desired
-            if remaining<=0 and reason.startswith('MA_V061_FORCE'):
+            if remaining<=0 and reason.startswith('MA_V061_'):
                 c.execute("""UPDATE orders SET status='EXPIRED'
                     WHERE market=? AND status='PENDING'""",(symbol,))
 
