@@ -74,7 +74,7 @@ def _bars_from_upbit(items,frame,now):
                 "close":close,"high":high,"low":low,"source":"UPBIT_CLOSED"}
         except (ValueError,TypeError,KeyError,AttributeError,OverflowError):
             continue
-    return sorted(rows.values(),key=lambda x:x["start"])[-80:]
+    return sorted(rows.values(),key=lambda x:x["start"])[-200:]
 
 
 def _stock_bar_end(ts,frame):
@@ -358,7 +358,7 @@ class Coordinator:
         now=dt.datetime.now(mt.KST)
         if market=="coin":
             client=self.rt.coin_runner.minute_client
-            data=client.candles(code,frame,count=65)
+            data=client.candles(code,frame,count=200)
             return _bars_from_upbit(data,frame,now)
         runner=self.rt.stock_runner
         if runner is None or runner.api is None:return []
