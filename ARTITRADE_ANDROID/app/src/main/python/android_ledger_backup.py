@@ -44,6 +44,7 @@ def _candidate(root: Path, file: Path) -> bool:
     # Paper trading capital/slot settings are part of the reproducible research.
     # This exact local JSON contains limits, never broker API credentials.
     if rel.as_posix() in ("market_research_v033.sqlite3",
+                          "market_trend_v043.sqlite3",
                           "phone_buy_evidence_v035.sqlite3"):
         return True
     if rel.as_posix()=="ANDROID_OPERATION_V074.json":

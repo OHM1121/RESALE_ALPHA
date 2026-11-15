@@ -75,7 +75,10 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
         raise FileNotFoundError("Phone ledger or export cache missing")
     # Both market scopes retain their own AI journal plus full market-score
     # history, needed to reconstruct buy-to-sell interval averages.
-    shared_scores={"market_research_v033.sqlite3"}
+    # The RSI20 coordinator journal is shared by both markets and contains
+    # manual mode, stop-day blocks and real-vs-shadow signal decisions.
+    shared_scores={"market_research_v033.sqlite3",
+                   "market_trend_v043.sqlite3"}
     if scope in ("stock","all"):
         shared_scores.add("phone_buy_evidence_v035.sqlite3")
     originals=sorted((p for p in root.rglob("*")

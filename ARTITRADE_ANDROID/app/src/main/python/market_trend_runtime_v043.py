@@ -128,7 +128,22 @@ class Coordinator:
         self._last_fetch_error={}
         self._watch_after={}
         self._position_snapshot_at={}
+        # In-memory performance counters only. No trading-ledger writes.
+        self._performance={market:{
+            "preclose_cycles":0,"preclose_no_due_cycles":0,
+            "preclose_due_cycles":0,"preclose_symbols_examined":0,
+            "stages":{name:{"calls":0,"total_ms":0.0,"max_ms":0.0}
+                      for name in ("score","closed","preclose","holds","history")}
+        } for market in ("stock","coin")}
         self._recover_positions()
+
+    def _record_latency(self,market,stage,started):
+        elapsed=max(0.0,(time.monotonic()-started)*1000.0)
+        with self.lock:
+            row=self._performance[market]["stages"][stage]
+            row["calls"]+=1
+            row["total_ms"]+=elapsed
+            row["max_ms"]=max(row["max_ms"],elapsed)
 
     def _recover_positions(self):
         for record in self.journal.open_positions():
@@ -363,6 +378,7 @@ class Coordinator:
                 if time.monotonic()-self._history_requests.get(key,0)<45:
                     continue
                 self._history_requests[key]=time.monotonic()
+                started=time.monotonic()
                 try:
                     bars=self._raw_history(market,code,frame)
                     if len(bars)>=21:
@@ -370,6 +386,8 @@ class Coordinator:
                     else:self._last_fetch_error[market]="HISTORY_SHORT:"+str(len(bars))
                 except Exception as exc:
                     self._last_fetch_error[market]="HISTORY:"+type(exc).__name__
+                finally:
+                    self._record_latency(market,"history",started)
                 self.stop_event.wait(.20 if market=="coin" else .35)
             self.stop_event.wait(2)
 
@@ -489,19 +507,32 @@ class Coordinator:
         if market=="stock":
             from krx_session_v041 import is_regular_open
             if not is_regular_open():return
-        with self.lock:candidates=dict(self._candidates[market])
+        # Evaluate the time-sensitive gate once per timeframe, not once per
+        # instrument. Outside the -15s/-12s windows skip quote/book/RSI calls.
+        scheduled=[]
+        for frame in mt.FRAMES:
+            finish=_end_clock(now,market,frame)
+            if finish is None:continue
+            check=mt.live_rsi_check_due(now,finish,frame,market)
+            submit=mt.preclose_due(now,finish,frame,market)
+            if check or submit:
+                scheduled.append((frame,finish,check,submit))
+        with self.lock:
+            perf=self._performance[market]
+            perf["preclose_cycles"]+=1
+            if not scheduled:perf["preclose_no_due_cycles"]+=1
+            else:perf["preclose_due_cycles"]+=1
+        if not scheduled:return
+        with self.lock:
+            candidates=dict(self._candidates[market])
+            self._performance[market]["preclose_symbols_examined"]+=len(candidates)
         due=collections.defaultdict(list)
         for code in candidates:
             q=self._quote(market,code)
             if q is None:continue
-            for frame in mt.FRAMES:
-                finish=_end_clock(now,market,frame)
-                if finish is None:continue
+            for frame,finish,check,submit in scheduled:
                 barid=finish.isoformat()
                 entry=(market,code,frame,barid)
-                check=mt.live_rsi_check_due(now,finish,frame,market)
-                submit=mt.preclose_due(now,finish,frame,market)
-                if not check and not submit:continue
                 closed=self._closed_series(market,code,frame,finish)
                 if not closed:continue
                 rsi=mt.rsi20([x["close"] for x in closed],q["trade"])
@@ -610,11 +641,19 @@ class Coordinator:
     def _loop(self,market):
         while not self.stop_event.is_set():
             try:
-                self._update_score(market)
-                self._process_closed(market)
+                started=time.monotonic()
+                try:self._update_score(market)
+                finally:self._record_latency(market,"score",started)
+                started=time.monotonic()
+                try:self._process_closed(market)
+                finally:self._record_latency(market,"closed",started)
                 if self.mode(market)=="MARKET_TREND":
-                    self._preclose_candidates(market,dt.datetime.now(mt.KST))
-                self._process_holds(market,dt.datetime.now(mt.KST))
+                    started=time.monotonic()
+                    try:self._preclose_candidates(market,dt.datetime.now(mt.KST))
+                    finally:self._record_latency(market,"preclose",started)
+                started=time.monotonic()
+                try:self._process_holds(market,dt.datetime.now(mt.KST))
+                finally:self._record_latency(market,"holds",started)
             except Exception as exc:
                 self._last_fetch_error[market]="COORD:"+type(exc).__name__
                 self.modes[market]="PAUSED"
@@ -701,13 +740,31 @@ class Coordinator:
         self.stop_event.set()
 
     def snapshot(self):
-        return {market:{"mode":self.mode(market),"score":self.scores[market],
-                 "manual_trend":bool(self.manual_trend[market]),
-                 "mode_source":"MANUAL" if self.manual_trend[market] else "AUTO",
-                 "status":self.mode_details[market],
-                 "candidates":len(self._candidates[market]),
-                 "error":self._last_fetch_error.get(market,"")}
-                for market in ("stock","coin")}
+        with self.lock:
+            result={}
+            for market in ("stock","coin"):
+                perf=self._performance[market]
+                stages={}
+                for name,raw in perf["stages"].items():
+                    calls=raw["calls"]
+                    stages[name]={"calls":calls,
+                                  "mean_ms":round(raw["total_ms"]/calls,3) if calls else None,
+                                  "max_ms":round(raw["max_ms"],3) if calls else None}
+                result[market]={
+                    "mode":self.mode(market),"score":self.scores[market],
+                    "manual_trend":bool(self.manual_trend[market]),
+                    "mode_source":"MANUAL" if self.manual_trend[market] else "AUTO",
+                    "status":self.mode_details[market],
+                    "candidates":len(self._candidates[market]),
+                    "error":self._last_fetch_error.get(market,""),
+                    "performance":{
+                        "preclose_cycles":perf["preclose_cycles"],
+                        "preclose_no_due_cycles":perf["preclose_no_due_cycles"],
+                        "preclose_due_cycles":perf["preclose_due_cycles"],
+                        "preclose_symbols_examined":perf["preclose_symbols_examined"],
+                        "stages":stages}
+                }
+            return result
 
     def attach_history(self,raw):
         """Expose mode inside original AT/MA tabs and send research-only signals."""

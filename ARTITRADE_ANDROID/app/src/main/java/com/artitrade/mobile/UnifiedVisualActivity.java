@@ -180,6 +180,9 @@ public final class UnifiedVisualActivity extends Activity {
     private static final int REQUEST_EXPORT_RESEARCH=7711;
     private static final int REQUEST_EXPORT_FULL_LEDGER=7712;
     private static final int REQUEST_EXPORT_COMBINED_RESEARCH=7713;
+    private static final int REQUEST_EXPORT_AI_EVIDENCE=7714;
+    private String pendingAiExportScope;
+    private String pendingAiExportReport;
     private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
         new java.util.concurrent.atomic.AtomicBoolean(false);
     private byte[] pendingResearchExport;
@@ -3016,12 +3019,16 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void fullLedgerExportResult(boolean success,String message,boolean research){
+        fullLedgerExportResult(success,message,research,null);
+    }
+    private void fullLedgerExportResult(boolean success,String message,boolean research,String title){
         getSharedPreferences("artitrade_full_ledger_export_v1",MODE_PRIVATE).edit()
             .putBoolean("ok",success).putString("message",message)
             .putLong("at",System.currentTimeMillis()).apply();
         main.post(()->{
             if(isFinishing()||(Build.VERSION.SDK_INT>=17&&isDestroyed()))return;
-            String what=research?"연구자료 전체 추출":"전체 원장 백업";
+            String what=title!=null?title:
+                research?"연구자료 전체 추출":"전체 원장 백업";
             new AlertDialog.Builder(this).setTitle(what+(success?" 완료":" 실패"))
                 .setMessage(message).setPositiveButton("확인",null).show();
         });
@@ -3034,7 +3041,11 @@ public final class UnifiedVisualActivity extends Activity {
         exportFullLedgerToDocument(target,null);
     }
     private void exportFullLedgerToDocument(Uri target,String reportsJson){
+        exportFullLedgerToDocument(target,reportsJson,null);
+    }
+    private void exportFullLedgerToDocument(Uri target,String reportsJson,String aiScope){
         final boolean research=reportsJson!=null;
+        final boolean aiExport=aiScope!=null;
         if(!fullExportRunning.compareAndSet(false,true))return;
         new Thread(()->{
             File archive=new File(getCacheDir(),"artitrade_full_ledger_"+System.nanoTime()+".zip");
@@ -3046,11 +3057,27 @@ public final class UnifiedVisualActivity extends Activity {
                 File rootDir=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
                 com.chaquo.python.PyObject backup=
                     Python.getInstance().getModule("android_ledger_backup");
-                String raw=(reportsJson==null
+                String metadata=reportsJson;
+                if(aiExport){
+                    // Small explicit runtime telemetry, not credential/secret stores.
+                    UiSnapshot current=uiSnapshot;
+                    JSONObject perf=new JSONObject()
+                        .put("ui_model_preload_ms",current.preloadMs)
+                        .put("ui_prepared_rows",current.preloadRows)
+                        .put("ui_cached_model_reused",current.reused);
+                    JSONObject local=current.packet.optJSONObject("local_records");
+                    JSONObject modes=local==null?null:local.optJSONObject("market_trend_status");
+                    if(modes!=null)perf.put("market_trend_runtime",modes);
+                    metadata=Python.getInstance()
+                        .getModule("android_ai_evidence_export_v046")
+                        .callAttr("build_reports",rootDir.getAbsolutePath(),
+                            aiScope,reportsJson,perf.toString()).toString();
+                }
+                String raw=(metadata==null
                     ?backup.callAttr("make_backup",rootDir.getAbsolutePath(),
                         archive.getAbsolutePath())
                     :backup.callAttr("make_backup",rootDir.getAbsolutePath(),
-                        archive.getAbsolutePath(),reportsJson)).toString();
+                        archive.getAbsolutePath(),metadata)).toString();
                 JSONObject result=new JSONObject(raw);
                 if(!result.optBoolean("ok")||!archive.isFile()||
                     result.optLong("bytes",-1)!=archive.length())
@@ -3087,12 +3114,13 @@ public final class UnifiedVisualActivity extends Activity {
                     "용량 "+String.format(Locale.KOREA,"%,d",confirmed)+"바이트\n"+
                     "ZIP SHA-256 "+expected+"\n"+
                     "과거·현재 실제/가상매매 원본 SQLite 전체 및 저장본을 검증했습니다.",
-                    research);
+                    research,aiExport?"AI 심층 정량자료 추출":null);
             }catch(Throwable e){
                 new RuntimeCrashStore(this).add(research?"research_full_export":"full_ledger_backup",e);
                 fullLedgerExportResult(false,
                     "기존 원장 데이터는 변경되지 않았습니다.\n"+e.getClass().getSimpleName()+
-                    ": "+String.valueOf(e.getMessage()),research);
+                    ": "+String.valueOf(e.getMessage()),research,
+                    aiExport?"AI 심층 정량자료 추출":null);
             }finally{
                 if(archive.exists()&&!archive.delete())
                     new RuntimeCrashStore(this).add("full_ledger_backup_cache_cleanup",
@@ -3274,6 +3302,14 @@ public final class UnifiedVisualActivity extends Activity {
             pendingCombinedResearchScope=null;
             if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
                 exportCombinedResearchToFolder(data.getData(),scope);
+            return;
+        }
+        if(requestCode==REQUEST_EXPORT_AI_EVIDENCE){
+            String scope=pendingAiExportScope,report=pendingAiExportReport;
+            pendingAiExportScope=null;pendingAiExportReport=null;
+            if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null
+                &&scope!=null&&report!=null)
+                exportFullLedgerToDocument(data.getData(),report,scope);
             return;
         }
         if(requestCode==REQUEST_EXPORT_FULL_LEDGER){
@@ -3813,6 +3849,39 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
 
+    // AI analysis export reuses the existing complete WAL-safe ledger backup.
+    // No report is extracted until the user selects an Android SAF destination.
+    private void requestAiEvidenceExport(){
+        final String chosenScope=market+"/"+strategy;
+        if(aiAnalysisRunning||aiAnalysisReport==null||
+            !chosenScope.equals(aiAnalysisScope)||
+            !chosenScope.equals(aiAnalysisReport.optString("scope",""))){
+            new AlertDialog.Builder(this).setTitle("AI 분석자료 없음")
+                .setMessage("선택한 전략에서 '분석 시작'을 먼저 완료한 뒤 추출하십시오.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        if(fullExportRunning.get()){
+            new AlertDialog.Builder(this).setTitle("원장 추출 진행 중")
+                .setMessage("기존 추출이 끝난 뒤 다시 요청하십시오.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        pendingAiExportScope=chosenScope;
+        pendingAiExportReport=aiAnalysisReport.toString();
+        String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA)
+            .format(new Date());
+        Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("application/zip");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        picker.putExtra(Intent.EXTRA_TITLE,
+            "ARTITRADE_AI_DEEP_"+market.toUpperCase(Locale.ROOT)+"_"+
+            strategy.toUpperCase(Locale.ROOT)+"_"+stamp+".zip");
+        startActivityForResult(picker,REQUEST_EXPORT_AI_EVIDENCE);
+    }
+
     // Manual analysis of the EXACT selected stock/coin strategy. No broker
     // order, strategy setting, exchange execution, or source database is edited.
     private void runAiAnalysis(){
@@ -3974,6 +4043,10 @@ public final class UnifiedVisualActivity extends Activity {
         measuresLp.setMargins(0,dp(4),0,dp(7));
         tile.addView(measures,measuresLp);
 
+        aiTitle(tile,"진입 지표 관측률 · 비율이 낮으면 결론의 신뢰도가 낮음",9);
+        AiFeatureCoverageV046 coverageView=new AiFeatureCoverageV046(this);
+        coverageView.setFrame(frame);
+        tile.addView(coverageView,new LinearLayout.LayoutParams(-1,dp(135)));
         aiFinding(tile,"01  손실 선행조건",
             diagnosis.optString("cause","손실의 선행조건 비교 중"),
             Color.rgb(252,152,165),false);
@@ -4018,10 +4091,24 @@ public final class UnifiedVisualActivity extends Activity {
         title.setTypeface(null,Typeface.BOLD);
         title.setPadding(0,dp(3),0,dp(7));
         header.addView(title);
+        LinearLayout controls=new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
         Button start=button(aiAnalysisRunning?"분석 중":"분석 시작",false,this::runAiAnalysis);
-        start.setTextSize(17);
+        start.setTextSize(16);
         start.setEnabled(!aiAnalysisRunning);
-        header.addView(start,new LinearLayout.LayoutParams(-1,dp(51)));
+        controls.addView(start,new LinearLayout.LayoutParams(0,dp(51),1));
+        Button export=button("분석 추출 ZIP",false,this::requestAiEvidenceExport);
+        export.setTextSize(15);
+        export.setEnabled(!aiAnalysisRunning&&
+            scope.equals(aiAnalysisScope)&&aiAnalysisReport!=null);
+        LinearLayout.LayoutParams exLp=new LinearLayout.LayoutParams(0,dp(51),1);
+        exLp.setMargins(dp(8),0,0,0);
+        controls.addView(export,exLp);
+        header.addView(controls,new LinearLayout.LayoutParams(-1,dp(51)));
+        TextView hint=text("정량 비교표·근거·시장점수·주문·AI원본 전체를 검증 ZIP으로 저장",11);
+        hint.setTextColor(PremiumUi.MUTED);
+        hint.setPadding(dp(1),dp(7),0,0);
+        header.addView(hint);
         content.addView(header);
 
         if(aiAnalysisRunning&&scope.equals(aiAnalysisScope)){
@@ -4048,6 +4135,11 @@ public final class UnifiedVisualActivity extends Activity {
         if(!scope.equals(report.optString("scope","")))return;
 
         addTrendResearchCard(report);
+        AiEvidenceFlowV046 flow=new AiEvidenceFlowV046(this);
+        flow.setReport(report);
+        LinearLayout.LayoutParams visualLp=new LinearLayout.LayoutParams(-1,dp(159));
+        visualLp.setMargins(0,dp(8),0,dp(9));
+        content.addView(flow,visualLp);
 
         JSONArray frames=report.optJSONArray("frames");
         if(frames==null||frames.length()==0)return;

@@ -72,8 +72,9 @@ def _asof_scores(root,market,conn):
 
 def _market_at(events,moment,market):
     if moment is None or not events:return None
-    times=[x[0] for x in events]
-    idx=bisect.bisect_right(times,int(moment))-1
+    # Events are already a sorted (timestamp, score) timeline.
+    # Tuple bisect avoids rebuilding a full timestamp list per position.
+    idx=bisect.bisect_right(events,(int(moment),float("inf")))-1
     if idx<0 or int(moment)-times[idx]>MARKET_TTL[market]:return None
     return events[idx][1]
 
@@ -83,8 +84,11 @@ def _market_average(events,entry,end,market):
     limit=MARKET_TTL[market]
     weighted=seconds=0.0
     observations=0
-    # Actual score-time coverage, do not invent overnight/weekend values.
-    for i,(ts,score) in enumerate(events):
+    # Actual score-time coverage; jump directly to the first possibly
+    # overlapping score. Old code scanned every historical row per position.
+    first=max(0,bisect.bisect_left(events,(entry,float("-inf")))-1)
+    for i in range(first,len(events)):
+        ts,score=events[i]
         if ts>=end:break
         start=max(entry,ts)
         after=min(end,ts+limit,events[i+1][0] if i+1<len(events) else end)

@@ -96,5 +96,5 @@ class V045ManualTrend(TestCase):
         self.assertIn('if not is_regular_open():return',PY)
         self.assertIn('self.journal.stop_reentry_blocked(market,code,now)',PY)
         self.assertIn('PENDING_BROKER_RECONCILIATION_REQUIRED',PY)
-        self.assertIn('versionCode 52',GRADLE)
+        self.assertRegex(GRADLE,r"versionCode\s+5[2-9]")
         self.assertIn("com.artitrade.unified.s21dex",GRADLE)

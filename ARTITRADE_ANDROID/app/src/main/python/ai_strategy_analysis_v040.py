@@ -78,26 +78,44 @@ def _position_key(row,market,strategy):
     return "combo:"+tf+"|"+symbol+"|"+ref if symbol and ref else None
 
 
-def _link(candidate_rows,position,market,strategy):
+def _signal_index(candidate_rows):
+    """First-match indexes preserve original candidate/position identity rules.
+
+    A signal ID is only usable for the same timeframe and instrument.
+    Fallback is the exact (timeframe, symbol, reference date/time) triple,
+    never the last same-symbol row.
+    """
+    by_id={}
+    by_reference={}
+    for item in candidate_rows:
+        raw=item["raw"]
+        frame=item["frame"]
+        code=item["symbol"]
+        candidate=raw.get("signal_id") or raw.get("candidate_id") or raw.get("id")
+        if candidate is not None:
+            by_id.setdefault((frame,code,str(candidate)),item)
+        ref=str(raw.get("ref_ts") or raw.get("ref_at") or
+                raw.get("event_date") or raw.get("gmo_event_date") or "")
+        if code and ref:
+            by_reference.setdefault((frame,code,ref),item)
+    return by_id,by_reference
+
+
+def _link(candidate_rows,position,market,strategy,index=None):
+    """Indexed exact-match lookup; no cross-instrument or stale signal match."""
     candidate_id=position.get("signal_id") if strategy in ("at","close") else position.get("candidate_id")
     tf=journal._frame(position.get("tf") or position.get("frame"),strategy)
     code=str(position.get("code") or position.get("market") or "")
     ref=str(position.get("ref_ts") or position.get("ref_at") or
             position.get("event_date") or position.get("gmo_event_date") or
             position.get("entry_date") or "")
+    by_id,by_reference=index if index is not None else _signal_index(candidate_rows)
     if candidate_id is not None:
-        for row in candidate_rows:
-            pk=row["raw"].get("signal_id") or row["raw"].get("candidate_id") or row["raw"].get("id")
-            if str(pk)==str(candidate_id) and row["frame"]==tf and row["symbol"]==code:
-                return row
+        found=by_id.get((tf,code,str(candidate_id)))
+        if found is not None:
+            return found
     if code and ref:
-        for row in candidate_rows:
-            r=row["raw"]
-            c_ref=str(r.get("ref_ts") or r.get("ref_at") or
-                      r.get("event_date") or r.get("gmo_event_date") or "")
-            if row["frame"]==tf and row["symbol"]==code and c_ref==ref:return row
-    # GMO can have different D-day/event_date and purchase date. Never map a
-    # position to an arbitrary same-symbol candidate from a different date.
+        return by_reference.get((tf,code,ref))
     return None
 
 
@@ -420,6 +438,8 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
             fills_by_position[str(fill["position_id"])].append(fill)
     rows=[]
     seen=set()
+    # O(signals + positions) rather than repeatedly scanning every signal.
+    signal_index=_signal_index(signals)
     # The most recent candle-derived metrics describe current exposure only.
     # They cannot be promoted to original pre-buy indicator evidence.
     current_indicators={}
@@ -438,7 +458,7 @@ def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
         if key in seen:continue
         seen.add(key)
         if str(row.get("status") or "").upper() in ("RESET_B_V1",):continue
-        match=_link(signals,row,market,strategy)
+        match=_link(signals,row,market,strategy,index=signal_index)
         feats=dict(match["features"]) if match is not None else {}
         # A current holding's indicators describe CURRENT exposure, not a
         # feature recorded at the historical moment of buying.

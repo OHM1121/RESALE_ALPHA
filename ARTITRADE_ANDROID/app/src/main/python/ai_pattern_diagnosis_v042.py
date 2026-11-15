@@ -142,11 +142,14 @@ def _best_pattern(observed,cohort,prefer_loss,allow_hold=True):
     if not candidates:return None
     _,key,n,mean_roi,contrast,comp_n=max(candidates,
         key=lambda a:(a[0],-CAUSAL_ORDER[a[1]]))
+    # The selected pattern's own observations determine provenance, not the
+    # last pattern visited by the ranking loop.
+    selected=[r for r in subset if key in r["precursors"]]
     return {"code":key,"title":TEXT[key][0],"action":TEXT[key][1],
             "n":n,"cohort_n":len(subset),"avg_return_pct":mean_roi,
             "relative_pp":round(contrast,3) if contrast is not None else None,
             "comparison_n":comp_n,
-            "basis":"종료거래" if all(r["closed"] for r in exposed) else
+            "basis":"종료거래" if all(r["closed"] for r in selected) else
                     "보유 중 관측 포함"}
 
 
