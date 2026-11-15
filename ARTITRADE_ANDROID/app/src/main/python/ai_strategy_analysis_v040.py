@@ -648,8 +648,15 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         if market not in ("stock","coin"):
             return json.dumps({"ok":False,"message":"시장 구분 오류"},ensure_ascii=False)
         from ai_trend_analysis_v047 import analyze as trend_analyze
-        return json.dumps(trend_analyze(root,market),ensure_ascii=False,
-                          allow_nan=False)
+        trend=trend_analyze(root,market)
+        try:
+            from ai_comprehensive_v052 import analyze_trend as comprehensive_trend
+            trend["comprehensive_v052"]=comprehensive_trend(root,market)
+        except (OSError,sqlite3.Error,ValueError,TypeError,ImportError) as exc:
+            trend["comprehensive_v052"]={
+                "ok":False,"schema":"ARTITRADE_AI_COMPREHENSIVE_V052",
+                "error":"TREND_COMPREHENSIVE_ERROR:"+type(exc).__name__}
+        return json.dumps(trend,ensure_ascii=False,allow_nan=False)
     if (market,strategy) not in SCOPES:
         return json.dumps({"ok":False,"message":"선택 전략 확인 필요"},ensure_ascii=False)
     from time import time
@@ -743,6 +750,16 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
             "schema":"ARTITRADE_APPROVED_TRADE_EVIDENCE_V048",
             "status":"READ_FAILED","error":type(exc).__name__}
 
+    # Broad, trade-linked research runs only on the manual AI button.
+    # Original trading, broker and account ledgers stay read-only.
+    try:
+        from ai_comprehensive_v052 import analyze as comprehensive_analyze
+        report["comprehensive_v052"]=comprehensive_analyze(
+            root,market,strategy,signals,trades,lifecycle,archive,now)
+    except (OSError,sqlite3.Error,ValueError,TypeError,ImportError) as exc:
+        report["comprehensive_v052"]={
+            "ok":False,"schema":"ARTITRADE_AI_COMPREHENSIVE_V052",
+            "error":"COMPREHENSIVE_ERROR:"+type(exc).__name__}
     try:
         journal.save_report(root,market,strategy,report,now)
     except (OSError,sqlite3.Error,ValueError):

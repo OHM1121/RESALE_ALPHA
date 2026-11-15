@@ -4124,6 +4124,93 @@ public final class UnifiedVisualActivity extends Activity {
         lp.setMargins(0,dp(7),0,0);
         parent.addView(panel,lp);
     }
+    private void addComprehensiveV052Card(JSONObject report){
+        JSONObject overall=report.optJSONObject("comprehensive_v052");
+        if(overall==null)return;
+        LinearLayout panel=card();
+        TextView title=text("종목별 종합 분석 · 전체 저장자료 연계",18);
+        title.setTypeface(null,Typeface.BOLD);
+        panel.addView(title);
+        if(!overall.optBoolean("ok",false)){
+            TextView warning=text("종합분석 미완료 · "+
+                overall.optString("error","근거자료 확인 필요"),13);
+            warning.setTextColor(Color.rgb(241,164,155));
+            panel.addView(warning);
+            content.addView(panel);
+            return;
+        }
+        int linked=overall.optInt("total_linked_cases",0);
+        int filled=overall.optInt("filled_cases",0);
+        int virtual=overall.optInt("unfilled_virtual_candidates",0);
+        int roi=overall.optInt("closed_with_verified_roi",0);
+        TextView summary=text("연결된 종목 사례 "+number(linked)+"건  ·  체결기록 "+
+            number(filled)+"건  ·  미매수 관측 "+number(virtual)+
+            "건  ·  수익률 확인 "+number(roi)+"건",13);
+        summary.setPadding(0,dp(6),0,dp(4));
+        panel.addView(summary);
+        JSONObject modes=overall.optJSONObject("by_execution_mode");
+        String byMode="LIVE "+(modes==null?0:modes.optInt("LIVE",0))+
+            " · PAPER "+(modes==null?0:modes.optInt("PAPER",0))+
+            " · 가상추적 "+(modes==null?0:modes.optInt("SHADOW_UNFILLED",0))+
+            " · 미확인 "+(modes==null?0:
+               modes.optInt("UNKNOWN_FILLED_LEDGER",0));
+        TextView modeLine=text(byMode,12);
+        modeLine.setTextColor(PremiumUi.MUTED);
+        panel.addView(modeLine);
+        TextView sources=text("원본 자료 "+overall.optInt("source_files_audited",0)+
+            "개 파일 · "+overall.optInt("source_tables_audited",0)+
+            "개 테이블 점검 · 정량 요인 "+overall.optInt("distinct_numeric_factors",0)+
+            "종 연결",12);
+        sources.setPadding(0,dp(6),0,0);
+        panel.addView(sources);
+        JSONArray factors=overall.optJSONArray("factors_preview");
+        aiTitle(panel,"시점검증된 매수 전 요인 비교 · 자동 매매 반영 없음",9);
+        if(factors==null||factors.length()==0){
+            TextView empty=text("유효 거래·지표 표본 부족 또는 연결 근거 미확인 · "+
+                "조건 변경 없이 계속 수집",13);
+            empty.setTextColor(PremiumUi.MUTED);
+            panel.addView(empty);
+        }else{
+            for(int i=0;i<Math.min(5,factors.length());i++){
+                JSONObject factor=factors.optJSONObject(i);
+                if(factor==null)continue;
+                String name=factor.optString("feature","지표");
+                if(name.length()>42)name=name.substring(0,42)+"…";
+                String result=name+" · "+factor.optString("frame","")+
+                    " · "+factor.optString("execution_mode","")+
+                    " · 비교 "+factor.optInt("samples",0)+"건";
+                TextView label=text(result,12);
+                label.setPadding(0,dp(6),0,0);
+                panel.addView(label);
+                TextView effect=text("상위·하위 수익률 차이 "+
+                    String.format(Locale.KOREA,"%+.2f%%p",factor.optDouble("delta_pp",0))+
+                    " · "+("DIRECTION_REPLICATED".equals(factor.optString("status"))?
+                        "기간 분리 방향 재현":"탐색 단계"),11);
+                effect.setTextColor(PremiumUi.MUTED);
+                panel.addView(effect);
+            }
+        }
+        int unlinked=overall.optInt("source_tables_unlinked",0);
+        int skipped=overall.optInt("source_files_skipped",0);
+        JSONObject truncated=overall.optJSONObject("sidecar_truncated");
+        int cut=truncated==null?0:truncated.length();
+        if(unlinked>0||skipped>0||cut>0){
+            TextView note=text("추가 연결 검증 필요: 미연결 원본 테이블 "+
+                unlinked+"개 · 파일 점검 제외 "+skipped+
+                "개 · 분석 입력 제한 테이블 "+cut+
+                "개 (원본 ZIP에는 보존)",12);
+            note.setTextColor(Color.rgb(229,190,124));
+            note.setPadding(0,dp(9),0,0);
+            panel.addView(note);
+        }
+        TextView exportHint=text("각 거래의 출처·관측시각·수치·누락 사유는 "+
+            "종합분석 SQLite 및 분석 추출 ZIP에 보존됨",11);
+        exportHint.setTextColor(PremiumUi.MUTED);
+        exportHint.setPadding(0,dp(8),0,0);
+        panel.addView(exportHint);
+        content.addView(panel);
+    }
+
     private void addApprovedEvidenceCard(JSONObject report){
         JSONObject evidence=report.optJSONObject("approved_metrics_v048");
         if(evidence==null)return;
@@ -4319,6 +4406,7 @@ public final class UnifiedVisualActivity extends Activity {
 
         addTrendResearchCard(report);
         addApprovedEvidenceCard(report);
+        addComprehensiveV052Card(report);
         AiEvidenceFlowV046 flow=new AiEvidenceFlowV046(this);
         flow.setReport(report);
         LinearLayout.LayoutParams visualLp=new LinearLayout.LayoutParams(-1,dp(159));
