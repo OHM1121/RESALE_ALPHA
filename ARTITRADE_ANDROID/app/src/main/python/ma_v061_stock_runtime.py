@@ -42,6 +42,7 @@ def _native_candle_candidate(m,rows,tf,when):
     from coin_v24_policy import body_policy
     from d_upbit import coin_diverse_priority
     from d_storage import KST
+    rows=[dict(row) for row in rows]
     cur=rows[-1]
     facts=rule.candidate_from_closed(rows,tf)
     kind=facts.get('kind')
