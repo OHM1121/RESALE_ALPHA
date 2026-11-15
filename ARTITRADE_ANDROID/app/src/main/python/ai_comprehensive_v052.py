@@ -176,6 +176,10 @@ def _load_sidecars(root,market,strategy):
                 by_position_key[str(entry["position_key"])].append(entry)
             symbol=str(entry.get("symbol") or entry.get("code") or
                        entry.get("benchmark") or "")
+            if label=="signal_history" and not symbol:
+                parts=str(entry.get("signal_key") or "").split("|")
+                if len(parts)>=3:
+                    symbol=parts[2] if parts[1] in ("5m","30m","60m","day","gmo") else parts[1]
             frame=_normframe(entry.get("frame") or entry.get("tf"),
                              "gmo" if strategy=="gmo" and label!="benchmark_history"
                              else "at")
@@ -263,7 +267,6 @@ def _source_audit(root,market,used_names):
     out=[]
     for path in files[:MAX_AUDIT_FILES]:
         relative=path.relative_to(base).as_posix()
-        used=used_names.get(relative,0)
         if path.suffix.lower() in (".sqlite3",".sqlite",".db"):
             try:
                 with closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
@@ -276,8 +279,7 @@ def _source_audit(root,market,used_names):
                             safe='"'+name.replace('"','""')+'"'
                             n=conn.execute("SELECT COUNT(*) FROM "+safe).fetchone()[0]
                         except sqlite3.Error:n=None
-                        integrated=(used>0 and (name in SIDE_TABS or
-                            relative.endswith("market_trend_v043.sqlite3")))
+                        integrated=(used_names.get(relative+"::"+name,0)>0)
                         out.append({"file":relative,"table":name,"rows":n,
                             "integration":"TRADE_LINKED" if integrated else
                                 "SOURCE_READ_FOR_BASE_ANALYSIS" if (
@@ -583,7 +585,7 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
         key=str(life.get("position_key") or "")
         if key:byid[key]=life
     for case in cases:
-        if case["kind"]!="FILLED":continue
+        if case["kind"]!="FILLED" or case["entry_ts"] is None:continue
         life=None
         # Exact position-key association; same ticker is NOT sufficient.
         for raw_name in (case["source_id"],case["key"]):
@@ -599,15 +601,16 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
             case["lifecycle_key"]=str(life.get("position_key") or "")
             case["exit_ts"]=_stamp(life.get("exit_ts"))
             _ingest_lifecycle(case,life)
-            used[market+"/ai/AI_RESEARCH_V040.sqlite3"]+=1
-        for label,fn in (("entry_context",_ingest_entry_candle),
-                         ("approved_metrics",_ingest_approved)):
+            used[market+"/ai/AI_RESEARCH_V040.sqlite3::position_lifecycle_v042"]+=1
+        for label,fn,table in (("entry_context",_ingest_entry_candle,"entry_candle_context_v047"),
+                               ("approved_metrics",_ingest_approved,"trade_evidence_v048")):
             if _associate(sidecars,case,label,fn):
-                used[market+"/ai/AI_RESEARCH_V040.sqlite3"]+=1
+                used[market+"/ai/AI_RESEARCH_V040.sqlite3::"+table]+=1
         from ai_comprehensive_sources_v052 import ingest as ingest_sources
         hits=ingest_sources(case,sidecars,_add,_stamp)
+        reverse={v:k for k,v in SIDE_TABS.items()}
         for name,n in hits.items():
-            used[market+"/ai/AI_RESEARCH_V040.sqlite3"]+=n
+            used[market+"/ai/AI_RESEARCH_V040.sqlite3::"+reverse.get(name,name)]+=n
             case["source_row_hits"][name]=n
         # Position snapshots carry mark/P&L history even without candle data.
         position_events=(sidecars.get("position_snapshots",{})
@@ -624,6 +627,7 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
             _add(case,"holding",_obj(event.get("extra_json")),
                  "V052_ORIGINAL_POSITION_INDICATORS",at)
             case["source_row_hits"]["position_snapshots"]+=1
+            used[market+"/ai/AI_RESEARCH_V040.sqlite3::position_observations"]+=1
     # Any scalar fields present only in the input signal's CURRENT snapshot stay
     # in holding/unverified cohorts, never reverse-engineered into pre-buy causes.
     # Complete raw source files remain in the signed on-device ZIP export.
