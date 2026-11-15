@@ -268,6 +268,43 @@ def _ma_exit(self,c,p,bid,now,book,native):
             WHERE code=? AND status='PENDING'""",(p['code'],))
 
 
+def _note_pivot_touch_without_sell_depth(self,tick,shared_book):
+    """Arm first-target entry-price protection from actual fresh bid evidence.
+
+    The native stock on_tick intentionally does not invoke _exit when verified
+    bid depth is zero. A touched first target remains binding regardless of
+    available liquidity; only the subsequent broker-eligible SELL needs depth.
+    """
+    import stock_ma_engine as m
+    if len(tick)<8 or tick[7]!='KRX':return
+    try:
+        now=dt.datetime.fromisoformat(str(tick[6]))
+        if now.tzinfo is None or abs((dt.datetime.now(now.tzinfo)-now).total_seconds())>3:
+            return
+        code=str(tick[0])
+        with shared_book._lock:
+            actual=shared_book._items.get((code,'KRX'))
+        if not actual:return
+        ask,bid,_,observed=actual
+        if not 0<=(now-observed).total_seconds()<=3 or not 0<bid<=ask:return
+    except (ValueError,TypeError,KeyError,AttributeError):
+        return
+    with self.lock,m._connect(self.db) as c:
+        _table(c)
+        rows=c.execute("""SELECT p.*,v.state_json FROM positions p
+            JOIN ma_v061_positions v ON v.position_id=p.id
+            WHERE p.code=? AND p.status='OPEN' AND v.kind='TURNPOINT'""",
+            (code,)).fetchall()
+        for p in rows:
+            state=json.loads(p['state_json'])
+            updated,_,_=rule.evaluate_pivot_exit(
+                state,bid,p['entry'],0,p['qty0'])
+            if updated!=state:
+                c.execute("""UPDATE ma_v061_positions SET state_json=?,updated_at=?
+                    WHERE position_id=?""",
+                    (json.dumps(updated,ensure_ascii=False),now.isoformat(),p['id']))
+
+
 def _try_open_first5s(self,tick,now):
     """KRX: catch a real finalized pivot even when the bulk scan is slow.
 
@@ -391,6 +428,7 @@ def install():
                 _try_open_first5s(self,data,received)
         except (ValueError,TypeError,IndexError):
             pass
+        _note_pivot_touch_without_sell_depth(self,data,book)
         result=original_tick(self,data,book)
         if result:
             with self.lock,m._connect(self.db) as c:
