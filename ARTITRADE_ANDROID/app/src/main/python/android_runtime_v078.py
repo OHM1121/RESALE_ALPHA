@@ -1929,6 +1929,11 @@ _install_ma_v061_fast()
 from ma_epoch_v062 import install as _install_ma_epoch_v062
 _install_ma_epoch_v062()
 
+# Start MA AI evidence from the new epoch exclusively. Other market and
+# strategy research scopes continue writing to their original repositories.
+from ma_v062_ai_scope import install as _install_ma_v062_ai_scope
+_install_ma_v062_ai_scope()
+
 # v0.7.43: market trend is an AT/MA entry mode, never an independent account.
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
