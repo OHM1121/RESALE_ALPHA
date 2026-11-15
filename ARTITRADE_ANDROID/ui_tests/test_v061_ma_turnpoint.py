@@ -156,7 +156,7 @@ class NewMaRules(unittest.TestCase):
             with self.subTest(frame=tf):
                 history=bars('DOWN',tf)
                 seconds={'5m':300,'30m':1800,'60m':3600,'day':86400}[tf]
-                now=history[-1]['start']+dt.timedelta(seconds=seconds,seconds=1)
+                now=history[-1]['start']+dt.timedelta(seconds=seconds+1)
                 audit,candidate=coin._candidate_decision(None,history,tf,
                     'KRW-NCT',Decimal('.01'),now)
                 self.assertEqual(candidate['features']['ma_v061_kind'],'DOWN_BEAR')
