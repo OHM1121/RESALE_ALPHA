@@ -116,6 +116,7 @@ def _add_entry(conn,row,event,market,strategy,now):
             spread=met.entry_spread({'entry_quote':observed},event["entry_ts"])
     item={
        "02":spread,
+       "gap_pct":met._metric(reason="WAITING_FOR_VERIFIED_ENTRY_CANDLE_OPEN"),
        "05":met.order_latency(row),
        "09":met._metric(reason="WAITING_FOR_FINAL_ENTRY_CANDLE_OHLC"),
        "10":met._metric(reason="WAITING_FOR_PRE_ENTRY_CANDLES"),
@@ -333,7 +334,8 @@ def capture_packet(root,packet,now=None):
         pending={}
         for row,event in _event_candidates(research,ledger,strategy):
             pending.setdefault(event["key"],(row,event))
-        for row,role in _trend_historical_rows(root,market,strategy):
+        for row,role in (_trend_historical_rows(root,market,strategy)
+                         if strategy!='trend' else []):
             observed=v47._candidate(row,strategy,role)
             if observed:pending.setdefault(observed["key"],(row,observed))
         wallet_positions,wallet_executions=(
@@ -346,7 +348,8 @@ def capture_packet(root,packet,now=None):
         executions+=wallet_executions
         # Trend sells are committed in the independent market-trend journal;
         # join by the same source_position_id, never merely by ticker.
-        executions+=_trend_sell_rows(root,market,strategy)
+        if strategy!='trend':
+            executions+=_trend_sell_rows(root,market,strategy)
         if not pending and not executions:continue
         try:
             with jr._connect(root,market) as conn:
@@ -392,6 +395,10 @@ def update_one(conn,row,bars,asof):
         candidate=info[code]
         if candidate.get("value") is not None or entry_json.get(code,{}).get("value") is None:
             entry_json[code]=candidate
+    opening_gap=met.entry_open_gap(bars,row["entry_ts"],row["frame"])
+    if opening_gap.get("value") is not None or (
+            entry_json.get("gap_pct") or {}).get("value") is None:
+        entry_json["gap_pct"]=opening_gap
     exit_ts=row["exit_ts"]
     if not row["closed"] or exit_ts is not None:
         item=met.after_entry_extremes(bars,row["entry_ts"],row["frame"],
@@ -501,21 +508,28 @@ def summarize(root,market,entry_mode=None,strategy=None,preview_max=40):
     if market not in ("stock","coin"):raise ValueError("market")
     rows=_research_rows(root,market,entry_mode,strategy)
     coverage={key:{"known":0,"missing":0,"by_reason":Counter()}
-              for key in met.APPROVED if key!="17"}
+              for key in (*met.APPROVED,"gap_pct") if key!="17"}
+    frame_coverage={}
     modes=Counter();roles=Counter();frames=Counter()
     confirmed_returns=[]
     examples=[]
     for item in rows:
         kind=item["execution_kind"]
         modes[kind]+=1;roles[item["role"]]+=1;frames[item["frame"]]+=1
+        if item["frame"] not in frame_coverage:
+            frame_coverage[item["frame"]]={key:{"known":0,"missing":0}
+                                           for key in coverage}
         a=json.loads(item["entry_json"]);p=json.loads(item["post_json"])
         vals={**a,**p}
         for code in coverage:
             reading=vals.get(code) or {}
             if reading.get("value") is None:
                 coverage[code]["missing"]+=1
+                frame_coverage[item["frame"]][code]["missing"]+=1
                 coverage[code]["by_reason"][reading.get("missing_reason") or "NO_SOURCE"]+=1
-            else:coverage[code]["known"]+=1
+            else:
+                coverage[code]["known"]+=1
+                frame_coverage[item["frame"]][code]["known"]+=1
         stage=(p.get("14") or {}).get("value") or {}
         roi=stage.get("net_return_pct")
         if item["closed"] and item["role"]=="ACTUAL" and roi is not None and (
@@ -542,6 +556,12 @@ def summarize(root,market,entry_mode=None,strategy=None,preview_max=40):
                 "pct":round(100*c["known"]/len(rows),2) if rows else None,
                 "missing_reasons":dict(c["by_reason"])}
           for code,c in coverage.items()},
+       "coverage_by_frame":{
+          frame:{code:{"known":val["known"],"missing":val["missing"],
+                       "pct":round(100*val["known"]/(val["known"]+val["missing"]),2)
+                       if val["known"]+val["missing"] else None}
+                 for code,val in items.items()}
+          for frame,items in frame_coverage.items()},
        "17":{
           "verified_closed_n":len(confirmed_returns),
           "all_confirmed_fills_chronological":met.cohort_stats(
