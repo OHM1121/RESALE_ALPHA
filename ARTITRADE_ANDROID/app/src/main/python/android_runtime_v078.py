@@ -32,7 +32,7 @@ _ORIGINAL_PROXY_BEFORE = _core.LiveConnectionProxy._before
 def _guard_live_position_from_paper_exit(self, sql, params=()):
     text=" ".join(str(sql).split())
     match=re.search(
-        r"INSERT(?:\\s+OR\\s+IGNORE|\\s+OR\\s+REPLACE)?\\s+INTO\\s+executions\\s*\\((.*?)\\)",
+        r"INSERT(?:\s+OR\s+IGNORE|\s+OR\s+REPLACE)?\s+INTO\s+executions\s*\((.*?)\)",
         text,re.IGNORECASE)
     if match and isinstance(params,(list,tuple)):
         columns=[x.strip().strip('"\u0060[]').lower() for x in match.group(1).split(",")]
