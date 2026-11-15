@@ -316,7 +316,10 @@ class Coordinator:
         if abs(time.time()-float(book.get("timestamp",0))/1000)>3:return None
         bid=mt._finite(book.get("bid"));ask=mt._finite(book.get("ask"))
         size=mt._finite(book.get("ask_size"));bid_size=mt._finite(book.get("bid_size"))
-        if any(x is None or x<=0 for x in (bid,ask,size,bid_size)):return None
+        # Buying consumes ASK depth. Missing/zero BID depth must block a
+        # subsequent SELL, not prevent a safely priced BUY signal.
+        if any(x is None or x<=0 for x in (bid,ask,size)) or ask<bid:return None
+        if bid_size is None or bid_size<0:bid_size=0.0
         return {"trade":price,"ask":ask,"bid":bid,"ask_size":size,"bid_size":bid_size}
 
     def _refresh_rank(self,market):
@@ -594,14 +597,20 @@ class Coordinator:
         due=collections.defaultdict(list)
         for code in candidates:
             q=self._quote(market,code)
-            if q is None:continue
+            if q is None:
+                self._entry_block_counts[market]['QUOTE_OR_BOOK_MISSING_AT_GATE']+=1
+                continue
             for frame,finish,check,submit in scheduled:
                 barid=finish.isoformat()
                 entry=(market,code,frame,barid)
                 closed=self._closed_series(market,code,frame,finish)
-                if not closed:continue
+                if not closed:
+                    self._entry_block_counts[market]['CLOSED_CANDLE_HISTORY_MISSING']+=1
+                    continue
                 rsi=mt.rsi20([x["close"] for x in closed],q["trade"])
-                if rsi is None:continue
+                if rsi is None:
+                    self._entry_block_counts[market]['RSI_20_HISTORY_INVALID']+=1
+                    continue
                 if check:
                     self._prechecked[entry]=rsi
                     self.journal.record_watch(market,code,frame,q["trade"],rsi,barid)
@@ -774,6 +783,7 @@ class Coordinator:
                 for code in candidates:
                     raw=quotes.get(code)
                     if raw is None or since-raw[1]>3:
+                        self._entry_block_counts[market]['WATCH_TICK_STALE']+=1
                         for frame in mt.FRAMES:self.watch.discard(market,code,frame)
                         continue
                     price=raw[0]
@@ -788,10 +798,12 @@ class Coordinator:
                             continue
                         rows=self._closed_series(market,code,frame,finish)
                         if not rows:
+                            self._entry_block_counts[market]['WATCH_HISTORY_MISSING']+=1
                             self.watch.discard(market,code,frame)
                             continue
                         rsi=mt.rsi20([x['close'] for x in rows],price)
                         if rsi is None:
+                            self._entry_block_counts[market]['WATCH_RSI_UNAVAILABLE']+=1
                             self.watch.discard(market,code,frame)
                             continue
                         if rsi<=40:
