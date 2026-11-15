@@ -116,7 +116,10 @@ class PersistenceAndExportTests(unittest.TestCase):
             indexed=[r for r in catalog["tables"] if r["source"]=="stock/ARTITRADE_D.sqlite3"
                      and r["table"]=="candidates"]
             self.assertEqual(indexed[0]["records"],3205)
-            self.assertGreater(catalog["actual_trade_rows"],0)
+            self.assertIsNone(catalog["actual_trade_rows"])
+            self.assertGreater(catalog["unverified_execution_ledger_rows"],0)
+            self.assertEqual(catalog["actual_trade_missing_reason"],
+                             "BROKER_PROVENANCE_NOT_PROVEN_BY_TABLE_NAME")
             self.assertGreater(catalog["virtual_research_rows"],0)
             original=Path(self.temp.name)/"untruncated.sqlite3"
             original.write_bytes(z.read("stock/ARTITRADE_D.sqlite3"))
