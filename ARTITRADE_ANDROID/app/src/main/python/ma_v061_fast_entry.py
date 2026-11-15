@@ -147,6 +147,47 @@ def _work(runner):
         if len(fail_counts)>1600:fail_counts.clear()
         runner.stop_event.wait(.20)
 
+def _refresh_held_slopes(runner):
+    """Keep urgent all-5 / 120-cross stop inputs current for held MA coins.
+
+    A holding may leave top-35 scan universe. The original feed still keeps
+    its book subscriptions, while this low-rate reader refreshes the last 120
+    completed candles independently for risk; no synthetic candle values.
+    """
+    import d_upbit
+    import ma_v061_coin_runtime as coin
+    client=d_upbit.UpbitPublicClient(min_interval=.22)
+    while not runner.stop_event.is_set():
+        try:
+            with runner.ma_ledger.lock,runner.ma_ledger.connect() as c:
+                held=c.execute("""SELECT DISTINCT tf,market
+                    FROM positions WHERE status='OPEN'""").fetchall()
+            now=dt.datetime.now(dt.timezone.utc)
+            for row in held:
+                frame,code=row['tf'],row['market']
+                with coin._HISTORY_LOCK:
+                    cached=coin._HISTORY.get((frame,code))
+                if cached and (now-cached[0]).total_seconds()<=d_upbit.SECONDS[frame]+2:
+                    continue
+                try:
+                    raw=client.candles(code,frame,count=135)
+                    done=d_upbit.point_in_time_bars(raw,frame,now)
+                    if len(done)<121:continue
+                    end=done[-1]['start']+dt.timedelta(seconds=d_upbit.SECONDS[frame])
+                    with coin._HISTORY_LOCK:
+                        old=coin._HISTORY.get((frame,code))
+                        if not old or end>=old[0]:
+                            coin._HISTORY[(frame,code)]=(end,tuple(dict(x) for x in done[-125:]))
+                except Exception:
+                    # A stale/no candle is a missing-slope diagnostic, not
+                    # permission to fabricate an urgent stop or ignore fresh
+                    # broker-provenance checks.
+                    continue
+        except (RuntimeError,AttributeError):
+            pass
+        runner.stop_event.wait(3)
+
+
 def install():
     global _INSTALLED
     if _INSTALLED:return
@@ -158,6 +199,11 @@ def install():
             worker=threading.Thread(target=_work,args=(self,),
                 name='artitrade-ma-turnpoint-5second-verifier',daemon=True)
             self._ma_v061_fast_thread=worker
+            worker.start()
+        if not getattr(self,'_ma_v061_slope_thread',None) or not self._ma_v061_slope_thread.is_alive():
+            worker=threading.Thread(target=_refresh_held_slopes,args=(self,),
+                name='artitrade-ma-v061-held-slope-refresh',daemon=True)
+            self._ma_v061_slope_thread=worker
             worker.start()
         return result
     d_upbit.UpbitPaperRunner.start=start
