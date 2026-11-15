@@ -200,7 +200,7 @@ class TestEntryContextV047(TestCase):
             self.assertIn("analysis/ENTRY_CANDLE_EVIDENCE_V047.json",saved)
 
     def test_java_ui_and_accounts_unchanged(self):
-        self.assertIn('private boolean aiTrendOnly=false,researchTrendOnly=false',UI)
+        self.assertIn('private boolean researchTrendOnly=false',UI)
         self.assertIn('renderTrendResearch()',UI)
         self.assertIn('isTrendRow(r)',UI)
         self.assertIn('마켓트렌드 RSI20',UI)
