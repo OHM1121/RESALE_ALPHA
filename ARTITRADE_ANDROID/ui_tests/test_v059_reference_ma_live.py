@@ -1,4 +1,8 @@
-"""v059: immutable reference chronology, superior completed record and LIVE parity."""
+"""v060 carryover: original quantity policy and MA special retained unchanged.
+
+These tests explicitly REVOKE the incorrect v059 turnover-volume and
+mandatory-MA-record assumptions while retaining audited UI/LIVE coverage.
+"""
 import datetime as dt
 import json
 import sqlite3
@@ -23,67 +27,60 @@ def coin_history():
     rows=[]
     for i in range(146):
         t=start+dt.timedelta(minutes=30*i)
-        amount=Decimal(1000000)
+        turnover=Decimal(1000000)
+        quantity=Decimal(100)
         if (t.hour,t.minute,t.day)==(16,0,15):
-            amount=Decimal(236000000)
+            turnover=Decimal(236000000);quantity=Decimal(230)
         if (t.hour,t.minute,t.day)==(22,30,15):
-            amount=Decimal(240000000)
+            turnover=Decimal(240000000);quantity=Decimal(240)
         rows.append({'start':t.astimezone(dt.timezone.utc),
                     'open':Decimal(100),'high':Decimal(104),
                     'low':Decimal(99),'close':Decimal(103),
-                    'volume':Decimal(100),
-                    'turnover':amount})
+                    'volume':quantity,'turnover':turnover})
     assert rows[-1]['start'].astimezone(KST).strftime('%m-%d %H:%M')=='11-15 22:30'
     return rows
 
 
 class TestV059(unittest.TestCase):
-    def test_2230_traded_value_supersedes_1600_even_when_quantity_is_same(self):
+    def test_original_reference_uses_quantity_not_turnover(self):
         h=coin_history()
-        current=guard._coin_record(h,'30m')
-        self.assertEqual(current['metric'],'turnover')
-        self.assertEqual(current['current'],Decimal(240000000))
-        self.assertEqual(current['previous_max'],Decimal(236000000))
-        self.assertTrue(current['new_record'])
+        chosen=guard.newest_superseding_record(
+            h,'30m',dt.datetime(2026,11,15,16,0,tzinfo=KST))
+        self.assertEqual(chosen['metric'],'BASE_ASSET_QUANTITY')
+        self.assertEqual(chosen['current'],'240')
+        self.assertEqual(chosen['prior_max'],'230')
+        self.assertTrue(chosen['ref_start'].endswith('13:30:00+00:00'))
+        for row in h:
+            if row['start']==h[-1]['start']:
+                row['volume']=Decimal(220)
+        self.assertIsNone(guard.newest_superseding_record(
+            h,'30m',dt.datetime(2026,11,15,16,0,tzinfo=KST)))
 
-    def test_latest_completed_record_selected_and_no_retroactive_fill(self):
-        # The original MA candidate interface is invoked once, at the newest
-        # proven record. It is NOT allowed to place a BUY at the past ref time.
-        h=coin_history()
-        observed=[]
-        class Fake:
-            ma_ledger=None
-        def original(fake,subset,frame,code,tick,at,name):
-            observed.append(subset[-1]['start'])
-            return {'market':code,'status':'QUALIFIED_QUEUED'}
-        scan_time=dt.datetime(2026,11,15,23,1,tzinfo=KST)
-        result=guard._coin_ma_scan(original,Fake(),h,'30m',
-                                   'KRW-POLYSWARM',Decimal('0.1'),
-                                   scan_time,'폴리스웜')
-        self.assertEqual(len(observed),1)
-        self.assertEqual(observed[0],h[-1]['start'])
-        self.assertEqual(result['latest_verified_reference_at'],h[-1]['start'].isoformat())
-        self.assertFalse(result['recovered_completed_candle'])
-
-    def test_incomplete_history_does_not_assert_verified_record(self):
+    def test_missing_full_48h_window_is_not_a_record(self):
         h=coin_history()[-45:]
-        self.assertIsNone(guard._coin_record(h,'30m'))
+        self.assertIsNone(guard.newest_superseding_record(
+            h,'30m',dt.datetime(2026,11,15,16,0,tzinfo=KST)))
 
-    def test_stock_ma_later_reference_record_is_strict(self):
-        h=[]
-        start=dt.datetime(2026,11,12,22,30,tzinfo=KST)
-        for i in range(145):
-            when=start+dt.timedelta(minutes=30*i)
-            volume=100
-            if when.day==15 and when.hour==16 and when.minute==0:volume=236000
-            if when.day==15 and when.hour==22 and when.minute==30:volume=240000
-            h.append({'ts':when.strftime('%Y%m%d%H%M%S'),'code':'005930',
-                      'volume':volume,'open':100,'close':101,'high':102,'low':99})
-        actual=guard._stock_volume_record(h,'30m')
-        self.assertIsNotNone(actual)
-        self.assertEqual(actual['volume'],240000)
-        self.assertEqual(actual['previous_max'],236000)
-        self.assertTrue(actual['new_record'])
+    def test_original_ma_special_has_no_mandatory_volume_record(self):
+        from coin_ma_engine import ma_reference_decision
+        ref=dt.datetime(2026,11,15,22,30,tzinfo=KST).astimezone(dt.timezone.utc)
+        bars=[]
+        for i in range(122):
+            at=ref-dt.timedelta(minutes=30*(121-i))
+            close=Decimal(124.2)-Decimal(i)*Decimal('.20')
+            opening=close+(Decimal(3) if i==121 else Decimal('.1'))
+            vol=Decimal(100)
+            if i==60:vol=Decimal(2000)
+            if i==121:vol=Decimal(1000)
+            bars.append({'start':at,'open':opening,'close':close,
+                         'low':close-Decimal('.5'),'high':opening+Decimal('.5'),
+                         'volume':vol})
+        audit,candidate=ma_reference_decision(bars,'30m','KRW-NCT',Decimal('.01'),
+            dt.datetime(2026,11,16,0,50,35,tzinfo=KST))
+        self.assertEqual(audit['reason'],'MA_BEAR_SPECIAL_PLUS10')
+        self.assertEqual(candidate['limit'],'99.50')
+        self.assertEqual(candidate['features']['ma_down'],5)
+        self.assertTrue(candidate['features']['ma_bear_override'])
 
     def test_position_id_join_distinguishes_two_candidates_for_same_symbol(self):
         with tempfile.TemporaryDirectory() as root:
