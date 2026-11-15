@@ -184,7 +184,7 @@ def refresh_packet(root,packet,now=None,max_calls=4):
     data=packet if isinstance(packet,dict) else {}
     for market,strategy in (
         ("coin","general"),("coin","ma"),("stock","at"),("stock","ma"),
-        ("stock","gmo"),("stock","close")):
+        ("stock","gmo"),("stock","close"),("coin","trend"),("stock","trend")):
         research,ledger=_records(data,market,strategy)
         signals=_rows(research,("items","candidates","signals"))
         holdings=_rows(ledger,("positions","holdings"))
