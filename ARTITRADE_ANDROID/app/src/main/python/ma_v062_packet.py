@@ -15,6 +15,9 @@ def enrich(runtime,packet):
     if isinstance(dst,dict):
         dst["ma_epoch_v062"]=epoch.epoch_state(runtime.root,"stock") or {}
         dst["legacy_history"]=epoch.read_archive(runtime.root,"stock")
+        dst["ma_legacy_open_count"]=sum(1 for p in dst["legacy_history"]["positions"]
+             if str(p.get("status") or "").upper()=="OPEN")
+        dst["ma_broker_balance_not_reset"]=True
         dst["new_strategy_account"]=True
         dst["new_strategy_research_only"]=True
         if dst.get("realized_pnl") is None:
@@ -28,6 +31,9 @@ def enrich(runtime,packet):
     if isinstance(cdst,dict):
         cdst["ma_epoch_v062"]=epoch.epoch_state(runtime.root,"coin") or {}
         cdst["legacy_history"]=epoch.read_archive(runtime.root,"coin")
+        cdst["ma_legacy_open_count"]=sum(1 for p in cdst["legacy_history"]["positions"]
+             if str(p.get("status") or "").upper()=="OPEN")
+        cdst["ma_broker_balance_not_reset"]=True
         cdst["new_strategy_account"]=True
         cdst["new_strategy_research_only"]=True
     res=coin.get("research") or {}
