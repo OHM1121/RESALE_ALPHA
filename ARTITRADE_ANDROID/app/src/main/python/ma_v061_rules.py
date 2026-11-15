@@ -106,8 +106,10 @@ def evaluate_pivot_exit(state,bid,entry,available_qty,initial_qty,forced=''):
     """
     state=dict(state)
     price,base,qty,initial=map(dec,(bid,entry,available_qty,initial_qty))
-    if any(v is None for v in (price,base,qty,initial)) or base<=0 or qty<=0 or initial<=0:
+    if any(v is None for v in (price,base,qty,initial)) or base<=0 or initial<=0:
         return state,Decimal(0),''
+    # An observed first-target touch must arm the entry-price guard even if
+    # the bid depth was zero and no partial sale was executable at that quote.
     if forced:
         return state,qty,forced
     stage=int(state.get('stage') or 0)
