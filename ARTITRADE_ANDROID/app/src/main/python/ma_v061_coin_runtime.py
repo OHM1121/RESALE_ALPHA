@@ -143,7 +143,8 @@ def _verified_forced(frame,symbol,bid,now):
     with _HISTORY_LOCK:
         old=_HISTORY.get((frame,symbol))
     if not old:return ''
-    stamp,closes=old
+    stamp,history=old
+    closes=[bar['close'] for bar in history]
     # No stale MA inference after a missing whole candle.
     from d_upbit import SECONDS
     if (now.astimezone(dt.timezone.utc)-stamp).total_seconds()>SECONDS[frame]+3:
@@ -283,7 +284,7 @@ def install():
             with _HISTORY_LOCK:
                 _HISTORY[(frame,code)]=(
                     history[-1]['start']+dt.timedelta(seconds=d_upbit.SECONDS[frame]),
-                    [x['close'] for x in history[-125:]])
+                    tuple(dict(x) for x in history[-125:]))
         return original_scan(self,history,frame,code,tick,now,name)
     d_upbit.UpbitPaperRunner._ma_scan_decision=scan
     _INSTALLED=True
