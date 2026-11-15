@@ -281,6 +281,10 @@ class TrendWalletV054:
                         try:self.rt.halt_market(market,'MT54_LEDGER_AFTER_FILL',exc)
                         except Exception:pass
                     raise UnsafeFill('MT54_FILL_LEDGER_MISMATCH') from exc
+                if mode=='LIVE':
+                    try:self.rt.on_live_fill(market,'BUY',symbol,real_qty,real_price,filled,
+                        'MARKET_TREND_RSI20_BUY',strategy='trend',event_key=key)
+                    except Exception:pass
                 return pos,'BOUGHT'
             finally:
                 self._reservations.discard((market,symbol))
@@ -401,6 +405,10 @@ class TrendWalletV054:
                     try:self.rt.halt_market(market,'MT54_LEDGER_AFTER_SELL',exc)
                     except Exception:pass
                 raise UnsafeFill('MT54_SELL_LEDGER_MISMATCH') from exc
+            if mode=='LIVE':
+                try:self.rt.on_live_fill(market,'SELL',symbol,sold,px,fill,
+                    reason,strategy='trend',event_key=key)
+                except Exception:pass
             return sold,'SOLD'
 
     def snapshot(self,market):
