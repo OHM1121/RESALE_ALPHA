@@ -1918,6 +1918,10 @@ _install_market_trend_v043(_core)
 from post_exit_runtime_v053 import install as _install_post_exit_v053
 _install_post_exit_v053(_core)
 
+# v0.7.59: read-only per-position chronology after all ledger wrappers.
+from phone_policy_reference_v059 import install as _install_policy_reference_v059
+_install_policy_reference_v059(_core)
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 
