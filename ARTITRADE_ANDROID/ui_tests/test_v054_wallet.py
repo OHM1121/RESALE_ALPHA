@@ -29,7 +29,7 @@ class RT:
         self.upbit=DummyBroker();self.kiwoom=DummyBroker()
         self._halted={}
         self.stock_runner=SimpleNamespace(market_map={'005930':('KOSPI','Test')})
-    def live_enabled(self,market):return True  # existing general LIVE switch must NOT arm new trend
+    def live_enabled(self,market):return False  # v054 tests are explicitly PAPER; v059 separately tests market LIVE parity
     def halt_market(self,*args):raise AssertionError('Unexpected halt')
 
 
