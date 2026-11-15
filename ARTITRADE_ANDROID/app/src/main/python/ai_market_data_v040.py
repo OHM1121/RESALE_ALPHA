@@ -112,7 +112,9 @@ def record(root,market,strategy,symbol,frame,bars,origin,
     # Optional open / true traded turnover are solely research sidecar inputs.
     valid=[tuple(x[:5]) for x in valid_raw]
     indicators=compute_candle_indicators(valid)
-    with _connect(root,market) as conn:
+    from ma_v062_ai_scope import ai_root
+    journal_root=ai_root(root) if strategy=="ma" else root
+    with _connect(journal_root,market) as conn:
         for ts,hi,lo,close,volume in valid:
             conn.execute("""INSERT OR IGNORE INTO candle_observations
                 (strategy,frame,symbol,bar_ts,high,low,close,volume,origin)
@@ -159,7 +161,7 @@ def record(root,market,strategy,symbol,frame,bars,origin,
     # evidence. Runs on AI worker, not any order or broker callback.
     try:
         from ai_entry_context_v047 import capture_events
-        capture_events(root,market,strategy,signals,positions,
+        capture_events(journal_root,market,strategy,signals,positions,
                        bars=valid,symbol=symbol,frame=frame,source=origin,now=now)
     except (sqlite3.Error,OSError,ValueError,TypeError):
         pass
