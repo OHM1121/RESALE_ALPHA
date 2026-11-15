@@ -8,8 +8,8 @@ SCOPE=(ROOT/'app/src/main/java/com/artitrade/mobile/StrategyDashboardScope.java'
 class V054Ui(TestCase):
     def test_unified_release_is_v054_or_newer_with_incremented_versioncode(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf-8')
-        self.assertRegex(gradle,r"versionCode (?:61|62)")
-        self.assertRegex(gradle,r"versionName '0\.7\.5[45]")
+        self.assertRegex(gradle,r"versionCode (?:61|62|63)")
+        self.assertRegex(gradle,r"versionName '0\.7\.5[456]")
         self.assertIn("applicationId 'com.artitrade.unified.s21dex'",gradle)
 
     def test_trend_is_primary_strategy_in_both_markets(self):
@@ -40,7 +40,7 @@ class V054Ui(TestCase):
     def test_segregated_ledger_read_and_ai_path(self):
         self.assertIn('if("trend".equals(s))',UI)
         self.assertIn('"trend".equals(strategy)',UI)
-        self.assertIn('market+"/"+(aiTrendOnly&&hasTrendCohort()?"trend":strategy)',UI)
+        self.assertIn('return market+"/"+strategy;',UI)
         self.assertIn('"trend".equals(filter)',SCOPE)
 
 if __name__=='__main__':
