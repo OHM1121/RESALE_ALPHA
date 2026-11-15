@@ -32,7 +32,7 @@ exec(compile(ast.Module(body=selected,type_ignores=[]),str(SRC),"exec"),scope)
 class MAOriginalSQLiteParity(unittest.TestCase):
     def test_display_all_rows_with_no_candidate_reason_column(self):
         with tempfile.TemporaryDirectory() as tmp:
-            directory=Path(tmp)/"stock/STOCK_MA_ENGINE_V1"
+            directory=Path(tmp)/"stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1"
             directory.mkdir(parents=True)
             db_path=directory/"ma_paper.sqlite3"
             with sqlite3.connect(db_path) as db:
