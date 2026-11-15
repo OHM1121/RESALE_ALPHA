@@ -74,22 +74,34 @@ def install(core):
             tracker._coin_research_only=selected
             tracker._last_coin_watch_gap=max(0,len(research)-room)
 
-    native_coin_mark=d_upbit.UpbitPaperRunner._dispatch_public_mark
-    def post_sale_coin_mark(self,code,price,seen=None):
-        try:
-            return native_coin_mark(self,code,price,seen)
-        finally:
-            rt=getattr(core,"_RUNTIME",None)
-            tracker=getattr(rt,"post_sale_tracker_v053",None) if rt else None
-            if tracker:
-                try:
-                    from post_exit_high_v053 import KST
-                    import datetime as dt
-                    stamp=seen or dt.datetime.now(KST)
-                    tracker.quote("coin",str(code),price,stamp,"UPBIT_PUBLIC_LAST")
-                except Exception as e:
-                    tracker._error="COIN_FEED:"+type(e).__name__
-    d_upbit.UpbitPaperRunner._dispatch_public_mark=post_sale_coin_mark
+    # Market Trend v043 already wraps latest_prices in _PriceMemory. Its
+    # callback sees every valid Upbit public ticker assignment, including
+    # research-only tickers (which _dispatch_public_mark otherwise ignores
+    # because those coins are not in the trading _held_codes set).
+    # Chain this observable, preserving the existing RSI20 callback.
+    original_prices=d_upbit.UpbitPaperRunner.latest_prices
+    if isinstance(original_prices,property):
+        def post_sale_prices_set(runner,values):
+            original_prices.fset(runner,values)
+            observed=runner.__dict__.get("_market_trend_prices")
+            if observed is None:return
+            original_observer=getattr(observed,"_callback",None)
+            if not callable(original_observer):return
+            def both_observers(code,price):
+                original_observer(code,price)
+                rt=getattr(core,"_RUNTIME",None)
+                tracker=getattr(rt,"post_sale_tracker_v053",None) if rt else None
+                if tracker:
+                    try:
+                        import datetime as dt
+                        from post_exit_high_v053 import KST
+                        tracker.quote("coin",str(code),price,dt.datetime.now(KST),
+                                      "UPBIT_PUBLIC_RECEIPT")
+                    except Exception as exc:
+                        tracker._error="COIN_FEED:"+type(exc).__name__
+            observed._callback=both_observers
+        d_upbit.UpbitPaperRunner.latest_prices=property(
+            original_prices.fget,post_sale_prices_set)
 
     original_start=core.Runtime.start
     def tracking_start(self):
