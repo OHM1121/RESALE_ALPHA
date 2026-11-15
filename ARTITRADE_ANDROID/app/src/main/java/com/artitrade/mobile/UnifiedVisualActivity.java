@@ -2360,6 +2360,25 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderHome(){
         Stats selected=stats(market,strategy);
+        if("ma".equals(strategy)){
+            JSONObject account=ledger(market,"ma");
+            JSONObject epoch=account.optJSONObject("ma_epoch_v062");
+            if(epoch!=null && !epoch.optString("started_at","").isEmpty()){
+                TextView point=text("신규 MA 시작  "+
+                    researchMoment(epoch.optString("started_at"))+
+                    "  ·  새 MA 손익만 집계 · 과거 기록 별도 보존",12);
+                point.setTextColor(Color.rgb(112,214,178));
+                content.addView(point,new LinearLayout.LayoutParams(-1,dp(39)));
+            }
+            int oldOpen=account.optInt("ma_legacy_open_count",0);
+            if(oldOpen>0){
+                TextView risk=text("기존 MA 미청산 "+oldOpen+
+                    "건 보존 · 신규 MA 계좌와 별도 · 실제 증권사/거래소 잔고 및 주문은 초기화되지 않음",12);
+                risk.setTextColor(Color.rgb(255,181,91));
+                risk.setMaxLines(3);
+                content.addView(risk,new LinearLayout.LayoutParams(-1,-2));
+            }
+        }
         if("stock".equals(market)&&"gmo".equals(strategy)&&
            selected.positions.length()+selected.executions.length()+selected.research.length()==0){
             JSONObject diag=ledger(market,strategy).optJSONObject("load_diagnostic");
