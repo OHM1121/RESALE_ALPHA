@@ -28,7 +28,8 @@ jobs:
           selected=['d_upbit.py','coin_ma_engine.py','coin_hold_policy.py','coin_v24_policy.py',
                     'stock_ma_engine.py','d_storage.py','d_broker.py','d_stock.py',
                     'stock_at_v19.py','stock_at_runner.py','stock_ma_service.py',
-                    'd_kiwoom.py','d_price.py']
+                    'd_kiwoom.py','d_price.py','android_live_bridge.py','d_live.py',
+                    'd_engine.py','d_v19_portfolio.py','d_calendar.py']
           out=Path('audit_v061');out.mkdir(exist_ok=True)
           listing=[str(v.relative_to(dest)) for v in dest.rglob('*.py')]
           (out/'source_manifest.txt').write_text('\n'.join(listing)+'\n',encoding='utf-8')
