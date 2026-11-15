@@ -268,6 +268,81 @@ def _ma_exit(self,c,p,bid,now,book,native):
             WHERE code=? AND status='PENDING'""",(p['code'],))
 
 
+def _try_open_first5s(self,tick,now):
+    """KRX: catch a real finalized pivot even when the bulk scan is slow.
+
+    Uses only MarketStore's prior completed OHLCV; no forming next-bar candle,
+    no simulated opening price and no late backdated purchase. The same native
+    StockMAService.on_tick still checks KRX 0D quote depth and fills the buy.
+    """
+    import stock_ma_engine as m
+    from d_v19_portfolio import live_session
+    if (len(tick)<8 or tick[7]!='KRX' or not live_session(now,'KRX')
+        or abs((dt.datetime.now(now.tzinfo)-now).total_seconds())>3
+        or now.microsecond+now.second*1000000>5000000):
+        return
+    code,market,name=str(tick[0]),str(tick[1]),str(tick[2])
+    frames=[]
+    if now.minute%5==0:frames.append('5m')
+    if now.minute%30==0:frames.append('30m')
+    if now.minute==0:frames.append('60m')
+    if now.hour==9 and now.minute==0:frames.append('day')
+    if not frames:return
+    token=now.strftime('%Y%m%d%H%M')
+    if not hasattr(self,'_ma_v061_fast_done'):self._ma_v061_fast_done=set()
+    done=self._ma_v061_fast_done
+    for tf in frames:
+        key=(code,tf,token)
+        if key in done:continue
+        try:
+            cutoff=now.replace(second=0,microsecond=0).strftime('%Y%m%d%H%M%S')
+            with self.market_store.connect() as source:
+                if tf=='day':
+                    history=source.execute("""SELECT code,market,ts,open,high,low,close,volume
+                        FROM bars WHERE code=? AND frame=? AND SUBSTR(ts,1,8)<?
+                        ORDER BY ts DESC LIMIT 150""",
+                        (code,tf,now.strftime('%Y%m%d'))).fetchall()
+                else:
+                    history=source.execute("""SELECT code,market,ts,open,high,low,close,volume
+                        FROM bars WHERE code=? AND frame=? AND ts<?
+                        ORDER BY ts DESC LIMIT 150""",(code,tf,cutoff)).fetchall()
+            if len(history)<122:continue
+            ordered=[dict(x) for x in reversed(history)]
+            audit,candidate=_native_candle_candidate(m,ordered,tf,now)
+            if audit.get('ma_v061_kind')!='TURNPOINT' or not candidate:
+                done.add(key);continue
+            open_at=dt.datetime.fromisoformat(audit['ma_v061_open_at'])
+            deadline=dt.datetime.fromisoformat(audit['ma_v061_deadline_at'])
+            if not open_at<=now<=deadline:
+                done.add(key);continue
+            with self.lock,m._connect(self.db) as c:
+                # Same atomic original candidate schema as MA scanner, so
+                # original price/position/depth and LIVE FOK gates still apply.
+                c.execute("""INSERT OR IGNORE INTO candidates(
+                    tf,code,name,market,ref_ts,created_at,limit_price,
+                    target,score,special,low,close_price,high,bodytop,
+                    recovery1,first_fraction,features)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (tf,code,name,candidate['market'],candidate['ref_ts'],
+                     now.isoformat(),candidate['limit'],candidate['target'],
+                     candidate['score'],int(candidate['special']),
+                     candidate['low'],candidate['close'],candidate['high'],
+                     candidate['bodytop'],candidate['recovery1'],
+                     candidate['first_fraction'],json.dumps(candidate['audit'],
+                                                            ensure_ascii=False)))
+                c.execute("""INSERT INTO research(ts,tf,code,ref_ts,verdict,detail)
+                    VALUES(?,?,?,?,?,?)""",
+                    (now.isoformat(),tf,code,candidate['ref_ts'],
+                     'QUALIFIED',json.dumps(audit,ensure_ascii=False)))
+            self._refresh_watched()
+            done.add(key)
+        except (sqlite3.Error,ValueError,TypeError,KeyError,AttributeError):
+            # Missing official record = no trade. Retry only within same 5s.
+            continue
+    if len(done)>5000:
+        self._ma_v061_fast_done={x for x in done if x[2]==token}
+
+
 def install():
     global _INSTALLED
     if _INSTALLED:return
@@ -309,6 +384,12 @@ def install():
                                 WHERE id=?""",(row['id'],))
                     # Candles for old MA candidates must not be bought.
         except (IndexError,ValueError,TypeError):
+            pass
+        try:
+            received=dt.datetime.fromisoformat(str(data[6]))
+            if received.tzinfo is not None:
+                _try_open_first5s(self,data,received)
+        except (ValueError,TypeError,IndexError):
             pass
         result=original_tick(self,data,book)
         if result:
