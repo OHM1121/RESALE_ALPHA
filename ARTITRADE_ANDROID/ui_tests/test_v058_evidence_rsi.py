@@ -109,7 +109,7 @@ class V058Evidence(unittest.TestCase):
     def test_existing_original_signing_and_package_preserved_in_build_file(self):
         src=(ROOT/'app/build.gradle').read_text('utf-8')
         self.assertIn('com.artitrade.unified.s21dex',src)
-        self.assertRegex(src,r'versionCode (?:65|66|67)')
+        self.assertRegex(src,r'versionCode (?:65|66|67|68)')
 
 if __name__=='__main__':
     unittest.main()
