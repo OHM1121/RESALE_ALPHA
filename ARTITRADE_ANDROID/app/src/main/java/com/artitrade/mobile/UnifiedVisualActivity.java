@@ -134,6 +134,7 @@ public final class UnifiedVisualActivity extends Activity {
     private volatile boolean brokerProbeIssued=false;
     // Keep the first visible frame as a real preparation screen, not an empty main UI.
     private volatile boolean preloadScreenReady=false;
+    private boolean priorUiSessionKnown=false;
     private long preloadStartedAt=0L;
     private ProgressBar startupProgress;
     private TextView startupStage;
@@ -274,6 +275,7 @@ public final class UnifiedVisualActivity extends Activity {
         android.content.SharedPreferences p=getSharedPreferences(
             "artitrade_ui_navigation_v1",MODE_PRIVATE);
         int oldPid=p.getInt("last_ui_pid",0),nowPid=android.os.Process.myPid();
+        priorUiSessionKnown=oldPid>0;
         String reason=saved!=null?"ACTIVITY_RECREATED":
             oldPid>0&&oldPid!=nowPid?"PROCESS_RESTARTED":"NEW_ACTIVITY";
         p.edit().putInt("last_ui_pid",nowPid)
@@ -294,7 +296,9 @@ public final class UnifiedVisualActivity extends Activity {
         // Activity recreation and a verified service heartbeat are independent
         // reasons to avoid the full-screen startup cover. UI status remains
         // 'waiting' until a new strategy snapshot confirms market connectivity.
-        return saved!=null||isRecentBackgroundHeartbeat();
+        // A known prior UI session also restores the non-blocking shell.
+        // Stale data stay explicitly stale until the service confirms them.
+        return saved!=null||isRecentBackgroundHeartbeat()||priorUiSessionKnown;
     }
 
     private void preloadWatchdog(){
@@ -4423,10 +4427,10 @@ public final class UnifiedVisualActivity extends Activity {
         title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         title.setTextColor(ink);
         panel.addView(title);
-        TextView detail=text(value,19);
+        TextView detail=text(value,17);
         detail.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         detail.setTextColor(action?Color.rgb(108,235,194):PremiumUi.TEXT);
-        detail.setMaxLines(3);
+        detail.setMaxLines(6);
         detail.setPadding(0,dp(7),0,dp(1));
         panel.addView(detail);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
