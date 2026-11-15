@@ -573,10 +573,14 @@ class Coordinator:
             except Exception as exc:
                 disposition="UNSAFE:"+type(exc).__name__
                 self._last_fetch_error[market]=disposition
+            # ACTUAL is reserved for broker-confirmed fills, PAPER for
+            # simulated fills, and VIRTUAL for missed / unfilled signals.
+            signal_mode=("ACTUAL" if self.rt.live_enabled(market) else "PAPER") if result else "VIRTUAL"
             self.journal.event("MT43:SIG:"+market+":"+code+":"+frame+":"+barid,
-                market,assigned,frame,code,"ACTUAL" if result else "VIRTUAL",
+                market,assigned,frame,code,signal_mode,
                 disposition,price=q["ask"],rsi20_live=rsi,
-                payload={"selected_frame":frame,"score":self.scores.get(market)})
+                payload={"selected_frame":frame,"score":self.scores.get(market),
+                         "execution_mode":signal_mode})
             if not result:
                 # Missed actual entry is shadow-only; never reserves wallet cash.
                 try:
@@ -738,6 +742,11 @@ class Coordinator:
 
     def stop(self):
         self.stop_event.set()
+        # Wait briefly for old trend loops before a new coordinator starts.
+        # The service remains fail-closed while the runtime restarts.
+        for worker in list(self.threads):
+            if worker.is_alive() and worker is not threading.current_thread():
+                worker.join(timeout=0.5)
 
     def snapshot(self,include_performance=False):
         """Keep high-frequency telemetry out of the large local ledger packet.
@@ -844,10 +853,13 @@ class Coordinator:
                   "at":x["at"],"ts":x["at"],"strategy":x["strategy"],
                   "entry_mode":"MARKET_TREND",
                   "rsi20_live":x["rsi20_live"],"rsi20_closed":x["rsi20_closed"],
-                  "score":None,"bought":x["mode"]=="ACTUAL",
+                  "score":None,"bought":x["mode"] in ("ACTUAL","PAPER"),
                   "entry_observed":x["mode"]=="VIRTUAL",
+                  "execution_mode":"LIVE" if x["mode"]=="ACTUAL" else
+                      "PAPER" if x["mode"]=="PAPER" else "SHADOW_UNFILLED",
                   "reason":x["reason"],"price":x["price"],
-                  "outcome":"REAL_FILL" if x["mode"]=="ACTUAL" else "VIRTUAL"}
+                  "outcome":"REAL_FILL" if x["mode"]=="ACTUAL" else
+                      "PAPER_FILL" if x["mode"]=="PAPER" else "VIRTUAL"}
             try:info=json.loads(x["payload"]);item["score"]=info.get("score")
             except (ValueError,TypeError):pass
             trend_research[x["market"]].append(item)
