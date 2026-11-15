@@ -9,7 +9,7 @@ permissions:
   contents: write
 jobs:
   audit-patch:
-    if: github.event.head_commit.message == 'ci: stage v055 market trend audit patch'
+    if: "github.event.head_commit.message == 'ci: stage v055 market trend audit patch'"
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
