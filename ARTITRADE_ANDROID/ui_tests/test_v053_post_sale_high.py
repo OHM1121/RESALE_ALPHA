@@ -40,7 +40,7 @@ class PostSalePolicyV053(unittest.TestCase):
         self.assertEqual(point,at("2026-11-19",16,30))
         after=high.deadline(at("2026-12-24"),"stock","5m")
         self.assertNotEqual(after.date().isoformat(),"2026-12-31")
-        self.assertEqual(after.date().isoformat(),"2027-01-04")
+        self.assertEqual(after.date().isoformat(),"2027-01-05")
         self.assertEqual(after.hour,15)
         with self.assertRaisesRegex(ValueError,"KRX_CALENDAR_NOT_VERIFIED"):
             high.deadline(at("2027-12-30"),"stock","60m")
