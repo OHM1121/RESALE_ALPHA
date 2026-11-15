@@ -23,22 +23,55 @@ def _read(root,market,limit=None):
     if market not in ("stock","coin"):raise ValueError("invalid market")
     db=Path(root)/"market_trend_v043.sqlite3"
     result={"events":[],"positions":[],"virtual":[],"source":str(db.name)}
-    if not db.is_file():return result
-    with closing(sqlite3.connect(db.resolve().as_uri()+"?mode=ro",
-                                 uri=True,timeout=8)) as c:
-        c.row_factory=sqlite3.Row
-        names={x[0] for x in c.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'")}
-        for key,table in (("events","events"),("positions","position_state"),
-                          ("virtual","virtual_position_state")):
-            if table not in names:continue
-            sql="SELECT * FROM "+table+" WHERE market=?"
-            params=[market]
-            if limit:
-                sql+=(" ORDER BY "+("at" if key=="events" else "updated_at")+
-                      " DESC LIMIT ?")
-                params.append(int(limit))
-            result[key]=[dict(r) for r in c.execute(sql,params)]
+    if db.is_file():
+      with closing(sqlite3.connect(db.resolve().as_uri()+"?mode=ro",
+                                   uri=True,timeout=8)) as c:
+          c.row_factory=sqlite3.Row
+          names={x[0] for x in c.execute(
+              "SELECT name FROM sqlite_master WHERE type='table'")}
+          for key,table in (("events","events"),("positions","position_state"),
+                            ("virtual","virtual_position_state")):
+              if table not in names:continue
+              sql="SELECT * FROM "+table+" WHERE market=?"
+              params=[market]
+              if limit:
+                  sql+=(" ORDER BY "+("at" if key=="events" else "updated_at")+
+                        " DESC LIMIT ?")
+                  params.append(int(limit))
+              result[key]=[dict(r) for r in c.execute(sql,params)]
+    # New MT54 own ledger is read-only. Its synthetic decision rows are
+    # deduplicated against MT54:SIG events in the original research journal.
+    new_db=Path(root)/market/'trend'/'market_trend_wallet_v054.sqlite3'
+    if new_db.is_file():
+        with closing(sqlite3.connect(new_db.resolve().as_uri()+'?mode=ro',uri=True,timeout=8)) as c:
+            c.row_factory=sqlite3.Row
+            existing={x['event_key'] for x in result['events']}
+            positions=[dict(x) for x in c.execute('SELECT * FROM positions')]
+            for p in positions:
+                data=json.loads(p.get('payload') or '{}')
+                result['positions'].append({'market':market,'strategy':'trend',
+                    'frame':p['tf'],'symbol':p['symbol'],'position_id':p['id'],
+                    'status':'OPEN' if p['status']=='TREND_OPEN' else p['status'],
+                    'payload':p['payload']})
+            for e in (dict(x) for x in c.execute('SELECT * FROM executions ORDER BY id')):
+                mode='ACTUAL' if e['execution_mode']=='LIVE' else 'PAPER'
+                if e['side']=='BUY':
+                    key='MT54:SIG:'+market+':'+e['symbol']+':'+e['tf']+':'+str(e['at'])
+                    prefix='MT54:SIG:'+market+':'+e['symbol']+':'+e['tf']+':'
+                    if not any(str(x).startswith(prefix) for x in existing):
+                        result['events'].append(dict(event_key=key,at=e['at'],market=market,
+                             strategy='trend',frame=e['tf'],symbol=e['symbol'],
+                             mode=mode,reason='BOUGHT',price=e['price'],
+                             rsi20_live=None,payload='{}'))
+                    result['events'].append(dict(event_key=e['event_key']+':FILLED',
+                        at=e['at'],market=market,strategy='trend',frame=e['tf'],
+                        symbol=e['symbol'],mode=mode,reason='MT_BUY_FILLED',
+                        payload=json.dumps({'position_id':e['position_id']})))
+                elif e['side']=='SELL':
+                    result['events'].append(dict(event_key=e['event_key']+':FILLED',
+                        at=e['at'],market=market,strategy='trend',frame=e['tf'],
+                        symbol=e['symbol'],mode=mode,reason=e['reason'],
+                        payload=json.dumps({'position_id':e['position_id'],'net_pnl':e['net_pnl']})))
     return result
 
 
@@ -52,12 +85,12 @@ def _stats(items):
 
 def _by_frame(root,market,frame,events,positions,virtuals,contexts):
     sigs=[x for x in events if x.get("frame")==frame and
-          str(x.get("event_key","")).startswith("MT43:SIG:")]
+          str(x.get("event_key","")).startswith(("MT43:SIG:","MT54:SIG:"))]
     fills=[x for x in events if x.get("frame")==frame and
            x.get("reason")=="MT_BUY_FILLED" and
            x.get("mode") in ("ACTUAL","PAPER")]
     exits=[x for x in events if x.get("frame")==frame and
-           str(x.get("event_key","")).startswith("MT43:SELL:") and
+           str(x.get("event_key","")).startswith(("MT43:SELL:","MT54:SELL:")) and
            str(x.get("event_key","")).endswith(":FILLED")]
     by_position=defaultdict(list)
     for x in exits:
@@ -175,7 +208,7 @@ def analyze(root,market):
         "market":market,"strategy":"trend","entry_mode":"MARKET_TREND",
         "title":("주식" if market=="stock" else "코인")+" · 마켓트렌드",
         "generated_at_epoch":int(time.time()),
-        "source":"market_trend_v043.sqlite3 (read only)",
+        "source":"market_trend_v043.sqlite3 + independent MT54 wallet (read only)",
         "frames":frames,
         "signals":sum(x["signals"] for x in frames),
         "closed":sum(x["closed"] for x in frames),
@@ -207,7 +240,7 @@ def research_rows(root,market,limit=350):
     rows=[]
     for e in raw["events"]:
         key=str(e.get("event_key") or "")
-        if not key.startswith("MT43:SIG:"):continue
+        if not key.startswith(("MT43:SIG:","MT54:SIG:")):continue
         try:meta=json.loads(e.get("payload") or "{}")
         except (ValueError,TypeError):meta={}
         # Older ACTUAL signals did not distinguish paper fills from broker
@@ -224,5 +257,5 @@ def research_rows(root,market,limit=350):
                       "PAPER_FILL" if origin=="PAPER" else
                       "UNVERIFIED_FILL" if origin=="UNKNOWN_FILLED_LEDGER" else "VIRTUAL",
             "reason":e["reason"],"rsi20_live":e["rsi20_live"],
-            "original_mode":e["mode"],"evidence_source":"TREND_JOURNAL"})
+            "original_mode":e["mode"],"evidence_source":"TREND_JOURNAL_OR_STANDALONE_LEDGER"})
     return rows

@@ -56,7 +56,7 @@ class V045ManualTrend(TestCase):
             with self.assertRaises(ValueError):
                 last.set_manual_trend("stock","true")
 
-    def test_runtime_changes_one_market_and_auto_restores(self):
+    def test_v054_runtime_preserves_manual_pref_but_no_longer_switches_parent(self):
         with TemporaryDirectory() as root:
             c=object.__new__(runtime.Coordinator)
             c.journal=mt.TrendJournal(root)
@@ -76,7 +76,8 @@ class V045ManualTrend(TestCase):
             self.assertEqual(c.mode("coin"),"ORIGINAL")
             result=c.set_manual_trend("coin",True)
             self.assertTrue(result["ok"])
-            self.assertEqual(c.mode("coin"),"MARKET_TREND")
+            # Legacy persisted flag survives, but cannot commandeer AT/MA cash.
+            self.assertEqual(c.mode("coin"),"ORIGINAL")
             self.assertEqual(c.mode("stock"),"ORIGINAL")
             self.assertTrue(mt.TrendJournal(root).manual_trend("coin"))
             c.set_manual_trend("coin",False)
@@ -84,14 +85,14 @@ class V045ManualTrend(TestCase):
             c._read_score=lambda market:{"score":-20,"stale":False,
                 "status":"정상","market_open":True}
             c._update_score("coin")
-            self.assertEqual(c.mode("coin"),"MARKET_TREND")
+            self.assertEqual(c.mode("coin"),"ORIGINAL")
 
     def test_android_command_ui_and_trading_guards(self):
         self.assertIn('SET_TREND_MANUAL',SERVICE)
         self.assertIn('setTrendManual(String market,boolean enabled)',BRIDGE)
         self.assertIn('module.callAttr("set_trend_manual",market,enabled)',BRIDGE)
         self.assertIn('마켓트렌드 수동 ON',UI)
-        self.assertIn('수동 해제 · 자동 복귀',UI)
+        self.assertIn('기준봉·MA는 원래 매매조건 유지',UI)
         self.assertIn('manual_trend',PY)
         self.assertIn('if not is_regular_open():return',PY)
         self.assertIn('self.journal.stop_reentry_blocked(market,code,now)',PY)

@@ -322,6 +322,43 @@ def _trend(root,problems,now):
     return out
 
 
+
+def _trend_v054(root,problems,now):
+    """Confirmed final sells from standalone MT54 wallets; WATCH is never a trade."""
+    out=[]
+    for market in ("stock","coin"):
+        rel=market+"/trend/market_trend_wallet_v054.sqlite3"
+        positions,error=_rows(root,rel,"positions","status='CLOSED'",order="id")
+        if error:problems.append(error)
+        executions,error=_rows(root,rel,"executions",order="id")
+        if error:problems.append(error)
+        sells=defaultdict(list)
+        for row in executions:
+            if str(row.get('side') or '').upper()=='SELL' and \
+               str(row.get('event_key') or '').startswith('MT54:SELL:'):
+                sells[str(row.get('position_id'))].append(row)
+        for row in positions:
+            identity=str(row.get('id') or '')
+            choices=sells.get(identity,())
+            if not choices:continue
+            stamps=[(parsed_at(x.get('at')),x) for x in choices]
+            stamped=[(at,x) for at,x in stamps if at is not None]
+            if not stamped:continue
+            final,sale=max(stamped,key=lambda t:t[0])
+            entry=parsed_at(row.get('entry_at'))
+            price=finite_positive(row.get('entry'))
+            symbol=str(row.get('symbol') or '')
+            if (entry is None or price is None or not symbol or final<entry
+                    or final.timestamp()>now):continue
+            out.append(dict(market=market,strategy='trend',frame=str(row.get('tf')),
+                symbol=symbol,cohort='ACTUAL_FILLED',
+                execution_mode=str(row.get('execution_mode') or 'UNVERIFIED_FILLED_LEDGER'),
+                entry_price=price,exit_at=final.isoformat(),
+                source_ref=rel+':position:'+identity+':'+entry.isoformat(),
+                exit_evidence='CONFIRMED',
+                notes='MT54 standalone acknowledged final SELL'))
+    return out
+
 def scan(root,now_epoch):
     """Return authenticated per-trade study windows; never mutate input files."""
     sources=[
@@ -338,6 +375,7 @@ def scan(root,now_epoch):
             out.extend(_shadows(root,market,strategy,path,problems,now_epoch))
     out.extend(_gmo(root,problems,now_epoch))
     out.extend(_trend(root,problems,now_epoch))
+    out.extend(_trend_v054(root,problems,now_epoch))
     # Favor confirmed and deduplicate exact source-episode keys.
     result={}
     for item in out:

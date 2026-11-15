@@ -891,7 +891,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void switchStrategy(int delta){
-        String[] a="stock".equals(market)?new String[]{"at","ma","close","gmo"}:new String[]{"general","ma"};
+        String[] a="stock".equals(market)?new String[]{"at","ma","close","gmo","trend"}:new String[]{"general","ma","trend"};
         int idx=0;for(int i=0;i<a.length;i++)if(a[i].equals(strategy))idx=i;
         int n=idx+delta;if(n<0||n>=a.length)return;strategy=a[n];resetHistoryFilter();persistNavigation();showShell();
     }
@@ -1050,13 +1050,13 @@ public final class UnifiedVisualActivity extends Activity {
             }else{
                 for(String m:new String[]{"stock","coin"}){
                     String[] strategies="stock".equals(m)
-                        ?new String[]{"at","ma","close","gmo"}
-                        :new String[]{"general","ma"};
+                        ?new String[]{"at","ma","close","gmo","trend"}
+                        :new String[]{"general","ma","trend"};
                     for(String stg:strategies){
                         try{
                             Stats st=calculateStats(packet,m,stg);
                             preparedTotals.put(m+"/"+stg,st);
-                            if("at".equals(stg)||"ma".equals(stg)||"general".equals(stg)){
+                            if("at".equals(stg)||"ma".equals(stg)||"general".equals(stg)||"trend".equals(stg)){
                                 for(String tf:new String[]{"5m","30m","60m","day"})
                                     preparedFrames.put(m+"/"+stg+"/"+tf,
                                         calculateStatsTf(packet,m,stg,tf,st));
@@ -1430,6 +1430,13 @@ public final class UnifiedVisualActivity extends Activity {
 
     private JSONObject ledger(String m,String s){return ledger(copyCache(),m,s);}
     private JSONObject ledger(JSONObject snapshot,String m,String s){
+        if("trend".equals(s)){
+            JSONObject local=snapshot.optJSONObject("local_records");
+            JSONObject tree=local==null?null:local.optJSONObject(m);
+            JSONObject trend=tree==null?null:tree.optJSONObject("trend");
+            JSONObject data=trend==null?null:trend.optJSONObject("ledger");
+            return data==null?new JSONObject():data;
+        }
         if("coin".equals(m))return record(snapshot,"ma".equals(s)?"coinMaLedger":"coinGeneralLedger");
         if("close".equals(s))return record(snapshot,"stockCwLedger");
         JSONObject base=record(snapshot,"stockAtLedger");
@@ -1444,6 +1451,13 @@ public final class UnifiedVisualActivity extends Activity {
 
     private JSONObject research(String m,String s){return research(copyCache(),m,s);}
     private JSONObject research(JSONObject snapshot,String m,String s){
+        if("trend".equals(s)){
+            JSONObject local=snapshot.optJSONObject("local_records");
+            JSONObject tree=local==null?null:local.optJSONObject(m);
+            JSONObject trend=tree==null?null:tree.optJSONObject("trend");
+            JSONObject data=trend==null?null:trend.optJSONObject("research");
+            return data==null?new JSONObject():data;
+        }
         if("coin".equals(m))return record(snapshot,"ma".equals(s)?"coinMaResearch":"coinGeneralResearch");
         if("close".equals(s))return record(snapshot,"stockCwResearch");
         JSONObject at=record(snapshot,"stockAtResearch");
@@ -1497,7 +1511,7 @@ public final class UnifiedVisualActivity extends Activity {
         String id=row.optString("id","");
         String reason=row.optString("reason","").toUpperCase(Locale.ROOT);
         return mode.contains("MARKET_TREND")||mode.contains("마켓트렌드")||
-            status.startsWith("TREND_")||id.startsWith("MT43:")||
+            status.startsWith("TREND_")||id.startsWith("MT43:")||id.startsWith("MT54:")||
             reason.startsWith("MARKET_TREND_");
     }
 
@@ -1631,6 +1645,37 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private Stats calculateStats(JSONObject snapshot,String m,String s){
         Stats st=new Stats();JSONObject l=ledger(snapshot,m,s);
+        if("trend".equals(s)){
+            JSONArray all=array(l,"positions"),open=new JSONArray();
+            for(int i=0;i<all.length();i++){
+                JSONObject x=all.optJSONObject(i);
+                if(x!=null&&"TREND_OPEN".equals(x.optString("status",""))&&
+                    x.optDouble("qty",0)>0)open.put(x);
+            }
+            st.positions=open;
+            JSONObject local=snapshot.optJSONObject("local_records");
+            JSONObject watches=local==null?null:local.optJSONObject("market_trend_watch");
+            st.pending=watches==null?new JSONArray():array(watches,m);
+            st.executions=array(l,"executions");
+            st.realized=num(l,"realized_pnl");
+            st.unrealized=num(l,"unrealized_pnl");
+            if(finite(st.realized)&&finite(st.unrealized))st.total=st.realized+st.unrealized;
+            JSONObject rs=research(snapshot,m,s);
+            st.research=array(rs,"items");
+            st.candidates=st.research.length();
+            int bought=0,sold=0;
+            for(int i=0;i<st.executions.length();i++){
+                JSONObject x=st.executions.optJSONObject(i);
+                if(x==null)continue;
+                String side=x.optString("side","");
+                if("BUY".equalsIgnoreCase(side))bought++;
+                if("SELL".equalsIgnoreCase(side))sold++;
+            }
+            st.bought=bought;st.closed=sold;
+            st.flowPending=st.pending.length();st.flowHolding=st.positions.length();
+            st.flowBought=bought;st.flowSold=sold;st.flowKnown=true;
+            return st;
+        }
         st.positions=rows(l,m,s,"positions","holdings");
         // Shadow observations are research, not broker pending orders.
         // They remain in the trend research journal and approved evidence.
@@ -1812,8 +1857,8 @@ public final class UnifiedVisualActivity extends Activity {
 
     private String[][] strategyList(String m){
         return "stock".equals(m)
-            ?new String[][]{{"at","기준봉"},{"ma","MA"},{"close","종가베팅"},{"gmo","수급매매"}}
-            :new String[][]{{"general","기준봉"},{"ma","MA"}};
+            ?new String[][]{{"at","기준봉"},{"ma","MA"},{"close","종가베팅"},{"gmo","수급매매"},{"trend","마켓트렌드"}}
+            :new String[][]{{"general","기준봉"},{"ma","MA"},{"trend","마켓트렌드"}};
     }
 
     private double sum(JSONArray a,boolean sellsOnly){
@@ -1863,7 +1908,10 @@ public final class UnifiedVisualActivity extends Activity {
         else if("market".equals(page))renderMarket();
         else if("home".equals(page))renderHome();
         else if("positions".equals(page))renderList("보유 종목",stats(market,strategy).positions,"positions");
-        else if("pending".equals(page))renderList("매수 대기",stats(market,strategy).pending,"pending");
+        else if("pending".equals(page)){
+            if("trend".equals(strategy))renderTrendWatchPending();
+            else renderList("매수 대기",stats(market,strategy).pending,"pending");
+        }
         else if("executions".equals(page))renderList("체결 이력",stats(market,strategy).executions,"executions");
         else if("operation".equals(page))renderOperation();
         else if("research".equals(page))renderResearch();
@@ -1872,6 +1920,35 @@ public final class UnifiedVisualActivity extends Activity {
         else if("errors".equals(page))renderErrors();
         else if("policyHistory".equals(page))renderPolicyHistory();
         else renderMore();
+    }
+
+    private void renderTrendWatchPending(){
+        // Distinguish live RSI observation from a broker order or virtual buy.
+        JSONArray pending=stats(market,"trend").pending;
+        TextView title=text("마켓트렌드 · RSI(20) ≤ 35 매수대기",20);
+        title.setTypeface(null,Typeface.BOLD);
+        content.addView(title);
+        TextView detail=text("실제 주문 대기가 아닌 RSI 관측 · 30 이하 진입조건 미충족 시 해당 봉에서 자동 해제",12);
+        detail.setTextColor(PremiumUi.MUTED);
+        detail.setPadding(dp(2),dp(6),0,dp(10));
+        content.addView(detail);
+        if(pending.length()==0){empty("RSI 35 이하 관측종목 없음 · RSI 40 이하는 내부 테스트만 진행");return;}
+        for(int i=0;i<pending.length();i++){
+            JSONObject row=pending.optJSONObject(i);
+            if(row==null||!"WATCH_PENDING".equals(row.optString("status","")))continue;
+            LinearLayout panel=card();
+            String symbol=row.optString("code","종목 미확인");
+            panel.addView(text(symbol+" · "+tfLabel(timeFrameOf(row)),17));
+            double rsi=row.optDouble("rsi20_live",Double.NaN);
+            panel.addView(text("관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
+                " · 현재가 "+formatMaybeMoney(row,"price"),13));
+            panel.addView(text("진입 재무장 "+(row.optBoolean("armed",false)?"완료":"대기")+
+                " · RSI30 관측 "+(row.optBoolean("touched_30",false)?"있음":"없음")+
+                " · 상태: 미주문 관측",11));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+            lp.setMargins(0,0,0,dp(9));
+            content.addView(panel,lp);
+        }
     }
 
     private LinearLayout marketEvidenceCard(JSONObject factor,boolean crypto){
@@ -2099,7 +2176,7 @@ public final class UnifiedVisualActivity extends Activity {
         boolean complete=knownR==totalScopes&&knownU==totalScopes;
         LinearLayout hero=card();
         hero.setPadding(dp(15),dp(10),dp(15),dp(10));
-        TextView info=text("전략 6개 · 주식 4 / 코인 2 · 보유 "+held.size()+"종목",12);
+        TextView info=text("전략 8개 · 주식 5 / 코인 3 · 보유 "+held.size()+"종목",12);
         info.setTextColor(PremiumUi.MUTED);hero.addView(info);
         TextView totalTitle=text("전체 누적손익",12);
         totalTitle.setTextColor(PremiumUi.MUTED);
@@ -2112,9 +2189,9 @@ public final class UnifiedVisualActivity extends Activity {
         hero.addView(total);
         LinearLayout sums=new LinearLayout(this);
         sums.setOrientation(LinearLayout.HORIZONTAL);
-        addLargeMoneyMetric(sums,"●","실현 ("+knownR+"/6)",knownR>0?realized:Double.NaN,
+        addLargeMoneyMetric(sums,"●","실현 ("+knownR+"/"+totalScopes+")",knownR>0?realized:Double.NaN,
                             Color.rgb(79,210,247));
-        addLargeMoneyMetric(sums,"◇","평가 ("+knownU+"/6)",knownU>0?unrealized:Double.NaN,
+        addLargeMoneyMetric(sums,"◇","평가 ("+knownU+"/"+totalScopes+")",knownU>0?unrealized:Double.NaN,
                             Color.rgb(184,158,255));
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(55));
         sp.setMargins(0,dp(7),0,0);hero.addView(sums,sp);
@@ -2261,49 +2338,19 @@ public final class UnifiedVisualActivity extends Activity {
         source.setTextColor(Color.rgb(132,177,213));
         headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
         content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
+        if("trend".equals(strategy)){
+            TextView status=text("RSI20 독립 자동감시 · 5분/30분/1시간/일봉 각 독립시드 · 신규 LIVE 별도 승인 전 PAPER",12);
+            status.setTextColor(Color.rgb(119,229,180));
+            content.addView(status,new LinearLayout.LayoutParams(-1,dp(27)));
+        }
 
-        // Market-trend is a mode of the existing reference/MA strategies.
+        // v054 independent RSI strategy: never expose the obsolete MT43
+        // manual toggle on original AT/MA strategy tabs. Preserve saved legacy
+        // flags and old positions for existing-exit reconciliation only.
         if("at".equals(strategy)||"general".equals(strategy)||"ma".equals(strategy)){
-            JSONObject local=uiSnapshot.packet.optJSONObject("local_records");
-            JSONObject all=local==null?null:local.optJSONObject("market_trend_status");
-            JSONObject one=all==null?null:all.optJSONObject(market);
-            String mode=one==null?"PAUSED":one.optString("mode","PAUSED");
-            boolean manual=one!=null&&one.optBoolean("manual_trend",false);
-            String label="MARKET_TREND".equals(mode)?"마켓트렌드":
-                         "ORIGINAL".equals(mode)?
-                            ("ma".equals(strategy)?"MA":"기준봉"):"시장점수 조회 대기 · 신규매수 중단";
-            TextView active=text("현재 적용 매매법: "+
-                (manual?"[수동] ":"[시장점수 자동] ")+label,12);
-            active.setTextColor("PAUSED".equals(mode)?
-                Color.rgb(255,201,94):Color.rgb(119,229,180));
+            TextView active=text("기준봉·MA는 원래 매매조건 유지 · 마켓트렌드 별도 전략",12);
+            active.setTextColor(Color.rgb(119,229,180));
             content.addView(active,new LinearLayout.LayoutParams(-1,dp(23)));
-            // One stock switch controls AT+MA. One coin switch controls BASE+MA.
-            final String targetMarket=market;
-            LinearLayout manualRow=new LinearLayout(this);
-            manualRow.setGravity(Gravity.CENTER_VERTICAL);
-            TextView scope=text("stock".equals(market)?"주식 기준봉·MA 공통":"코인 기준봉·MA 공통",11);
-            scope.setTextColor(PremiumUi.MUTED);
-            manualRow.addView(scope,new LinearLayout.LayoutParams(0,dp(38),1));
-            Button manualButton=button(manual?"수동 해제 · 자동 복귀":
-                "마켓트렌드 수동 ON",manual,
-                ()->confirmManualTrend(targetMarket,!manual));
-            manualRow.addView(manualButton,new LinearLayout.LayoutParams(dp(178),dp(38)));
-            content.addView(manualRow,new LinearLayout.LayoutParams(-1,dp(42)));
-            try{
-                android.content.SharedPreferences reply=getSharedPreferences(
-                    "artitrade_trend_manual_result_v045",MODE_PRIVATE);
-                long elapsed=System.currentTimeMillis()-reply.getLong("at",0L);
-                if(targetMarket.equals(reply.getString("market",""))
-                    &&elapsed>=0&&elapsed<60000L){
-                    JSONObject result=new JSONObject(reply.getString("result","{}"));
-                    if(!result.optBoolean("ok",true)){
-                        TextView warning=text("수동 전환 미적용: "+
-                            result.optString("error","설정 확인 필요"),11);
-                        warning.setTextColor(PremiumUi.LOSS);
-                        content.addView(warning,new LinearLayout.LayoutParams(-1,dp(22)));
-                    }
-                }
-            }catch(Exception ignored){}
         }
 
         String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"업비트 · KRW TOP35";
@@ -4544,7 +4591,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderResearch(){
-        if(researchTrendOnly&&hasTrendCohort()){
+        if("trend".equals(strategy)||(researchTrendOnly&&hasTrendCohort())){
             renderTrendResearch();
             return;
         }
@@ -5021,14 +5068,14 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject root=new JSONObject();
         try{
             JSONObject stock=new JSONObject(),coin=new JSONObject();
-            for(String stg:new String[]{"at","ma"}){
+            for(String stg:new String[]{"at","ma","trend"}){
                 JSONObject frames=new JSONObject();
                 for(String tf:new String[]{"5m","30m","60m","day"})frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
                 stock.put(stg,new JSONObject().put("frames",frames));
             }
             stock.put("close",new JSONObject().put("seed",2000000).put("max_positions",4));
             stock.put("gmo",new JSONObject().put("seed",2000000).put("max_positions",4));
-            for(String stg:new String[]{"general","ma"}){
+            for(String stg:new String[]{"general","ma","trend"}){
                 JSONObject frames=new JSONObject();
                 for(String tf:new String[]{"5m","30m","60m","day"})frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
                 coin.put(stg,new JSONObject().put("frames",frames));
@@ -5203,7 +5250,7 @@ public final class UnifiedVisualActivity extends Activity {
         try{
             JSONObject marketObj=all.optJSONObject(market);if(marketObj==null){marketObj=new JSONObject();all.put(market,marketObj);}
             if("stock".equals(market)){
-                for(String stg:new String[]{"at","ma"}){
+                for(String stg:new String[]{"at","ma","trend"}){
                     JSONObject frames=new JSONObject();
                     for(String tf:new String[]{"5m","30m","60m","day"}){
                         EditText[] e=operationFields.get("stock."+stg+"."+tf);if(e==null)continue;
@@ -5216,7 +5263,7 @@ public final class UnifiedVisualActivity extends Activity {
                     marketObj.put(stg,new JSONObject().put("seed",operationLong(e[0],"시드")).put("max_positions",operationLong(e[1],"최대보유")));
                 }
             }else{
-                for(String stg:new String[]{"general","ma"}){
+                for(String stg:new String[]{"general","ma","trend"}){
                     JSONObject frames=new JSONObject();
                     for(String tf:new String[]{"5m","30m","60m","day"}){
                         EditText[] e=operationFields.get("coin."+stg+"."+tf);if(e==null)continue;
@@ -5247,6 +5294,7 @@ public final class UnifiedVisualActivity extends Activity {
         if("stock".equals(market)){
             addFrameOperationSection("기준봉", "stock","at",settings);
             addFrameOperationSection("MA", "stock","ma",settings);
+            addFrameOperationSection("마켓트렌드", "stock","trend",settings);
 
             TextView single=text("단일 전략 계좌",19);single.setTypeface(null,Typeface.BOLD);single.setTextColor(Color.rgb(224,226,236));single.setPadding(0,dp(18),0,dp(8));content.addView(single);
             LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
@@ -5256,6 +5304,7 @@ public final class UnifiedVisualActivity extends Activity {
         }else{
             addFrameOperationSection("기준봉", "coin","general",settings);
             addFrameOperationSection("MA", "coin","ma",settings);
+            addFrameOperationSection("마켓트렌드", "coin","trend",settings);
         }
 
         Button save=button("현재 "+("stock".equals(market)?"주식":"코인")+" 전체 계좌 설정 저장",true,this::saveOperationAll);
@@ -5321,6 +5370,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void empty(String s){TextView e=text(s,13);e.setGravity(Gravity.CENTER);e.setTextColor(PremiumUi.MUTED);e.setPadding(0,dp(22),0,dp(22));content.addView(e);}
 
     private String strategyName(String m,String s){
+        if("trend".equals(s))return "마켓트렌드";
         if("coin".equals(m))return "ma".equals(s)?"MA":"기준봉";
         if("ma".equals(s))return "MA";if("close".equals(s))return "종가베팅";if("gmo".equals(s))return "수급매매";return "기준봉";
     }

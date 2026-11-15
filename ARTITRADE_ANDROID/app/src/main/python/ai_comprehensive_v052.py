@@ -710,7 +710,7 @@ def analyze_trend(root,market,now=None):
             pid=_obj(event.get("payload")).get("position_id")
             if pid is not None:
                 entries[(str(event.get("strategy")),str(pid))]=event
-        if (str(event.get("event_key") or "").startswith("MT43:SELL:") and
+        if (str(event.get("event_key") or "").startswith(("MT43:SELL:","MT54:SELL:")) and
                 str(event.get("event_key") or "").endswith(":FILLED")):
             pid=_obj(event.get("payload")).get("position_id")
             if pid is not None:

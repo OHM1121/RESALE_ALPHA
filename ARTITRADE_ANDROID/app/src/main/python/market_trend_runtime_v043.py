@@ -17,6 +17,8 @@ from pathlib import Path
 
 import market_trend_v043 as mt
 from market_trend_wallet_v043 import TrendWallet, UnsafeFill
+from market_trend_wallet_v054 import TrendWalletV054
+from market_trend_watch_v054 import WatchBook
 
 _CORE=None
 _INSTALLED=False
@@ -110,7 +112,11 @@ class Coordinator:
         self.journal=mt.TrendJournal(rt.root)
         self.manual_trend={market:self.journal.manual_trend(market)
                            for market in ("stock","coin")}
-        self.wallet=TrendWallet(rt,self.journal)
+        self.wallet=TrendWallet(rt,self.journal)  # LEGACY MT43 exits only
+        self.standalone_wallet=TrendWalletV054(rt,legacy_owned=self.wallet.native_owned,
+             order_lock=self.wallet.order_lock)
+        self.watch=WatchBook()  # RSI35 watch is not an order or shadow fill
+        self._sealed_watch={}
         self.stop_event=threading.Event()
         self.lock=threading.RLock()
         self.threads=[]
@@ -191,6 +197,14 @@ class Coordinator:
                     record["market"],record["strategy"],record["frame"],
                     record["symbol"],"UNSAFE",type(exc).__name__)
 
+        # MT54 restores exclusively from its own accounts, never from parent cash.
+        for market in ('stock','coin'):
+            try:
+                for p in self.standalone_wallet.open_positions(market):
+                    self._positions[(market,'trend',p.frame,p.symbol)]=p
+            except (sqlite3.Error,ValueError,TypeError,OSError) as exc:
+                self._last_fetch_error[market]='MT54_RESTORE:'+type(exc).__name__
+
     def mode(self,market):
         return self.modes.get(market,"PAUSED")
 
@@ -206,8 +220,10 @@ class Coordinator:
                     "mode":self.mode(market),"score":self.scores.get(market)}
 
     def active_symbol(self,market,code):
-        return any(p.market==market and p.symbol==code and p.qty>0
-                   for p in tuple(self._positions.values())) or self.wallet.trend_owned(market,code)
+        return (any(p.market==market and p.symbol==code and p.qty>0
+                    for p in tuple(self._positions.values())) or
+                self.wallet.trend_owned(market,code) or
+                self.standalone_wallet.owned(market,code))
 
     def _start_score_worker(self):
         from market_research_v033 import offer_records
@@ -224,15 +240,14 @@ class Coordinator:
         result=self._read_score(market)
         with self.lock:
             score=result.get("score")
-            mode=mt.effective_market_mode(score,result.get("status",""),
-                    result.get("stale",True),result.get("market_open",True),
-                    manual_trend=self.manual_trend[market])
+            # v054: AT/MA never switch to RSI20 based on score or legacy manual
+            # override. Their original engines retain their own entry filters.
+            mode="ORIGINAL"
             prior=self.modes.get(market,"PAUSED")
             self.scores[market]=score
             self.mode_details[market]=str(result.get("status") or "")
             if mode!=prior:
-                if mode=="MARKET_TREND":
-                    self._cancel_native_pending(market)
+                # No automatic cancellation of original strategy pending orders.
                 # Broker-unknown pending orders remain unresolved and preserved.
                 with self.journal.lock,self.journal.connect() as c:
                     c.execute("INSERT INTO gate_events VALUES(?,?,?,?,?)",
@@ -476,7 +491,9 @@ class Coordinator:
                             p.close_next_bar(stamp,rsi)
                             p.__dict__["rsi20_closed"]=rsi
                             changed=True
-                if changed:self.journal.save_position(p,p.position_id)
+                if changed:
+                    if p.strategy=='trend':self.standalone_wallet.save_position(p)
+                    else:self.journal.save_position(p,p.position_id)
             for virtual_key,v in tuple(self._virtual.items()):
                 if v.market!=market or v.symbol!=code or v.frame!=frame:
                     continue
@@ -505,7 +522,7 @@ class Coordinator:
                     self.journal.save_virtual(json.dumps(virtual_key,ensure_ascii=False),v)
 
     def _preclose_candidates(self,market,now):
-        if self.mode(market)!="MARKET_TREND":return
+        # Independent trend evaluates regardless of the signed market score.
         # Score bypass must never permit KRX trading outside regular session.
         if market=="stock":
             from krx_session_v041 import is_regular_open
@@ -543,9 +560,19 @@ class Coordinator:
                 if check:
                     self._prechecked[entry]=rsi
                     self.journal.record_watch(market,code,frame,q["trade"],rsi,barid)
+                    armed=self.journal.latch(market,code,frame).armed
+                    self.watch.observe(market,code,frame,barid,rsi,armed,
+                        observed_at=time.time(),price=q['trade'])
                 if submit and (self._prechecked.get(entry,100)>30 or rsi>30):continue
                 if submit and entry not in self._ordered:
                     due[code].append((frame,rsi,barid,q))
+        # The -12s decision closes the observation queue for this bar.
+        # A 35-only candidate never becomes a simulated entry.
+        for frame,finish,_,submit in scheduled:
+            if submit:
+                barid=finish.isoformat()
+                self._sealed_watch[(market,frame)]=barid
+                self.watch.expire(market,frame,barid)
         for code,signals in due.items():
             # Broker/ledger duplicate checks and a durable filled-stop ban are
             # mandatory before an entry can consume parent-strategy cash.
@@ -560,19 +587,15 @@ class Coordinator:
             latch=self.journal.latch(market,code,frame)
             if not latch.offer(barid,rsi):continue
             self.journal.save_latch(market,code,frame,latch)
-            assigned=_parent(market)[self._fair[market]%2]
-            self._fair[market]+=1
+            assigned='trend'
             name=str(candidates[code][1]) if isinstance(candidates[code],(tuple,list)) else code
             disposition="NO_FILL"
             result=None
             try:
-                if self.mode(market)!="MARKET_TREND":
-                    disposition="SCORE_SWITCHED"
-                else:
-                    p,disposition=self.wallet.buy(market,assigned,frame,code,name,
+                p,disposition=self.standalone_wallet.buy(market,frame,code,name,
                         q["ask"],q["ask_size"],now,barid,rsi)
-                    if p is not None:
-                        self._positions[(market,assigned,frame,code)]=p;result=p
+                if p is not None:
+                    self._positions[(market,assigned,frame,code)]=p;result=p
             except Exception as exc:
                 disposition="UNSAFE:"+type(exc).__name__
                 self._last_fetch_error[market]=disposition
@@ -580,7 +603,7 @@ class Coordinator:
             # simulated fills, and VIRTUAL for missed / unfilled signals.
             signal_mode=("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
                          else "PAPER") if result else "VIRTUAL"
-            self.journal.event("MT43:SIG:"+market+":"+code+":"+frame+":"+barid,
+            self.journal.event("MT54:SIG:"+market+":"+code+":"+frame+":"+barid,
                 market,assigned,frame,code,signal_mode,
                 disposition,price=q["ask"],rsi20_live=rsi,
                 payload={"selected_frame":frame,"score":self.scores.get(market),
@@ -606,14 +629,20 @@ class Coordinator:
                         bar3_preclose=bool(p.__dict__.get("bar3_preclose")))
             if result:
                 try:
-                    sold,status=self.wallet.sell(p,q["bid"],now,result[0],bid_size=q["bid_size"])
+                    owner=self.standalone_wallet if p.strategy=='trend' else self.wallet
+                    sold,status=owner.sell(p,q["bid"],now,result[0],bid_size=q["bid_size"])
                     if not sold and status in ("LIVE_POSITION_BROKER_DISABLED",
                             "PAPER_POSITION_LIVE_MODE","POSITION_FILL_MODE_UNVERIFIED"):
                         self._last_fetch_error[market]="SELL:"+status
                     if sold:
                         if result[0]=="MT_STOP_9PCT":
                             p.__dict__["stop_fill_at"]=now.isoformat()
-                            self.journal.save_position(p,p.position_id)
+                            if p.strategy=='trend':
+                                self.standalone_wallet.save_position(p)
+                                # A closed MT54 stop may populate the v043 dedicated
+                                # re-entry ban without borrowing any parent cash.
+                                self.journal.save_position(p,p.position_id)
+                            else:self.journal.save_position(p,p.position_id)
                         if p.qty<=0:self._positions.pop(key,None)
                 except Exception as exc:
                     self._last_fetch_error[market]="SELL:"+type(exc).__name__
@@ -623,7 +652,8 @@ class Coordinator:
                 now_mono=time.monotonic()
                 last=self._position_snapshot_at.get(key,0)
                 if now_mono-last>=10.0:
-                    self.journal.save_position(p,p.position_id)
+                    if p.strategy=='trend':self.standalone_wallet.save_position(p)
+                    else:self.journal.save_position(p,p.position_id)
                     self._position_snapshot_at[key]=now_mono
         for key,v in list(self._virtual.items()):
             if v.market!=market:continue
@@ -658,10 +688,9 @@ class Coordinator:
                 started=time.monotonic()
                 try:self._process_closed(market)
                 finally:self._record_latency(market,"closed",started)
-                if self.mode(market)=="MARKET_TREND":
-                    started=time.monotonic()
-                    try:self._preclose_candidates(market,dt.datetime.now(mt.KST))
-                    finally:self._record_latency(market,"preclose",started)
+                started=time.monotonic()
+                try:self._preclose_candidates(market,dt.datetime.now(mt.KST))
+                finally:self._record_latency(market,"preclose",started)
                 started=time.monotonic()
                 try:self._process_holds(market,dt.datetime.now(mt.KST))
                 finally:self._record_latency(market,"holds",started)
@@ -671,47 +700,54 @@ class Coordinator:
             self.stop_event.wait(.45)
 
     def _watch_loop(self,market):
-        """Record RSI<=40 and ten minutes of following price evidence.
+        """Record RSI<=40 internally; expose only RSI<=35 WATCH_PENDING.
 
-        This runs separately from the -15/-12 second order scheduler. Its
-        lower-frequency writes cannot delay time-critical trade decisions.
+        This research-only loop never submits a broker order or virtual fill.
         """
         while not self.stop_event.is_set():
             try:
-                if self.mode(market)=="MARKET_TREND":
-                    now=dt.datetime.now(mt.KST)
-                    since=time.monotonic()
-                    with self.lock:
-                        candidates=list(self._candidates[market])
-                        quotes=dict(self._quotes[market])
-                    for code in candidates:
-                        raw=quotes.get(code)
-                        if raw is None or since-raw[1]>3:continue
-                        price=raw[0]
-                        for frame in mt.FRAMES:
-                            finish=_end_clock(now,market,frame)
-                            if finish is None:continue
-                            rows=self._closed_series(market,code,frame,finish)
-                            if not rows:continue
-                            rsi=mt.rsi20([x["close"] for x in rows],price)
-                            if rsi is None:continue
-                            key=(market,code,frame)
-                            if rsi<=40:
-                                self._watch_after[key]=time.time()+600
-                            after=time.time()<self._watch_after.get(key,0)
-                            if after:
-                                self.journal.record_watch(market,code,frame,
-                                    price,rsi,finish.isoformat(),
-                                    after_trigger=True)
+                now=dt.datetime.now(mt.KST)
+                since=time.monotonic()
+                with self.lock:
+                    candidates=list(self._candidates[market])
+                    quotes=dict(self._quotes[market])
+                for code in candidates:
+                    raw=quotes.get(code)
+                    if raw is None or since-raw[1]>3:
+                        for frame in mt.FRAMES:self.watch.discard(market,code,frame)
+                        continue
+                    price=raw[0]
+                    for frame in mt.FRAMES:
+                        finish=_end_clock(now,market,frame)
+                        if finish is None:
+                            self.watch.discard(market,code,frame)
+                            continue
+                        barid=finish.isoformat()
+                        if self._sealed_watch.get((market,frame))==barid:
+                            self.watch.discard(market,code,frame)
+                            continue
+                        rows=self._closed_series(market,code,frame,finish)
+                        if not rows:
+                            self.watch.discard(market,code,frame)
+                            continue
+                        rsi=mt.rsi20([x['close'] for x in rows],price)
+                        if rsi is None:
+                            self.watch.discard(market,code,frame)
+                            continue
+                        if rsi<=40:
+                            self.journal.record_watch(market,code,frame,
+                                price,rsi,barid,after_trigger=True)
+                        armed=self.journal.latch(market,code,frame).armed if rsi<=35 else False
+                        self.watch.observe(market,code,frame,barid,rsi,armed,
+                            observed_at=time.time(),price=price)
             except Exception as exc:
-                self._last_fetch_error[market]="WATCH:"+type(exc).__name__
+                self._last_fetch_error[market]='WATCH:'+type(exc).__name__
             self.stop_event.wait(30)
 
     def _rank_loop(self,market):
         while not self.stop_event.is_set():
             try:
-                if self.mode(market)=="MARKET_TREND":
-                    self._refresh_rank(market)
+                self._refresh_rank(market)
             except Exception as exc:
                 self._last_fetch_error[market]="RANK_WORKER:"+type(exc).__name__
             self.stop_event.wait(5)
@@ -767,7 +803,12 @@ class Coordinator:
                 item={
                     "mode":self.mode(market),"score":self.scores[market],
                     "manual_trend":bool(self.manual_trend[market]),
-                    "mode_source":"MANUAL" if self.manual_trend[market] else "AUTO",
+                    "mode_source":"INDEPENDENT",
+                    "entry_mode":"INDEPENDENT_TREND",
+                    "trend_active":True,
+                    "watch_pending":len(self.watch.snapshot(market)) if hasattr(self,"watch") else 0,
+                    "trend_wallet_frames":({tf:self.standalone_wallet.allocation(market,tf)
+                       for tf in mt.FRAMES} if hasattr(self,"standalone_wallet") else {}),
                     "status":self.mode_details[market],
                     "candidates":len(self._candidates[market]),
                     "error":self._last_fetch_error.get(market,"")}
@@ -799,11 +840,17 @@ class Coordinator:
         try:out=json.loads(raw) if isinstance(raw,str) else dict(raw)
         except (ValueError,TypeError):return raw
         out["market_trend_status"]=self.snapshot()
+        out["market_trend_watch"]={m:self.watch.snapshot(m) for m in ('stock','coin')}
+        for m in ('stock','coin'):
+            node=out.setdefault(m,{})
+            node['trend']={'ledger':self.standalone_wallet.snapshot(m)}
         trend_research={"stock":[],"coin":[]}
         with self.lock:
             current=tuple(self._positions.values())
             virtual=tuple(self._virtual.items())
         def target_ledger(market,strategy):
+            if strategy=='trend':
+                return out.get(market,{}).get('trend',{}).get('ledger',{})
             if market=="stock":
                 ledger=out.get("stock",{}).get("at",{}).get("ledger",{})
                 return ledger.get("ma_subledger",{}) if strategy=="ma" else ledger
@@ -854,7 +901,8 @@ class Coordinator:
         # Only RSI20 entry decisions belong in RSI20 research.
         # SELL and INTENT events cannot masquerade as a new BUY signal.
         for x in self.journal.events_recent(350):
-            if not str(x["event_key"]).startswith("MT43:SIG:"):continue
+            if not (str(x["event_key"]).startswith("MT43:SIG:") or
+                    str(x["event_key"]).startswith("MT54:SIG:")):continue
             item={"id":x["event_key"],"tf":x["frame"],
                   "code":x["symbol"],"market":x["market"],
                   "at":x["at"],"ts":x["at"],"strategy":x["strategy"],
@@ -878,7 +926,11 @@ class Coordinator:
                     item["outcome"]="UNVERIFIED_FILL"
             except (ValueError,TypeError):pass
             trend_research[x["market"]].append(item)
-            if x["market"]=="stock":
+            if x['strategy']=='trend':
+                target=out.get(x['market'],{}).get('trend',{})
+                if isinstance(target,dict):
+                    target.setdefault('research',{}).setdefault('items',[]).append(item)
+            elif x["market"]=="stock":
                 target=out.get("stock",{}).get("at",{})
                 if x["strategy"]=="ma":
                     target=target.get("ledger",{}).get("ma_subledger",{})

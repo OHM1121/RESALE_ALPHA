@@ -39,10 +39,12 @@ def _defaults():
         'ma':{'frames':_frame_defaults()},
         'close':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX},
         'gmo':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX},
+        'trend':{'frames':_frame_defaults()},
       },
       'coin':{
         'general':{'frames':_frame_defaults()},
         'ma':{'frames':_frame_defaults()},
+        'trend':{'frames':_frame_defaults()},
       },
     }
 
@@ -87,10 +89,12 @@ def _validate(data):
         'ma':{'frames':_frames(stock.get('ma',{}),'stock/ma')},
         'close':_read_pair(stock.get('close',{}),'stock/close'),
         'gmo':_read_pair(stock.get('gmo',{}),'stock/gmo'),
+        'trend':{'frames':_frames(stock.get('trend',{}),'stock/trend')},
       },
       'coin':{
         'general':{'frames':_frames(coin.get('general',{}),'coin/general')},
         'ma':{'frames':_frames(coin.get('ma',{}),'coin/ma')},
+        'trend':{'frames':_frames(coin.get('trend',{}),'coin/trend')},
       },
     }
 
@@ -206,6 +210,8 @@ def _apply_runtime(rt,data):
       ('stock.gmo',lambda:_apply_gmo(rt,data['stock']['gmo'])),
       ('coin.general',lambda:_apply_coin(rt.coin_ledger,data['coin']['general'])),
       ('coin.ma',lambda:_apply_coin(rt.coin_ma_ledger,data['coin']['ma'])),
+      ('stock.trend',lambda:rt.market_trend.standalone_wallet.apply_settings('stock',data['stock']['trend']['frames'])),
+      ('coin.trend',lambda:rt.market_trend.standalone_wallet.apply_settings('coin',data['coin']['trend']['frames'])),
     ]
     for name,fn in jobs:
         try:result['strategies'][name]=fn()
