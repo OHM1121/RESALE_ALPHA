@@ -23,10 +23,10 @@ C. 완전히 새 거래소 연결/매매 엔진: 소켓 중복·레이트리밋�
 
 ## 3. 운영자금 제안
 
-- `stock.trend` / `coin.trend` 각각 독립 계좌, 초기 기본운용시드 2,000,000원, 최대 4종목(기존 기본값과 동일). 이는 사용자가 지정하지 않은 숫자의 제안값이며 실제 기존 설정을 덮어쓰면 안 됨.
-- 시간봉 5m/30m/60m/day는 해당 시장의 마켓트렌드 **단일 공동 시드**에서 지출함. 4개 시간봉에 각각 2백만원을 중복 할당하지 않음.
+- `stock.trend` / `coin.trend` 각각 5m·30m·60m·day의 독립 시간봉 계좌 네 개, 기본 각 2,000,000원/4종목(기존 기본값을 재사용하는 초기값 제안, 기존 설정 덮어쓰기 금지).
+- 시간봉 5m/30m/60m/day별로 **독립 운용시드, 독립 잔액, 최대 보유종목 수**를 관리함(사용자가 2026-11-15 명시 승인). 각 시간봉의 초기 제안값은 2,000,000원/최대 4종목이며 앱의 운영설정에서 개별 수정 가능. 매수·매도는 해당 시간봉 원장/잔액에만 반영하고 같은 시장의 다른 시간봉 자금을 전용하지 않음.
 - 기존 AT, MA, CLOSE, GMO, coin BASE 자금·손익·최대보유 설정은 불변.
-- 새 DB 예: `stock/trend/market_trend_wallet_v054.sqlite3`, `coin/trend/market_trend_wallet_v054.sqlite3`; `accounts`, `positions`, `executions`, `allocations`, `reservation_audit` 보유. 기존 v043 연구 DB는 읽기 유지, 필요시 v054 전용 watch 테이블로 증분.
+- 새 DB 예: `stock/trend/market_trend_wallet_v054.sqlite3`, `coin/trend/market_trend_wallet_v054.sqlite3`; 계좌키 `tf`로 구분되는 `accounts(tf,seed,cash,max_positions,...)`, `positions`, `executions`, `allocations`, `reservation_audit` 보유. 기존 v043 연구 DB는 읽기 유지, 필요시 v054 전용 watch 테이블로 증분.
 - 독립시드는 앱 내부의 계좌별 전략 운용한도이며, 키움/업비트 실계좌의 실물 현금을 법적·물리적으로 분리한 별도 계좌가 아님. LIVE에서는 전역 브로커 잔고/예약과 대조하고 부족 시 주문 중단.
 - 새 전략은 기존 LIVE 스위치를 상속해 예기치 않게 실주문하지 않도록 **별도 명시적 LIVE 활성화**가 있기 전까지 PAPER 작동. 사용자의 현재 시장별 LIVE 설정은 그대로 보존.
 
