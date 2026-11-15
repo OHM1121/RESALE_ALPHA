@@ -105,8 +105,17 @@ def _add_entry(conn,row,event,market,strategy,now):
                       FROM trade_evidence_v048
                       WHERE strategy=? AND evidence_key=?""",
                       (strategy,key)).fetchone()
+    spread=met.entry_spread(row,event["entry_ts"])
+    if spread.get('value') is None:
+        # The original trade rows generally have no bid/ask timestamp.
+        # Recover ONLY a separately recorded pre-entry fresh book; a future
+        # observation must never be attributed to the past trade.
+        from ai_live_book_v058 import lookup
+        observed=lookup(conn,event["symbol"],event["entry_ts"])
+        if observed is not None:
+            spread=met.entry_spread({'entry_quote':observed},event["entry_ts"])
     item={
-       "02":met.entry_spread(row,event["entry_ts"]),
+       "02":spread,
        "05":met.order_latency(row),
        "09":met._metric(reason="WAITING_FOR_FINAL_ENTRY_CANDLE_OHLC"),
        "10":met._metric(reason="WAITING_FOR_PRE_ENTRY_CANDLES"),
