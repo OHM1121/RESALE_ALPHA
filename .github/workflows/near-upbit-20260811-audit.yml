@@ -1,0 +1,30 @@
+name: OFFICIAL KRW-NEAR Aug 11 23h 1m versus 60m RSI20 read-only audit
+on:
+  push:
+    branches: [ audit-near-20260811-20261116 ]
+    paths: [ '.github/workflows/near-upbit-20260811-audit.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rsi20-minute-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Official Upbit 1-minute and 60-minute candles including last-minute high-low bound
+        env:
+          PYTHONPATH: ARTITRADE_ANDROID/app/src/main/python
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests
+          python3 ARTITRADE_ANDROID/ui_tests/near_upbit_20260811_readonly_audit.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KRW_NEAR_20260811_23h_1m_60m_RSI20_audit
+          path: near_20260811_official_1m_evidence/*
+          retention-days: 30
+          if-no-files-found: error
