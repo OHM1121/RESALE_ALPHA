@@ -196,7 +196,9 @@ def _upsert(conn,event,context,source,now):
                    AND excluded.state!='FINALIZED'
              THEN entry_candle_context_v047.source ELSE excluded.source END,
         updated_at=excluded.updated_at
-      WHERE entry_candle_context_v047.state!='FINALIZED'""",
+      WHERE entry_candle_context_v047.state!='FINALIZED'
+        AND (entry_candle_context_v047.state<>excluded.state
+             OR excluded.state IN ('FINALIZED','PARTIAL_PRIOR_HISTORY'))""",
         (event["strategy"],event["key"],event["role"],event["entry_mode"],
          event["frame"],event["symbol"],event["entry_ts"],context["state"],
          source,encoded,int(now),int(now)))
@@ -219,6 +221,7 @@ def capture_events(root,market,strategy,signals=(),positions=(),bars=(),
             role="ACTUAL"
         elif (row.get("entry_observed") or row.get("virtual_entered") or
               row.get("shadow_entered") or
+              (row.get("virtual_buy_at") and row.get("virtual_buy_evidence")) or
               str(row.get("entry_mode","")).upper() in ("MARKET_TREND","마켓트렌드")
               and str(row.get("id","")).startswith("MT43:SIG:")):
             role="VIRTUAL"
