@@ -2,7 +2,7 @@ name: ARTITRADE v0.7.61 reference, MA, LIVE parity regressions
 on:
   push:
     branches:
-      - feature-artitrade-v061-original-ma-stale-ref-fix-20261116
+      - feature-artitrade-v061-ma-downturn-pivot-20261116
     paths:
       - '.github/workflows/artitrade-v061-regression.yml'
       - 'ARTITRADE_ANDROID/app/src/main/python/**'
