@@ -281,6 +281,7 @@ class TrendWallet:
                 pos.__dict__["position_id"]=pid
                 pos.__dict__["broker_order_id"]=fill.get("order_id","")
                 pos.__dict__["entry_mode"]="MARKET_TREND"
+                pos.__dict__["execution_mode"]=fill["mode"]
                 pos.__dict__["rsi20_live"]=rsi20_live
                 pos.__dict__["bar_finalized"]=False
                 if market=="stock":
