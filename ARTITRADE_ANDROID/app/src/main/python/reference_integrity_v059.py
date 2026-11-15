@@ -253,11 +253,11 @@ def install():
         finally:
             refs=getattr(_STOCK_SCAN,'pending',[])
             _STOCK_SCAN.pending=None
-            if not refs:return
-            with self.lock,stock_ma_engine._connect(self.db) as conn:
-                for e in refs:
-                    conn.execute("""UPDATE candidates SET status='REPLACED'
-                        WHERE tf=? AND code=? AND status='PENDING' AND ref_ts<?""",
-                        (e['tf'],e['code'],e['ref_ts']))
-            self._refresh_watched()
+            if refs:
+                with self.lock,stock_ma_engine._connect(self.db) as conn:
+                    for e in refs:
+                        conn.execute("""UPDATE candidates SET status='REPLACED'
+                            WHERE tf=? AND code=? AND status='PENDING' AND ref_ts<?""",
+                            (e['tf'],e['code'],e['ref_ts']))
+                self._refresh_watched()
     stock_ma_engine.StockMAService.scan_completed=repaired_stock_scan
