@@ -3065,8 +3065,11 @@ public final class UnifiedVisualActivity extends Activity {
                         .put("ui_model_preload_ms",current.preloadMs)
                         .put("ui_prepared_rows",current.preloadRows)
                         .put("ui_cached_model_reused",current.reused);
-                    JSONObject local=current.packet.optJSONObject("local_records");
-                    JSONObject modes=local==null?null:local.optJSONObject("market_trend_status");
+                    JSONObject engine=current.packet.optJSONObject("strategy_runtime");
+                    JSONObject modes=engine==null?null:
+                        engine.optJSONObject("market_trend_status");
+                    // Stable trade-record snapshots intentionally omit volatile
+                    // profiler counters; fetch diagnostics from runtime instead.
                     if(modes!=null)perf.put("market_trend_runtime",modes);
                     metadata=Python.getInstance()
                         .getModule("android_ai_evidence_export_v046")

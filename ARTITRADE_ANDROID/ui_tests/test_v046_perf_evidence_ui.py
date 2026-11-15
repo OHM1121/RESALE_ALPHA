@@ -123,6 +123,27 @@ class V046PerformanceEvidence(TestCase):
         self.assertEqual(c._performance["coin"]["preclose_no_due_cycles"],1)
         self.assertEqual(c._performance["coin"]["preclose_symbols_examined"],0)
 
+    def test_profiler_is_excluded_from_ledger_packet_and_visible_in_runtime(self):
+        c=object.__new__(runtime.Coordinator)
+        c.lock=threading.RLock()
+        c.modes={"stock":"ORIGINAL","coin":"MARKET_TREND"}
+        c.scores={"stock":20,"coin":-20}
+        c.manual_trend={"stock":False,"coin":True}
+        c.mode_details={"stock":"정상","coin":"정상"}
+        c._candidates={"stock":{},"coin":{}}
+        c._last_fetch_error={}
+        c._performance={name:{
+            "preclose_cycles":10,"preclose_no_due_cycles":9,
+            "preclose_due_cycles":1,"preclose_symbols_examined":40,
+            "stages":{"preclose":{"calls":10,"total_ms":80.0,"max_ms":20.0}}
+        } for name in ("stock","coin")}
+        lean=c.snapshot()
+        detailed=c.snapshot(include_performance=True)
+        self.assertNotIn("performance",lean["coin"])
+        self.assertEqual(detailed["coin"]["performance"]["stages"]["preclose"]["mean_ms"],8.0)
+        self.assertEqual(detailed["coin"]["performance"]["preclose_no_due_cycles"],9)
+        self.assertTrue(lean["coin"]["manual_trend"])
+
     def test_full_export_includes_trend_journal_and_exact_numeric_evidence(self):
         with TemporaryDirectory() as work:
             root=Path(work)/"phone"

@@ -75,7 +75,7 @@ def _market_at(events,moment,market):
     # Events are already a sorted (timestamp, score) timeline.
     # Tuple bisect avoids rebuilding a full timestamp list per position.
     idx=bisect.bisect_right(events,(int(moment),float("inf")))-1
-    if idx<0 or int(moment)-times[idx]>MARKET_TTL[market]:return None
+    if idx<0 or int(moment)-events[idx][0]>MARKET_TTL[market]:return None
     return events[idx][1]
 
 

@@ -739,31 +739,38 @@ class Coordinator:
     def stop(self):
         self.stop_event.set()
 
-    def snapshot(self):
+    def snapshot(self,include_performance=False):
+        """Keep high-frequency telemetry out of the large local ledger packet.
+
+        Service runtime diagnostics opt in. The hub/Android trade history stays
+        stable when only profiling counters change, enabling UI memoization.
+        """
         with self.lock:
             result={}
             for market in ("stock","coin"):
-                perf=self._performance[market]
-                stages={}
-                for name,raw in perf["stages"].items():
-                    calls=raw["calls"]
-                    stages[name]={"calls":calls,
-                                  "mean_ms":round(raw["total_ms"]/calls,3) if calls else None,
-                                  "max_ms":round(raw["max_ms"],3) if calls else None}
-                result[market]={
+                item={
                     "mode":self.mode(market),"score":self.scores[market],
                     "manual_trend":bool(self.manual_trend[market]),
                     "mode_source":"MANUAL" if self.manual_trend[market] else "AUTO",
                     "status":self.mode_details[market],
                     "candidates":len(self._candidates[market]),
-                    "error":self._last_fetch_error.get(market,""),
-                    "performance":{
+                    "error":self._last_fetch_error.get(market,"")}
+                if include_performance:
+                    perf=self._performance[market]
+                    stages={}
+                    for name,raw in perf["stages"].items():
+                        calls=raw["calls"]
+                        stages[name]={
+                            "calls":calls,
+                            "mean_ms":round(raw["total_ms"]/calls,3) if calls else None,
+                            "max_ms":round(raw["max_ms"],3) if calls else None}
+                    item["performance"]={
                         "preclose_cycles":perf["preclose_cycles"],
                         "preclose_no_due_cycles":perf["preclose_no_due_cycles"],
                         "preclose_due_cycles":perf["preclose_due_cycles"],
                         "preclose_symbols_examined":perf["preclose_symbols_examined"],
                         "stages":stages}
-                }
+                result[market]=item
             return result
 
     def attach_history(self,raw):
@@ -974,7 +981,8 @@ def install(core):
         try:
             out=json.loads(raw)
             if getattr(self,"market_trend",None):
-                out["market_trend_status"]=self.market_trend.snapshot()
+                out["market_trend_status"]=self.market_trend.snapshot(
+                    include_performance=True)
             return json.dumps(out,ensure_ascii=False,default=str)
         except Exception:return raw
     core.Runtime.snapshot=runtime_snapshot
