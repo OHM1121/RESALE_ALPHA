@@ -149,8 +149,8 @@ public final class UnifiedVisualActivity extends Activity {
     private JSONObject aiAnalysisReport=null;
     private String aiAnalysisScope="";
     private String aiAnalysisError="";
-    // Research/AI cohorts are exclusive; parent wallets stay unchanged.
-    private boolean researchTrendOnly=false;
+    // MA has its own current epoch; historical records appear only on demand.
+    private boolean showLegacyMaArchive=false;
     private String historyFilterStock="current",historyFilterCoin="current";
     // History is never truncated; only the visible Android Views are paged.
     private String historyContext="";
@@ -1380,6 +1380,7 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void resetHistoryFilter(){
         if("stock".equals(market))historyFilterStock="current";else historyFilterCoin="current";
+        showLegacyMaArchive=false;
         historyContext="";historyOffset=0;
     }
 
@@ -1624,103 +1625,8 @@ public final class UnifiedVisualActivity extends Activity {
             reason.startsWith("MARKET_TREND_");
     }
 
-    private boolean hasTrendCohort(){
-        return ("stock".equals(market)&&("at".equals(strategy)||"ma".equals(strategy)))||
-               ("coin".equals(market)&&("general".equals(strategy)||"ma".equals(strategy)));
-    }
-
     private String aiScope(){
         return market+"/"+strategy;
-    }
-
-    private void renderResearchCohortToggle(){
-        if(!hasTrendCohort())return;
-        final boolean selected=researchTrendOnly;
-        LinearLayout bar=new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(0,dp(2),0,dp(7));
-        Button original=button("기존 기준봉·MA",!selected,()->{
-            researchTrendOnly=false;
-            render();
-        });
-        Button trend=button("마켓트렌드 RSI20",selected,()->{
-            researchTrendOnly=true;
-            render();
-        });
-        original.setTextSize(13);
-        trend.setTextSize(13);
-        bar.addView(original,new LinearLayout.LayoutParams(0,dp(42),1));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(42),1);
-        lp.setMargins(dp(7),0,0,0);
-        bar.addView(trend,lp);
-        content.addView(bar,new LinearLayout.LayoutParams(-1,dp(51)));
-    }
-
-    private void renderTrendResearch(){
-        renderResearchCohortToggle();
-        JSONObject local=copyCache().optJSONObject("local_records");
-        JSONObject trends=local==null?null:local.optJSONObject("market_trend_research");
-        JSONArray all=trends==null?null:trends.optJSONArray(market);
-        if(all==null)all=new JSONArray();
-        java.util.ArrayList<JSONObject> entries=new java.util.ArrayList<>();
-        for(int i=0;i<all.length();i++){
-            JSONObject row=all.optJSONObject(i);
-            if(row!=null&&isTrendRow(row))entries.add(row);
-        }
-        int fills=0,virtual=0;
-        java.util.Map<String,int[]> byFrame=new java.util.LinkedHashMap<>();
-        for(String frame:new String[]{"5m","30m","60m","day"})
-            byFrame.put(frame,new int[2]);
-        for(JSONObject row:entries){
-            boolean filled=row.optBoolean("bought",false);
-            int[] counts=byFrame.get(timeFrameOf(row));
-            if(counts!=null)counts[filled?0:1]++;
-            if(filled)fills++;else virtual++;
-        }
-        LinearLayout head=card();
-        TextView title=text("마켓트렌드 RSI(20) · "+("stock".equals(market)?"주식":"코인"),22);
-        title.setTypeface(null,Typeface.BOLD);
-        head.addView(title);
-        TextView label=text("실제 매수 "+fills+"건 · 가상 추적 "+virtual+
-            "건 · 화면 최근 "+entries.size()+"건 (전체 원본은 ZIP)",13);
-        label.setTextColor(PremiumUi.MUTED);
-        label.setPadding(0,dp(6),0,dp(8));
-        head.addView(label);
-        Button source=button("마켓트렌드 원본 포함 ZIP",false,
-            ()->requestCombinedResearch(market));
-        head.addView(source,new LinearLayout.LayoutParams(-1,dp(45)));
-        content.addView(head);
-        for(java.util.Map.Entry<String,int[]> e:byFrame.entrySet()){
-            LinearLayout tile=card();
-            int[] counts=e.getValue();
-            TextView t=text(tfLabel(e.getKey())+" · 실매수 "+counts[0]+
-                "건 / 미매수 가상 "+counts[1]+"건",16);
-            tile.addView(t);
-            content.addView(tile);
-        }
-        if(entries.isEmpty()){
-            empty("마켓트렌드 신호기록 없음 · 시장/전략별 원본 SQLite 확인");
-            return;
-        }
-        int offset=Math.min(Math.max(0,historyOffset),Math.max(0,entries.size()-1));
-        int last=Math.min(entries.size(),offset+40);
-        for(int i=offset;i<last;i++){
-            JSONObject row=entries.get(i);
-            LinearLayout tile=card();
-            TextView name=text(nameOf(row)+" · "+
-                tfLabel(timeFrameOf(row))+
-                (row.optBoolean("bought",false)?" · 매수체결":" · 미매수 가상"),16);
-            name.setTypeface(null,Typeface.BOLD);
-            tile.addView(name);
-            TextView detail=text("시장점수 "+row.optString("score","미기록")+
-                " · RSI20 "+row.optString("rsi20_live","미기록")+
-                " · 사유 "+row.optString("reason","미기록"),12);
-            detail.setTextColor(PremiumUi.MUTED);
-            detail.setPadding(0,dp(5),0,0);
-            tile.addView(detail);
-            content.addView(tile);
-        }
-        addHistoryPager("research",entries.size());
     }
 
     private double num(JSONObject o,String... keys){
@@ -2440,13 +2346,13 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text(strategyName(market,strategy),20);
         title.setTypeface(null,Typeface.BOLD);
         headline.addView(title,new LinearLayout.LayoutParams(0,dp(29),1));
-        TextView source=text("trend".equals(strategy)?"● 독립 PAPER 계좌":"● 실제 계좌",12);
+        TextView source=text("trend".equals(strategy)?"● 독립 마켓트렌드":"● 전략별 계좌",12);
         source.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
         source.setTextColor(Color.rgb(132,177,213));
         headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
         content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
         if("trend".equals(strategy)){
-            TextView status=text("RSI20 독립 자동감시 · 5분/30분/1시간/일봉 각 독립시드 · 신규 LIVE 별도 승인 전 PAPER",12);
+            TextView status=text("RSI20 독립 자동감시 · 5분/30분/1시간/일봉 · 각 시장의 승인된 LIVE/PAPER 상태 적용",12);
             status.setTextColor(Color.rgb(119,229,180));
             content.addView(status,new LinearLayout.LayoutParams(-1,dp(27)));
         }
@@ -2455,7 +2361,7 @@ public final class UnifiedVisualActivity extends Activity {
         // manual toggle on original AT/MA strategy tabs. Preserve saved legacy
         // flags and old positions for existing-exit reconciliation only.
         if("at".equals(strategy)||"general".equals(strategy)||"ma".equals(strategy)){
-            TextView active=text("기준봉·MA는 원래 매매조건 유지 · 마켓트렌드 별도 전략",12);
+            TextView active=text("기준봉·MA·마켓트렌드 각각 독립 원장 · 다른 전략 연구자료 미포함",12);
             active.setTextColor(Color.rgb(119,229,180));
             content.addView(active,new LinearLayout.LayoutParams(-1,dp(23)));
         }
@@ -4866,11 +4772,9 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderResearch(){
-        if("trend".equals(strategy)||(researchTrendOnly&&hasTrendCohort())){
-            renderTrendResearch();
-            return;
-        }
-        renderResearchCohortToggle();
+        // Exactly one research UI for AT, MA, Trend, CLOSE and GMO. Trend
+        // has its OWN tab and cannot be selected from AT/MA research.
+
         String filter=activeHistoryFilter();
         String scope="gmo".equals(filter)||"close".equals(filter)?filter:strategy;
         boolean combined="all".equals(filter);
