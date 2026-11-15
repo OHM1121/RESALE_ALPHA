@@ -6,10 +6,10 @@ UI=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').re
 SCOPE=(ROOT/'app/src/main/java/com/artitrade/mobile/StrategyDashboardScope.java').read_text('utf-8')
 
 class V054Ui(TestCase):
-    def test_unified_release_is_v054_with_incremented_versioncode(self):
+    def test_unified_release_is_v054_or_newer_with_incremented_versioncode(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf-8')
-        self.assertIn("versionCode 61",gradle)
-        self.assertIn("versionName '0.7.54",gradle)
+        self.assertRegex(gradle,r"versionCode (?:61|62)")
+        self.assertRegex(gradle,r"versionName '0\.7\.5[45]")
         self.assertIn("applicationId 'com.artitrade.unified.s21dex'",gradle)
 
     def test_trend_is_primary_strategy_in_both_markets(self):

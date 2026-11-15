@@ -2333,7 +2333,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text(strategyName(market,strategy),20);
         title.setTypeface(null,Typeface.BOLD);
         headline.addView(title,new LinearLayout.LayoutParams(0,dp(29),1));
-        TextView source=text("● 실제 계좌",12);
+        TextView source=text("trend".equals(strategy)?"● 독립 PAPER 계좌":"● 실제 계좌",12);
         source.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
         source.setTextColor(Color.rgb(132,177,213));
         headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
@@ -2353,7 +2353,7 @@ public final class UnifiedVisualActivity extends Activity {
             content.addView(active,new LinearLayout.LayoutParams(-1,dp(23)));
         }
 
-        String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"업비트 · KRW TOP35";
+        String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"trend".equals(strategy)?"업비트 · KRW TOP40":"업비트 · KRW TOP35";
         content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(46)));
 
         // A single performance strip on landscape; no stacked 167dp+142dp panels.

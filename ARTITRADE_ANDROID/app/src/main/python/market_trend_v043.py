@@ -447,6 +447,16 @@ class TrendJournal:
                    (pos.market,pos.symbol,when.date().isoformat(),
                     when.isoformat(),"MT_STOP_9PCT"))
 
+    def record_stop_fill(self,market,symbol,at):
+        """Durable MT54 stop ban, without inventing a legacy position row."""
+        when=_as_kst(at)
+        with self.lock,self.connect() as c:
+            c.execute("""INSERT OR IGNORE INTO stop_reentry_blocks
+                (market,symbol,trade_day,first_fill_at,reason)
+                VALUES(?,?,?,?,?)""",
+                (market,str(symbol),when.date().isoformat(),when.isoformat(),
+                 'MT_STOP_9PCT'))
+
     def stop_reentry_blocked(self,market,symbol,at):
         """Ban only RSI20 entries on the KST date of a filled -9% exit."""
         day=_as_kst(at).date().isoformat()
