@@ -9,6 +9,7 @@ raw ATR/RSI/Williams/volume/market-score values remain in SQLite/ZIP.
 from __future__ import annotations
 
 import math
+import statistics
 from collections import defaultdict
 
 import ai_research_v040 as journal
@@ -102,6 +103,68 @@ def _precursors(record):
     return activated
 
 
+def _median_factor(samples,phase,key):
+    numbers=[]
+    for item in samples:
+        features=item['features'][phase]
+        value=_num(features.get(key))
+        if value is not None:numbers.append(value)
+    return round(statistics.median(numbers),2) if numbers else None
+
+
+def _pattern_condition(pattern,observed,loss=True):
+    """Explain the exact trigger and observed values, never an invented metric."""
+    key=pattern["code"]
+    subset=[x for x in observed if (x['outcome']<0 if loss else x['outcome']>0)
+            and key in x['precursors']]
+    def measured(key,phase='entry',unit=''):
+        val=_median_factor(subset,phase,key)
+        return (' · 관측 중앙값 '+str(val)+unit) if val is not None else ''
+    if key=='market_weak':
+        return '진입 시장점수 ≤ -20'+measured('market_score')
+    if key=='market_volume':
+        return ('진입 시장점수 ≤ -20 및 거래량/평균 거래량 ≥ 2배'
+                +measured('volume_ratio','entry','배'))
+    if key=='heat_chase':
+        return ('진입 RSI ≥ 72 또는 Williams %R ≥ -20'
+                +measured('rsi'))
+    if key=='volatility_risk':
+        return ('진입 ATR ≥ 4% 또는 호가차이 ≥ 0.5%'
+                +measured('atr_pct','entry','%'))
+    if key=='thin_bid':
+        return '진입 매수호가 비중 < 35%'+measured('bid_imbalance')
+    if key=='excess_gap':
+        return '진입 시가 갭 ≥ +4%'+measured('gap_pct','entry','%')
+    if key=='market_loss':
+        return '보유 중 시장점수 진입 대비 20점 이상 하락'
+    if key=='momentum_loss':
+        return '보유 중 RSI 12점 이상 하락 또는 Williams %R 22점 이상 하락'
+    if key=='volatility_rise':
+        return '보유 ATR 진입 대비 1.5배 이상 확대'
+    if key=='stable_market':
+        return '진입 시장점수 ≥ 25 및 보유 평균 시장점수 ≥ 10'
+    if key=='trend_hold':
+        return '진입 RSI 42~68 및 상대거래량 1~2.5배, 시장점수 ≥ 0'
+    return pattern['title']
+
+
+def _finding_sentence(pattern,observed,loss=True):
+    if pattern is None:return None
+    n,total=pattern['n'],pattern['cohort_n']
+    if total<=0:return None
+    share=100*n/total
+    cond=_pattern_condition(pattern,observed,loss)
+    if n<2:
+        return f'{cond} 구간에서 단일 사례 관측됨 ({share:.1f}%) · 반복 검증 필요'
+    if pattern['code']=='momentum_loss':
+        statement=('상승동력 약화가 손실거래에 반복 선행됨'
+                   if loss else '상승동력 변화가 수익거래에 반복 관측됨')
+    else:
+        statement=('손실거래에 반복 관측됨' if loss else
+                   '수익거래에 반복 관측됨')
+    return f'{cond} 조건이 {statement} ({share:.1f}%)'
+
+
 def _mean(rows):
     return round(sum(rows)/len(rows),3) if rows else None
 
@@ -193,18 +256,18 @@ def diagnose(frame_result,trades,lifecycles,market,strategy,frame):
     if negative is None:
         down="손실 거래의 선행조건 추가 비교 중"
     else:
-        down=negative["title"]
+        down=_finding_sentence(negative,closed,True)
     if positive is None:
         up="상승 거래의 선행조건 추가 비교 중"
     else:
-        up=positive["title"]
+        up=_finding_sentence(positive,closed,False)
     # Underlying cause is a research hypothesis, NEVER "stock fell 10%".
     # Show the main *pre-event* condition or deterioration while holding.
     if negative:
-        cause=(negative["title"]+"이 손실 거래에 반복 관측됨")
+        cause=_finding_sentence(negative,closed,True)
         recommendation=negative["action"]
     elif positive:
-        cause="상승 거래에서 "+positive["title"]+"이 반복 관측됨"
+        cause=_finding_sentence(positive,closed,False)
         recommendation=positive["action"]+" · 손실 비교 후 기준 조정"
     elif observed:
         cause="현재 보유종목의 진입조건·시장변화와 손익을 비교 중"
