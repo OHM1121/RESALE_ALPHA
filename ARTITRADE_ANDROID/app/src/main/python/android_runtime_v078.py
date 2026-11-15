@@ -1929,6 +1929,12 @@ _install_ma_v061_fast()
 from ma_epoch_v062 import install as _install_ma_epoch_v062
 _install_ma_epoch_v062()
 
+# Feed the first eligible KRX 0B tick of a previously UNWATCHED stock
+# through the SAME MA + verified 0D/FOK transaction path. Bulk scan alone
+# cannot meet the new 5-second turnpoint deadline.
+from ma_v062_stock_live_lane import install as _install_ma_v062_stock_lane
+_install_ma_v062_stock_lane()
+
 # Start MA AI evidence from the new epoch exclusively. Other market and
 # strategy research scopes continue writing to their original repositories.
 from ma_v062_ai_scope import install as _install_ma_v062_ai_scope
