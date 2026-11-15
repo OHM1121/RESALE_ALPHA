@@ -346,8 +346,13 @@ def capture_packet(root,packet,now=None):
         pending={}
         for row,event in _event_candidates(research,ledger,strategy):
             pending.setdefault(event["key"],(row,event))
-        # Old MT43 parent trades remain in their original archive and must
-        # not be recaptured as fresh original AT/MA trade evidence.
+        # Legacy MT43 historical buys belong ONLY to the independent Trend
+        # research, never to their old parent AT/MA buckets.
+        if strategy=="trend":
+            for parent in (("at","ma") if market=="stock" else ("general","ma")):
+                for old_row,role in _trend_historical_rows(root,market,parent):
+                    observed=v47._candidate(old_row,"trend",role)
+                    if observed:pending.setdefault(observed["key"],(old_row,observed))
         wallet_positions,wallet_executions=(
             _independent_wallet_evidence(root,market) if strategy=='trend'
             else ([],[]))
@@ -358,8 +363,11 @@ def capture_packet(root,packet,now=None):
         executions+=wallet_executions
         # Trend sells are committed in the independent market-trend journal;
         # join by the same source_position_id, never merely by ticker.
-        # Standalone Trend owns its own broker fills; parent AT/MA never
-        # import trend exit events into their outcome cohort.
+        # Legacy MT43 verified SELL events are part of independent Trend
+        # outcomes only. Parent AT/MA never collect those executions.
+        if strategy=="trend":
+            for parent in (("at","ma") if market=="stock" else ("general","ma")):
+                executions+=_trend_sell_rows(root,market,parent)
         if not pending and not executions:continue
         try:
             from ma_v062_ai_scope import ai_root
