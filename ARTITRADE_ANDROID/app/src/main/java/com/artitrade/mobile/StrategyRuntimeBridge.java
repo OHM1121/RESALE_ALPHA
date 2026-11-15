@@ -45,6 +45,11 @@ final class StrategyRuntimeBridge {
     synchronized JSONObject start(){
         try{
             if(!Python.isStarted())Python.start(new AndroidPlatform(context));
+            // A saved LIVE flag is not a valid MSERVER execution lease.
+            // Every bootstrap/restart begins disarmed; re-arm explicitly.
+            if(!prefs().edit().putBoolean("live_stock",false)
+                    .putBoolean("live_coin",false).commit())
+                throw new IllegalStateException("Cannot persist safe paper startup");
             File source=prepareCore();
             Python py=Python.getInstance();
             PyObject sys=py.getModule("sys");
@@ -57,12 +62,15 @@ final class StrategyRuntimeBridge {
             PyObject result=module.callAttr("start",root.getAbsolutePath(),
                 s.kiwoomKey(),s.kiwoomSecret(),s.upbitAccess(),s.upbitSecret(),
                 liveEnabled("stock"),liveEnabled("coin"));
+            JSONObject reply=parse(result);
+            if(!reply.optBoolean("ok",true))
+                throw new IllegalStateException("Python runtime refused startup: "+reply);
             started=true;
             try{
                 JSONObject applied=parse(operationModule.callAttr("apply_saved"));
                 if(!applied.optBoolean("ok",true))crashes.add("operation_apply_saved",new IllegalStateException(applied.toString()));
             }catch(Throwable op){crashes.add("operation_apply_saved",op);}
-            return parse(result);
+            return reply;
         }catch(Throwable e){
             crashes.add("python_strategy_start",e);started=false;
             return error("PYTHON_STRATEGY_START",e);
@@ -206,12 +214,29 @@ final class StrategyRuntimeBridge {
     }
 
     synchronized JSONObject setLive(String market,boolean enabled){
-        if(!("stock".equals(market)||"coin".equals(market)))return new JSONObject();
-        prefs().edit().putBoolean("live_"+market,enabled).commit();
+        if(!("stock".equals(market)||"coin".equals(market)))
+            return error("INVALID_LIVE_MARKET",null);
+        if(enabled&&(!started||module==null))
+            return error("LIVE_RUNTIME_NOT_READY",null);
         try{
-            if(module!=null)return parse(module.callAttr("set_live",market,enabled));
-        }catch(Throwable e){crashes.add("python_set_live_"+market,e);}
-        return new JSONObject();
+            JSONObject reply=module==null?new JSONObject():
+                parse(module.callAttr("set_live",market,enabled));
+            if(!reply.optBoolean("ok",true))
+                throw new IllegalStateException("Python rejected live mode: "+reply);
+            if(!prefs().edit().putBoolean("live_"+market,enabled).commit())
+                throw new IllegalStateException("Cannot persist confirmed live mode");
+            return new JSONObject().put("ok",true).put("market",market).put("enabled",enabled);
+        }catch(Throwable e){
+            crashes.add("python_set_live_"+market,e);
+            // Never save unconfirmed ON. Failed OFF remains an OFF request;
+            // the service monitor retries until Python reports disabled.
+            prefs().edit().putBoolean("live_"+market,false).commit();
+            if(enabled&&module!=null){
+                try{module.callAttr("set_live",market,false);}
+                catch(Throwable reset){crashes.add("python_live_rollback_"+market,reset);}
+            }
+            return error("PYTHON_SET_LIVE_FAILED",e);
+        }
     }
     synchronized void stop(){
         if(module!=null){
