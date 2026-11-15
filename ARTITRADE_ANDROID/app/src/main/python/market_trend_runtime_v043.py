@@ -757,9 +757,8 @@ class Coordinator:
                 started=time.monotonic()
                 try:self._process_closed(market)
                 finally:self._record_latency(market,"closed",started)
-                started=time.monotonic()
-                try:self._preclose_candidates(market,dt.datetime.now(mt.KST))
-                finally:self._record_latency(market,"preclose",started)
+                # Entry evaluation has a dedicated short-latency worker.
+                # Slow score/candle/holding IO must not consume its 1s window.
                 started=time.monotonic()
                 try:self._process_holds(market,dt.datetime.now(mt.KST))
                 finally:self._record_latency(market,"holds",started)
@@ -767,6 +766,23 @@ class Coordinator:
                 self._last_fetch_error[market]="COORD:"+type(exc).__name__
                 # A trend-only failure must not pause native AT/MA entries.
             self.stop_event.wait(.45)
+
+    def _preclose_loop(self,market):
+        """Run the pre-existing -15s/-12s gates independently of slow IO.
+
+        Entry rules, 1-second decision timestamps and fail-closed freshness
+        are unchanged. This scheduling change prevents the score and holding
+        database workers from starving the single-second decision window.
+        """
+        while not self.stop_event.is_set():
+            started=time.monotonic()
+            try:
+                self._preclose_candidates(market,dt.datetime.now(mt.KST))
+            except Exception as exc:
+                self._last_fetch_error[market]='PRECLOSE:'+type(exc).__name__
+            finally:
+                self._record_latency(market,'preclose',started)
+            self.stop_event.wait(.20)
 
     def _watch_loop(self,market):
         """Record RSI<=40 internally; expose only RSI<=35 WATCH_PENDING.
@@ -865,6 +881,7 @@ class Coordinator:
             for target in (lambda m=market:self._rank_loop(m),
                            lambda m=market:self._prefetch(m),
                            lambda m=market:self._book_evidence_loop(m),
+                           lambda m=market:self._preclose_loop(m),
                            lambda m=market:self._watch_loop(m),
                            lambda m=market:self._loop(m)):
                 thread=threading.Thread(target=target,daemon=True,
