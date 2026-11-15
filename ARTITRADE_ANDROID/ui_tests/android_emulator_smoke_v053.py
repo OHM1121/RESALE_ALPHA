@@ -281,7 +281,7 @@ def fixtures():
         tree=choose("매수대기")
         check_screen(label+"_pending",[label+"_대기"])
         tree=choose("체결이력")
-        check_screen(label+"_executions",[label+"_매도","매도 원인","09:30:00 KST"])
+        check_screen(label+"_executions",[label+"_매도","손절 기준 도달","09:30:00 KST"])
         tree=choose("연구자료")
         check_screen(label+"_research",["개별 연구 판단 근거",label+"_연구"],scroll=6)
         tree=choose("대시보드")
