@@ -1,0 +1,52 @@
+name: Apply reviewed ARTITRADE v054 source patch
+on:
+  push:
+    branches:
+      - feature-artitrade-v054-standalone-trend-20261115
+    paths:
+      - 'ARTITRADE_ANDROID/v054_source_patch.xz.b64'
+permissions:
+  contents: write
+jobs:
+  apply-reviewed-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify payload SHA-256 and source patch integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d ARTITRADE_ANDROID/v054_source_patch.xz.b64 > /tmp/v054_source.patch.xz
+          echo '257a9b6c35e7f0b80bf55ed5e0cf1d6093a732f978deb9faacc9187c185bc7ea  /tmp/v054_source.patch.xz' | sha256sum -c -
+          xz -dc /tmp/v054_source.patch.xz > /tmp/v054_source.patch
+          git apply --check --directory=ARTITRADE_ANDROID /tmp/v054_source.patch
+      - name: Apply patch, never touch parent source branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --directory=ARTITRADE_ANDROID /tmp/v054_source.patch
+          git rm ARTITRADE_ANDROID/v054_source_patch.xz.b64
+          git add ARTITRADE_ANDROID
+          git diff --cached --check
+      - name: New v054 regression and v053 compatibility tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ARTITRADE_ANDROID
+          python3 -m compileall -q app/src/main/python
+          python3 -m unittest discover -s ui_tests -p 'test_v054*.py' -v
+          python3 -m unittest discover -s ui_tests -p 'test_v045_manual_trend.py' -v
+          python3 -m unittest discover -s ui_tests -p 'test_v052_comprehensive_ai.py' -v
+          python3 -m unittest discover -s ui_tests -p 'test_v053_post_sale_high.py' -v
+      - name: Commit to isolated v054 branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ARTITRADE v054 CI'
+          git config user.email 'artitrade-v054-ci@users.noreply.github.com'
+          git commit -m 'feat(v054): standalone trend wallets per timeframe and RSI35 watch'
+          git push origin "HEAD:refs/heads/feature-artitrade-v054-standalone-trend-20261115"
