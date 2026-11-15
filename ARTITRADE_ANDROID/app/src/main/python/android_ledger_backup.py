@@ -45,7 +45,8 @@ def _candidate(root: Path, file: Path) -> bool:
     # This exact local JSON contains limits, never broker API credentials.
     if rel.as_posix() in ("market_research_v033.sqlite3",
                           "market_trend_v043.sqlite3",
-                          "phone_buy_evidence_v035.sqlite3"):
+                          "phone_buy_evidence_v035.sqlite3",
+                          "POST_EXIT_HIGH_V053.sqlite3"):
         return True
     if rel.as_posix()=="ANDROID_OPERATION_V074.json":
         return True
@@ -284,6 +285,7 @@ def validate_backup(archive_path: str) -> dict:
                 root_journals=("market_research_v033.sqlite3",
                                "market_trend_v043.sqlite3",
                                "phone_buy_evidence_v035.sqlite3",
+                               "POST_EXIT_HIGH_V053.sqlite3",
                                "ANDROID_OPERATION_V074.json")
                 if (not rel.startswith(("stock/","coin/")) and
                         rel not in root_journals) or ".." in Path(rel).parts:

@@ -214,5 +214,5 @@ class V046PerformanceEvidence(TestCase):
         self.assertIn('exportFullLedgerToDocument(data.getData(),report,scope)',JAVA)
         self.assertIn('AiEvidenceFlowV046 flow=new AiEvidenceFlowV046(this)',JAVA)
         self.assertIn("AiFeatureCoverageV046 coverageView",JAVA)
-        self.assertRegex(GRADLE,r"versionCode\s+5[3-9]")
+        self.assertRegex(GRADLE,r"versionCode\s+(?:5[3-9]|[6-9][0-9])")
         self.assertIn('package com.artitrade.mobile',VIEW)

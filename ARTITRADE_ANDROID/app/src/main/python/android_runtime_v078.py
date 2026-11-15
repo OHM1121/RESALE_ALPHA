@@ -1908,6 +1908,11 @@ _core.Runtime.stop = _patched_stop
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
 
+# v0.7.53: authoritative POST-SELL tracker. This is research-only, listens
+# to the existing verified stock/coin feeds and never changes order logic.
+from post_exit_runtime_v053 import install as _install_post_exit_v053
+_install_post_exit_v053(_core)
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 

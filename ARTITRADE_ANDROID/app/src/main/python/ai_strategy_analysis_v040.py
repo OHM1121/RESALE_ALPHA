@@ -656,6 +656,12 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
             trend["comprehensive_v052"]={
                 "ok":False,"schema":"ARTITRADE_AI_COMPREHENSIVE_V052",
                 "error":"TREND_COMPREHENSIVE_ERROR:"+type(exc).__name__}
+        try:
+            from post_exit_high_v053 import report as exit_report
+            trend["post_sale_tracking_v053"]=exit_report(root,market,"trend")
+        except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
+            trend["post_sale_tracking_v053"]={"ok":False,
+                "reason":"RESEARCH_SOURCE_UNAVAILABLE:"+type(exc).__name__}
         return json.dumps(trend,ensure_ascii=False,allow_nan=False)
     if (market,strategy) not in SCOPES:
         return json.dumps({"ok":False,"message":"선택 전략 확인 필요"},ensure_ascii=False)
@@ -760,6 +766,12 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         report["comprehensive_v052"]={
             "ok":False,"schema":"ARTITRADE_AI_COMPREHENSIVE_V052",
             "error":"COMPREHENSIVE_ERROR:"+type(exc).__name__}
+    try:
+        from post_exit_high_v053 import report as exit_report
+        report["post_sale_tracking_v053"]=exit_report(root,market,strategy)
+    except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
+        report["post_sale_tracking_v053"]={"ok":False,
+            "reason":"RESEARCH_SOURCE_UNAVAILABLE:"+type(exc).__name__}
     try:
         journal.save_report(root,market,strategy,report,now)
     except (OSError,sqlite3.Error,ValueError):
