@@ -1917,6 +1917,8 @@ from ma_v061_coin_runtime import install as _install_ma_v061_coin
 from ma_v061_stock_runtime import install as _install_ma_v061_stock
 _install_ma_v061_coin()
 _install_ma_v061_stock()
+from ma_v061_fast_entry import install as _install_ma_v061_fast
+_install_ma_v061_fast()
 
 # v0.7.43: market trend is an AT/MA entry mode, never an independent account.
 from market_trend_runtime_v043 import install as _install_market_trend_v043
