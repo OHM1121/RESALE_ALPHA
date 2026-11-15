@@ -1,0 +1,128 @@
+name: ARTITRADE v0.7.50 Original Signed APK
+# Release builds use the SAME GitHub branch scope as the proven v0.7.44 signer.
+# Source pinned to an immutable commit; never upload or print the keystore.
+on:
+  push:
+    branches:
+      - artitrade-phone-main-v070-live-orders-20261112
+    paths:
+      - '.github/workflows/artitrade-v050-original-signed.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artitrade-v050-original-signing
+  cancel-in-progress: false
+
+jobs:
+  compatible-apk:
+    name: Signed ${{ matrix.version }} (original certificate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: v0.7.50
+            version_code: 57
+            source: e050161211491bd2a445a6312e884df0289b9392
+            artifact: ARTITRADE_UNIFIED_v0.7.50_20261115
+    steps:
+      - name: Fetch immutable and previously regression-tested app source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.source }}
+          persist-credentials: false
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore ORIGINAL signing key (read-only cache)
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Abort release when original signing key is unavailable
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true" || {
+            echo "STABLE_SIGNING_CACHE_MISSING: must not replace the original signing certificate"; exit 1;
+          }
+          test -f "$HOME/.android/debug.keystore"
+          EXPECTED="37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+          ACTUAL="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$ACTUAL" = "$EXPECTED" || { echo "ORIGINAL_CERTIFICATE_MISMATCH"; exit 1; }
+          echo "Original certificate verified against v0.7.44. Key not exported."
+      - name: Android SDK 35
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify all new features and historical safety regression tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v050_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_persistence_full.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_android_ledger_backup.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v048_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v047_*.py' -v
+          for pat in 'test_v046_*.py' 'test_v045_*.py' 'test_v044_*.py' 'test_v043_*.py' 'test_v042_*.py' 'test_v041_*.py' 'test_v040_*.py' 'test_v039_*.py' 'test_v038_*.py' 'test_v037_*.py' 'test_v036_*.py' 'test_v035_*.py' 'test_v031_*.py' 'test_v029_research_loaders.py' 'test_v028_trade_record_parity.py' 'test_v030_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          mkdir -p /tmp/artitrade-jvm
+          javac -d /tmp/artitrade-jvm ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SignedMarketScore.java ARTITRADE_ANDROID/ui_tests/SignedMarketScoreTest.java
+          java -cp /tmp/artitrade-jvm com.artitrade.mobile.SignedMarketScoreTest
+          javac -d /tmp/artitrade-jvm ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchScoreGrid.java ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ResearchBandSelection.java ARTITRADE_ANDROID/ui_tests/ResearchBandSelectionTest.java ARTITRADE_ANDROID/ui_tests/ResearchScoreGridTest.java
+          java -cp /tmp/artitrade-jvm com.artitrade.mobile.ResearchBandSelectionTest
+          java -cp /tmp/artitrade-jvm com.artitrade.mobile.ResearchScoreGridTest
+          javac -d /tmp/artitrade-jvm ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ColumnQueryV036.java ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SyncStatusV036.java ARTITRADE_ANDROID/ui_tests/ColumnQueryV036Test.java ARTITRADE_ANDROID/ui_tests/SyncStatusV036Test.java
+          java -cp /tmp/artitrade-jvm com.artitrade.mobile.ColumnQueryV036Test
+          java -cp /tmp/artitrade-jvm com.artitrade.mobile.SyncStatusV036Test
+      - name: Build with the retained compatible signing identity
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Strict package, original certificate and version verification
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+          CODE: ${{ matrix.version_code }}
+          VERSION: ${{ matrix.version }}
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -euo pipefail
+          APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
+          test -s "$APK"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='$CODE' versionName='${VERSION#v}"
+          "$SIGNER" verify --print-certs "$APK" > /tmp/artitrade_signer_verify.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/artitrade_signer_verify.txt
+          unzip -l "$APK" | grep -F 'assets/chaquopy/app.imy'
+          cp "$APK" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
+          printf 'artifact=%s\nsource=%s\npackage=com.artitrade.unified.s21dex\nversionCode=%s\nversionName=%s\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\nno_ledger_reset=true\n' "$ARTIFACT.apk" "$SOURCE" "$CODE" "$VERSION" > "$ARTIFACT.compatibility.txt"
+          echo "SIGNED APK VERIFIED: $ARTIFACT"
+          cat "$ARTIFACT.sha256"
+      - name: Upload individual installable original-signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.apk
+            ${{ matrix.artifact }}.sha256
+            ${{ matrix.artifact }}.compatibility.txt
+          if-no-files-found: error
+          retention-days: 30
