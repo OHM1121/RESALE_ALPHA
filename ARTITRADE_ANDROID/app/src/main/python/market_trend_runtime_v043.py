@@ -817,8 +817,14 @@ class Coordinator:
         for key,v in virtual:
             node=target_ledger(v.market,v.strategy)
             if not isinstance(node,dict):continue
-            pending=node.setdefault("pending",[])
-            if not isinstance(pending,list):continue
+            # Append to the SAME queue used by the parent view. A new
+            # empty 'pending' list must not shadow existing pending_orders.
+            pending=next((node[k] for k in
+                 ("pending","pending_orders","orders","candidates")
+                 if isinstance(node.get(k),list)),None)
+            if pending is None:
+                pending=[]
+                node["pending"]=pending
             pending.append({
                 "id":"MT43:VIRTUAL:"+json.dumps(key,ensure_ascii=False),
                 "tf":v.frame,"code":v.symbol,
