@@ -109,7 +109,7 @@ jobs:
           test -s "$APK"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$AAPT" dump badging "$APK" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='$CODE' versionName='$VERSION"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='$CODE' versionName='${VERSION#v}"
           "$SIGNER" verify --print-certs "$APK" > /tmp/artitrade_signer_verify.txt
           grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/artitrade_signer_verify.txt
           unzip -l "$APK" | grep -F 'assets/chaquopy/app.imy'
