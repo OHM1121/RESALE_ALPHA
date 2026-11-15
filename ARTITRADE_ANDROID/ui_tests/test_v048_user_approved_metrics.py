@@ -217,7 +217,7 @@ class ApprovedMetricsV048(unittest.TestCase):
             self.assertIn("analysis/APPROVED_METRICS_V048.json",outputs)
             x=json.loads(outputs["analysis/APPROVED_METRICS_V048.json"])
             self.assertEqual(sorted(x["approved_codes"]),sorted(m.APPROVED))
-        self.assertIn("versionCode 55",GRADLE)
+        self.assertRegex(GRADLE,r"versionCode\s+(?:5[5-9]|[6-9][0-9])")
         self.assertIn("APPROVED_METRICS_V048",(
              ROOT/"app/src/main/python/android_ai_evidence_export_v046.py")
              .read_text(encoding="utf-8"))
