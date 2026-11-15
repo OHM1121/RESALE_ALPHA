@@ -150,7 +150,8 @@ def _pattern_condition(pattern,observed,loss=True):
 
 def _finding_sentence(pattern,observed,loss=True):
     if pattern is None:return None
-    n,total=pattern['n'],pattern['cohort_n']
+    # Denominator is ALL finalized trades in this frame, not only losses.
+    n,total=pattern['n'],len(observed)
     if total<=0:return None
     share=100*n/total
     cond=_pattern_condition(pattern,observed,loss)
