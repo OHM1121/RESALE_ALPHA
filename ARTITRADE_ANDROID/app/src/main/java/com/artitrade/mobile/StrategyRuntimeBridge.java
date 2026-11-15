@@ -63,8 +63,12 @@ final class StrategyRuntimeBridge {
                 s.kiwoomKey(),s.kiwoomSecret(),s.upbitAccess(),s.upbitSecret(),
                 liveEnabled("stock"),liveEnabled("coin"));
             JSONObject reply=parse(result);
-            if(!reply.optBoolean("ok",true))
+            if(!reply.optBoolean("ok",false)||!reply.optBoolean("started",false))
                 throw new IllegalStateException("Python runtime refused startup: "+reply);
+            JSONObject liveAtStart=reply.optJSONObject("live_enabled");
+            if(liveAtStart==null||liveAtStart.optBoolean("stock",true)
+                    ||liveAtStart.optBoolean("coin",true))
+                throw new IllegalStateException("Python did not confirm disarmed startup");
             started=true;
             try{
                 JSONObject applied=parse(operationModule.callAttr("apply_saved"));
@@ -221,8 +225,10 @@ final class StrategyRuntimeBridge {
         try{
             JSONObject reply=module==null?new JSONObject():
                 parse(module.callAttr("set_live",market,enabled));
-            if(!reply.optBoolean("ok",true))
-                throw new IllegalStateException("Python rejected live mode: "+reply);
+            JSONObject confirmed=reply.optJSONObject("live_enabled");
+            if(!reply.optBoolean("ok",false)||confirmed==null
+                    ||confirmed.optBoolean(market,!enabled)!=enabled)
+                throw new IllegalStateException("Python did not confirm requested live mode: "+reply);
             if(!prefs().edit().putBoolean("live_"+market,enabled).commit())
                 throw new IllegalStateException("Cannot persist confirmed live mode");
             return new JSONObject().put("ok",true).put("market",market).put("enabled",enabled);
