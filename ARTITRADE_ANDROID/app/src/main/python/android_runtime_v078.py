@@ -1909,6 +1909,15 @@ _core.Runtime.stop = _patched_stop
 from reference_integrity_v059 import install as _install_reference_integrity_v059
 _install_reference_integrity_v059()
 
+# v0.7.61 MA is an independent strategy in its existing stock/coin wallets:
+# no ordinary record-volume entries; only 3+ downward SMA bearish candles
+# or a first completed MA120-down/short4-up turnpoint. Both get existing
+# broker FOK safety gates. Existing bought positions retain their policy.
+from ma_v061_coin_runtime import install as _install_ma_v061_coin
+from ma_v061_stock_runtime import install as _install_ma_v061_stock
+_install_ma_v061_coin()
+_install_ma_v061_stock()
+
 # v0.7.43: market trend is an AT/MA entry mode, never an independent account.
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
