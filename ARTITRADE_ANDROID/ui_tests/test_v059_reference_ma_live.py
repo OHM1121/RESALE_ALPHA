@@ -71,12 +71,12 @@ class TestV059(unittest.TestCase):
 
     def test_stock_ma_later_reference_record_is_strict(self):
         h=[]
-        start=dt.datetime(2026,11,13,0,0,tzinfo=KST)
+        start=dt.datetime(2026,11,12,22,30,tzinfo=KST)
         for i in range(145):
             when=start+dt.timedelta(minutes=30*i)
             volume=100
             if when.day==15 and when.hour==16 and when.minute==0:volume=236000
-            if when.day==15 and when.hour==22 and when.minute==0:volume=240000
+            if when.day==15 and when.hour==22 and when.minute==30:volume=240000
             h.append({'ts':when.strftime('%Y%m%d%H%M%S'),'code':'005930',
                       'volume':volume,'open':100,'close':101,'high':102,'low':99})
         actual=guard._stock_volume_record(h,'30m')
