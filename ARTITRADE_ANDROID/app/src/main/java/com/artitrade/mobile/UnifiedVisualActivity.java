@@ -51,6 +51,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
@@ -110,6 +111,9 @@ public final class UnifiedVisualActivity extends Activity {
         0L,0,false);
     // Worker-only parsed record reuse. The service publishes a fresh JSON string
     // frequently, even when all historical records are unchanged.
+    private final Map<String,JSONObject> tradeEvidenceCache=new ConcurrentHashMap<>();
+    private final java.util.Set<String> pendingTradeEvidence=java.util.Collections.newSetFromMap(
+        new ConcurrentHashMap<String,Boolean>());
     private String cachedLocalRaw;
     private JSONObject cachedLocalParsed=new JSONObject();
     private boolean cachedLocalMeaningful;
@@ -121,7 +125,10 @@ public final class UnifiedVisualActivity extends Activity {
     private LinearLayout content;
     private LinearLayout strategyBar;
     private TextView statusText;
+    private TextView drawerBackgroundHealth;
     private TextView clockText;
+    private static final long BACKGROUND_HEARTBEAT_FRESH_MS=14_000L;
+    private static final long PRELOAD_WATCHDOG_MS=5_000L;
     private volatile boolean refreshRunning=false;
     private volatile boolean runtimeStartIssued=false;
     private volatile boolean brokerProbeIssued=false;
@@ -233,9 +240,20 @@ public final class UnifiedVisualActivity extends Activity {
             root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
             preloadStartedAt=android.os.SystemClock.elapsedRealtime();
-            showBoot();
-            // First frame is the real preloader. Service and all UI model parsing
-            // happen asynchronously while the main dashboard stays hidden.
+            recordUiEntry(state);
+            if(shouldRestoreShellImmediately(state)){
+                // Re-creating the Activity is NOT evidence that the trading engine
+                // stopped. Draw an honest, initially stale shell immediately.
+                preloadScreenReady=true;
+                showShell();
+            }else{
+                showBoot();
+                // Even if the local-hub request stalls, never trap the user in
+                // the full-screen boot view waiting for an I/O worker.
+                main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS);
+            }
+            // Service and UI model parsing happen asynchronously. No trade
+            // session is restarted just because the Activity was recreated.
             main.postDelayed(()->{
                 try{
                     updateStartupProgress(12,"백그라운드 전략엔진 시작");
@@ -249,6 +267,77 @@ public final class UnifiedVisualActivity extends Activity {
         }catch(Throwable e){
             try{new RuntimeCrashStore(this).add("native_onCreate",e);}catch(Throwable ignored){}
             showFatal(e);
+        }
+    }
+
+    private void recordUiEntry(Bundle saved){
+        android.content.SharedPreferences p=getSharedPreferences(
+            "artitrade_ui_navigation_v1",MODE_PRIVATE);
+        int oldPid=p.getInt("last_ui_pid",0),nowPid=android.os.Process.myPid();
+        String reason=saved!=null?"ACTIVITY_RECREATED":
+            oldPid>0&&oldPid!=nowPid?"PROCESS_RESTARTED":"NEW_ACTIVITY";
+        p.edit().putInt("last_ui_pid",nowPid)
+            .putString("last_ui_entry_kind",reason)
+            .putLong("last_ui_entry_ms",System.currentTimeMillis()).apply();
+    }
+
+    private boolean isRecentBackgroundHeartbeat(){
+        android.content.SharedPreferences p=getSharedPreferences(
+            "artitrade_background_health_v1",MODE_PRIVATE);
+        long last=p.getLong("last_heartbeat_ms",0L);
+        long age=System.currentTimeMillis()-last;
+        return last>0L&&age>=0L&&age<=BACKGROUND_HEARTBEAT_FRESH_MS&&
+            p.getBoolean("service_running",false);
+    }
+
+    private boolean shouldRestoreShellImmediately(Bundle saved){
+        // Activity recreation and a verified service heartbeat are independent
+        // reasons to avoid the full-screen startup cover. UI status remains
+        // 'waiting' until a new strategy snapshot confirms market connectivity.
+        return saved!=null||isRecentBackgroundHeartbeat();
+    }
+
+    private void preloadWatchdog(){
+        if(!preloadScreenReady&&!isFinishing()&&root!=null){
+            // UI-only escape hatch. Never mark a stale quote/ledger as fresh.
+            finishPreload(false);
+        }
+    }
+
+    private String readableBackgroundHealth(){
+        android.content.SharedPreferences p=getSharedPreferences(
+            "artitrade_background_health_v1",MODE_PRIVATE);
+        long last=p.getLong("last_heartbeat_ms",0L);
+        long age=last<=0?-1L:Math.max(0L,System.currentTimeMillis()-last)/1000L;
+        String freshness=isRecentBackgroundHeartbeat()?"백그라운드 엔진 동작":
+            "백그라운드 엔진 확인 필요";
+        String ageText=age<0?"신호 없음":age+"초 전";
+        String lock=" · CPU "+(p.getBoolean("cpu_lock",false)?"유지":"해제")+
+            " · Wi-Fi "+(p.getBoolean("wifi_lock",false)?"유지":"해제");
+        String entry=getSharedPreferences("artitrade_ui_navigation_v1",MODE_PRIVATE)
+            .getString("last_ui_entry_kind","");
+        String restart="PROCESS_RESTARTED".equals(entry)?" · 앱 프로세스 재생성 감지":
+            "ACTIVITY_RECREATED".equals(entry)?" · 화면 재생성 감지":"";
+        return freshness+" · 마지막 동작 "+ageText+lock+restart;
+    }
+
+    private void ensureBackgroundServiceOnResume(){
+        if(isRecentBackgroundHeartbeat())return;
+        long now=System.currentTimeMillis();
+        android.content.SharedPreferences p=getSharedPreferences(
+            "artitrade_ui_navigation_v1",MODE_PRIVATE);
+        long last=p.getLong("background_health_last_retry",0L);
+        if(last>0&&now-last<30_000L)return;
+        p.edit().putLong("background_health_last_retry",now).apply();
+        if(!runtimeStartIssued){startRuntimeLater();return;}
+        // START is idempotent in UnifiedTradingService: running.compareAndSet
+        // prevents a second order engine, and it does not re-arm LIVE.
+        try{
+            Intent i=new Intent(this,UnifiedTradingService.class);
+            i.setAction(UnifiedTradingService.START);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+        }catch(Throwable e){
+            new RuntimeCrashStore(this).add("native_background_resume",e);
         }
     }
 
@@ -348,7 +437,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private TextView segmentItem(String label,boolean active,Runnable action){
-        TextView t=text(label,13);
+        TextView t=text(label,12);
         t.setGravity(Gravity.CENTER);
         t.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         t.setTextColor(active?accent():PremiumUi.MUTED);
@@ -361,7 +450,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private TextView strategyTab(String label,boolean active,Runnable action){
-        TextView t=text(label,14);
+        TextView t=text(label,12);
         t.setGravity(Gravity.CENTER);
         t.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         t.setTextColor(active?accent():PremiumUi.MUTED);
@@ -465,6 +554,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void showShell(){
         root.removeAllViews();
         drawerOverlay=null;
+        statusText=null;drawerBackgroundHealth=null;
         stopDrawerProgressTicker();
         LinearLayout shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(PremiumUi.BG);
         root.addView(shell,new FrameLayout.LayoutParams(-1,-1));
@@ -472,27 +562,22 @@ public final class UnifiedVisualActivity extends Activity {
         final boolean wideHeader=getResources().getConfiguration().screenWidthDp>=720;
         LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(10),dp(3),dp(7),dp(3));
+        top.setPadding(dp(9),0,dp(6),0);
         LinearLayout brandBox=new LinearLayout(this);
         brandBox.setOrientation(LinearLayout.VERTICAL);brandBox.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout brandLine=new LinearLayout(this);brandLine.setOrientation(LinearLayout.HORIZONTAL);
         brandLine.setGravity(Gravity.CENTER_VERTICAL);
-        TextView brand=text("ARTITRADE",18);
+        TextView brand=text("ARTITRADE",16);
         brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         brand.setLetterSpacing(.065f);
         brandLine.addView(brand);
         if(wideHeader){
             TextView ver=text("  ·  "+marketVersionLabel(),12);
             ver.setTextColor(accent());
-            brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(26)));
+            brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(22)));
         }
-        brandBox.addView(brandLine,new LinearLayout.LayoutParams(-1,dp(26)));
-        statusText=text("● 연결 확인 중",12);
-        statusText.setSingleLine(true);
-        statusText.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        statusText.setTextColor(PremiumUi.MUTED);
-        brandBox.addView(statusText,new LinearLayout.LayoutParams(-1,dp(19)));
-        top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(46),1));
+        brandBox.addView(brandLine,new LinearLayout.LayoutParams(-1,dp(24)));
+        top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(24),1));
 
 
         // Keep the brand/status/header readable on narrow phones.
@@ -500,17 +585,17 @@ public final class UnifiedVisualActivity extends Activity {
         clockText.setTextColor(PremiumUi.MUTED);
         clockText.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams clockLp=new LinearLayout.LayoutParams(
-            dp(wideHeader?115:59),dp(38));
-        clockLp.setMargins(dp(6),0,dp(4),0);
+            dp(wideHeader?98:51),dp(24));
+        clockLp.setMargins(dp(4),0,dp(3),0);
         top.addView(clockText,clockLp);
         top.addView(iconAction("☰",this::openSettingsDrawer),
-            new LinearLayout.LayoutParams(dp(43),dp(43)));
-        shell.addView(top,new LinearLayout.LayoutParams(-1,dp(51)));
+            new LinearLayout.LayoutParams(dp(25),dp(25)));
+        shell.addView(top,new LinearLayout.LayoutParams(-1,dp(26)));
 
         // The four main destinations occupy their own full-width row.
         LinearLayout marketSwitch=new LinearLayout(this);
         marketSwitch.setOrientation(LinearLayout.HORIZONTAL);
-        marketSwitch.setPadding(dp(3),dp(3),dp(3),dp(3));
+        marketSwitch.setPadding(dp(1),dp(1),dp(1),dp(1));
         marketSwitch.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,14));
         TextView marketTab=segmentItem("시장","market".equals(page)&&!integratedMode,()->{
             integratedMode=false;page="market";persistNavigation();showShell();
@@ -530,17 +615,17 @@ public final class UnifiedVisualActivity extends Activity {
             if(!"coin".equals(market)){market="coin";strategy="general";resetHistoryFilter();}
             page="home";persistNavigation();showShell();
         });
-        marketSwitch.addView(marketTab,new LinearLayout.LayoutParams(0,dp(33),1));
-        marketSwitch.addView(integrated,new LinearLayout.LayoutParams(0,dp(33),1));
-        marketSwitch.addView(stock,new LinearLayout.LayoutParams(0,dp(33),1));
-        marketSwitch.addView(coin,new LinearLayout.LayoutParams(0,dp(33),1));
-        shell.addView(marketSwitch,new LinearLayout.LayoutParams(-1,dp(39)));
+        marketSwitch.addView(marketTab,new LinearLayout.LayoutParams(0,dp(22),1));
+        marketSwitch.addView(integrated,new LinearLayout.LayoutParams(0,dp(22),1));
+        marketSwitch.addView(stock,new LinearLayout.LayoutParams(0,dp(22),1));
+        marketSwitch.addView(coin,new LinearLayout.LayoutParams(0,dp(22),1));
+        shell.addView(marketSwitch,new LinearLayout.LayoutParams(-1,dp(26)));
         shell.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
 
         HorizontalScrollView sh=new HorizontalScrollView(this);sh.setHorizontalScrollBarEnabled(false);sh.setFillViewport(true);
-        strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(11),dp(3),dp(11),dp(3));
+        strategyBar=new LinearLayout(this);strategyBar.setOrientation(LinearLayout.HORIZONTAL);strategyBar.setGravity(Gravity.CENTER_VERTICAL);strategyBar.setPadding(dp(8),dp(1),dp(8),dp(1));
         sh.addView(strategyBar,new HorizontalScrollView.LayoutParams(-1,-1));if(!"market".equals(page)&&!integratedMode){
-            shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(40)));
+            shell.addView(sh,new LinearLayout.LayoutParams(-1,dp(27)));
             buildStrategyBar();
         }
 
@@ -667,6 +752,9 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void refreshOpenDrawerProgress(){
         if(drawerOverlay==null)return;
+        updateHeader();
+        if(drawerBackgroundHealth!=null)
+            drawerBackgroundHealth.setText(readableBackgroundHealth());
         JSONObject snapshot=copyCache();
         updateDrawerProgressView(drawerPublishProgress,
             drawerLocalProgress("artitrade_mserver_sync_v078",false));
@@ -733,6 +821,22 @@ public final class UnifiedVisualActivity extends Activity {
         manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         manage.addView(policyRow,new LinearLayout.LayoutParams(-1,dp(44)));
         panel.addView(manage);
+
+        LinearLayout healthPanel=card();
+        TextView hTitle=text("실시간 연결 · 백그라운드",13);
+        hTitle.setTextColor(PremiumUi.TEXT);
+        healthPanel.addView(hTitle);
+        statusText=text("실시간 연결 확인 중 · 원장 갱신 확인 중",12);
+        statusText.setTextColor(PremiumUi.MUTED);
+        statusText.setPadding(0,dp(6),0,0);
+        healthPanel.addView(statusText);
+        drawerBackgroundHealth=text(readableBackgroundHealth(),12);
+        drawerBackgroundHealth.setTextColor(PremiumUi.MUTED);
+        drawerBackgroundHealth.setPadding(0,dp(4),0,0);
+        drawerBackgroundHealth.setMaxLines(3);
+        healthPanel.addView(drawerBackgroundHealth);
+        panel.addView(healthPanel);
+        updateHeader();
 
         String brokerKey="stock".equals(market)?"kiwoom":"upbit";
         String brokerName="stock".equals(market)?"키움":"업비트";
@@ -847,6 +951,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void closeSettingsDrawer(){
         if(drawerOverlay==null)return;
         View old=drawerOverlay;drawerOverlay=null;
+        statusText=null;drawerBackgroundHealth=null;
         stopDrawerProgressTicker();
         TranslateAnimation anim=new TranslateAnimation(0,dp(380),0,0);anim.setDuration(180);
         anim.setAnimationListener(new android.view.animation.Animation.AnimationListener(){
@@ -884,7 +989,7 @@ public final class UnifiedVisualActivity extends Activity {
         for(String[] item:list){
             boolean active=item[0].equals(strategy);
             TextView tab=strategyTab(item[1],active,()->{if(!item[0].equals(strategy)){strategy=item[0];resetHistoryFilter();}persistNavigation();showShell();});
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(24),1);
             if(strategyBar.getChildCount()>0)lp.setMargins(dp(4),0,0,0);
             strategyBar.addView(tab,lp);
         }
@@ -1113,7 +1218,7 @@ public final class UnifiedVisualActivity extends Activity {
         if(statusText==null)return;
         JSONObject c=copyCache();JSONObject rt=c.optJSONObject("strategy_runtime");
         JSONObject mr=rt==null?null:rt.optJSONObject(market);
-        boolean live=mr!=null&&mr.optBoolean("connected",false);
+        boolean live=isRecentBackgroundHeartbeat()&&mr!=null&&mr.optBoolean("connected",false);
         JSONObject halted=rt==null?null:rt.optJSONObject("halted");
         boolean stopped=halted!=null&&!halted.isNull(market)&&halted.optJSONObject(market)!=null;
         long recordsAt=c.optLong("local_records_at",0L);
@@ -2818,6 +2923,122 @@ public final class UnifiedVisualActivity extends Activity {
         return values;
     }
 
+    private String tradeEvidenceKey(HistoryRow row){
+        String symbol=row.row.optString("code",row.row.optString("market",""));
+        String pid=row.row.optString("position_id",
+            row.row.optString("source_position_id",""));
+        return market+"|"+row.source+"|"+row.frame+"|"+symbol+"|"+pid+"|"+
+            row.at+"|"+row.row.optString("id","");
+    }
+
+    private JSONObject readTradeEvidence(HistoryRow item){
+        JSONObject evidence=tradeEvidenceCache.get(tradeEvidenceKey(item));
+        return evidence==null?new JSONObject():evidence;
+    }
+
+    private void queryTradeHistoryEvidence(java.util.List<HistoryRow> pageRows){
+        if(pageRows==null||pageRows.isEmpty()||!Python.isStarted())return;
+        JSONArray requests=new JSONArray();
+        java.util.ArrayList<String> requestedKeys=new java.util.ArrayList<>();
+        for(HistoryRow item:pageRows){
+            if(requests.length()>=40)break;
+            JSONObject row=item.row;
+            String pid=row.optString("position_id",
+                row.optString("source_position_id",""));
+            String symbol=row.optString("code",row.optString("market",""));
+            if(pid.isEmpty()||symbol.isEmpty())continue;
+            String key=tradeEvidenceKey(item);
+            if(tradeEvidenceCache.containsKey(key)||!pendingTradeEvidence.add(key))continue;
+            try{
+                JSONObject request=new JSONObject();
+                request.put("key",key).put("market",market)
+                    .put("strategy",item.source).put("frame",item.frame)
+                    .put("symbol",symbol).put("position_id",pid)
+                    .put("side","매도".equals(tradeSideOf(row))?"SELL":"BUY")
+                    .put("at",item.at);
+                requests.put(request);
+                requestedKeys.add(key);
+            }catch(Exception e){pendingTradeEvidence.remove(key);}
+        }
+        if(requestedKeys.isEmpty())return;
+        final String payload=requests.toString();
+        io.execute(()->{
+            try{
+                File rootDir=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                String value=Python.getInstance()
+                    .getModule("trade_history_evidence_v057")
+                    .callAttr("lookup_batch",rootDir.getAbsolutePath(),payload).toString();
+                JSONObject result=new JSONObject(value);
+                for(String key:requestedKeys){
+                    JSONObject found=result.optJSONObject(key);
+                    tradeEvidenceCache.put(key,found==null?new JSONObject():found);
+                }
+                // Bound view cache independently of SQLite and order state.
+                if(tradeEvidenceCache.size()>1500)tradeEvidenceCache.clear();
+            }catch(Exception err){
+                // A transient/missing research DB is not an order error.
+                // Cache unknown rather than an exception->render->retry loop.
+                for(String key:requestedKeys)tradeEvidenceCache.put(key,new JSONObject());
+                new RuntimeCrashStore(this).add("trade_history_read_only_evidence",err);
+            }finally{
+                for(String key:requestedKeys)pendingTradeEvidence.remove(key);
+            }
+            main.post(()->{
+                if(!isFinishing()&&!isDestroyed()&&
+                    ("executions".equals(page)||"policyHistory".equals(page)))render();
+            });
+        });
+    }
+
+    private void historyEvidenceCell(LinearLayout row,String title,String value,int widthDp){
+        LinearLayout tile=new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setPadding(dp(8),dp(3),dp(6),dp(3));
+        tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,6));
+        TextView head=text(title,12);head.setTextColor(PremiumUi.MUTED);
+        head.setSingleLine(true);tile.addView(head,new LinearLayout.LayoutParams(-1,dp(19)));
+        TextView detail=text(value,12);detail.setSingleLine(true);
+        detail.setTextColor(PremiumUi.TEXT);
+        detail.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tile.addView(detail,new LinearLayout.LayoutParams(-1,dp(23)));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(widthDp),dp(48));
+        lp.setMargins(0,0,dp(5),0);row.addView(tile,lp);
+    }
+
+    private String evidenceValue(JSONObject evidence,String key,String suffix){
+        return evidence.has(key)&&!evidence.isNull(key)
+            ?evidence.optString(key)+suffix:"미기록";
+    }
+
+    private void renderExecutionEvidenceStrip(LinearLayout panel,HistoryRow item){
+        JSONObject r=item.row,e=readTradeEvidence(item);
+        HorizontalScrollView details=new HorizontalScrollView(this);
+        details.setHorizontalScrollBarEnabled(true);
+        details.setFillViewport(false);
+        LinearLayout fields=new LinearLayout(this);
+        fields.setOrientation(LinearLayout.HORIZONTAL);
+        fields.setPadding(0,dp(4),0,dp(5));
+        historyEvidenceCell(fields,"매매전략",HistorySelection.strategyTag(item.source,item.frame),112);
+        historyEvidenceCell(fields,"체결시각",fillTimeOf(r,"executions",item.source),148);
+        historyEvidenceCell(fields,"체결구분",tradeSideOf(r),78);
+        historyEvidenceCell(fields,"체결가",formatMaybeMoney(r,"price","fill_price"),116);
+        historyEvidenceCell(fields,"체결수량",formatMaybeNumber(r,"qty","fill_qty"),106);
+        historyEvidenceCell(fields,"판단점수",formatMaybeNumber(r,"score","signal_score"),92);
+        historyEvidenceCell(fields,"매수·매도 근거",tradeReasonOf(r,tradeSideOf(r)),250);
+        historyEvidenceCell(fields,"AI 연계 출처",evidenceValue(e,"ai_source_count","개"),115);
+        historyEvidenceCell(fields,"AI 검증 요인",evidenceValue(e,"ai_factor_count","개"),115);
+        historyEvidenceCell(fields,"실현 수익률",evidenceValue(e,"ai_realized_roi","%"),116);
+        historyEvidenceCell(fields,"매도 이후 고가",
+            e.has("post_sale_peak")?money(e.optDouble("post_sale_peak")):"미기록",136);
+        historyEvidenceCell(fields,"매수가 대비 고가",
+            evidenceValue(e,"post_sale_peak_pct_from_buy","%"),133);
+        historyEvidenceCell(fields,"후속 관측상태",evidenceValue(e,"post_sale_state",""),146);
+        historyEvidenceCell(fields,"포지션 ID",
+            r.optString("position_id",r.optString("source_position_id","미기록")),210);
+        details.addView(fields,new HorizontalScrollView.LayoutParams(-2,-2));
+        panel.addView(details,new LinearLayout.LayoutParams(-1,dp(56)));
+    }
+
     private void renderList(String title,JSONArray a,String kind){
         boolean marketWide="positions".equals(kind)||"pending".equals(kind)||
             "executions".equals(kind);
@@ -2858,6 +3079,8 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         int first=historyStart(kind,total),last=HistoryPager.end(first,total);
+        if("executions".equals(kind)&&marketWide&&first<last)
+            queryTradeHistoryEvidence(history.subList(first,last));
         addHistoryPager(kind,total);
         for(int i=first;i<last;i++){
             HistoryRow item=marketWide?history.get(i):null;
@@ -3008,6 +3231,8 @@ public final class UnifiedVisualActivity extends Activity {
             if(wideList)whyLp.setMargins(dp(10),0,0,0);
             listFooterColumns.addView(why,whyLp);
             panel.addView(listFooterColumns,new LinearLayout.LayoutParams(-1,-2));
+            if("executions".equals(kind)&&item!=null)
+                renderExecutionEvidenceStrip(panel,item);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
             lp.setMargins(0,0,0,dp(6));content.addView(panel,lp);
         }
@@ -3064,7 +3289,9 @@ public final class UnifiedVisualActivity extends Activity {
                 entries.add(item);
         }
         String id="policy/"+market+"/"+scopeStrategy;
-        ColumnQueryV036 query=tableQuery(id,"identity","side","reason","when","score");
+        ColumnQueryV036 query=tableQuery(id,"identity","side","reason","when",
+            "score","price","qty","pnl","position_id","ai_sources",
+            "ai_factors","post_sale_peak","post_sale_pct","post_sale_state");
         File root=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
         java.util.NavigableMap<Long,Double> marketScores=
             MarketResearchScoreLookup.scoreTimeline(root,market);
@@ -3080,6 +3307,19 @@ public final class UnifiedVisualActivity extends Activity {
             Double recorded=MarketResearchScoreLookup.atTime(marketScores,item.at);
             values.put("score",recorded==null?"미기록":
                 String.format(Locale.KOREA,"%+.1f",recorded));
+            JSONObject evidence=readTradeEvidence(item);
+            values.put("price",formatMaybeMoney(record,"price","fill_price"));
+            values.put("qty",formatMaybeNumber(record,"qty","fill_qty"));
+            double pnl=tradePnL(record,"executions");
+            values.put("pnl",finite(pnl)?money(pnl):"미기록");
+            values.put("position_id",record.optString("position_id","미기록"));
+            values.put("ai_sources",evidenceValue(evidence,"ai_source_count","개"));
+            values.put("ai_factors",evidenceValue(evidence,"ai_factor_count","개"));
+            values.put("post_sale_peak",evidence.has("post_sale_peak")?
+                money(evidence.optDouble("post_sale_peak")):"미기록");
+            values.put("post_sale_pct",evidenceValue(evidence,
+                "post_sale_peak_pct_from_buy","%"));
+            values.put("post_sale_state",evidenceValue(evidence,"post_sale_state",""));
             cached.put(item,values);
         }
         filterAndSortHistory(entries,query,cached::get);
@@ -3104,7 +3344,12 @@ public final class UnifiedVisualActivity extends Activity {
             ap.setMargins(dp(5),0,0,0);titleRow.addView(all,ap);
         }
         content.addView(titleRow,new LinearLayout.LayoutParams(-1,dp(44)));
-        TextView note=text("표시 "+entries.size()+"건 · 열 터치: 정렬 / 길게 누르기: 필터·열 이동",11);
+        if(!entries.isEmpty()){
+            int pageFirst=Math.min(historyStart("policyHistory",entries.size()),entries.size());
+            int pageLast=HistoryPager.end(pageFirst,entries.size());
+            queryTradeHistoryEvidence(entries.subList(pageFirst,pageLast));
+        }
+        TextView note=text("표시 "+entries.size()+"건 · 좌우 스크롤: 거래별 정량·AI·매도후 고가 · 열 터치: 정렬",11);
         note.setTextColor(PremiumUi.MUTED);note.setPadding(dp(3),0,0,dp(6));
         content.addView(note);
         if(entries.isEmpty()){
@@ -3112,6 +3357,14 @@ public final class UnifiedVisualActivity extends Activity {
                 "조건에 맞는 실제 체결 기록 없음");
             return;
         }
+        HorizontalScrollView wideTable=new HorizontalScrollView(this);
+        wideTable.setFillViewport(true);
+        wideTable.setHorizontalScrollBarEnabled(true);
+        LinearLayout tableBody=new LinearLayout(this);
+        tableBody.setOrientation(LinearLayout.VERTICAL);
+        int tableWidth=Math.max(1240,query.visibleColumns().size()*146);
+        wideTable.addView(tableBody,
+            new HorizontalScrollView.LayoutParams(dp(tableWidth),-2));
         LinearLayout headings=new LinearLayout(this);
         headings.setOrientation(LinearLayout.HORIZONTAL);
         headings.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,7));
@@ -3120,11 +3373,21 @@ public final class UnifiedVisualActivity extends Activity {
             String label="identity".equals(column)?"종목명":
                 "side".equals(column)?"매수 / 매도":
                 "reason".equals(column)?"판단 근거":
-                "when".equals(column)?"체결 시점":"당시 시장점수";
+                "when".equals(column)?"체결 시점":
+                "score".equals(column)?"당시 시장점수":
+                "price".equals(column)?"체결가":
+                "qty".equals(column)?"체결수량":
+                "pnl".equals(column)?"순손익":
+                "position_id".equals(column)?"포지션 ID":
+                "ai_sources".equals(column)?"AI 연계출처":
+                "ai_factors".equals(column)?"AI 검증요인":
+                "post_sale_peak".equals(column)?"매도후 고가":
+                "post_sale_pct".equals(column)?"매수가 대비 고가%":
+                "post_sale_state".equals(column)?"관측상태":column;
             tableHeaderCell(headings,label,column,
                 policyColumnWeight(column),id,query,redraw);
         }
-        content.addView(headings,new LinearLayout.LayoutParams(-1,dp(47)));
+        tableBody.addView(headings,new LinearLayout.LayoutParams(-1,dp(47)));
         int first=historyStart("policyHistory",entries.size());
         int last=HistoryPager.end(first,entries.size());
         addHistoryPager("policyHistory",entries.size());
@@ -3150,8 +3413,9 @@ public final class UnifiedVisualActivity extends Activity {
             }
             LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(79));
             rp.setMargins(0,dp(3),0,0);
-            content.addView(row,rp);
+            tableBody.addView(row,rp);
         }
+        content.addView(wideTable,new LinearLayout.LayoutParams(-1,-2));
         addHistoryPager("policyHistory",entries.size());
     }
 
@@ -4459,10 +4723,7 @@ public final class UnifiedVisualActivity extends Activity {
         measuresLp.setMargins(0,dp(4),0,dp(7));
         tile.addView(measures,measuresLp);
 
-        aiTitle(tile,"진입 지표 관측률 · 비율이 낮으면 결론의 신뢰도가 낮음",9);
-        AiFeatureCoverageV046 coverageView=new AiFeatureCoverageV046(this);
-        coverageView.setFrame(frame);
-        tile.addView(coverageView,new LinearLayout.LayoutParams(-1,dp(135)));
+        // Detailed source coverage remains in AI SQLite/ZIP, not user-facing findings.
         aiFinding(tile,"01  손실 선행조건",
             diagnosis.optString("cause","손실의 선행조건 비교 중"),
             Color.rgb(252,152,165),false);
@@ -4553,9 +4814,6 @@ public final class UnifiedVisualActivity extends Activity {
         if(!scope.equals(report.optString("scope","")))return;
 
         if("trend".equals(strategy))addTrendResearchCard(report);
-        addApprovedEvidenceCard(report);
-        addComprehensiveV052Card(report);
-        addPostSaleV053Card(report);
         AiEvidenceFlowV046 flow=new AiEvidenceFlowV046(this);
         flow.setReport(report);
         LinearLayout.LayoutParams visualLp=new LinearLayout.LayoutParams(-1,dp(159));
@@ -5780,7 +6038,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text("ARTITRADE 네이티브 안전모드",22);h.setTypeface(null,Typeface.BOLD);p.addView(h);TextView d=text(e==null?"알 수 없는 오류":e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),11);d.setTextColor(Color.rgb(255,145,155));d.setPadding(0,dp(10),0,dp(10));p.addView(d);p.addView(button("화면 다시 구성",true,()->{try{showShell();refresh(false);}catch(Throwable x){}}),new LinearLayout.LayoutParams(dp(240),dp(44)));root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
-    @Override protected void onResume(){super.onResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
+    @Override protected void onResume(){super.onResume();ensureBackgroundServiceOnResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
     @Override protected void onPause(){persistNavigation();main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
     @Override protected void onDestroy(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);io.shutdownNow();super.onDestroy();}
 }
