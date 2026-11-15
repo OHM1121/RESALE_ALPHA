@@ -188,7 +188,9 @@ class PostSalePolicyV053(unittest.TestCase):
     def test_integration_does_not_replace_order_execution(self):
         text=(ROOT/"app/src/main/python/post_exit_runtime_v053.py").read_text(encoding="utf-8")
         self.assertIn("native_stock_tick(self,tick)",text)
-        self.assertIn("native_coin_mark(self,code,price,seen)",text)
+        self.assertIn("original_prices.fset(runner,values)",text)
+        self.assertIn("original_observer(code,price)",text)
+        self.assertIn("UPBIT_PUBLIC_RECEIPT",text)
         self.assertIn("_pinned_stocks=tracking_pins",text)
         self.assertNotIn("broker.fok(",text)
         self.assertNotIn("manual_sell(",text)
