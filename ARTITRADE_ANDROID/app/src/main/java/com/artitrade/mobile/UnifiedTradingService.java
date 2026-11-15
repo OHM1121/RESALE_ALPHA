@@ -330,11 +330,11 @@ public final class UnifiedTradingService extends Service {
 
     private void disarmUnverifiedMarkets(String reason){
         try{
-            if(stockEpoch<=0||!lastMserverAuthOk)
+            if((stockEpoch<=0||!lastMserverAuthOk)&&strategy.liveEnabled("stock"))
                 strategy.setLive("stock",false);
         }catch(Throwable e){crashes.add("disarm_stock_"+reason,e);}
         try{
-            if(coinEpoch<=0||!lastMserverAuthOk)
+            if((coinEpoch<=0||!lastMserverAuthOk)&&strategy.liveEnabled("coin"))
                 strategy.setLive("coin",false);
         }catch(Throwable e){crashes.add("disarm_coin_"+reason,e);}
     }
