@@ -80,15 +80,27 @@ def _quantity(row):
     return met._num(met._first(row,"qty0","entry_qty","original_qty",
                                "initial_qty","buy_qty"))
 
+def _foreign_trend_row(row):
+    if not isinstance(row,dict):return False
+    mode=str(row.get("entry_mode") or row.get("mode") or "").upper()
+    status=str(row.get("status") or "").upper()
+    reason=str(row.get("reason") or "").upper()
+    return ("MARKET_TREND" in mode or status.startswith("TREND_") or
+            reason.startswith("MARKET_TREND_") or
+            str(row.get("id") or "").startswith(("MT43:","MT54:")))
+
+
 def _event_candidates(research,ledger,strategy):
     signals=jr._rows(research,("items","candidates","signals"))
     positions=jr._rows(ledger,("positions","holdings"))
     waiting=jr._rows(ledger,("pending","pending_orders","orders","candidates"))
     for row in positions:
+        if strategy!="trend" and _foreign_trend_row(row):continue
         e=v47._candidate(row,strategy,"ACTUAL")
         if e:yield row,e
     for row in signals+waiting:
         if not isinstance(row,dict):continue
+        if strategy!="trend" and _foreign_trend_row(row):continue
         if row.get("ledger_is_virtual_only") or row.get("virtual_entered") or (
             row.get("entry_observed") and not row.get("bought")):
             role="VIRTUAL"
@@ -334,10 +346,8 @@ def capture_packet(root,packet,now=None):
         pending={}
         for row,event in _event_candidates(research,ledger,strategy):
             pending.setdefault(event["key"],(row,event))
-        for row,role in (_trend_historical_rows(root,market,strategy)
-                         if strategy!='trend' else []):
-            observed=v47._candidate(row,strategy,role)
-            if observed:pending.setdefault(observed["key"],(row,observed))
+        # Old MT43 parent trades remain in their original archive and must
+        # not be recaptured as fresh original AT/MA trade evidence.
         wallet_positions,wallet_executions=(
             _independent_wallet_evidence(root,market) if strategy=='trend'
             else ([],[]))
@@ -348,8 +358,8 @@ def capture_packet(root,packet,now=None):
         executions+=wallet_executions
         # Trend sells are committed in the independent market-trend journal;
         # join by the same source_position_id, never merely by ticker.
-        if strategy!='trend':
-            executions+=_trend_sell_rows(root,market,strategy)
+        # Standalone Trend owns its own broker fills; parent AT/MA never
+        # import trend exit events into their outcome cohort.
         if not pending and not executions:continue
         try:
             from ma_v062_ai_scope import ai_root
