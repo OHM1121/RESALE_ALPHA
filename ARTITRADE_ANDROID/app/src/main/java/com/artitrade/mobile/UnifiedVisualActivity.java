@@ -4124,6 +4124,110 @@ public final class UnifiedVisualActivity extends Activity {
         lp.setMargins(0,dp(7),0,0);
         parent.addView(panel,lp);
     }
+    private void addPostSaleV053Card(JSONObject report){
+        JSONObject data=report.optJSONObject("post_sale_tracking_v053");
+        if(data==null)return;
+        LinearLayout panel=card();
+        TextView headline=text("매도 이후 후속 고가 추적 · V053",18);
+        headline.setTypeface(null,Typeface.BOLD);
+        panel.addView(headline);
+        if(!data.optBoolean("ok",false)){
+            TextView notice=text("후속 추적 자료를 확인하지 못함 · "+
+                data.optString("reason","매도 관측자료 없음"),13);
+            notice.setTextColor(PremiumUi.MUTED);
+            panel.addView(notice);
+            content.addView(panel);return;
+        }
+        JSONArray counts=data.optJSONArray("cohorts");
+        int actual=0,paper=0,complete=0,noQuotes=0;
+        if(counts!=null)for(int i=0;i<counts.length();i++){
+            JSONObject group=counts.optJSONObject(i);
+            if(group==null)continue;
+            if("ACTUAL_FILLED".equals(group.optString("cohort")))actual+=group.optInt("n");
+            else if("PAPER".equals(group.optString("cohort")))paper+=group.optInt("n");
+            if("COMPLETE".equals(group.optString("status")))complete+=group.optInt("n");
+            if("ENDED_NO_OBSERVATION".equals(group.optString("status"))||
+               "EXPIRED_NO_OBSERVATION".equals(group.optString("status")))
+                noQuotes+=group.optInt("n");
+        }
+        panel.addView(text("실제 매수 후 추적 "+actual+"건 · PAPER 가상 추적 "+
+            paper+"건 · 완료 "+complete+"건",13));
+        TextView basis=text("5분·30분 5일 / 1시간 10일 / 일봉 15일 / 수급·종가 5일"+
+            " · 주식 거래일, 코인 연속일 기준",12);
+        basis.setTextColor(PremiumUi.MUTED);
+        basis.setPadding(0,dp(6),0,dp(4));
+        panel.addView(basis);
+        SimpleDateFormat display=new SimpleDateFormat("MM/dd HH:mm:ss",Locale.KOREA);
+        display.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
+        JSONArray cases=data.optJSONArray("cases");
+        JSONArray histories=data.optJSONArray("high_history_preview");
+        if(cases==null||cases.length()==0){
+            TextView empty=text("아직 매도/가상매도 이후 확인된 추적 사례 없음",13);
+            empty.setTextColor(PremiumUi.MUTED);
+            panel.addView(empty);
+        }else for(int i=0;i<Math.min(8,cases.length());i++){
+            JSONObject item=cases.optJSONObject(i);
+            if(item==null)continue;
+            long sold=item.optLong("exit_ts",0);
+            long peakAt=item.optLong("peak_at",0);
+            boolean peak=item.has("peak")&&!item.isNull("peak");
+            String label=("ACTUAL_FILLED".equals(item.optString("cohort"))?
+                    "실제":"PAPER")+
+                " · "+item.optString("symbol")+" · "+tfLabel(item.optString("frame"));
+            TextView head=text(label,13);
+            head.setTypeface(null,Typeface.BOLD);
+            head.setPadding(0,dp(9),0,0);
+            panel.addView(head);
+            String soldLabel=(sold>0?display.format(new Date(sold*1000L)):"시각 미확인");
+            String first="매도"+("EXPECTED".equals(item.optString("exit_evidence"))?
+                         " 예상":" 확인")+" "+soldLabel;
+            if(peak){
+                String observed=display.format(new Date(peakAt*1000L));
+                first+=" · 후속 최고 "+money(item.optDouble("peak"))+
+                    " · 매수 대비 "+String.format(Locale.KOREA,"%+.2f%%",
+                                  item.optDouble("peak_pct"))+
+                    " · "+observed;
+            }else{
+                first+=" · 후속 고가 미수신";
+            }
+            TextView detail=text(first,12);
+            detail.setTextColor(PremiumUi.MUTED);
+            panel.addView(detail);
+            if(histories!=null)for(int k=0;k<histories.length();k++){
+                JSONObject history=histories.optJSONObject(k);
+                if(history==null||!item.optString("case_id").equals(
+                    history.optString("case_id")))continue;
+                JSONArray steps=history.optJSONArray("peak_updates");
+                if(steps!=null)for(int j=0;j<Math.min(4,steps.length());j++){
+                    JSONObject step=steps.optJSONObject(j);
+                    if(step==null)continue;
+                    TextView mark=text(" ↳ 최고가 갱신 "+
+                        display.format(new Date(step.optLong("high_at")*1000L))+
+                        "  "+money(step.optDouble("price"))+
+                        "  ("+String.format(Locale.KOREA,"%+.2f%%",
+                               step.optDouble("pct_from_buy"))+")",11);
+                    mark.setTextColor(PremiumUi.MUTED);
+                    panel.addView(mark);
+                }
+                break;
+            }
+        }
+        if(noQuotes>0||data.optInt("dropped_ticks",0)>0){
+            TextView warning=text("관측시세 누락 "+noQuotes+"건 · 시세 수신 버퍼 초과 "+
+                data.optInt("dropped_ticks",0)+"회. 관측되지 않은 고가는 추정하지 않음",12);
+            warning.setTextColor(Color.rgb(229,190,124));
+            warning.setPadding(0,dp(6),0,0);
+            panel.addView(warning);
+        }
+        TextView footer=text("전체 1분 관측값·고가 갱신이력: "+
+            data.optString("raw_research_db","POST_EXIT_HIGH_V053.sqlite3")+
+            " (분석 추출 ZIP에 포함)",11);
+        footer.setTextColor(PremiumUi.MUTED);
+        footer.setPadding(0,dp(8),0,0);
+        panel.addView(footer);
+        content.addView(panel);
+    }
+
     private void addComprehensiveV052Card(JSONObject report){
         JSONObject overall=report.optJSONObject("comprehensive_v052");
         if(overall==null)return;
@@ -4407,6 +4511,7 @@ public final class UnifiedVisualActivity extends Activity {
         addTrendResearchCard(report);
         addApprovedEvidenceCard(report);
         addComprehensiveV052Card(report);
+        addPostSaleV053Card(report);
         AiEvidenceFlowV046 flow=new AiEvidenceFlowV046(this);
         flow.setReport(report);
         LinearLayout.LayoutParams visualLp=new LinearLayout.LayoutParams(-1,dp(159));
