@@ -1,0 +1,23 @@
+name: ARTITRADE v054 source snapshot for offline verification
+on:
+  push:
+    branches:
+      - feature-artitrade-v054-standalone-trend-20261115
+    paths:
+      - '.github/workflows/artitrade-v054-source-snapshot.yml'
+      - 'ARTITRADE_ANDROID/**'
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive source tree
+        run: tar -czf /tmp/artitrade-v054-source.tar.gz -C ARTITRADE_ANDROID .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V054_SOURCE_SNAPSHOT
+          path: /tmp/artitrade-v054-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
