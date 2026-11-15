@@ -40,7 +40,7 @@ def _category(name):
         return "VIRTUAL"
     if t in ("executions","fills","positions","orders","wallets","accounts",
              "gmo_fills","gmo_position_history") or "execution" in t:
-        return "ACTUAL"
+        return "UNVERIFIED_LEDGER"
     return "SIGNAL_AND_RESEARCH"
 
 def _fingerprint(payload):
@@ -54,6 +54,18 @@ def _key(row, index):
         "code","symbol","market","tf","event_date","trade_date",
         "day_index","ts","time","at","side","state") if row.get(x) is not None}
     return json.dumps(subset,ensure_ascii=False,sort_keys=True) if subset else "row:"+str(index)
+
+def _source_stamp(file):
+    """Skip unchanged sources. Include main DB/WAL/journal, but not read-only -shm."""
+    parts=[]
+    for path in (file,Path(str(file)+"-wal"),Path(str(file)+"-journal")):
+        try:
+            stat=path.stat()
+            parts.append(f"{stat.st_size}:{stat.st_mtime_ns}")
+        except FileNotFoundError:
+            parts.append("absent")
+    return "|".join(parts)
+
 
 def _init(db):
     db.execute("PRAGMA journal_mode=WAL")
@@ -74,6 +86,13 @@ def _init(db):
         ON observations(strategy,record_kind,sequence)""")
     db.execute("""CREATE INDEX IF NOT EXISTS ix_observation_source
         ON observations(source_file,source_table,record_key,sequence)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS capture_source_stamps_v050(
+        source_file TEXT PRIMARY KEY, source_stamp TEXT NOT NULL,
+        completed_at_kst TEXT NOT NULL)""")
+    # Metadata-only correction in the independent observation DB. No broker
+    # or paper-ledger records are edited.
+    db.execute("""UPDATE observations SET record_kind='UNVERIFIED_LEDGER'
+        WHERE record_kind='ACTUAL'""")
 
 def capture(root_path):
     root=Path(root_path).resolve()
@@ -83,12 +102,20 @@ def capture(root_path):
     journal.parent.mkdir(parents=True,exist_ok=True)
     inserted=0
     failures=[]
+    scanned=skipped=0
     stamp=datetime.now(KST).isoformat(timespec="seconds")
     with closing(sqlite3.connect(journal,timeout=15)) as output:
         _init(output)
         for rel,strategy in SOURCES.items():
             source=root/rel
             if not source.is_file():
+                continue
+            before=_source_stamp(source)
+            previous=output.execute(
+                "SELECT source_stamp FROM capture_source_stamps_v050 WHERE source_file=?",
+                (rel,)).fetchone()
+            if previous and previous[0]==before:
+                skipped+=1
                 continue
             try:
                 with closing(sqlite3.connect(source.resolve().as_uri()+"?mode=ro",
@@ -125,42 +152,66 @@ def capture(root_path):
                                      rowkey,payload,digest))
                                 inserted+=max(0,cur.rowcount)
                         output.commit()
+                output.execute("""INSERT INTO capture_source_stamps_v050(
+                    source_file,source_stamp,completed_at_kst) VALUES(?,?,?)
+                    ON CONFLICT(source_file) DO UPDATE
+                    SET source_stamp=excluded.source_stamp,
+                        completed_at_kst=excluded.completed_at_kst""",
+                    (rel,before,stamp))
+                output.commit()
+                scanned+=1
             except (sqlite3.Error,ValueError,OSError) as error:
                 failures.append({"source":rel,"error":type(error).__name__})
         state=root/GMO_STATE
         if state.is_file():
-            try:
-                with state.open("r",encoding="utf-8") as stream:
-                    original=json.load(stream)
-                if not isinstance(original,dict):
-                    raise ValueError("GMO state root invalid")
-                # Record each buy/sell fill individually; state updates remain append-only.
-                for key in ("buy_fills","fills"):
-                    for index,record in enumerate(original.get(key) or []):
-                        if not isinstance(record,dict):
-                            continue
+            before=_source_stamp(state)
+            previous=output.execute(
+                "SELECT source_stamp FROM capture_source_stamps_v050 WHERE source_file=?",
+                (GMO_STATE,)).fetchone()
+            if previous and previous[0]==before:
+                skipped+=1
+            else:
+                try:
+                    with state.open("r",encoding="utf-8") as stream:
+                        original=json.load(stream)
+                    if not isinstance(original,dict):
+                        raise ValueError("GMO state root invalid")
+                    # Record each buy/sell fill individually; state updates remain append-only.
+                    for key in ("buy_fills","fills"):
+                        for index,record in enumerate(original.get(key) or []):
+                            if not isinstance(record,dict):
+                                continue
+                            payload=json.dumps(record,ensure_ascii=False,sort_keys=True,
+                                               separators=(",",":"),default=str)
+                            record_key=_key(record,index)
+                            cur=output.execute("""INSERT OR IGNORE INTO observations(
+                                observed_at_kst,strategy,source_file,source_table,
+                                record_kind,record_key,raw_json,source_sha256)
+                                VALUES(?,?,?,?,?,?,?,?)""",
+                                (stamp,"stock_gmo",GMO_STATE,key,"UNVERIFIED_LEDGER",
+                                 record_key,payload,_fingerprint(payload)))
+                            inserted+=max(0,cur.rowcount)
+                    for code,record in (original.get("positions") or {}).items():
                         payload=json.dumps(record,ensure_ascii=False,sort_keys=True,
                                            separators=(",",":"),default=str)
-                        record_key=_key(record,index)
                         cur=output.execute("""INSERT OR IGNORE INTO observations(
                             observed_at_kst,strategy,source_file,source_table,
                             record_kind,record_key,raw_json,source_sha256)
                             VALUES(?,?,?,?,?,?,?,?)""",
-                            (stamp,"stock_gmo",GMO_STATE,key,"ACTUAL",
-                             record_key,payload,_fingerprint(payload)))
+                            (stamp,"stock_gmo",GMO_STATE,"positions","UNVERIFIED_LEDGER",
+                             str(code),payload,_fingerprint(payload)))
                         inserted+=max(0,cur.rowcount)
-                for code,record in (original.get("positions") or {}).items():
-                    payload=json.dumps(record,ensure_ascii=False,sort_keys=True,
-                                       separators=(",",":"),default=str)
-                    cur=output.execute("""INSERT OR IGNORE INTO observations(
-                        observed_at_kst,strategy,source_file,source_table,
-                        record_kind,record_key,raw_json,source_sha256)
-                        VALUES(?,?,?,?,?,?,?,?)""",
-                        (stamp,"stock_gmo",GMO_STATE,"positions","ACTUAL",
-                         str(code),payload,_fingerprint(payload)))
-                    inserted+=max(0,cur.rowcount)
-                output.commit()
-            except (OSError,ValueError,TypeError,sqlite3.Error) as error:
-                failures.append({"source":GMO_STATE,"error":type(error).__name__})
+                    output.commit()
+                    output.execute("""INSERT INTO capture_source_stamps_v050(
+                        source_file,source_stamp,completed_at_kst) VALUES(?,?,?)
+                        ON CONFLICT(source_file) DO UPDATE
+                        SET source_stamp=excluded.source_stamp,
+                            completed_at_kst=excluded.completed_at_kst""",
+                        (GMO_STATE,before,stamp))
+                    output.commit()
+                    scanned+=1
+                except (OSError,ValueError,TypeError,sqlite3.Error) as error:
+                    failures.append({"source":GMO_STATE,"error":type(error).__name__})
     return {"ok":not failures,"added_observations":inserted,
+            "scanned_sources":scanned,"skipped_unchanged_sources":skipped,
             "source_errors":failures,"journal":AUDIT_REL}
