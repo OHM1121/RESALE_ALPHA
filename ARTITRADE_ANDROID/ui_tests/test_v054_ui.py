@@ -8,7 +8,7 @@ SCOPE=(ROOT/'app/src/main/java/com/artitrade/mobile/StrategyDashboardScope.java'
 class V054Ui(TestCase):
     def test_unified_release_is_v054_or_newer_with_incremented_versioncode(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf-8')
-        self.assertRegex(gradle,r"versionCode (?:61|62|63|64)")
+        self.assertRegex(gradle,r"versionCode (?:61|62|63|64|65)")
         self.assertRegex(gradle,r"versionName '0\.7\.5[4567]")
         self.assertIn("applicationId 'com.artitrade.unified.s21dex'",gradle)
 
