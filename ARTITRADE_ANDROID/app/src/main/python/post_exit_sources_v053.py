@@ -270,7 +270,9 @@ def _trend(root,problems,now):
     out=[]
     for virtual_flag,items in ((False,states),(True,virtual)):
         for p in items:
-            if str(p.get("status") or "").upper()!="CLOSED":continue
+            state=str(p.get("status") or "").upper()
+            if state!="CLOSED" and not (virtual_flag and state=="OPEN"):
+                continue
             try:payload=json.loads(p.get("payload") or "{}")
             except (ValueError,TypeError):continue
             entry=parsed_at(payload.get("entry_at"))
@@ -296,6 +298,9 @@ def _trend(root,problems,now):
                 at=parsed_at(max(choices,key=lambda x:x["at"])["at"]) if choices else None
                 evidence="CONFIRMED" if at else "EXPECTED"
                 if at is None:at=parsed_at(payload.get("deadline"))
+                if state=="OPEN":
+                    at=parsed_at(payload.get("deadline"))
+                    evidence="EXPECTED"
             else:
                 key=(market,strategy,frame,symbol,str(p.get("position_id")))
                 choices=sold_by.get(key,())
