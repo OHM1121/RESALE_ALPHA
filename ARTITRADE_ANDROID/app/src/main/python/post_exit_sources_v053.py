@@ -27,7 +27,10 @@ def _rows(root,relative,table,where="",args=(),order="id"):
             c.row_factory=sqlite3.Row
             known={r[0] for r in c.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
-            if table not in known:return [],"MISSING_TABLE:"+relative+":"+table
+            if table not in known:
+                # Optional shadow/trend tables are absent in older ledgers.
+                # Do not log thousands of false alarms on each refresh.
+                return [],None
             columns={r[1] for r in c.execute('PRAGMA table_info("'+table+'")')}
             ordering="rowid" if order not in columns else order
             query='SELECT * FROM "'+table+'"'+(' WHERE '+where if where else '')+\
@@ -59,7 +62,8 @@ def _exit(row,executions):
 
 
 def _actual(root,market,strategy,relative,problems):
-    positions,error=_rows(root,relative,"positions",order="id")
+    positions,error=_rows(root,relative,"positions",
+                          "status IN ('CLOSED','SOLD','DONE','FILLED_EXIT')",order="id")
     if error:problems.append(error);return []
     executions,error=_rows(root,relative,"executions",order="id")
     if error:problems.append(error)
@@ -278,9 +282,17 @@ def _trend(root,problems,now):
             symbol=_symbol(p,market)
             if market not in ("stock","coin") or not symbol:continue
             if virtual_flag:
-                # Avoid linking a different re-entry of the same ticker.
+                # The signal_key serializes the exact original virtual tuple.
+                # Do not borrow a VEXIT from another entry of the same ticker.
+                try:
+                    identity=json.loads(str(p.get("signal_key") or ""))
+                    event_prefix="MT43:VEXIT:"+":".join(str(x) for x in identity)+":"
+                except (ValueError,TypeError):
+                    event_prefix=""
                 choices=[e for e in virtual_by.get((market,strategy,frame,symbol),())
-                         if entry.timestamp()<=float(e["at"])<=float(p["updated_at"])+10]
+                         if event_prefix and
+                         str(e.get("event_key") or "").startswith(event_prefix)
+                         and entry.timestamp()<=float(e["at"])<=float(p["updated_at"])+10]
                 at=parsed_at(max(choices,key=lambda x:x["at"])["at"]) if choices else None
                 evidence="CONFIRMED" if at else "EXPECTED"
                 if at is None:at=parsed_at(payload.get("deadline"))
