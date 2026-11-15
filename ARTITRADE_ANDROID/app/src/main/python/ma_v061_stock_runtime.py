@@ -26,7 +26,12 @@ def _next_stock_open(ref,tf):
         next_open=ref+timedelta(seconds=seconds)
         if next_open.hour>15 or (next_open.hour==15 and next_open.minute>=20):
             next_open=(ref+timedelta(days=1)).replace(hour=9,minute=0,second=0)
-    while next_open.weekday()>=5:
+    from d_v19_portfolio import live_session
+    # The exchange session check covers non-trading public holidays as well
+    # as weekends. No candidate is filled while KRX itself is closed.
+    for _ in range(16):
+        if next_open.weekday()<5 and live_session(next_open,'KRX'):
+            break
         next_open=(next_open+timedelta(days=1)).replace(hour=9,minute=0,second=0)
     # Kiwoom's native live_session remains authoritative about holidays,
     # exchange halt and actual eligibility; this is an opening deadline.
@@ -166,6 +171,41 @@ def _make_buy_state(self,c,p):
                   (target,first,p['id']))
 
 
+def _restore_open_states(self):
+    """Repair missing sidecar after a crash with exact candidate and fill IDs."""
+    import stock_ma_engine as m
+    with self.lock,m._connect(self.db) as c:
+        _table(c)
+        missing=c.execute("""SELECT p.* FROM positions p
+            JOIN candidates a ON a.id=p.candidate_id
+            LEFT JOIN ma_v061_positions v ON v.position_id=p.id
+            WHERE p.status='OPEN' AND v.position_id IS NULL
+              AND a.features LIKE '%"ma_v061_kind"%'""").fetchall()
+        for p in missing:
+            _make_buy_state(self,c,p)
+            row=c.execute("""SELECT state_json FROM ma_v061_positions
+                WHERE position_id=?""",(p['id'],)).fetchone()
+            if not row:continue
+            state=json.loads(row['state_json'])
+            evidence=c.execute("""SELECT reason,qty,price FROM executions
+                WHERE position_id=? AND side='SELL' ORDER BY id""",
+                (p['id'],)).fetchall()
+            for sale in evidence:
+                reason=str(sale['reason'] or '')
+                if reason=='MA_V061_FIRST_20PCT':
+                    state=rule.quantity_after_fill(state,reason,sale['qty'])
+                    state.update(stage=max(1,int(state['stage'])),
+                                 first_anchor=str(sale['price']))
+                elif reason=='MA_V061_SECOND_HALF_REMAINING':
+                    state=rule.quantity_after_fill(state,reason,sale['qty'])
+                    state.update(stage=2,peak2=str(sale['price']))
+            if evidence:
+                c.execute("""UPDATE ma_v061_positions SET state_json=?,updated_at=?
+                    WHERE position_id=?""",
+                    (json.dumps(state,ensure_ascii=False),
+                     dt.datetime.now(dt.timezone.utc).isoformat(),p['id']))
+
+
 def _slope_closes(self,code,tf,at):
     from d_storage import KST
     period={'5m':300,'30m':1800,'60m':3600,'day':86400}[tf]
@@ -237,6 +277,7 @@ def install():
     def init(self,*a,**kw):
         original_init(self,*a,**kw)
         _disable_legacy_orders(self)
+        _restore_open_states(self)
     m.StockMAService.__init__=init
     original_exit=m.StockMAService._exit
     def exits(self,c,p,bid,now,book):
