@@ -302,6 +302,9 @@ def capture_packet(root,packet,now=None):
         if not pending and not executions:continue
         try:
             with jr._connect(root,market) as conn:
+                # This local journal defaults to sqlite3 tuple rows.
+                # Sidecar dictionaries must use named rows to avoid rollback.
+                conn.row_factory=sqlite3.Row
                 _ensure(conn)
                 for row,event in pending.values():
                     _add_entry(conn,row,event,market,strategy,now)
@@ -406,6 +409,7 @@ def record_candles(root,market,strategy,symbol,frame,raw_rows,origin,now=None):
     bars=met._norm_bars(raw_rows)
     if not bars:return 0
     with jr._connect(root,market) as conn:
+        conn.row_factory=sqlite3.Row
         _ensure(conn)
         conn.executemany("""INSERT INTO candle_extra_v048(
            strategy,frame,symbol,bar_ts,open_price,turnover,origin)
