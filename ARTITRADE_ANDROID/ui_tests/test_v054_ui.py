@@ -28,7 +28,7 @@ class V054Ui(TestCase):
     def test_native_strategies_no_longer_offer_manual_override(self):
         panel=UI.split('private void renderHome(){',1)[1].split('String feedName=',1)[0]
         self.assertNotIn('Button manualButton=',panel)
-        self.assertIn('기준봉·MA는 원래 매매조건 유지',panel)
+        self.assertIn('기준봉·MA·마켓트렌드 각각 독립 원장',panel)
 
     def test_watch_pending_has_distinct_observation_screen(self):
         self.assertIn('renderTrendWatchPending()',UI)
