@@ -1862,8 +1862,14 @@ def _patched_gmo(self):
             except UnsafePaperExit as unsafe:
                 self._err("gmo_broker_provenance_blocked",unsafe)
             return
+        # GMO PAPER uses its independent simulated wallet. A broker fill
+        # made by stock AT/MA/CLOSE is not a GMO position and must not
+        # suppress GMO's virtual fills or its research evidence.
+        # Only a LIVE GMO fill (or an unresolved GMO broker order) may
+        # block this market's simulated matcher after a mode switch.
         try:
-            refuse_paper_sell_if_live_open(self.root,"stock",code)
+            if verified_gmo_live_quantity(self.root,code)>0:
+                raise UnsafePaperExit("GMO_LIVE_POSITION_PAPER_MATCH_BLOCKED")
         except UnsafePaperExit as unsafe:
             self._err("gmo_paper_broker_conflict",unsafe)
             return
@@ -1872,8 +1878,10 @@ def _patched_gmo(self):
     def mode_scoped_print(quote, volume, **kwargs):
         if self.live_enabled("stock"):return 0
         try:
-            refuse_paper_sell_if_live_open(self.root,"stock",quote.code)
-        except UnsafePaperExit:
+            if verified_gmo_live_quantity(self.root,quote.code)>0:
+                raise UnsafePaperExit("GMO_LIVE_POSITION_PAPER_PROXY_BLOCKED")
+        except UnsafePaperExit as unsafe:
+            self._err("gmo_paper_proxy_broker_conflict",unsafe)
             return 0
         return original_print(quote,volume,**kwargs)
     engine.paper_match=mode_scoped_match
