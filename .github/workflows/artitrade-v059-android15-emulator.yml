@@ -1,11 +1,11 @@
 name: ARTITRADE v0.7.59 Android 15 real boot + eight-screen smoke
 on:
   push:
-    branches: [ feature-artitrade-v059-background-ui-20261116 ]
+    branches: [ feature-artitrade-v059-reference-ma-live-20261116 ]
     paths:
       - 'ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/reference_integrity_v059.py'
-      - '.github/workflows/artitrade-v059-emulator-run.yml'
+      - '.github/workflows/artitrade-v059-android15-emulator.yml'
   workflow_dispatch:
 permissions:
   contents: read
