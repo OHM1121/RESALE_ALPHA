@@ -56,6 +56,7 @@ class V058Evidence(unittest.TestCase):
                                    10000/99.5,places=5)
 
     def test_no_quote_is_not_fabricated(self):
+        book.persist(self.root,'coin',[('KRW-ETH',1794700799,99,100)],1794700800000)
         with sqlite3.connect(book.research.db_path(self.root,'coin')) as c:
             self.assertIsNone(book.lookup(c,'KRW-UNKNOWN',1794700800))
 
