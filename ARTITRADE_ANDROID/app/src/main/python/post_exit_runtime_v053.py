@@ -56,19 +56,23 @@ def install(core):
         return pins
     d_live.LivePaperRunner._pinned_stocks=tracking_pins
 
-    native_coin_watch=d_upbit.UpbitPaperRunner._both_watched_codes
-    def tracking_coin_watch(self):
-        original=set(native_coin_watch(self))
-        rt=getattr(core,"_RUNTIME",None)
-        tracker=getattr(rt,"post_sale_tracker_v053",None) if rt else None
-        if tracker:
-            available=max(0,MAX_WATCH_COIN-len(original))
-            tracked=sorted(x for x in tracker.active_symbols("coin")
-                           if x.startswith("KRW-") and x not in original)
-            original.update(tracked[:available])
-            tracker._last_coin_watch_gap=max(0,len(tracked)-available)
-        return sorted(original)
-    d_upbit.UpbitPaperRunner._both_watched_codes=tracking_coin_watch
+    # Do NOT add research-only symbols to _both_watched_codes(): that
+    # method is also used by UPBIT orderbook/buy-sell decisions. For post-sale
+    # highs only public TICKER_LAST marks are needed.
+    def refresh_research_tickers(rt,tracker):
+        runner=getattr(rt,"coin_runner",None)
+        if runner is None:return
+        with runner._lock:
+            before=set(getattr(runner,"tracked",()) or ())
+            old=set(getattr(tracker,"_coin_research_only",set()))
+            mandatory=before-old
+            research=sorted(x for x in tracker.active_symbols("coin")
+                            if x.startswith("KRW-") and x not in mandatory)
+            room=max(0,MAX_WATCH_COIN-len(mandatory))
+            selected=set(research[:room])
+            runner.tracked=sorted(mandatory|selected)
+            tracker._coin_research_only=selected
+            tracker._last_coin_watch_gap=max(0,len(research)-room)
 
     native_coin_mark=d_upbit.UpbitPaperRunner._dispatch_public_mark
     def post_sale_coin_mark(self,code,price,seen=None):
@@ -93,6 +97,12 @@ def install(core):
         try:
             tracker=Tracker(self.root)
             self.post_sale_tracker_v053=tracker
+            original_scan=tracker.scan_sources
+            def scan_with_ticker_subscription(*a,**kw):
+                result=original_scan(*a,**kw)
+                refresh_research_tickers(self,tracker)
+                return result
+            tracker.scan_sources=scan_with_ticker_subscription
             tracker.start()
         except Exception as e:
             # Research errors must not start or stop an unrelated live order.
