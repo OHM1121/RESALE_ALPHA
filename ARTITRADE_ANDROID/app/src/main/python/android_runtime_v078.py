@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 import android_live_bridge as _core
 from android_sqlite_reader import db_rows
 from android_live_position_guard_v049 import (
-    refuse_paper_sell_if_live_open, UnsafePaperExit)
+    refuse_paper_sell_if_live_open, verified_gmo_live_quantity, UnsafePaperExit)
 
 # Bundled original EXE bridge lacks this read-only history helper.
 # Add the accessor without modifying strategy or order state machines.
@@ -1785,7 +1785,99 @@ def _patched_gmo(self):
 
         gmo.start(lambda: self.stock_runner.api,
                   lambda: dict(self.stock_runner.market_map))
-    return _ORIG_PATCH_GMO(self)
+    # The v071 live bridge replaces GMO paper_match with a broker-only
+    # wrapper, which silently ignores all PAPER orders when live is OFF.
+    # Preserve the original simulated matcher and the explicitly labelled
+    # 0B PAPER proxy. Only dispatch to the broker wrapper while LIVE is ON.
+    engine=self.stock_runner.gmo.engine
+    if not hasattr(engine,"_android_original_paper_match_v050"):
+        engine._android_original_paper_match_v050=engine.paper_match
+        engine._android_original_print_proxy_v050=engine.paper_match_krx_print_proxy
+    _ORIG_PATCH_GMO(self)
+    original_paper=engine._android_original_paper_match_v050
+    original_print=engine._android_original_print_proxy_v050
+    # The legacy broker wrapper sent ALL NEW GMO orders on ANY KRX tick,
+    # including unrelated tickers without fresh 0D depth. Preserve strategy
+    # decisions, but require a matching fresh quote for each live order.
+    live_intents=set()
+    original_make_order=engine._order
+    def mode_scoped_order(*args,**kwargs):
+        result=original_make_order(*args,**kwargs)
+        if self.live_enabled("stock"):
+            live_intents.add(result.id)
+        return result
+    engine._order=mode_scoped_order
+
+    def mode_scoped_match(quote):
+        code=str(getattr(quote,"code","") or "")
+        if self.live_enabled("stock"):
+            try:
+                lag=float(getattr(quote,"receive_delay_seconds",float("nan")))
+                if (getattr(quote,"venue",None)!="KRX" or not code or
+                    not math.isfinite(lag) or lag<0 or lag>3.0):
+                    return
+                for order in list(engine.orders.values()):
+                    if (order.state!="NEW" or order.code!=code or
+                            order.id not in live_intents):
+                        continue
+                    qty=int(order.requested)-int(order.filled)
+                    if qty<=0:continue
+                    if order.side=="BUY":
+                        if (getattr(quote,"trading_day_index",None)!=1 or
+                            not engine._d1_buy_window_ok(order,quote.at) or
+                            quote.ask<=0 or quote.ask_size<qty or
+                            quote.ask>order.limit):
+                            continue
+                        if verified_gmo_live_quantity(self.root,code)>0:
+                            raise UnsafePaperExit("GMO_LIVE_DUPLICATE_BROKER_BUY_BLOCKED")
+                    elif order.side=="SELL":
+                        if quote.bid<=0 or quote.bid_size<qty or quote.bid<order.limit:
+                            continue
+                        if verified_gmo_live_quantity(self.root,code)<qty:
+                            raise UnsafePaperExit("GMO_PAPER_POSITION_LIVE_SELL_BLOCKED")
+                    else:
+                        continue
+                    key="GMO-"+_core._safe_key(
+                        order.id+":"+order.time+":"+order.side+":"+order.code)
+                    try:
+                        engine.mark_submitted(order.id,quote.at)
+                        fill=self.kiwoom.fok(key,order.side,order.code,qty,
+                                             order.limit,order.purpose,"KRX")
+                        engine.fill(order.id,int(fill["qty"]),
+                                    float(fill["price"]),quote.at)
+                        self.on_live_fill("stock",order.side,order.code,fill["qty"],
+                                          order.limit,fill,order.purpose)
+                    except _core.LiveOrderNoFill:
+                        try:
+                            engine._cancel(order,"BROKER_FOK_NO_FILL",quote.at)
+                            engine.acknowledge_cancel(order.id,quote.at)
+                        except Exception:
+                            pass
+                    except Exception as error:
+                        self._err("gmo_live_order",error)
+                        engine._log(order.code,"LIVE_ORDER_HALTED",
+                            type(error).__name__+":"+str(error)[:160],quote.at)
+                        self._live["stock"]=False
+                        raise
+            except UnsafePaperExit as unsafe:
+                self._err("gmo_broker_provenance_blocked",unsafe)
+            return
+        try:
+            refuse_paper_sell_if_live_open(self.root,"stock",code)
+        except UnsafePaperExit as unsafe:
+            self._err("gmo_paper_broker_conflict",unsafe)
+            return
+        return original_paper(quote)
+
+    def mode_scoped_print(quote, volume, **kwargs):
+        if self.live_enabled("stock"):return 0
+        try:
+            refuse_paper_sell_if_live_open(self.root,"stock",quote.code)
+        except UnsafePaperExit:
+            return 0
+        return original_print(quote,volume,**kwargs)
+    engine.paper_match=mode_scoped_match
+    engine.paper_match_krx_print_proxy=mode_scoped_print
 
 
 def _patched_stop(self):

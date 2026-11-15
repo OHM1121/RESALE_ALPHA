@@ -66,3 +66,45 @@ def refuse_paper_sell_if_live_open(root,market,symbol):
         raise
     except (OSError,sqlite3.Error) as exc:
         raise UnsafePaperExit("BROKER_FILL_JOURNAL_UNREADABLE") from exc
+
+
+def verified_gmo_live_quantity(root,symbol):
+    """Net broker-FILLED GMO shares, not paper positions or other AT/MA fills.
+
+    The original broker journal keys all GMO orders with the GMO- prefix.
+    Unknown/partial broker status cannot be treated as zero.
+    """
+    names=_symbols("stock",symbol)
+    journal=Path(root)/"broker"/"live_order_journal.sqlite3"
+    if not journal.is_file():
+        raise UnsafePaperExit("GMO_BROKER_JOURNAL_MISSING")
+    try:
+        uri=journal.resolve().as_uri()+"?mode=ro"
+        with closing(sqlite3.connect(uri,uri=True,timeout=2)) as conn:
+            q=",".join("?" for _ in names)
+            rows=conn.execute(
+                "SELECT side,status,fill_qty FROM live_orders "
+                "WHERE event_key LIKE 'GMO-%' AND market='stock' "
+                "AND symbol IN ("+q+")",( *names,)).fetchall()
+        remaining=Decimal(0)
+        for side,status,raw_qty in rows:
+            state=str(status or "").upper()
+            if state in UNRESOLVED:
+                raise UnsafePaperExit("GMO_BROKER_ORDER_UNRESOLVED")
+            if state!="FILLED":
+                continue
+            try:quantity=Decimal(str(raw_qty))
+            except (InvalidOperation,TypeError,ValueError) as error:
+                raise UnsafePaperExit("GMO_BROKER_QUANTITY_UNVERIFIED") from error
+            if not quantity.is_finite() or quantity<=0:
+                raise UnsafePaperExit("GMO_BROKER_QUANTITY_UNVERIFIED")
+            if side=="BUY":remaining+=quantity
+            elif side=="SELL":remaining-=quantity
+            else:raise UnsafePaperExit("GMO_BROKER_SIDE_UNVERIFIED")
+        if remaining<0:
+            raise UnsafePaperExit("GMO_BROKER_NEGATIVE_BALANCE_RECONCILE")
+        return remaining
+    except UnsafePaperExit:
+        raise
+    except (OSError,sqlite3.Error) as error:
+        raise UnsafePaperExit("GMO_BROKER_JOURNAL_UNREADABLE") from error
