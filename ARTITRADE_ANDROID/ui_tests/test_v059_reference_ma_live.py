@@ -84,7 +84,7 @@ class TestV059(unittest.TestCase):
 
     def test_position_id_join_distinguishes_two_candidates_for_same_symbol(self):
         with tempfile.TemporaryDirectory() as root:
-            d=Path(root)/'stock/STOCK_MA_ENGINE_V1'
+            d=Path(root)/'stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1'
             d.mkdir(parents=True)
             db=d/'ma_paper.sqlite3'
             with sqlite3.connect(db) as c:
