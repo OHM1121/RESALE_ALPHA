@@ -1933,6 +1933,11 @@ _install_post_exit_v053(_core)
 from phone_policy_reference_v059 import install as _install_policy_reference_v059
 _install_policy_reference_v059(_core)
 
+# v061 MA mode/turnpoint stages are read-only ledger annotations; never
+# substitute reference times for actual broker/PAPER BUY execution times.
+from ma_v061_packet import install as _install_ma_v061_packet
+_install_ma_v061_packet(_core)
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 
