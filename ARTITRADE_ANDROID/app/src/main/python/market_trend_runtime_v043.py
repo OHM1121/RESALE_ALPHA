@@ -39,16 +39,19 @@ def _end_clock(now,market,frame):
         width=mt.FRAME_SECS[frame]
         ts=(int(now.timestamp())//width+1)*width
         return dt.datetime.fromtimestamp(ts,mt.KST)
-    if frame=="day":
-        return now.replace(hour=15,minute=30,second=0,microsecond=0)
     if not mt._krx_day(now.date()):return None
-    start=now.replace(hour=9,minute=0,second=0,microsecond=0)
+    from krx_session_v041 import SPECIAL_SESSIONS, START, END
+    opening,closing=SPECIAL_SESSIONS.get(now.date().isoformat(),(START,END))
+    finish=now.replace(hour=closing//60,minute=closing%60,
+                       second=0,microsecond=0)
+    if frame=="day":return finish
+    start=now.replace(hour=opening//60,minute=opening%60,
+                      second=0,microsecond=0)
     elapsed=(now-start).total_seconds()
-    if elapsed<0 or elapsed>=390*60:return None
+    if elapsed<0 or elapsed>=(closing-opening)*60:return None
     size=mt.FRAME_SECS[frame]
     step=int(elapsed//size)+1
-    return min(start+dt.timedelta(seconds=step*size),
-               start+dt.timedelta(minutes=390))
+    return min(start+dt.timedelta(seconds=step*size),finish)
 
 
 def _bars_from_upbit(items,frame,now):
