@@ -291,12 +291,44 @@ def _trend_sell_rows(root,market,strategy):
     except (sqlite3.Error,OSError,ValueError):return []
 
 
+def _independent_wallet_evidence(root,market):
+    """Read all MT54 positions and broker-confirmed/PAPER executions.
+
+    The snapshot only previews recent rows; the immutable independent wallet
+    remains the authoritative source, without modifying its SQLite files.
+    """
+    path=Path(root)/market/"trend"/"market_trend_wallet_v054.sqlite3"
+    if not path.is_file():return [],[]
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
+                                     uri=True,timeout=4)) as conn:
+            conn.row_factory=sqlite3.Row
+            positions=[]
+            for p in conn.execute("SELECT * FROM positions ORDER BY id"):
+                row=dict(p)
+                row.update({"id":p["id"],"position_id":p["id"],
+                    "tf":p["tf"],"code":p["symbol"],"market":p["symbol"],
+                    "entry_at":p["entry_at"],"entry_price":p["entry"],
+                    "qty0":p["qty0"],"execution_mode":p["execution_mode"],
+                    "entry_mode":"MARKET_TREND","status":p["status"]})
+                positions.append(row)
+            executions=[]
+            for event in conn.execute("SELECT * FROM executions WHERE side='SELL'"):
+                event=dict(event)
+                event.update({"tf":event["tf"],"code":event["symbol"],
+                              "market":event["symbol"]})
+                executions.append(event)
+            return positions,executions
+    except (sqlite3.Error,OSError,ValueError):
+        return [],[]
+
+
 def capture_packet(root,packet,now=None):
     """Must be called ONLY from the existing slow research background worker."""
     now=int(time.time() if now is None else now)
     data=jr._json_obj(packet)
     counts={"rows_seen":0,"sell_fills_preserved":0}
-    for market,strategy in jr.SCOPES:
+    for market,strategy in (*jr.SCOPES,("stock","trend"),("coin","trend")):
         research,ledger=jr._records(data,market,strategy)
         pending={}
         for row,event in _event_candidates(research,ledger,strategy):
@@ -304,7 +336,14 @@ def capture_packet(root,packet,now=None):
         for row,role in _trend_historical_rows(root,market,strategy):
             observed=v47._candidate(row,strategy,role)
             if observed:pending.setdefault(observed["key"],(row,observed))
+        wallet_positions,wallet_executions=(
+            _independent_wallet_evidence(root,market) if strategy=='trend'
+            else ([],[]))
+        for row in wallet_positions:
+            observed=v47._candidate(row,strategy,"ACTUAL")
+            if observed:pending.setdefault(observed["key"],(row,observed))
         executions=jr._rows(ledger,("executions","fills","trades"))
+        executions+=wallet_executions
         # Trend sells are committed in the independent market-trend journal;
         # join by the same source_position_id, never merely by ticker.
         executions+=_trend_sell_rows(root,market,strategy)
