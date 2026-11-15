@@ -8,7 +8,8 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/**'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
       - 'ARTITRADE_ANDROID/app/build.gradle'
-      - 'ARTITRADE_ANDROID/ui_tests/test_v060_*.py' 'test_v059_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v060_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v059_*.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_ma_sqlite_ui_parity.py'
   workflow_dispatch:
