@@ -4,6 +4,7 @@ import json
 import sqlite3
 import sys
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import TestCase
 
@@ -13,6 +14,7 @@ import android_ledger_backup as backup
 import krx_session_v041 as krx
 import market_trend_v043 as mt
 import market_trend_runtime_v043 as runtime
+import market_trend_wallet_v043 as wallet
 
 JAVA = ROOT / "app/src/main/java/com/artitrade/mobile"
 PY = ROOT / "app/src/main/python"
@@ -93,3 +95,27 @@ class V049UnifiedSafety(TestCase):
         self.assertIn('signal_mode=(',trend)
         self.assertIn('"execution_mode"]=fill["mode"]',wallet)
         self.assertIn('"UNKNOWN_FILLED_LEDGER"',analysis)
+
+    def test_trend_live_holding_cannot_be_sold_in_paper_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            journal=mt.TrendJournal(tmp)
+            current=dt.datetime(2026,11,13,10,0,tzinfo=mt.KST)
+            position=mt.TrendPosition("coin","general","5m","KRW-BTC",
+                                      current,1000,1,current.isoformat())
+            position.__dict__["position_id"]=7
+            position.__dict__["execution_mode"]="LIVE"
+            paper=wallet.TrendWallet(
+                SimpleNamespace(root=tmp,live_enabled=lambda _:False),journal)
+            sold,status=paper.sell(position,1050,current,"MT_TP1",bid_size=10)
+            self.assertEqual(sold,0)
+            self.assertEqual(status,"LIVE_POSITION_BROKER_DISABLED")
+            position.__dict__["execution_mode"]="PAPER"
+            live=wallet.TrendWallet(
+                SimpleNamespace(root=tmp,live_enabled=lambda _:True),journal)
+            sold,status=live.sell(position,1050,current,"MT_TP1",bid_size=10)
+            self.assertEqual(sold,0)
+            self.assertEqual(status,"PAPER_POSITION_LIVE_MODE")
+            del position.__dict__["execution_mode"]
+            journal.event("TEST:BUY:7","coin","general","5m","KRW-BTC",
+                          "ACTUAL","MT_BUY_FILLED",payload={"position_id":7})
+            self.assertEqual(paper._position_fill_mode(position),"LIVE")
