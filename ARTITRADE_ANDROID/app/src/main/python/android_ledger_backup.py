@@ -122,7 +122,8 @@ def _research_class(table):
         return "virtual_research"
     if ("execution" in x or "fill" in x or x in
             ("positions","orders","wallets","accounts")):
-        return "actual_trade"
+        # Table-level source contains both paper and broker fills.
+        return "unverified_execution_ledger"
     if ("candidate" in x or "signal" in x or "research" in x
             or "scan" in x or "cohort" in x):
         return "signal_and_decision"
@@ -141,7 +142,9 @@ def _source_catalog(manifest):
                          "has_original_sqlite_in_zip":True})
     return {"version":1,"read_only":True,"original_records_not_truncated":True,
             "tables":rows,
-            "actual_trade_rows":sum(x["records"] for x in rows if x["kind"]=="actual_trade"),
+            "actual_trade_rows":None,
+            "actual_trade_missing_reason":"BROKER_PROVENANCE_NOT_PROVEN_BY_TABLE_NAME",
+            "unverified_execution_ledger_rows":sum(x["records"] for x in rows if x["kind"]=="unverified_execution_ledger"),
             "virtual_research_rows":sum(x["records"] for x in rows if x["kind"]=="virtual_research"),
             "signal_decision_rows":sum(x["records"] for x in rows if x["kind"]=="signal_and_decision"),
             "note":"Count is per original table, not deduplicated individual trades."}
