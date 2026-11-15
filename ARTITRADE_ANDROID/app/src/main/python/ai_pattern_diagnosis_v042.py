@@ -106,7 +106,10 @@ def _precursors(record):
 def _median_factor(samples,phase,key):
     numbers=[]
     for item in samples:
-        features=item['features'][phase]
+        bundle=item.get('features') or ()
+        features=(bundle[{'entry':0,'holding':1,'exit':2}[phase]]
+                  if isinstance(bundle,(tuple,list)) and len(bundle)==3
+                  else bundle.get(phase,{}) if isinstance(bundle,dict) else {})
         value=_num(features.get(key))
         if value is not None:numbers.append(value)
     return round(statistics.median(numbers),2) if numbers else None
