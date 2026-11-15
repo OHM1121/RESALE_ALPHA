@@ -165,8 +165,14 @@ def _load_sidecars(root,market,strategy):
             if strategy=="trend":continue
             where="strategy=?";args=(strategy,)
         rows,total,error=_read_table(root,market,table,where,args)
-        result[label]={"rows":rows,"total":total,"error":error,
-                       "truncated":total>len(rows)}
+        groups=defaultdict(list)
+        for entry in rows:
+            symbol=str(entry.get("symbol") or entry.get("code") or "")
+            frame=_normframe(entry.get("frame") or entry.get("tf"),
+                             "gmo" if strategy=="gmo" else "at")
+            if symbol and frame:groups[(frame,symbol)].append(entry)
+        result[label]={"groups":groups,"total":total,"loaded":len(rows),
+                       "error":error,"truncated":total>len(rows)}
     return result
 
 
@@ -202,11 +208,12 @@ def _add(case,phase,values,source,observed_at=None):
         case["sources"].add(source)
 
 
-def _match(source_rows,case):
-    """Exact position ID first, otherwise unique symbol/frame/entry second."""
+def _match(indexed_rows,case):
+    """Indexed exact position identity or unique <=3 second evidence association."""
+    rows=indexed_rows.get((case["frame"],case["symbol"]),())
     if case["entry_ts"] is None:return None,"MISSING_ENTRY_TIMESTAMP"
     options=[]
-    for row in source_rows:
+    for row in rows:
         if str(row.get("symbol") or row.get("code") or "")!=case["symbol"]:
             continue
         if (case.get("owner_strategy") and row.get("strategy") and
@@ -376,7 +383,7 @@ def _ingest_approved(case,row):
 
 def _associate(groups,case,kind,fn):
     block=groups.get(kind) or {}
-    row,why=_match(block.get("rows",[]),case)
+    row,why=_match(block.get("groups",{}),case)
     if row is not None:
         fn(case,row)
         return True
@@ -522,6 +529,9 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
                    "STRATEGY_POSITION_LEDGER")
         if case is None:continue
         _ingest_before_entry(case,trade)
+        # Preserve every numeric field found in the original position state.
+        # Timestamp/unverified fields never enter pre-buy causal comparisons.
+        _add(case,"unverified",raw,"ORIGINAL_POSITION_STATE_AS_OBSERVED")
         cases.append(case)
     # Non-buys are research signals, NOT zero-profit closed trades.
     filled_by=( {(x["frame"],x["symbol"],x["entry_ts"])
@@ -540,12 +550,13 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
         case=_case(row,frame,entry,"SHADOW_UNFILLED","UNFILLED_SIGNAL",
                    str(row.get("outcome") or "UNFILLED"),None,"STRATEGY_CANDIDATE")
         if case is None:continue
-        if timestamp is not None:
+        if timestamp is not None and signal.get("source")!="CAPTURED_LATE":
             _add(case,"entry",signal.get("features") or {},
                  "SOURCE_CANDIDATE_AT_SIGNAL",timestamp)
         else:
             _add(case,"unverified",signal.get("features") or {},
-                 "CANDIDATE_TIMESTAMP_MISSING")
+                 "CANDIDATE_TIMESTAMP_UNVERIFIED")
+        _add(case,"unverified",raw,"ORIGINAL_CANDIDATE_HISTORY_AS_OBSERVED")
         value=row.get("target_hit")
         if isinstance(value,bool):
             _add(case,"virtual",{"observed_target_hit":int(value)},
@@ -610,11 +621,11 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
         "source_tables_audited":len(source_audit["tables"]),
         "source_tables_unlinked":sum(1 for x in source_audit["tables"]
             if x["integration"]=="AVAILABLE_UNATTRIBUTED"),
-        "sidecar_rows_loaded":{name:len(v["rows"]) for name,v in sidecars.items()},
+        "sidecar_rows_loaded":{name:v["loaded"] for name,v in sidecars.items()},
         "sidecar_rows_total":{name:v["total"] for name,v in sidecars.items()},
         "sidecar_errors":{name:v["error"] for name,v in sidecars.items()
                           if v.get("error")},
-        "sidecar_truncated":{name:v["total"]-len(v["rows"])
+        "sidecar_truncated":{name:v["total"]-v["loaded"]
             for name,v in sidecars.items() if v["truncated"]},
         "missing_evidence_reasons":dict(missing.most_common(25)),
         "factor_comparisons_evaluated":len(ranked),
