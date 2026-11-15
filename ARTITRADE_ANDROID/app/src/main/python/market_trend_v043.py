@@ -69,6 +69,16 @@ def market_mode(score,status="",stale=False,market_open=True):
     return "MARKET_TREND" if val<0 else "ORIGINAL"
 
 
+def effective_market_mode(score,status="",stale=False,market_open=True,
+                          manual_trend=False):
+    """Manual override affects only the score gate, not quote/order safety."""
+    if type(manual_trend) is not bool:
+        raise TypeError("manual_trend must be boolean")
+    if manual_trend:
+        return "MARKET_TREND"
+    return market_mode(score,status,stale,market_open)
+
+
 def _as_kst(stamp):
     if isinstance(stamp,(int,float)):
         return dt.datetime.fromtimestamp(stamp,KST)
@@ -335,6 +345,11 @@ class TrendJournal:
               CREATE TABLE IF NOT EXISTS gate_events(
                 at REAL NOT NULL,market TEXT NOT NULL,old_mode TEXT NOT NULL,
                 new_mode TEXT NOT NULL,reason TEXT NOT NULL);
+              -- Isolated setting; neither balances nor order ledgers change.
+              CREATE TABLE IF NOT EXISTS manual_trend_mode(
+                market TEXT NOT NULL PRIMARY KEY CHECK(market IN ('stock','coin')),
+                enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+                changed_at REAL NOT NULL);
               -- Durable RSI20-only re-entry ban. No original position/order table changes.
               CREATE TABLE IF NOT EXISTS stop_reentry_blocks(
                 market TEXT NOT NULL,symbol TEXT NOT NULL,trade_day TEXT NOT NULL,
@@ -347,6 +362,24 @@ class TrendJournal:
         c.row_factory=sqlite3.Row
         c.execute("PRAGMA busy_timeout=10000")
         return c
+
+    def manual_trend(self,market):
+        if market not in ("stock","coin"):
+            raise ValueError("unknown market")
+        with self.lock,self.connect() as c:
+            row=c.execute("SELECT enabled FROM manual_trend_mode WHERE market=?",
+                          (market,)).fetchone()
+        return bool(row["enabled"]) if row else False
+
+    def set_manual_trend(self,market,enabled):
+        if market not in ("stock","coin") or type(enabled) is not bool:
+            raise ValueError("invalid market/manual flag")
+        with self.lock,self.connect() as c:
+            c.execute("""INSERT INTO manual_trend_mode(market,enabled,changed_at)
+                VALUES(?,?,?)
+                ON CONFLICT(market) DO UPDATE SET
+                enabled=excluded.enabled,changed_at=excluded.changed_at""",
+                (market,int(enabled),time.time()))
 
     def latch(self,market,symbol,frame):
         with self.lock,self.connect() as c:

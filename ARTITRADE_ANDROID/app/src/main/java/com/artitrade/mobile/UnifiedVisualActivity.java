@@ -2136,13 +2136,42 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject all=local==null?null:local.optJSONObject("market_trend_status");
             JSONObject one=all==null?null:all.optJSONObject(market);
             String mode=one==null?"PAUSED":one.optString("mode","PAUSED");
+            boolean manual=one!=null&&one.optBoolean("manual_trend",false);
             String label="MARKET_TREND".equals(mode)?"마켓트렌드":
                          "ORIGINAL".equals(mode)?
                             ("ma".equals(strategy)?"MA":"기준봉"):"시장점수 조회 대기 · 신규매수 중단";
-            TextView active=text("현재 적용 매매법: "+label,12);
+            TextView active=text("현재 적용 매매법: "+
+                (manual?"[수동] ":"[시장점수 자동] ")+label,12);
             active.setTextColor("PAUSED".equals(mode)?
                 Color.rgb(255,201,94):Color.rgb(119,229,180));
             content.addView(active,new LinearLayout.LayoutParams(-1,dp(23)));
+            // One stock switch controls AT+MA. One coin switch controls BASE+MA.
+            final String targetMarket=market;
+            LinearLayout manualRow=new LinearLayout(this);
+            manualRow.setGravity(Gravity.CENTER_VERTICAL);
+            TextView scope=text("stock".equals(market)?"주식 기준봉·MA 공통":"코인 기준봉·MA 공통",11);
+            scope.setTextColor(PremiumUi.MUTED);
+            manualRow.addView(scope,new LinearLayout.LayoutParams(0,dp(38),1));
+            Button manualButton=button(manual?"수동 해제 · 자동 복귀":
+                "마켓트렌드 수동 ON",manual,
+                ()->confirmManualTrend(targetMarket,!manual));
+            manualRow.addView(manualButton,new LinearLayout.LayoutParams(dp(178),dp(38)));
+            content.addView(manualRow,new LinearLayout.LayoutParams(-1,dp(42)));
+            try{
+                android.content.SharedPreferences reply=getSharedPreferences(
+                    "artitrade_trend_manual_result_v045",MODE_PRIVATE);
+                long elapsed=System.currentTimeMillis()-reply.getLong("at",0L);
+                if(targetMarket.equals(reply.getString("market",""))
+                    &&elapsed>=0&&elapsed<60000L){
+                    JSONObject result=new JSONObject(reply.getString("result","{}"));
+                    if(!result.optBoolean("ok",true)){
+                        TextView warning=text("수동 전환 미적용: "+
+                            result.optString("error","설정 확인 필요"),11);
+                        warning.setTextColor(PremiumUi.LOSS);
+                        content.addView(warning,new LinearLayout.LayoutParams(-1,dp(22)));
+                    }
+                }
+            }catch(Exception ignored){}
         }
 
         String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"업비트 · KRW TOP35";
@@ -4969,6 +4998,38 @@ public final class UnifiedVisualActivity extends Activity {
     private String money(double v){return WonFormat.won(v);}
     private String pct(double v){return finite(v)?number(v)+"%":"—";}
     private void paintProfit(TextView t,double v){if(!finite(v))return;t.setTextColor(v>0?Color.rgb(62,224,181):v<0?Color.rgb(255,119,133):Color.rgb(240,247,255));}
+
+    private void confirmManualTrend(String targetMarket,boolean enable){
+        if(!("stock".equals(targetMarket)||"coin".equals(targetMarket)))return;
+        String subject="stock".equals(targetMarket)?"주식 기준봉·MA":"코인 기준봉·MA";
+        String title=enable?"마켓트렌드 수동 ON":"시장점수 자동 모드로 복귀";
+        String detail=enable?
+            subject+"의 신규매수 방식을 시장점수와 관계없이 RSI(20) 마켓트렌드로 전환합니다. "+
+            "시장점수가 양수이거나 수신되지 않아도 조건을 충족하면 실거래 주문이 발생할 수 있습니다.":
+            subject+"의 신규매수 방식을 시장점수 자동 전환으로 되돌립니다. "+
+            "시장점수가 음수면 마켓트렌드가 계속 적용됩니다.";
+        new AlertDialog.Builder(this).setTitle(title)
+            .setMessage(detail+"\n\n기존 보유종목의 매도조건은 유지되며, "+
+                "브로커 미확정 주문의 취소·체결은 별도 확인이 필요합니다. "+
+                "수동 설정은 앱 재시작 후에도 유지됩니다.")
+            .setNegativeButton("취소",null)
+            .setPositiveButton("전환 요청",(d,w)->{
+                try{
+                    Intent intent=new Intent(this,UnifiedTradingService.class);
+                    intent.setAction(UnifiedTradingService.SET_TREND_MANUAL);
+                    intent.putExtra("market",targetMarket);
+                    intent.putExtra("enabled",enable);
+                    if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);
+                    else startService(intent);
+                    main.postDelayed(()->refresh(false),2900);
+                }catch(Throwable e){
+                    new RuntimeCrashStore(this).add("manual_trend_ui",e);
+                    new AlertDialog.Builder(this).setTitle("수동 전환 요청 실패")
+                        .setMessage(String.valueOf(e.getMessage()))
+                        .setPositiveButton("확인",null).show();
+                }
+            }).show();
+    }
 
     private void setDesired(String desired){
         io.execute(()->{try{new LocalHubClient(this).control(market,desired);}catch(Exception e){new RuntimeCrashStore(this).add("native_desired_"+market,e);}main.post(()->refresh(false));});

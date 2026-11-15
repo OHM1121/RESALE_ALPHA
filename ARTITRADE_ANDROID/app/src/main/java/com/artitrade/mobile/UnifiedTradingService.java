@@ -28,6 +28,7 @@ public final class UnifiedTradingService extends Service {
     static final String STOP="com.artitrade.mobile.UNIFIED_STOP";
     static final String RESTART_FEEDS="com.artitrade.mobile.RESTART_FEEDS";
     static final String SET_LIVE="com.artitrade.mobile.SET_LIVE";
+    static final String SET_TREND_MANUAL="com.artitrade.mobile.SET_TREND_MANUAL";
     static final String APPLY_OPERATION="com.artitrade.mobile.APPLY_OPERATION";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
     static final String SET_PC_SYNC="com.artitrade.mobile.SET_PC_LIVE_SYNC";
@@ -86,6 +87,12 @@ public final class UnifiedTradingService extends Service {
                 final String requestedMarket=market;
                 final boolean requestedEnabled=enabled;
                 new Thread(()->applyLiveMode(requestedMarket,requestedEnabled),"artitrade-v070-live-arm").start();
+            }
+            if(intent!=null&&SET_TREND_MANUAL.equals(intent.getAction())){
+                final String requestedMarket=intent.getStringExtra("market");
+                final boolean requestedEnabled=intent.getBooleanExtra("enabled",false);
+                new Thread(()->applyTrendManual(requestedMarket,requestedEnabled),
+                    "artitrade-v045-manual-trend").start();
             }
             if(intent!=null&&SET_PC_SYNC.equals(intent.getAction())){
                 boolean enabled=intent.getBooleanExtra("enabled",false);
@@ -311,6 +318,31 @@ public final class UnifiedTradingService extends Service {
             try{Thread.sleep(2500);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
         }
         try{releaseQuietly(hub,"stock",stockEpoch);releaseQuietly(hub,"coin",coinEpoch);}catch(Throwable ignored){}
+    }
+
+    private void applyTrendManual(String market,boolean enabled){
+        JSONObject result;
+        try{
+            if(!("stock".equals(market)||"coin".equals(market))){
+                result=new JSONObject().put("ok",false)
+                    .put("error","INVALID_TREND_MARKET");
+            }else if(strategy==null||!strategy.isStarted()){
+                result=new JSONObject().put("ok",false)
+                    .put("error","TREND_RUNTIME_NOT_READY");
+            }else{
+                result=strategy.setTrendManual(market,enabled);
+            }
+        }catch(Throwable e){
+            crashes.add("manual_trend_service",e);
+            try{result=new JSONObject().put("ok",false)
+                .put("error","MANUAL_TREND_SERVICE_FAILED");}
+            catch(Exception ignored){result=new JSONObject();}
+        }
+        // Acknowledgement is not evidence of an executed broker order.
+        getSharedPreferences("artitrade_trend_manual_result_v045",MODE_PRIVATE)
+            .edit().putString("market",market==null?"":market)
+            .putString("result",result.toString())
+            .putLong("at",System.currentTimeMillis()).commit();
     }
 
     private void applyLiveMode(String market,boolean enabled){

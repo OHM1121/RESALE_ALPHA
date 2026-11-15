@@ -105,6 +105,8 @@ class Coordinator:
     def __init__(self,rt):
         self.rt=rt
         self.journal=mt.TrendJournal(rt.root)
+        self.manual_trend={market:self.journal.manual_trend(market)
+                           for market in ("stock","coin")}
         self.wallet=TrendWallet(rt,self.journal)
         self.stop_event=threading.Event()
         self.lock=threading.RLock()
@@ -174,6 +176,17 @@ class Coordinator:
     def mode(self,market):
         return self.modes.get(market,"PAUSED")
 
+    def set_manual_trend(self,market,enabled):
+        if market not in ("stock","coin") or type(enabled) is not bool:
+            raise ValueError("invalid market/manual flag")
+        with self.lock:
+            # Database persistence first, then immediate runtime application.
+            self.journal.set_manual_trend(market,enabled)
+            self.manual_trend[market]=enabled
+            self._update_score(market)
+            return {"ok":True,"market":market,"manual_trend":enabled,
+                    "mode":self.mode(market),"score":self.scores.get(market)}
+
     def active_symbol(self,market,code):
         return any(p.market==market and p.symbol==code and p.qty>0
                    for p in tuple(self._positions.values())) or self.wallet.trend_owned(market,code)
@@ -191,21 +204,22 @@ class Coordinator:
 
     def _update_score(self,market):
         result=self._read_score(market)
-        score=result.get("score")
-        mode=mt.market_mode(score,result.get("status",""),
-                result.get("stale",True),
-                result.get("market_open",True))
-        prior=self.modes.get(market,"PAUSED")
-        self.scores[market]=score
-        self.mode_details[market]=str(result.get("status") or "")
-        if mode!=prior:
-            if mode=="MARKET_TREND":
-                self._cancel_native_pending(market)
-            # On unknown score, existing pending orders remain as requested.
-            with self.journal.lock,self.journal.connect() as c:
-                c.execute("INSERT INTO gate_events VALUES(?,?,?,?,?)",
-                         (time.time(),market,prior,mode,self.mode_details[market]))
-            self.modes[market]=mode
+        with self.lock:
+            score=result.get("score")
+            mode=mt.effective_market_mode(score,result.get("status",""),
+                    result.get("stale",True),result.get("market_open",True),
+                    manual_trend=self.manual_trend[market])
+            prior=self.modes.get(market,"PAUSED")
+            self.scores[market]=score
+            self.mode_details[market]=str(result.get("status") or "")
+            if mode!=prior:
+                if mode=="MARKET_TREND":
+                    self._cancel_native_pending(market)
+                # Broker-unknown pending orders remain unresolved and preserved.
+                with self.journal.lock,self.journal.connect() as c:
+                    c.execute("INSERT INTO gate_events VALUES(?,?,?,?,?)",
+                             (time.time(),market,prior,mode,self.mode_details[market]))
+                self.modes[market]=mode
 
     def _cancel_native_pending(self,market):
         """Never claim broker cancellation just because a local row changed.
@@ -471,6 +485,10 @@ class Coordinator:
 
     def _preclose_candidates(self,market,now):
         if self.mode(market)!="MARKET_TREND":return
+        # Score bypass must never permit KRX trading outside regular session.
+        if market=="stock":
+            from krx_session_v041 import is_regular_open
+            if not is_regular_open():return
         with self.lock:candidates=dict(self._candidates[market])
         due=collections.defaultdict(list)
         for code in candidates:
@@ -684,6 +702,8 @@ class Coordinator:
 
     def snapshot(self):
         return {market:{"mode":self.mode(market),"score":self.scores[market],
+                 "manual_trend":bool(self.manual_trend[market]),
+                 "mode_source":"MANUAL" if self.manual_trend[market] else "AUTO",
                  "status":self.mode_details[market],
                  "candidates":len(self._candidates[market]),
                  "error":self._last_fetch_error.get(market,"")}
@@ -732,6 +752,22 @@ class Coordinator:
                 if isinstance(target,dict):
                     target.setdefault("research",{}).setdefault("items",[]).append(item)
         return json.dumps(out,ensure_ascii=False,default=str)
+
+
+def set_manual_mode(market,enabled):
+    """UI bridge; changes entry selection only, not an order or ledger fill."""
+    if market not in ("stock","coin") or type(enabled) is not bool:
+        return json.dumps({"ok":False,"error":"INVALID_MARKET_OR_FLAG"})
+    rt=getattr(_CORE,"_RUNTIME",None) if _CORE else None
+    coordinator=getattr(rt,"market_trend",None) if rt else None
+    if coordinator is None:
+        return json.dumps({"ok":False,"error":"MARKET_TREND_NOT_READY"})
+    try:
+        return json.dumps(coordinator.set_manual_trend(market,enabled),
+                          ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok":False,"error":"MANUAL_TREND_WRITE_FAILED",
+                           "detail":type(exc).__name__},ensure_ascii=False)
 
 
 def install(core):

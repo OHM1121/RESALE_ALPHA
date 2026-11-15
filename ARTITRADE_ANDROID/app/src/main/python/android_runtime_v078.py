@@ -1846,3 +1846,5 @@ stop = _core.stop
 snapshot = _core.snapshot
 hub_records = _core.hub_records
 set_live = _core.set_live
+# v045 explicit score-independent market trend entry selection.
+from market_trend_runtime_v043 import set_manual_mode as set_trend_manual

@@ -196,6 +196,15 @@ final class StrategyRuntimeBridge {
         catch(Throwable e){crashes.add("operation_apply",e);return error("OPERATION_APPLY",e);}
     }
 
+    synchronized JSONObject setTrendManual(String market,boolean enabled){
+        if(!("stock".equals(market)||"coin".equals(market)))
+            return error("INVALID_TREND_MARKET",null);
+        if(module==null||!started)return error("TREND_RUNTIME_NOT_READY",null);
+        try{return parse(module.callAttr("set_trend_manual",market,enabled));}
+        catch(Throwable e){crashes.add("python_manual_trend_"+market,e);
+            return error("TREND_MANUAL_UPDATE_FAILED",e);}
+    }
+
     synchronized JSONObject setLive(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))return new JSONObject();
         prefs().edit().putBoolean("live_"+market,enabled).commit();

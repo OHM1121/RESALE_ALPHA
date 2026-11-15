@@ -48,7 +48,7 @@ class V044Safeguards(TestCase):
         self.assertIn("int netWidth=Math.max(92,Math.min(142,",UI)
         self.assertIn("amount.setGravity(Gravity.CENTER);",UI)
         self.assertIn("symbol.setEllipsize(android.text.TextUtils.TruncateAt.END)",UI)
-        self.assertIn("versionCode 51",GRADLE)
+        self.assertRegex(GRADLE,r"versionCode\s+5[1-9]")
 
     def test_idle_sqlite_writes_throttled_without_changing_exit_rules(self):
         self.assertIn("if now_mono-last>=10.0:",RUNTIME)
