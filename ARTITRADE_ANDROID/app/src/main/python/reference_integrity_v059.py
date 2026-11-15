@@ -106,6 +106,9 @@ def _coin_ma_scan(original,self,history,frame,code,tick,at,name):
                     'newest_ref_at':ref['start'].isoformat()}
         if not record['new_record']:continue
         ref_key=ref['start'].isoformat()
+        # Both independent original and MA queues must stop referencing an
+        # older verified turnover peak. Only PENDING gets replaced.
+        _coin_invalidate(self.ledger,code,frame,ref_key,at,record)
         _coin_invalidate(self.ma_ledger,code,frame,ref_key,at,record)
         audit=original(self,subset,frame,code,tick,at,name)
         audit['record_metric']=record['metric']
