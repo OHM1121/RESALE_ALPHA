@@ -239,6 +239,15 @@ def real_boot():
         tree=choose(title,tree)
         if not contains(tree,title):
             raise AssertionError("Navigation failed: "+title)
+    # v057: briefly go Home and reopen. A live service must keep the native
+    # dashboard visible without returning to the blocking first-run preloader.
+    adb("shell","input","keyevent","KEYCODE_HOME")
+    time.sleep(1.5)
+    tree=start_app("warm_return")
+    check_screen("warm_return_no_preload",["대시보드"],scroll=0)
+    if contains(tree,"전략별 원장 데이터 확인"):
+        raise AssertionError("WARM_RETURN_SHOULD_NOT_SHOW_BLOCKING_PRELOADER")
+    print("WARM_RESUME_NO_PRELOAD_PASS",flush=True)
     # v053: the actual service-enabled app must initialize the new research
     # journal. Dashboard-only checks can pass even when Python failed to start.
     tracker="files/ARTITRADE_PHONE_MAIN_V070/POST_EXIT_HIGH_V053.sqlite3"
