@@ -139,6 +139,7 @@ class Coordinator:
         self._last_fetch_error={}
         self._watch_after={}
         self._position_snapshot_at={}
+        self._entry_block_counts={market:collections.Counter() for market in ('stock','coin')}
         # In-memory performance counters only. No trading-ledger writes.
         self._performance={market:{
             "preclose_cycles":0,"preclose_no_due_cycles":0,
@@ -607,7 +608,12 @@ class Coordinator:
                     armed=self.journal.latch(market,code,frame).armed
                     self.watch.observe(market,code,frame,barid,rsi,armed,
                         observed_at=time.time(),price=q['trade'])
-                if submit and (self._prechecked.get(entry,100)>30 or rsi>30):continue
+                if submit and (self._prechecked.get(entry,100)>30 or rsi>30):
+                    self._entry_block_counts[market][
+                        'PRECHECK_MISSING_OR_RSI_ABOVE_30'
+                        if entry not in self._prechecked else 'RSI_ABOVE_30'
+                    ]+=1
+                    continue
                 if submit and entry not in self._ordered:
                     due[code].append((frame,rsi,barid,q))
         # The -12s decision closes the observation queue for this bar.
@@ -622,6 +628,7 @@ class Coordinator:
             # mandatory before an entry can consume parent-strategy cash.
             if (self.journal.stop_reentry_blocked(market,code,now) or
                 self.standalone_wallet.stop_reentry_blocked(market,code,now)):
+                self._entry_block_counts[market]['STOP_REENTRY_LOCK']+=1
                 for frame,_,barid,_ in signals:
                     self._ordered.add((market,code,frame,barid))
                 continue
@@ -630,7 +637,9 @@ class Coordinator:
             frame,rsi,barid,q=next(x for x in signals if x[0]==chosen)
             self._ordered.add((market,code,frame,barid))
             latch=self.journal.latch(market,code,frame)
-            if not latch.offer(barid,rsi):continue
+            if not latch.offer(barid,rsi):
+                self._entry_block_counts[market]['SIGNAL_LATCH_NOT_ARMED']+=1
+                continue
             self.journal.save_latch(market,code,frame,latch)
             assigned='trend'
             name=str(candidates[code][1]) if isinstance(candidates[code],(tuple,list)) else code
@@ -648,6 +657,8 @@ class Coordinator:
                 self._last_fetch_error[market]=disposition
             if str(disposition).startswith(('BROKER:', 'UNSAFE:')):
                 unsafe_result=True
+            if result is None:
+                self._entry_block_counts[market][str(disposition)[:80]]+=1
             # ACTUAL is reserved for broker-confirmed fills, PAPER for
             # simulated fills, and VIRTUAL for missed / unfilled signals.
             signal_mode=("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
@@ -793,6 +804,21 @@ class Coordinator:
                 self._last_fetch_error[market]='WATCH:'+type(exc).__name__
             self.stop_event.wait(5)
 
+    def _book_evidence_loop(self,market):
+        """Read-only, separately scheduled broker-book research collection.
+
+        Live bid/ask snapshots are never manufactured from candle prices.
+        Failures remain diagnostic, not a new reason to pause AT/MA or place
+        a market-trend order.
+        """
+        from ai_live_book_v058 import sample_runtime
+        while not self.stop_event.is_set():
+            try:
+                sample_runtime(self.rt.root,self.rt,market)
+            except Exception as exc:
+                self._last_fetch_error[market]="BOOK_EVIDENCE:"+type(exc).__name__
+            self.stop_event.wait(2)
+
     def _rank_loop(self,market):
         while not self.stop_event.is_set():
             try:
@@ -826,6 +852,7 @@ class Coordinator:
         for market in ("stock","coin"):
             for target in (lambda m=market:self._rank_loop(m),
                            lambda m=market:self._prefetch(m),
+                           lambda m=market:self._book_evidence_loop(m),
                            lambda m=market:self._watch_loop(m),
                            lambda m=market:self._loop(m)):
                 thread=threading.Thread(target=target,daemon=True,
@@ -860,7 +887,10 @@ class Coordinator:
                        for tf in mt.FRAMES} if hasattr(self,"standalone_wallet") else {}),
                     "status":self.mode_details[market],
                     "candidates":len(self._candidates[market]),
-                    "error":self._last_fetch_error.get(market,"")}
+                    "error":self._last_fetch_error.get(market,""),
+                    "entry_block_reasons":dict(self._entry_block_counts[market].most_common(18)),
+                    "rsi_basis":"WILDER_RSI_20_MAIN_ONLY",
+                    "rsi_signal_ma9_used":False}
                 if include_performance:
                     perf=self._performance[market]
                     stages={}
