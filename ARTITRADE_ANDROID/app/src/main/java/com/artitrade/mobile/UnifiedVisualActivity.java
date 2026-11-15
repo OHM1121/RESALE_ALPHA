@@ -1378,6 +1378,31 @@ public final class UnifiedVisualActivity extends Activity {
         return selected==null?java.util.Collections.emptyList():selected;
     }
 
+    private java.util.ArrayList<HistoryRow> legacyMaRows(String kind){
+        java.util.ArrayList<HistoryRow> out=new java.util.ArrayList<>();
+        if(!"ma".equals(strategy))return out;
+        JSONObject legacy=ledger(market,"ma").optJSONObject("legacy_history");
+        JSONArray rows=legacy==null?null:legacy.optJSONArray(kind);
+        if(rows==null)return out;
+        String filter=activeHistoryFilter();
+        for(int i=0;i<rows.length();i++){
+            JSONObject row=rows.optJSONObject(i);
+            if(row==null)continue;
+            String frame=timeFrameOf(row);
+            if(!("all".equals(filter)||"current".equals(filter)||
+                    filter.equals(frame)))continue;
+            out.add(new HistoryRow(row,"ma",frame,rowTimestamp(row)));
+        }
+        return out;
+    }
+
+    private Button legacyMaButton(){
+        return button(showLegacyMaArchive?"신규 MA":"과거 MA",false,()->{
+            showLegacyMaArchive=!showLegacyMaArchive;
+            historyContext="";historyOffset=0;render();
+        });
+    }
+
     private void resetHistoryFilter(){
         if("stock".equals(market))historyFilterStock="current";else historyFilterCoin="current";
         showLegacyMaArchive=false;
@@ -2960,6 +2985,8 @@ public final class UnifiedVisualActivity extends Activity {
             "executions".equals(kind);
         java.util.List<HistoryRow> history=marketWide?
             new java.util.ArrayList<>(selectedHistory(kind)):null;
+        if("ma".equals(strategy)&&"executions".equals(kind)&&showLegacyMaArchive)
+            history=legacyMaRows("executions");
         String tableId="list/"+market+"/"+strategy+"/"+kind;
         ColumnQueryV036 query=tableQuery(tableId,
             "name","strategy","side","when","buy","current","price",
@@ -2976,6 +3003,11 @@ public final class UnifiedVisualActivity extends Activity {
         h.setSingleLine(true);
         h.setEllipsize(android.text.TextUtils.TruncateAt.END);
         header.addView(h,new LinearLayout.LayoutParams(0,dp(43),1));
+        if("ma".equals(strategy)&&"executions".equals(kind)){
+            Button older=legacyMaButton();
+            older.setTextSize(11);
+            header.addView(older,new LinearLayout.LayoutParams(dp(82),dp(38)));
+        }
         Button arrange=button("정렬·필터",false,()->
             tableOptionsDialog(tableId,query,this::render));
         arrange.setTextSize(11);
@@ -2995,7 +3027,7 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         int first=historyStart(kind,total),last=HistoryPager.end(first,total);
-        if("executions".equals(kind)&&marketWide&&first<last)
+        if("executions".equals(kind)&&marketWide&&first<last&&!showLegacyMaArchive)
             queryTradeHistoryEvidence(history.subList(first,last));
         addHistoryPager(kind,total);
         for(int i=first;i<last;i++){
@@ -4782,7 +4814,16 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject rs=research(market,scope);
         java.util.ArrayList<HistoryRow> entries=
             new java.util.ArrayList<>(selectedHistory("research"));
-        String queryId="research/"+market+"/"+scope;
+        // AT/MA research never renders the independent Market Trend cohort,
+        // even through the 'all' filter or legacy MT43 parent-wallet rows.
+        if("at".equals(strategy)||"general".equals(strategy)||"ma".equals(strategy)){
+            entries.removeIf(x->!"ma".equals(strategy)&&isTrendRow(x.row));
+            entries.removeIf(x->!strategy.equals(x.source));
+        }
+        if("ma".equals(strategy)&&showLegacyMaArchive)
+            entries=legacyMaRows("research");
+        String queryId="research/"+market+"/"+scope+
+            (showLegacyMaArchive?"/historical":"");
         ColumnQueryV036 researchQuery=tableQuery(queryId,
             "name","strategy","when","score","outcome","reason","buy","sell");
         filterAndSortHistory(entries,researchQuery,this::researchListValues);
@@ -4797,6 +4838,11 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text("리서치 · "+entries.size(),18);
         h.setTypeface(null,Typeface.BOLD);
         head.addView(h,new LinearLayout.LayoutParams(0,dp(42),1));
+        if("ma".equals(strategy)){
+            Button old=legacyMaButton();
+            old.setTextSize(11);
+            head.addView(old,new LinearLayout.LayoutParams(dp(82),dp(38)));
+        }
         Button export=button("현재 ZIP",false,()->exportResearch(st));
         export.setTextSize(13);head.addView(export,new LinearLayout.LayoutParams(dp(92),dp(38)));
         content.addView(head,new LinearLayout.LayoutParams(-1,dp(44)));
