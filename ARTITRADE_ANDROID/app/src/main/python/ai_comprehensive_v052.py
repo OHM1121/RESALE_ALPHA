@@ -177,10 +177,11 @@ def _case(raw,frame,when,mode,kind,status,roi=None,source=""):
     ident=str(row.get("id") or row.get("position_id") or row.get("event_key")
               or row.get("signal_id") or "").strip()
     ts=_stamp(when)
+    owner=str(row.get("strategy") or "")
     seed=(ident if ident else ("at:"+str(ts) if ts else "unknown"))
-    key="|".join((kind,mode,frame,symbol,seed))
+    key="|".join((kind,mode,owner,frame,symbol,str(ts or ""),seed))
     return {"key":key,"kind":kind,"mode":mode,"frame":frame,"symbol":symbol,
-            "source_id":ident,"entry_ts":ts,"status":status,"roi":_number(roi),
+            "owner_strategy":owner,"source_id":ident,"entry_ts":ts,"status":status,"roi":_number(roi),
             "source":source,"features":[],"sources":set(),"missing":Counter(),
             "raw":row}
 
@@ -207,6 +208,9 @@ def _match(source_rows,case):
     options=[]
     for row in source_rows:
         if str(row.get("symbol") or row.get("code") or "")!=case["symbol"]:
+            continue
+        if (case.get("owner_strategy") and row.get("strategy") and
+                str(row["strategy"])!=case["owner_strategy"]):
             continue
         if _normframe(row.get("frame") or row.get("tf"),"gmo" if case["frame"]=="gmo" else "at")!=case["frame"]:
             continue
@@ -420,8 +424,8 @@ def _rank_cases(cases):
                 train_high=[r for t,v,r in train if v>=train_threshold]
                 test_low=[r for t,v,r in test if v<train_threshold]
                 test_high=[r for t,v,r in test if v>=train_threshold]
-                if min(len(train_low),len(train_high))>=5 and
-                        min(len(test_low),len(test_high))>=3:
+                if (min(len(train_low),len(train_high))>=5 and
+                        min(len(test_low),len(test_high))>=3):
                     train_sign=statistics.mean(train_high)-statistics.mean(train_low)
                     test_effect=statistics.mean(test_high)-statistics.mean(test_low)
                     validated=train_sign*test_effect>0
@@ -648,8 +652,8 @@ def analyze_trend(root,market,now=None):
             pid=_obj(event.get("payload")).get("position_id")
             if pid is not None:
                 entries[(str(event.get("strategy")),str(pid))]=event
-        if str(event.get("event_key") or "").startswith("MT43:SELL:") and
-                str(event.get("event_key") or "").endswith(":FILLED"):
+        if (str(event.get("event_key") or "").startswith("MT43:SELL:") and
+                str(event.get("event_key") or "").endswith(":FILLED")):
             pid=_obj(event.get("payload")).get("position_id")
             if pid is not None:
                 sell[(str(event.get("strategy")),str(pid))].append(event)
@@ -658,7 +662,8 @@ def analyze_trend(root,market,now=None):
         pid=str(item.get("position_id") or "")
         strategy=str(item.get("strategy") or "")
         raw=dict(_obj(item.get("payload")),
-                 code=item.get("symbol"),tf=item.get("frame"),position_id=pid)
+                 code=item.get("symbol"),tf=item.get("frame"),
+                 strategy=strategy,position_id=pid)
         buy=entries.get((strategy,pid))
         mode=str(raw.get("execution_mode") or "").upper()
         if mode not in ("LIVE","PAPER") and buy:
