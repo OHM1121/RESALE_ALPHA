@@ -607,6 +607,9 @@ class Coordinator:
             if result:
                 try:
                     sold,status=self.wallet.sell(p,q["bid"],now,result[0],bid_size=q["bid_size"])
+                    if not sold and status in ("LIVE_POSITION_BROKER_DISABLED",
+                            "PAPER_POSITION_LIVE_MODE","POSITION_FILL_MODE_UNVERIFIED"):
+                        self._last_fetch_error[market]="SELL:"+status
                     if sold:
                         if result[0]=="MT_STOP_9PCT":
                             p.__dict__["stop_fill_at"]=now.isoformat()
