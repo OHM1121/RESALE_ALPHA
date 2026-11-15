@@ -387,7 +387,10 @@ def _ingest_approved(case,row):
         else:
             reason=str(metric.get("missing_reason") or "NOT_CAPTURED")
             case["missing"]["V048_"+code+":"+reason]+=1
-    for code,phase in (("13","post"),("14","exit"),("15","post")):
+    # V048 13: MFE/MAE strictly from BUY until SELL (holding period);
+    # V048 15: entry-to-exit benchmark excess (exit evaluation), not
+    # after-SALE tracking. Keep post-sale follow-ups in a separate cohort.
+    for code,phase in (("13","holding"),("14","exit"),("15","exit")):
         metric=_obj(post.get(code))
         if metric.get("value") is not None:
             _add(case,phase,{code:metric["value"]},"V048_APPROVED_"+code,
