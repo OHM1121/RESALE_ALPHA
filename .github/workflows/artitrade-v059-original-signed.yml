@@ -48,10 +48,28 @@ jobs:
           test -f "$HOME/.android/debug.keystore"
           actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
-      - name: Verify targeted v059 and unchanged legacy regressions
+      - name: Extract SHA-verified legacy EXE for regression tests only
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          assert hashlib.sha256(z).hexdigest()=='e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0'
+          dest=Path('/tmp/artitrade-core-verified')
+          dest.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(z)) as f:f.extractall(dest)
+          print('IMMUTABLE_EXE_VERIFIED')
+          PY
+      - name: Verify targeted v059 and unchanged legacy regressions
+        shell: bash
+        env:
+          PYTHONPATH: '/tmp/artitrade-core-verified:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
           for pat in 'test_v059_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
