@@ -88,7 +88,7 @@ def ingest(case,sidecars,add,stamp,origin_mode="ORIGINAL"):
     entry=case.get("entry_ts")
     frame=case.get("frame")
     symbol=case.get("symbol")
-    identity=case.get("source_id")
+    identity=case.get("lifecycle_key") or case.get("source_id")
     if entry is None or not frame or not symbol:
         case["missing"]["V052_SOURCE_LINK_ENTRY_ID_OR_CLOCK_MISSING"]+=1
         return {}
@@ -175,21 +175,19 @@ def ingest(case,sidecars,add,stamp,origin_mode="ORIGINAL"):
     # Snapshot records are historical, but only a source stamped BEFORE entry
     # (or reconstructed exclusively from completed pre-entry bars) qualifies.
     snaps=sidecars.get("signal_history") or {}
-    for group in (snaps.get("groups") or {}).values():
-        for row in group[:MAX_FACTORS_PER_WINDOW]:
-            if row.get("frame")!=frame:continue
-            t=stamp(row.get("event_ts"))
-            if t is None or abs(t-entry)>30*86400:continue
-            key=str(row.get("signal_key") or "")
-            if symbol not in key.split("|"):continue
-            first=stamp(row.get("first_captured"))
-            reconstructed=(row.get("origin")=="RECONSTRUCTED_PRE_ENTRY_OHLCV")
-            phase="entry" if (reconstructed or first is not None and
-                               t<=entry and first<=entry) else "unverified"
-            if _metric(case,phase,_j(row.get("features_json")),
-                       "V052_SAVED_SIGNAL_"+str(row.get("origin") or "UNKNOWN"),
-                       first if first is not None else t,add):
-                hits["signal_history"]+=1
+    for row in (snaps.get("groups") or {}).get((frame,symbol),())[:MAX_FACTORS_PER_WINDOW]:
+        t=stamp(row.get("event_ts"))
+        if t is None or t>entry or entry-t>30*86400:continue
+        key=str(row.get("signal_key") or "")
+        if symbol not in key.split("|"):continue
+        first=stamp(row.get("first_captured"))
+        reconstructed=(row.get("origin")=="RECONSTRUCTED_PRE_ENTRY_OHLCV")
+        phase="entry" if (reconstructed or first is not None and
+                           t<=entry and first<=entry) else "unverified"
+        if _metric(case,phase,_j(row.get("features_json")),
+                   "V052_SAVED_SIGNAL_"+str(row.get("origin") or "UNKNOWN"),
+                   first if first is not None else t,add):
+            hits["signal_history"]+=1
     # Shared market conditions apply to all symbols but only at their own
     # timestamp, never use the next event to fill an earlier entry.
     scores=sidecars.get("market_score_history") or {}
