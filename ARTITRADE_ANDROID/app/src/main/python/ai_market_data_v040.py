@@ -168,6 +168,10 @@ def refresh_packet(root,packet,now=None,max_calls=4):
         research,ledger=_records(data,market,strategy)
         signals=_rows(research,("items","candidates","signals"))
         holdings=_rows(ledger,("positions","holdings"))
+        # RSI20 missed fills live in a separate virtual-only pending view,
+        # never a broker order. Include their entry candles for research.
+        pending=_rows(ledger,("pending","pending_orders","orders","candidates"))
+        signals+= [r for r in pending if r.get("ledger_is_virtual_only")]
         for source in (holdings,signals[:40]):
             for row in source:
                 if not isinstance(row,dict):continue
