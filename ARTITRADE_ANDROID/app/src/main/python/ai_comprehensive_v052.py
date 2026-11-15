@@ -39,6 +39,7 @@ SIDE_TABS={
     "feature_snapshots":"signal_history",
     "benchmark_candles_v048":"benchmark_history",
     "trade_exit_events_v048":"exit_events",
+    "position_observations":"position_snapshots",
 }
 POST_FIELDS=("forward_","future_","post_","after_","observed_","exit_","sell_",
              "profit_","realized_","unrealized_","target_","peak_")
@@ -166,13 +167,24 @@ def _load_sidecars(root,market,strategy):
             where="strategy=?";args=(strategy,)
         rows,total,error=_read_table(root,market,table,where,args)
         groups=defaultdict(list)
+        by_evidence_key=defaultdict(list)
+        by_position_key=defaultdict(list)
         for entry in rows:
-            symbol=str(entry.get("symbol") or entry.get("code") or "")
+            if entry.get("evidence_key"):
+                by_evidence_key[str(entry["evidence_key"])].append(entry)
+            if entry.get("position_key"):
+                by_position_key[str(entry["position_key"])].append(entry)
+            symbol=str(entry.get("symbol") or entry.get("code") or
+                       entry.get("benchmark") or "")
             frame=_normframe(entry.get("frame") or entry.get("tf"),
-                             "gmo" if strategy=="gmo" else "at")
+                             "gmo" if strategy=="gmo" and label!="benchmark_history"
+                             else "at")
             if symbol and frame:groups[(frame,symbol)].append(entry)
-        result[label]={"groups":groups,"total":total,"loaded":len(rows),
-                       "error":error,"truncated":total>len(rows)}
+        result[label]={"groups":groups,"by_evidence_key":by_evidence_key,
+                       "by_position_key":by_position_key,
+                       "unscoped":rows if label=="market_score_history" else [],
+                       "total":total,"loaded":len(rows),"error":error,
+                       "truncated":total>len(rows)}
     return result
 
 
@@ -189,7 +201,7 @@ def _case(raw,frame,when,mode,kind,status,roi=None,source=""):
     return {"key":key,"kind":kind,"mode":mode,"frame":frame,"symbol":symbol,
             "owner_strategy":owner,"source_id":ident,"entry_ts":ts,"status":status,"roi":_number(roi),
             "source":source,"features":[],"sources":set(),"missing":Counter(),
-            "raw":row}
+            "source_row_hits":Counter(),"raw":row}
 
 
 def _add(case,phase,values,source,observed_at=None):
@@ -317,7 +329,7 @@ def _ingest_lifecycle(case,row):
         "indicator_observations","position_factor_events","bar_observations",
         "volume_observations","duration_seconds") if row.get(k) is not None}
     _add(case,"holding",keep,"OBSERVED_POSITION_LIFECYCLE")
-    if row.get("market_entry") is not None:
+    if row.get("market_entry") is not None and case.get("entry_ts") is not None:
         _add(case,"entry",{"market_score":row["market_entry"]},
              "POINT_IN_TIME_MARKET_SCORE",row.get("entry_ts"))
     if row.get("market_exit") is not None:
@@ -355,8 +367,10 @@ def _ingest_entry_candle(case,row):
 def _ingest_approved(case,row):
     if case["mode"]=="UNKNOWN_FILLED_LEDGER":
         mode=str(row.get("execution_kind") or "").upper()
-        if mode in ("LIVE","PAPER"):
+        if mode in ("LIVE","PAPER") and str(row.get("role"))=="ACTUAL":
             case["mode"]=mode
+    case["approved_evidence_key"]=str(row.get("evidence_key") or "")
+    case["market_id"]=str(row.get("market_id") or "")
     entry=_obj(row.get("entry_json"))
     post=_obj(row.get("post_json"))
     counts={}
@@ -484,6 +498,7 @@ def _persistence(root,market,strategy,cases,sources,report):
             safe={k:v for k,v in case.items() if k not in ("sources","missing","raw")}
             safe["sources"]=sorted(case["sources"])
             safe["missing"]=dict(case["missing"])
+            safe["source_row_hits"]=dict(case["source_row_hits"])
             # Original source rows are in the unchanged manifest ZIP, not duplicated.
             payload=json.dumps(safe,ensure_ascii=False,allow_nan=False)
             conn.execute("""INSERT INTO trade_cases VALUES(?,?,?,?,?,?,?,?,?,?)
@@ -581,12 +596,34 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
             if len(matches)==1:life=matches[0]
             elif len(matches)>1:case["missing"]["AMBIGUOUS_LIFECYCLE_MATCH"]+=1
         if life:
+            case["lifecycle_key"]=str(life.get("position_key") or "")
+            case["exit_ts"]=_stamp(life.get("exit_ts"))
             _ingest_lifecycle(case,life)
             used[market+"/ai/AI_RESEARCH_V040.sqlite3"]+=1
         for label,fn in (("entry_context",_ingest_entry_candle),
                          ("approved_metrics",_ingest_approved)):
             if _associate(sidecars,case,label,fn):
                 used[market+"/ai/AI_RESEARCH_V040.sqlite3"]+=1
+        from ai_comprehensive_sources_v052 import ingest as ingest_sources
+        hits=ingest_sources(case,sidecars,_add,_stamp)
+        for name,n in hits.items():
+            used[market+"/ai/AI_RESEARCH_V040.sqlite3"]+=n
+            case["source_row_hits"][name]=n
+        # Position snapshots carry mark/P&L history even without candle data.
+        position_events=(sidecars.get("position_snapshots",{})
+            .get("by_position_key",{}).get(case.get("lifecycle_key"),()))
+        for event in position_events:
+            at=_stamp(event.get("observed_minute"))
+            if at is None or at<case["entry_ts"] or (
+                  case.get("exit_ts") is not None and at>case["exit_ts"]):
+                continue
+            _add(case,"holding",dict(mark=event.get("mark"),
+                 quantity=event.get("quantity"),pnl=event.get("pnl"),
+                 market_score=event.get("market_score")),
+                 "V052_ORIGINAL_POSITION_OBSERVATION",at)
+            _add(case,"holding",_obj(event.get("extra_json")),
+                 "V052_ORIGINAL_POSITION_INDICATORS",at)
+            case["source_row_hits"]["position_snapshots"]+=1
     # Any scalar fields present only in the input signal's CURRENT snapshot stay
     # in holding/unverified cohorts, never reverse-engineered into pre-buy causes.
     # Complete raw source files remain in the signed on-device ZIP export.
@@ -621,6 +658,9 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
         "source_tables_audited":len(source_audit["tables"]),
         "source_tables_unlinked":sum(1 for x in source_audit["tables"]
             if x["integration"]=="AVAILABLE_UNATTRIBUTED"),
+        "trade_joined_source_rows":dict(sum(
+            (case["source_row_hits"] for case in cases),Counter())),
+        "unlinked_sources_are_not_claimed_used":True,
         "sidecar_rows_loaded":{name:v["loaded"] for name,v in sidecars.items()},
         "sidecar_rows_total":{name:v["total"] for name,v in sidecars.items()},
         "sidecar_errors":{name:v["error"] for name,v in sidecars.items()
