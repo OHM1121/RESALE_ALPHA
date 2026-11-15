@@ -1,7 +1,7 @@
 name: ARTITRADE v0.7.61 Android 15 real boot + eight-screen smoke
 on:
   push:
-    branches: [ feature-artitrade-v061-original-ma-stale-ref-fix-20261116 ]
+    branches: [ feature-artitrade-v061-ma-downturn-pivot-20261116 ]
     paths:
       - 'ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/reference_integrity_v059.py'
