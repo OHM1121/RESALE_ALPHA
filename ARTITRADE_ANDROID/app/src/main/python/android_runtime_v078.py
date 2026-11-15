@@ -1952,6 +1952,10 @@ _install_policy_reference_v059(_core)
 from ma_v061_packet import install as _install_ma_v061_packet
 _install_ma_v061_packet(_core)
 
+# v062 new MA strategy-only dashboard/research packet and read-only legacy.
+from ma_v062_packet import install as _install_ma_v062_packet
+_install_ma_v062_packet(_core)
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 
