@@ -313,6 +313,7 @@ def build_reports(root_path,scope,analysis_json,ui_runtime_json="{}"):
             "signals_observed":"관측 후보와 실제 포지션 수가 일치하지 않을 수 있음"
         },
         "analysis_source":report.get("source"),
+        "source_record_counts":report.get("source_record_counts") or {},
         "errors":report.get("error") or [],
         "frame_statistics":frames,
         "score_history":_score_metrics(root,market),
