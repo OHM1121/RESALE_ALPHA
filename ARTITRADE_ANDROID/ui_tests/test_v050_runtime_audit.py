@@ -168,3 +168,26 @@ class V050Audit(TestCase):
             with sqlite3.connect(base/audit.AUDIT_REL) as db:
                 self.assertEqual(db.execute(
                     "SELECT COUNT(*) FROM observations WHERE record_kind='ACTUAL'").fetchone()[0],0)
+
+    def test_gmo_broker_fills_not_confused_with_other_stock_strategies(self):
+        guard=load_module("v050_guard","android_live_position_guard_v049.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            broker=Path(tmp)/"broker"
+            broker.mkdir()
+            database=broker/"live_order_journal.sqlite3"
+            with sqlite3.connect(database) as c:
+                c.execute("""CREATE TABLE live_orders(
+                    event_key TEXT,market TEXT,symbol TEXT,
+                    side TEXT,status TEXT,fill_qty TEXT)""")
+                c.executemany("INSERT INTO live_orders VALUES(?,?,?,?,?,?)",[
+                    ("SQL-AT-1","stock","005930","BUY","FILLED","9"),
+                    ("GMO-BUY-1","stock","005930","BUY","FILLED","5"),
+                    ("GMO-SELL-1","stock","005930","SELL","FILLED","2"),
+                    ("GMO-OLD-2","stock","000660","BUY","FILLED","4")])
+            self.assertEqual(guard.verified_gmo_live_quantity(tmp,"A005930"),3)
+            self.assertEqual(guard.verified_gmo_live_quantity(tmp,"000660"),4)
+            with sqlite3.connect(database) as c:
+                c.execute("INSERT INTO live_orders VALUES(?,?,?,?,?,?)",
+                    ("GMO-PENDING","stock","005930","SELL","SENT",""))
+            with self.assertRaisesRegex(guard.UnsafePaperExit,"GMO_BROKER_ORDER_UNRESOLVED"):
+                guard.verified_gmo_live_quantity(tmp,"005930")
