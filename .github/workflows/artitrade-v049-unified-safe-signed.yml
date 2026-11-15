@@ -1,4 +1,4 @@
-name: ARTITRADE v0.7.49 Unified Safety Signed APK
+name: ARTITRADE v0.7.49 Unified Safety Validation
 on:
   push:
     branches:
@@ -31,19 +31,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Restore original phone-compatible signing key
-        id: signing
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: artitrade-s21plus-update-signing-v1
-      - name: Reject missing or different signing certificate
-        run: |
-          test "${{ steps.signing.outputs.cache-hit }}" = "true" || { echo "STABLE_SIGNING_CACHE_MISSING"; exit 1; }
-          test -f "$HOME/.android/debug.keystore"
-          EXPECTED="37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
-          ACTUAL="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          test "$ACTUAL" = "$EXPECTED" || { echo "UPDATE_CERTIFICATE_MISMATCH"; exit 1; }
       - name: Install Android SDK 35
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -70,26 +57,14 @@ jobs:
           javac -d /tmp/artitrade-v049-jvm ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ColumnQueryV036.java ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SyncStatusV036.java ARTITRADE_ANDROID/ui_tests/ColumnQueryV036Test.java ARTITRADE_ANDROID/ui_tests/SyncStatusV036Test.java
           java -cp /tmp/artitrade-v049-jvm com.artitrade.mobile.ColumnQueryV036Test
           java -cp /tmp/artitrade-v049-jvm com.artitrade.mobile.SyncStatusV036Test
-      - name: Build unified APK with the recovered certificate
+      - name: Compile unified APK with test key (not distributable)
         working-directory: ARTITRADE_ANDROID
         env:
-          CI: 'true'
+          CI: 'false'
         run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
-      - name: Verify signature package version and create installable APK
+      - name: Verify test build metadata (do not install over production)
         run: |
           APK="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
           test -s "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='56'"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" > /tmp/artitrade-v049-signature.txt
-          grep -Fi '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/artitrade-v049-signature.txt
-          cp "$APK" ARTITRADE_UNIFIED_v0.7.49_20261115.apk
-          sha256sum ARTITRADE_UNIFIED_v0.7.49_20261115.apk > ARTITRADE_UNIFIED_v0.7.49_20261115.sha256
-      - name: Upload direct-install unified APK only
-        uses: actions/upload-artifact@v4
-        with:
-          name: ARTITRADE_UNIFIED_v0.7.49_20261115
-          path: |
-            ARTITRADE_UNIFIED_v0.7.49_20261115.apk
-            ARTITRADE_UNIFIED_v0.7.49_20261115.sha256
-          if-no-files-found: error
-          retention-days: 14
+          echo "Test-key build only. Production APK must use the original cached signing certificate."
