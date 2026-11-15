@@ -27,7 +27,7 @@ jobs:
         include:
           - version: v0.7.49
             version_code: 56
-            source: b0076f206757e0bfede6ade6be5dadc243dbf702
+            source: 7d5869c4c4a70507f78a7cd92378c1b4a217572b
             artifact: ARTITRADE_UNIFIED_v0.7.49_20261115
     steps:
       - name: Fetch immutable and previously regression-tested app source
