@@ -129,26 +129,30 @@ def _prior_live_conflict(root,market,symbol):
     real broker position or hide an unresolved live order.
     """
     path=legacy_db(root,market)
-    if not path.is_file():return None
     try:
-        with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
-                             uri=True,timeout=2) as c:
-            symcolumn="market" if market=="coin" else "code"
-            count=c.execute("SELECT COUNT(*) FROM positions WHERE status='OPEN' AND "+
-                            symcolumn+"=?",(symbol,)).fetchone()[0]
-            if not count:return None
+        count=0
+        if path.is_file():
+            with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
+                                 uri=True,timeout=2) as c:
+                symcolumn="market" if market=="coin" else "code"
+                count=c.execute("SELECT COUNT(*) FROM positions WHERE status='OPEN' AND "+
+                                symcolumn+"=?",(symbol,)).fetchone()[0]
         journal=Path(root)/"broker"/"live_order_journal.sqlite3"
         if not journal.is_file():
-            return "OLD_MA_POSITION_UNPROVEN_BROKER_STATE"
+            return "OLD_MA_POSITION_UNPROVEN_BROKER_STATE" if count else None
         with sqlite3.connect(journal.resolve().as_uri()+"?mode=ro",
                              uri=True,timeout=2) as c:
             rows=c.execute("""SELECT side,status,reason FROM live_orders
                 WHERE market=? AND symbol=? ORDER BY updated_at DESC LIMIT 250""",
                 (market,symbol)).fetchall()
             for side,status,reason in rows:
-                if (side=="BUY" and status in
-                        ("FILLED","SENT","AMBIGUOUS","PARTIAL") and
-                        ("MA" in str(reason).upper() or market=="coin")):
+                if side in ("BUY","SELL") and status in (
+                        "PREPARED","SENT","AMBIGUOUS","PARTIAL"):
+                    # A not-yet-resolved broker instruction may create or
+                    # consume actual holdings even when old SQLite says zero.
+                    return "UNRESOLVED_BROKER_ORDER_RECONCILIATION_REQUIRED"
+                if count and side=="BUY" and status=="FILLED" and (
+                        "MA" in str(reason).upper() or market=="coin"):
                     return "OLD_MA_LIVE_POSITION_RECONCILIATION_REQUIRED"
         return None
     except (OSError,sqlite3.Error,ValueError):
