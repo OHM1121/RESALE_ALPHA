@@ -205,6 +205,6 @@ class TestEntryContextV047(TestCase):
         self.assertIn('isTrendRow(r)',UI)
         self.assertIn('마켓트렌드 RSI20',UI)
         self.assertIn('가상체결',UI)
-        self.assertIn('versionCode 54',GRADLE)
+        self.assertRegex(GRADLE,r"versionCode\s+5[4-9]")
         self.assertIn('market_trend_research',MT)
         self.assertIn('ledger_is_virtual_only',MT)

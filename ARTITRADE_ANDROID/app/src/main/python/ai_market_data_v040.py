@@ -30,7 +30,7 @@ def _http(url,params):
     return _public_json(url,params)
 
 
-def fetch_candles(market,symbol,frame,now=None):
+def fetch_candles(market,symbol,frame,now=None,include_trade_extras=False):
     if frame not in FRAME_SECONDS or market not in ("stock","coin"):
         return [],""
     now=int(time.time() if now is None else now)
@@ -52,7 +52,12 @@ def fetch_candles(market,symbol,frame,now=None):
             close=_number(row.get("trade_price"))
             volume=_number(row.get("candle_acc_trade_volume"))
             if None in (high,low,close) or high<close or close<low:continue
-            bars.append((ts,high,low,close,volume))
+            if include_trade_extras:
+                turnover=_number(row.get("candle_acc_trade_price"))
+                opened=_number(row.get("opening_price"))
+                bars.append((ts,high,low,close,volume,turnover,opened))
+            else:
+                bars.append((ts,high,low,close,volume))
         return sorted({x[0]:x for x in bars}.values()),"UPBIT_CLOSED_OHLCV"
     # KRX numeric code: test both suffixes; never assign a different ticker.
     code=str(symbol).zfill(6)
@@ -71,6 +76,7 @@ def fetch_candles(market,symbol,frame,now=None):
                 l=candles.get("low") or []
                 c=candles.get("close") or []
                 v=candles.get("volume") or []
+                o=candles.get("open") or []
                 bars=[]
                 for i,ts in enumerate(timestamps):
                     if int(ts)+FRAME_SECONDS[frame]>now:continue
@@ -79,7 +85,12 @@ def fetch_candles(market,symbol,frame,now=None):
                     close=_number(c[i] if i<len(c) else None)
                     volume=_number(v[i] if i<len(v) else None)
                     if None in (hi,lo,close) or hi<close or close<lo:continue
-                    bars.append((int(ts),hi,lo,close,volume))
+                    if include_trade_extras:
+                        # Yahoo chart volume has no exact traded-value VWAP.
+                        opened=_number(o[i] if i<len(o) else None)
+                        bars.append((int(ts),hi,lo,close,volume,None,opened))
+                    else:
+                        bars.append((int(ts),hi,lo,close,volume))
                 if len(bars)>=16:
                     return sorted({x[0]:x for x in bars}.values())[-160:],"YAHOO_KRX_PUBLIC_CHART"
             except (OSError,ValueError,KeyError,IndexError,TypeError):
@@ -93,10 +104,13 @@ def record(root,market,strategy,symbol,frame,bars,origin,
     now=int(time.time() if now is None else now)
     # GMO is one daily-strategy cohort, not a fabricated fifth timeframe.
     save_frame="gmo" if strategy=="gmo" and frame=="day" else frame
-    valid=sorted((x for x in bars if x[0]+FRAME_SECONDS[frame]<=now),
-                 key=lambda x:x[0])
-    if not valid:return {"bars":0,"entries":0}
-    valid=valid[-170:]  # SMA120 plus preceding 30 for entry-candle evidence
+    valid_raw=sorted((x for x in bars if x[0]+FRAME_SECONDS[frame]<=now),
+                     key=lambda x:x[0])
+    if not valid_raw:return {"bars":0,"entries":0}
+    valid_raw=valid_raw[-170:]
+    # The legacy candle-indicator API receives exactly five OHLCV fields.
+    # Optional open / true traded turnover are solely research sidecar inputs.
+    valid=[tuple(x[:5]) for x in valid_raw]
     indicators=compute_candle_indicators(valid)
     with _connect(root,market) as conn:
         for ts,hi,lo,close,volume in valid:
@@ -149,16 +163,22 @@ def record(root,market,strategy,symbol,frame,bars,origin,
                        bars=valid,symbol=symbol,frame=frame,source=origin,now=now)
     except (sqlite3.Error,OSError,ValueError,TypeError):
         pass
+    try:
+        from ai_approved_collect_v048 import record_candles
+        record_candles(root,market,strategy,symbol,frame,valid_raw,origin,now)
+    except (sqlite3.Error,OSError,ValueError,TypeError,KeyError):
+        pass
     return {"bars":len(valid),"entries":reconstructed}
 
 
 _LAST_ATTEMPT={}
 _ROTATION=0
+_BENCHMARK_ROTATION=0
 
 
 def refresh_packet(root,packet,now=None,max_calls=4):
     """Rotate across scopes, prioritizing open positions but no starvation."""
-    global _ROTATION
+    global _ROTATION,_BENCHMARK_ROTATION
     now=int(time.time() if now is None else now)
     work=[]
     data=packet if isinstance(packet,dict) else {}
@@ -197,11 +217,24 @@ def refresh_packet(root,packet,now=None,max_calls=4):
         _LAST_ATTEMPT[key]=now
         market,strategy,symbol,frame=key
         try:
-            bars,origin=fetch_candles(market,symbol,frame,now)
+            bars,origin=fetch_candles(market,symbol,frame,now,
+                                      include_trade_extras=True)
             if len(bars)>=16:
                 record(root,market,strategy,symbol,frame,bars,origin,signals,now,
                        positions=holdings)
             count+=1
         except (OSError,sqlite3.Error,ValueError,TypeError,KeyError):
             count+=1
+    # One additional public benchmark fetch per research-worker cycle at most.
+    # Originals still have priority. No orders are requested here.
+    benchmark_keys=list(dict.fromkeys((key[0],key[3]) for key,_ in entries))
+    if benchmark_keys:
+        idx=_BENCHMARK_ROTATION%len(benchmark_keys)
+        _BENCHMARK_ROTATION+=1
+        m,frame=benchmark_keys[idx]
+        try:
+            from ai_approved_collect_v048 import refresh_benchmark
+            refresh_benchmark(root,m,frame,now)
+        except (sqlite3.Error,OSError,ValueError,TypeError,KeyError):
+            pass
     return count

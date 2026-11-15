@@ -153,6 +153,15 @@ def _by_frame(root,market,frame,events,positions,virtuals,contexts):
     }
 
 
+def _approved_metrics(root,market):
+    try:
+        from ai_approved_collect_v048 import summarize
+        return summarize(root,market,"MARKET_TREND",preview_max=10)
+    except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
+        return {"schema":"ARTITRADE_APPROVED_TRADE_EVIDENCE_V048",
+                "status":"READ_FAILED","error":type(exc).__name__}
+
+
 def analyze(root,market):
     if market not in ("stock","coin"):
         raise ValueError("unknown market")
@@ -182,6 +191,7 @@ def analyze(root,market):
             "virtual_rows_loaded":len(data["virtual"]),
             "source_rows_truncated":False,
             "all_original_rows_in_verified_export":True},
+        "approved_metrics_v048":_approved_metrics(root,market),
         "market_trend_rsi20":{
             "signals":sum(x["signals"] for x in frames),
             "filled":sum(x["market_trend_rsi20"]["confirmed_buy_fills"] for x in frames),

@@ -543,8 +543,16 @@ class _EvidenceWorker:
                 capture_packet_pending(self.root,packet)
             except (OSError,sqlite3.Error,ValueError,TypeError):
                 pass
+            # New user-approved metrics only touch the research SQLite sidecar.
+            # This worker is separate from broker, market-tick and UI threads.
+            try:
+                from ai_approved_collect_v048 import capture_packet as capture_approved
+                capture_approved(self.root,packet)
+            except (sqlite3.Error,OSError,ValueError,TypeError):
+                pass
             # Network collection runs ONLY here, never on trading or UI
-            # callbacks. Cap at three instrument/timeframe queries per cycle.
+            # callbacks. Cap at three instrument/timeframe queries plus one
+            # public benchmark source per cycle.
             try:
                 from ai_market_data_v040 import refresh_packet
                 refresh_packet(self.root,packet,max_calls=3)

@@ -327,6 +327,9 @@ def build_reports(root_path,scope,analysis_json,ui_runtime_json="{}"):
             "execution_strength":"only timestamped source observation at entry, else null"},
         "entry_candle_summary":__import__("ai_entry_context_v047")
              .summarize(root,market,None if strategy=="trend" else "ORIGINAL"),
+        "approved_metrics_v048":__import__("ai_approved_collect_v048").summarize(
+             root,market,"MARKET_TREND" if strategy=="trend" else "ORIGINAL",
+             None if strategy=="trend" else strategy,preview_max=8),
         "quality_warnings":[
             "원본 데이터가 없으면 0으로 보정하지 않고 누락 사실을 표시",
             "수동 마켓트렌드 전환과 거래 시간봉의 역사적 매수 근거는 별도 조회",
@@ -347,6 +350,10 @@ def build_reports(root_path,scope,analysis_json,ui_runtime_json="{}"):
         "analysis/ENTRY_CANDLE_EVIDENCE_V047.json":
             __import__("ai_entry_context_v047").export_rows(
                  root,market,None if strategy=="trend" else "ORIGINAL"),
+        "analysis/APPROVED_METRICS_V048.json":
+            __import__("ai_approved_collect_v048").export_json(
+                 root,market,"MARKET_TREND" if strategy=="trend" else "ORIGINAL",
+                 None if strategy=="trend" else strategy,preview_max=200),
     }
     for name,value in outputs.items():
         if len(value.encode("utf-8"))>8*1024*1024:

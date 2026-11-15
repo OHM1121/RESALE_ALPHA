@@ -4114,6 +4114,50 @@ public final class UnifiedVisualActivity extends Activity {
         lp.setMargins(0,dp(7),0,0);
         parent.addView(panel,lp);
     }
+    private void addApprovedEvidenceCard(JSONObject report){
+        JSONObject evidence=report.optJSONObject("approved_metrics_v048");
+        if(evidence==null)return;
+        LinearLayout panel=card();
+        TextView heading=text("매수·보유·청산 정량 기록",18);
+        heading.setTypeface(null,Typeface.BOLD);
+        panel.addView(heading);
+        int n=evidence.optInt("entry_records",0);
+        JSONObject roles=evidence.optJSONObject("by_role");
+        JSONObject modes=evidence.optJSONObject("by_execution_kind");
+        String counts="총 "+n+"건  ·  실제·모의 체결 "+(roles==null?0:
+            roles.optInt("ACTUAL",0))+"건  ·  가상추적 "+(roles==null?0:
+            roles.optInt("VIRTUAL",0))+"건";
+        TextView summary=text(counts,13);
+        summary.setTextColor(PremiumUi.MUTED);
+        summary.setPadding(0,dp(6),0,dp(6));
+        panel.addView(summary);
+        String[] keys={"02","05","09","10","11","13","14","15","16"};
+        String[] labels={"호가 스프레드","주문 단계별 지연","매수봉 캔들 형태",
+            "ATR·볼린저","진입 전 VWAP","진입 후 MFE·MAE",
+            "단계별 청산","기준시장 대비 성과","공격적 체결량·CVD"};
+        JSONObject coverage=evidence.optJSONObject("coverage");
+        for(int i=0;i<keys.length;i++){
+            JSONObject metric=coverage==null?null:coverage.optJSONObject(keys[i]);
+            int available=metric==null?0:metric.optInt("known",0);
+            TextView line=text(labels[i]+"  "+available+"/"+n+"건 수집",12);
+            line.setTextColor(available>0?Color.rgb(106,223,183):
+                              Color.rgb(170,186,205));
+            line.setPadding(0,dp(2),0,dp(2));
+            panel.addView(line);
+        }
+        JSONObject confidence=evidence.optJSONObject("17");
+        TextView stat=text("성과통계 검증 거래 "+
+              (confidence==null?0:confidence.optInt("verified_closed_n",0))+
+              "건 · 95% 신뢰구간은 검증 종료거래 20건 이상에서 산출",12);
+        stat.setTextColor(PremiumUi.MUTED);
+        stat.setPadding(0,dp(8),0,dp(4));
+        panel.addView(stat);
+        TextView note=text("상세 수치·미수신 사유·원천 기록은 분석 추출 ZIP에 포함",11);
+        note.setTextColor(Color.rgb(131,193,236));
+        panel.addView(note);
+        content.addView(panel,new LinearLayout.LayoutParams(-1,-2));
+    }
+
     private void addTrendResearchCard(JSONObject report){
         JSONObject rsiTrend=report.optJSONObject("market_trend_rsi20");
         if(rsiTrend!=null&&rsiTrend.optInt("signals",0)>0){
@@ -4264,6 +4308,7 @@ public final class UnifiedVisualActivity extends Activity {
         if(!scope.equals(report.optString("scope","")))return;
 
         addTrendResearchCard(report);
+        addApprovedEvidenceCard(report);
         AiEvidenceFlowV046 flow=new AiEvidenceFlowV046(this);
         flow.setReport(report);
         LinearLayout.LayoutParams visualLp=new LinearLayout.LayoutParams(-1,dp(159));

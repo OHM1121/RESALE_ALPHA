@@ -734,6 +734,14 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     # RSI20 history is a separate 'trend' cohort. Never attach it to
     # original AT/MA AI analysis or historical improvement claims.
     report["entry_mode"]="ORIGINAL"
+    try:
+        from ai_approved_collect_v048 import summarize as approved_summary
+        report["approved_metrics_v048"]=approved_summary(
+            root,market,"ORIGINAL",strategy,preview_max=10)
+    except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
+        report["approved_metrics_v048"]={
+            "schema":"ARTITRADE_APPROVED_TRADE_EVIDENCE_V048",
+            "status":"READ_FAILED","error":type(exc).__name__}
 
     try:
         journal.save_report(root,market,strategy,report,now)
