@@ -456,7 +456,8 @@ def _stock_at_research(root):
 
 
 def _stock_ma_research(root):
-    db=Path(root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
+    from ma_epoch_v062 import stock_active
+    db=stock_active(root)
     candidates=_core._db_rows(db,"SELECT id,tf,code,name,ref_ts,created_at AS at,score,status,target,features FROM candidates ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions")
     first_target_sells=_research_first_target_fills(db)
@@ -506,7 +507,8 @@ def _stock_ma_research(root):
 
 
 def _coin_research(root,which):
-    db=Path(root)/'coin'/which/'upbit_paper.sqlite3'
+    from ma_epoch_v062 import coin_active
+    db=coin_active(root) if which=='ma' else Path(root)/'coin'/which/'upbit_paper.sqlite3'
     candidates=_core._db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,created_at AS at,score,limit_price,target,reason FROM candidates ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions")
     first_target_sells=_research_first_target_fills(db)
@@ -830,7 +832,8 @@ def _stock_ma_full(self):
         return {}
     snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
     perf=snap.get('performance_by_frame') or {}
-    db=Path(self.root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
+    from ma_epoch_v062 import stock_active
+    db=stock_active(self.root)
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
     full_exec=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 10000")
     # The original MA snapshot omits positions.entry_at and candidate.created_at.
@@ -1116,7 +1119,7 @@ def _research_history(self, out):
               ('candidate_events','candidate_forward','candidate_milestones',
                'candidate_cohort_decisions','candidate_research_health',
                'stock_shadow_trials','stock_shadow_fills','signals','positions','executions')),
-        'MA':('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
+        'MA':('stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
               ('positions','executions','research')),
         'CLOSE':('stock/close/AT_CLOSE_PAPER.sqlite3','signals',
                  ('research_candidates','research_followups','research_bars',
@@ -1124,7 +1127,7 @@ def _research_history(self, out):
         'COIN_BASE':('coin/base/upbit_paper.sqlite3','candidates',
                      ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
                       'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
-        'COIN_MA':('coin/ma/upbit_paper.sqlite3','candidates',
+        'COIN_MA':('coin/ma_epoch_v062/upbit_paper.sqlite3','candidates',
                    ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
                     'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
     }
