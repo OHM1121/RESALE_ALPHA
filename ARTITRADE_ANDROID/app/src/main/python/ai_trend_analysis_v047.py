@@ -35,8 +35,8 @@ def _read(root,market,limit=None):
             sql="SELECT * FROM "+table+" WHERE market=?"
             params=[market]
             if limit:
-                sql+=" ORDER BY "+("at" if key=="events" else "updated_at")+
-                     " DESC LIMIT ?"
+                sql+=(" ORDER BY "+("at" if key=="events" else "updated_at")+
+                      " DESC LIMIT ?")
                 params.append(int(limit))
             result[key]=[dict(r) for r in c.execute(sql,params)]
     return result
