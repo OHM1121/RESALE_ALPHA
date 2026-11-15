@@ -95,7 +95,7 @@ class V058Evidence(unittest.TestCase):
         for i in range(10):
             observed.append({'outcome':-1 if i<5 else 1,
                              'precursors':{'market_weak'} if i<3 else set(),
-                             'features':({'market_score':-32} if i<3 else {},{},{} )})
+                             'features':{'entry':{'market_score':-32} if i<3 else {},'holding':{},'exit':{}}})
         statement=patterns._finding_sentence(sample,observed,True)
         self.assertIn('30.0%',statement)
         self.assertIn('≤ -20',statement)
@@ -109,7 +109,7 @@ class V058Evidence(unittest.TestCase):
     def test_existing_original_signing_and_package_preserved_in_build_file(self):
         src=(ROOT/'app/build.gradle').read_text('utf-8')
         self.assertIn('com.artitrade.unified.s21dex',src)
-        self.assertRegex(src,r'versionCode\\s+65')
+        self.assertIn('versionCode 65',src)
 
 if __name__=='__main__':
     unittest.main()
