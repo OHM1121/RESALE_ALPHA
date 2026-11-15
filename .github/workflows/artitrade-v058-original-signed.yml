@@ -8,6 +8,7 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/**'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
       - 'ARTITRADE_ANDROID/ui_tests/test_v058_evidence_rsi.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
       - 'ARTITRADE_ANDROID/app/build.gradle'
   workflow_dispatch:
 permissions:
