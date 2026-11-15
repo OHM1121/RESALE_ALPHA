@@ -257,7 +257,7 @@ class TrendAudit(unittest.TestCase):
 
     def test_audit_release_increments_versioncode_for_in_place_upgrade(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf8')
-        self.assertRegex(gradle,r'versionCode (?:62|63|64)')
+        self.assertRegex(gradle,r'versionCode (?:62|63|64|65)')
         self.assertRegex(gradle,r"versionName '0\.7\.5[567]")
 
     def test_trend_ui_is_not_mislabeled_as_actual_broker_account(self):
