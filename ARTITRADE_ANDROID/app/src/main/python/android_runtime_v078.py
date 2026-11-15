@@ -1920,6 +1920,12 @@ _install_ma_v061_stock()
 from ma_v061_fast_entry import install as _install_ma_v061_fast
 _install_ma_v061_fast()
 
+# v0.7.62: MA-only cold-epoch account. The old stock/coin MA SQLite is
+# preserved read-only, and both markets begin new virtual cash/PnL at zero.
+# No physical stock/crypto broker balance or external position is reset.
+from ma_epoch_v062 import install as _install_ma_epoch_v062
+_install_ma_epoch_v062()
+
 # v0.7.43: market trend is an AT/MA entry mode, never an independent account.
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
