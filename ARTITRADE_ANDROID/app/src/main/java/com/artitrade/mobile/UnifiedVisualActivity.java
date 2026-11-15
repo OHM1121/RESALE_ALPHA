@@ -1632,7 +1632,17 @@ public final class UnifiedVisualActivity extends Activity {
     private Stats calculateStats(JSONObject snapshot,String m,String s){
         Stats st=new Stats();JSONObject l=ledger(snapshot,m,s);
         st.positions=rows(l,m,s,"positions","holdings");
-        st.pending=rows(l,m,s,"pending","pending_orders","orders","candidates");
+        // Shadow observations are research, not broker pending orders.
+        // They remain in the trend research journal and approved evidence.
+        JSONArray sourcePending=rows(l,m,s,"pending","pending_orders","orders","candidates");
+        JSONArray brokerPending=new JSONArray();
+        for(int i=0;i<sourcePending.length();i++){
+            JSONObject candidate=sourcePending.optJSONObject(i);
+            if(candidate!=null&&!candidate.optBoolean("ledger_is_virtual_only",false)
+                    &&!candidate.optBoolean("virtual_entered",false))
+                brokerPending.put(candidate);
+        }
+        st.pending=brokerPending;
         st.executions=rows(l,m,s,"executions","fills","transactions","trades");
 
         if("stock".equals(m)&&("at".equals(s)||"gmo".equals(s))){
