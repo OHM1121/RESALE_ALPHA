@@ -115,6 +115,30 @@ def _derive_bars(candles,ts,frame,market):
     return result,len(eligible)
 
 
+def _entry_gap(candles,entry_ts,frame):
+    """The trade's own candle OPEN relative to the previous completed CLOSE.
+
+    An exact original open is mandatory. An intra-bar price move or the
+    prior candle's gap is not a substitute for the entry-candle gap.
+    Candle-open evidence may be finalized later but occurred before entry.
+    """
+    if entry_ts is None or frame not in BAR_SECONDS:return None
+    period=BAR_SECONDS[frame]
+    rows=sorted(candles,key=lambda x:x["bar_ts"])
+    for i,row in enumerate(rows):
+        start=int(row["bar_ts"])
+        if not start<=entry_ts<start+period:continue
+        if i==0:return None
+        prev=rows[i-1]
+        if int(prev["bar_ts"])+period>start:return None
+        opened=journal._number(row.get("open_price"))
+        prev_close=journal._number(prev.get("close"))
+        if opened is None or prev_close is None or opened<=0 or prev_close<=0:
+            return None
+        return round(100*(opened/prev_close-1),6)
+    return None
+
+
 def _snapshot_at(observations,moment,frame):
     if moment is None:return {},None
     period=BAR_SECONDS.get(frame,60)
@@ -194,6 +218,17 @@ def _rollup_one(root,market,strategy,row,conn,events,candles_cache,inds_cache,
                 "AND symbol=? ORDER BY bar_ts",
                 (strategy,frame,symbol))]
     candles=candles_cache[symbolframe]
+    # Extra open/true turnover is optional on older installations. Match by
+    # strategy+frame+symbol+bar start, never by ticker alone or current price.
+    try:
+        extras=conn.execute("""SELECT bar_ts,open_price FROM candle_extra_v048
+            WHERE strategy=? AND frame=? AND symbol=?""",
+            (strategy,frame,symbol)).fetchall()
+        by_open={int(ts):journal._number(opened) for ts,opened in extras}
+        for candle in candles:
+            candle['open_price']=by_open.get(int(candle['bar_ts']))
+    except sqlite3.Error:
+        pass
     if symbolframe not in inds_cache:
         inds_cache[symbolframe]=[
             dict(x) for x in conn.execute(
@@ -218,6 +253,25 @@ def _rollup_one(root,market,strategy,row,conn,events,candles_cache,inds_cache,
     # before BUY/SELL. Never use current indicators as historic entries.
     if not entry_features:
         entry_features,entry_origin=_snapshot_at(indicators,entry_ts,frame)
+    # Quote factor at the actual BUY time, recorded independently of order
+    # execution. Never infer a best book from candles or later quotations.
+    try:
+        from ai_live_book_v058 import lookup as find_entry_book
+        book=find_entry_book(conn,symbol,entry_ts)
+        if book is not None:
+            mid=(book['bid']+book['ask'])/2.0
+            if mid>0:
+                entry_features=dict(entry_features,
+                                    spread_pct=round(100*(book['ask']-book['bid'])/mid,6))
+                entry_origin=(entry_origin+'+' if entry_origin else '')+(
+                    'VERIFIED_PRE_ENTRY_BEST_BOOK')
+    except (sqlite3.Error,ValueError,TypeError):
+        pass
+    gap=_entry_gap(candles,entry_ts,frame)
+    if gap is not None:
+        entry_features=dict(entry_features,gap_pct=gap)
+        entry_origin=(entry_origin+'+' if entry_origin else '')+(
+            'VERIFIED_ENTRY_OPEN_VS_PREVIOUS_CLOSE')
     if exit_ts is not None and not exit_features:
         exit_features,exit_origin=_snapshot_at(indicators,exit_ts,frame)
     # Non-time-stamped row fields must not be backdated as BUY indicators.

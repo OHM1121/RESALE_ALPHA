@@ -74,7 +74,7 @@ def _bars_from_upbit(items,frame,now):
                 "close":close,"high":high,"low":low,"source":"UPBIT_CLOSED"}
         except (ValueError,TypeError,KeyError,AttributeError,OverflowError):
             continue
-    return sorted(rows.values(),key=lambda x:x["start"])[-80:]
+    return sorted(rows.values(),key=lambda x:x["start"])[-200:]
 
 
 def _stock_bar_end(ts,frame):
@@ -139,6 +139,7 @@ class Coordinator:
         self._last_fetch_error={}
         self._watch_after={}
         self._position_snapshot_at={}
+        self._entry_block_counts={market:collections.Counter() for market in ('stock','coin')}
         # In-memory performance counters only. No trading-ledger writes.
         self._performance={market:{
             "preclose_cycles":0,"preclose_no_due_cycles":0,
@@ -315,7 +316,10 @@ class Coordinator:
         if abs(time.time()-float(book.get("timestamp",0))/1000)>3:return None
         bid=mt._finite(book.get("bid"));ask=mt._finite(book.get("ask"))
         size=mt._finite(book.get("ask_size"));bid_size=mt._finite(book.get("bid_size"))
-        if any(x is None or x<=0 for x in (bid,ask,size,bid_size)):return None
+        # Buying consumes ASK depth. Missing/zero BID depth must block a
+        # subsequent SELL, not prevent a safely priced BUY signal.
+        if any(x is None or x<=0 for x in (bid,ask,size)) or ask<bid:return None
+        if bid_size is None or bid_size<0:bid_size=0.0
         return {"trade":price,"ask":ask,"bid":bid,"ask_size":size,"bid_size":bid_size}
 
     def _refresh_rank(self,market):
@@ -354,7 +358,7 @@ class Coordinator:
         now=dt.datetime.now(mt.KST)
         if market=="coin":
             client=self.rt.coin_runner.minute_client
-            data=client.candles(code,frame,count=65)
+            data=client.candles(code,frame,count=200)
             return _bars_from_upbit(data,frame,now)
         runner=self.rt.stock_runner
         if runner is None or runner.api is None:return []
@@ -593,21 +597,32 @@ class Coordinator:
         due=collections.defaultdict(list)
         for code in candidates:
             q=self._quote(market,code)
-            if q is None:continue
+            if q is None:
+                self._entry_block_counts[market]['QUOTE_OR_BOOK_MISSING_AT_GATE']+=1
+                continue
             for frame,finish,check,submit in scheduled:
                 barid=finish.isoformat()
                 entry=(market,code,frame,barid)
                 closed=self._closed_series(market,code,frame,finish)
-                if not closed:continue
+                if not closed:
+                    self._entry_block_counts[market]['CLOSED_CANDLE_HISTORY_MISSING']+=1
+                    continue
                 rsi=mt.rsi20([x["close"] for x in closed],q["trade"])
-                if rsi is None:continue
+                if rsi is None:
+                    self._entry_block_counts[market]['RSI_20_HISTORY_INVALID']+=1
+                    continue
                 if check:
                     self._prechecked[entry]=rsi
                     self.journal.record_watch(market,code,frame,q["trade"],rsi,barid)
                     armed=self.journal.latch(market,code,frame).armed
                     self.watch.observe(market,code,frame,barid,rsi,armed,
                         observed_at=time.time(),price=q['trade'])
-                if submit and (self._prechecked.get(entry,100)>30 or rsi>30):continue
+                if submit and (self._prechecked.get(entry,100)>30 or rsi>30):
+                    self._entry_block_counts[market][
+                        'PRECHECK_MISSING_OR_RSI_ABOVE_30'
+                        if entry not in self._prechecked else 'RSI_ABOVE_30'
+                    ]+=1
+                    continue
                 if submit and entry not in self._ordered:
                     due[code].append((frame,rsi,barid,q))
         # The -12s decision closes the observation queue for this bar.
@@ -622,6 +637,7 @@ class Coordinator:
             # mandatory before an entry can consume parent-strategy cash.
             if (self.journal.stop_reentry_blocked(market,code,now) or
                 self.standalone_wallet.stop_reentry_blocked(market,code,now)):
+                self._entry_block_counts[market]['STOP_REENTRY_LOCK']+=1
                 for frame,_,barid,_ in signals:
                     self._ordered.add((market,code,frame,barid))
                 continue
@@ -630,7 +646,9 @@ class Coordinator:
             frame,rsi,barid,q=next(x for x in signals if x[0]==chosen)
             self._ordered.add((market,code,frame,barid))
             latch=self.journal.latch(market,code,frame)
-            if not latch.offer(barid,rsi):continue
+            if not latch.offer(barid,rsi):
+                self._entry_block_counts[market]['SIGNAL_LATCH_NOT_ARMED']+=1
+                continue
             self.journal.save_latch(market,code,frame,latch)
             assigned='trend'
             name=str(candidates[code][1]) if isinstance(candidates[code],(tuple,list)) else code
@@ -648,6 +666,8 @@ class Coordinator:
                 self._last_fetch_error[market]=disposition
             if str(disposition).startswith(('BROKER:', 'UNSAFE:')):
                 unsafe_result=True
+            if result is None:
+                self._entry_block_counts[market][str(disposition)[:80]]+=1
             # ACTUAL is reserved for broker-confirmed fills, PAPER for
             # simulated fills, and VIRTUAL for missed / unfilled signals.
             signal_mode=("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
@@ -737,9 +757,8 @@ class Coordinator:
                 started=time.monotonic()
                 try:self._process_closed(market)
                 finally:self._record_latency(market,"closed",started)
-                started=time.monotonic()
-                try:self._preclose_candidates(market,dt.datetime.now(mt.KST))
-                finally:self._record_latency(market,"preclose",started)
+                # Entry evaluation has a dedicated short-latency worker.
+                # Slow score/candle/holding IO must not consume its 1s window.
                 started=time.monotonic()
                 try:self._process_holds(market,dt.datetime.now(mt.KST))
                 finally:self._record_latency(market,"holds",started)
@@ -747,6 +766,23 @@ class Coordinator:
                 self._last_fetch_error[market]="COORD:"+type(exc).__name__
                 # A trend-only failure must not pause native AT/MA entries.
             self.stop_event.wait(.45)
+
+    def _preclose_loop(self,market):
+        """Run the pre-existing -15s/-12s gates independently of slow IO.
+
+        Entry rules, 1-second decision timestamps and fail-closed freshness
+        are unchanged. This scheduling change prevents the score and holding
+        database workers from starving the single-second decision window.
+        """
+        while not self.stop_event.is_set():
+            started=time.monotonic()
+            try:
+                self._preclose_candidates(market,dt.datetime.now(mt.KST))
+            except Exception as exc:
+                self._last_fetch_error[market]='PRECLOSE:'+type(exc).__name__
+            finally:
+                self._record_latency(market,'preclose',started)
+            self.stop_event.wait(.20)
 
     def _watch_loop(self,market):
         """Record RSI<=40 internally; expose only RSI<=35 WATCH_PENDING.
@@ -763,6 +799,7 @@ class Coordinator:
                 for code in candidates:
                     raw=quotes.get(code)
                     if raw is None or since-raw[1]>3:
+                        self._entry_block_counts[market]['WATCH_TICK_STALE']+=1
                         for frame in mt.FRAMES:self.watch.discard(market,code,frame)
                         continue
                     price=raw[0]
@@ -777,10 +814,12 @@ class Coordinator:
                             continue
                         rows=self._closed_series(market,code,frame,finish)
                         if not rows:
+                            self._entry_block_counts[market]['WATCH_HISTORY_MISSING']+=1
                             self.watch.discard(market,code,frame)
                             continue
                         rsi=mt.rsi20([x['close'] for x in rows],price)
                         if rsi is None:
+                            self._entry_block_counts[market]['WATCH_RSI_UNAVAILABLE']+=1
                             self.watch.discard(market,code,frame)
                             continue
                         if rsi<=40:
@@ -792,6 +831,21 @@ class Coordinator:
             except Exception as exc:
                 self._last_fetch_error[market]='WATCH:'+type(exc).__name__
             self.stop_event.wait(5)
+
+    def _book_evidence_loop(self,market):
+        """Read-only, separately scheduled broker-book research collection.
+
+        Live bid/ask snapshots are never manufactured from candle prices.
+        Failures remain diagnostic, not a new reason to pause AT/MA or place
+        a market-trend order.
+        """
+        from ai_live_book_v058 import sample_runtime
+        while not self.stop_event.is_set():
+            try:
+                sample_runtime(self.rt.root,self.rt,market)
+            except Exception as exc:
+                self._last_fetch_error[market]="BOOK_EVIDENCE:"+type(exc).__name__
+            self.stop_event.wait(2)
 
     def _rank_loop(self,market):
         while not self.stop_event.is_set():
@@ -826,6 +880,8 @@ class Coordinator:
         for market in ("stock","coin"):
             for target in (lambda m=market:self._rank_loop(m),
                            lambda m=market:self._prefetch(m),
+                           lambda m=market:self._book_evidence_loop(m),
+                           lambda m=market:self._preclose_loop(m),
                            lambda m=market:self._watch_loop(m),
                            lambda m=market:self._loop(m)):
                 thread=threading.Thread(target=target,daemon=True,
@@ -860,7 +916,10 @@ class Coordinator:
                        for tf in mt.FRAMES} if hasattr(self,"standalone_wallet") else {}),
                     "status":self.mode_details[market],
                     "candidates":len(self._candidates[market]),
-                    "error":self._last_fetch_error.get(market,"")}
+                    "error":self._last_fetch_error.get(market,""),
+                    "entry_block_reasons":dict(self._entry_block_counts[market].most_common(18)),
+                    "rsi_basis":"WILDER_RSI_20_MAIN_ONLY",
+                    "rsi_signal_ma9_used":False}
                 if include_performance:
                     perf=self._performance[market]
                     stages={}

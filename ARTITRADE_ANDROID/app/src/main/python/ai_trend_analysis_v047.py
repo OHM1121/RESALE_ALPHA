@@ -193,6 +193,69 @@ def _by_frame(root,market,frame,events,positions,virtuals,contexts):
     }
 
 
+def _quantified_diagnosis(root,market,frame,metrics):
+    """Only verified, completed MT54 trades are used for numeric patterns.
+
+    Frequency denominator: every closed verified outcome in this timeframe.
+    No paper/live pooling is represented as an expected future success rate.
+    """
+    from ai_approved_collect_v048 import _research_rows
+    rows=_research_rows(root,market,"MARKET_TREND",strategy="trend")
+    cases=[]
+    for row in rows:
+        if row.get("frame")!=frame or not row.get("closed") or row.get("role")!="ACTUAL":
+            continue
+        try:
+            entry=json.loads(row.get("entry_json") or "{}")
+            post=json.loads(row.get("post_json") or "{}")
+            step=(post.get("14") or {}).get("value") or {}
+            if (step.get("sold_pct") or 0)<99.999:continue
+            roi=step.get("net_return_pct")
+            if roi is None:continue
+            gap=(entry.get("gap_pct") or {}).get("value")
+            spread=(entry.get("02") or {}).get("value")
+            cases.append((float(roi),float(gap) if gap is not None else None,
+                          float(spread) if spread is not None else None))
+        except (TypeError,ValueError,OverflowError,KeyError):continue
+    diagnosis={"cause":"체결시점 지표와 종료 손익의 연결자료 축적 중",
+               "decline":"종료 거래와 선행 지표의 반복 하락조건 비교 중",
+               "rise":"종료 거래와 선행 지표의 반복 상승조건 비교 중",
+               "confidence":"추가 검증 필요" if len(cases)<20 else "기간 분리검증 필요",
+               "sample_n":len(cases),"effect":None,
+               "recommendation":"수치가 검증된 선행조건의 추가 표본 확보 후 매수필터 검토"}
+    if not cases:return diagnosis
+    def condition(row,key):
+        return row[1] is not None and row[1]>=4 if key=="gap" else (
+            row[2] is not None and row[2]>=50)
+    def describe(key,rows,total,loss):
+        vals=[(r[1] if key=="gap" else r[2]) for r in rows]
+        if not vals:return None
+        import statistics
+        median=statistics.median(vals)
+        label=(f'진입 시가 갭 ≥ +4.0% (관측 중앙값 {median:+.2f}%)'
+               if key=="gap" else
+               f'진입 최우선호가 차이 ≥ 0.50% (관측 중앙값 {median/100:.2f}%)')
+        rate=100*len(rows)/total
+        outcome="손실" if loss else "수익"
+        if len(rows)<2:
+            return f'{label}이 {outcome}거래에서 단일 관측됨 ({rate:.1f}%) · 반복검증 필요'
+        return f'{label}이 {outcome}거래에 반복 관측됨 ({rate:.1f}%)'
+    for loss in (True,False):
+        matches=[]
+        for key in ("gap","spread"):
+            hit=[row for row in cases if (row[0]<0 if loss else row[0]>0)
+                 and condition(row,key)]
+            if hit:matches.append((len(hit),key,hit))
+        if matches:
+            _,key,hit=max(matches,key=lambda x:x[0])
+            finding=describe(key,hit,len(cases),loss)
+            if loss:
+                diagnosis["cause"]=finding
+                diagnosis["decline"]=finding
+            else:diagnosis["rise"]=finding
+    return diagnosis
+
+
 def _approved_metrics(root,market):
     try:
         from ai_approved_collect_v048 import summarize
@@ -210,6 +273,13 @@ def analyze(root,market):
     contexts=entry.captured(root,market,"MARKET_TREND")
     frames=[_by_frame(root,market,frame,data["events"],data["positions"],
                       data["virtual"],contexts) for frame in FRAMES]
+    approved=_approved_metrics(root,market)
+    for frame_result in frames:
+        frame=frame_result["frame"]
+        frame_result["diagnosis"]=_quantified_diagnosis(root,market,frame,approved)
+        coverage=(approved.get("coverage_by_frame") or {}).get(frame) or {}
+        frame_result["coverage"]["spread_pct"]=(coverage.get("02") or {}).get("pct") or 0
+        frame_result["coverage"]["gap_pct"]=(coverage.get("gap_pct") or {}).get("pct") or 0
     return {
         "ok":True,"scope":market+"/trend","schema":"ARTITRADE_AI_TREND_V047",
         "market":market,"strategy":"trend","entry_mode":"MARKET_TREND",
@@ -231,7 +301,7 @@ def analyze(root,market):
             "virtual_rows_loaded":len(data["virtual"]),
             "source_rows_truncated":False,
             "all_original_rows_in_verified_export":True},
-        "approved_metrics_v048":_approved_metrics(root,market),
+        "approved_metrics_v048":approved,
         "market_trend_rsi20":{
             "signals":sum(x["signals"] for x in frames),
             "filled":sum(x["market_trend_rsi20"]["confirmed_buy_fills"] for x in frames),
