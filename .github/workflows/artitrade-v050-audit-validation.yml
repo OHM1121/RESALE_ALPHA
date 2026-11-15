@@ -2,10 +2,10 @@ name: ARTITRADE v0.7.50 Unified Safety Validation
 on:
   push:
     branches:
-      - fix-artitrade-unified-v050-20261115
+      - fix-artitrade-unified-v050-audit-20261115
     paths:
       - 'ARTITRADE_ANDROID/**'
-      - '.github/workflows/artitrade-v050-unified-safe-signed.yml'
+      - '.github/workflows/artitrade-v050-audit-validation.yml'
   workflow_dispatch:
 
 permissions:
