@@ -73,7 +73,7 @@ class PersistenceAndExportTests(unittest.TestCase):
         self.assertEqual(self.query_audit(
             "SELECT COUNT(*) FROM observations WHERE record_kind='VIRTUAL'"),6)
         self.assertEqual(self.query_audit(
-            "SELECT COUNT(*) FROM observations WHERE record_kind='ACTUAL'"),9)
+            "SELECT COUNT(*) FROM observations WHERE record_kind='UNVERIFIED_LEDGER'"),9)
         self.assertEqual(audit.capture(str(self.root))["added_observations"],0)
         db=self.dbs["coin/base/upbit_paper.sqlite3"]
         with sqlite3.connect(db) as c:
@@ -89,7 +89,7 @@ class PersistenceAndExportTests(unittest.TestCase):
         with sqlite3.connect(self.root/audit.AUDIT_REL) as c:
             rows=c.execute("SELECT DISTINCT record_kind FROM observations").fetchall()
             stamp=c.execute("SELECT observed_at_kst FROM observations LIMIT 1").fetchone()[0]
-        self.assertIn(("ACTUAL",),rows)
+        self.assertIn(("UNVERIFIED_LEDGER",),rows)
         self.assertIn(("VIRTUAL",),rows)
         self.assertIn(("SIGNAL_AND_RESEARCH",),rows)
         self.assertRegex(stamp,r"\+09:00$")
