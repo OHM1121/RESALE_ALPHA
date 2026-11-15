@@ -283,7 +283,7 @@ def fixtures():
         tree=choose("체결이력")
         check_screen(label+"_executions",[label+"_매도","손절 기준 도달","09:30:00 KST"])
         tree=choose("연구자료")
-        check_screen(label+"_research",["개별 연구 판단 근거",label+"_연구"],scroll=6)
+        check_screen(label+"_research",["개별 연구 판단 근거",label+"_연구"],scroll=16)
         tree=choose("대시보드")
         print("FIXTURE_STRATEGY_OK",market,strategy,label,flush=True)
     verify_no_fatal("fixtures")
