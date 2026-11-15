@@ -259,6 +259,13 @@ def _ma_exit(self,c,p,bid,now,book,native):
     actual=self._sell(c,p,size,int(bid),now,reason,book)
     if not actual:return
     applied=rule.quantity_after_fill(updated,reason,actual)
+    if reason=='MA_V061_FIRST_20PCT' and (
+            rule.dec(state.get('first_sold')) or Decimal(0))==0:
+        fill=c.execute("""SELECT price FROM executions
+            WHERE position_id=? AND side='SELL'
+            ORDER BY id DESC LIMIT 1""",(p['id'],)).fetchone()
+        if fill and rule.dec(fill['price']) is not None:
+            applied['first_anchor']=str(fill['price'])
     c.execute("""UPDATE ma_v061_positions SET state_json=?,updated_at=?
         WHERE position_id=?""",
         (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
