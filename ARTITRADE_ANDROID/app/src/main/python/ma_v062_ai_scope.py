@@ -46,11 +46,11 @@ def install():
                         market,strategy,report,when)
     journal.save_report=save
 
-    old_rebuild=lifecycle.rebuild_lifecycle
+    old_rebuild=lifecycle.rebuild
     def rebuild(root,market,strategy,*args,**kwargs):
         return old_rebuild(ai_root(root) if strategy=="ma" else root,
                            market,strategy,*args,**kwargs)
-    lifecycle.rebuild_lifecycle=rebuild
+    lifecycle.rebuild=rebuild
 
     old_comprehensive=comprehensive.analyze
     def analyze(root,market,strategy,*args,**kwargs):
