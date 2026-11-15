@@ -120,7 +120,8 @@ class Coordinator:
         self.stop_event=threading.Event()
         self.lock=threading.RLock()
         self.threads=[]
-        self.modes={"stock":"PAUSED","coin":"PAUSED"}
+        # Independent trend failures must not gate the native AT/MA engines.
+        self.modes={"stock":"ORIGINAL","coin":"ORIGINAL"}
         self.scores={"stock":None,"coin":None}
         self.mode_details={"stock":"","coin":""}
         self._candidates={"stock":{},"coin":{}}
@@ -131,6 +132,7 @@ class Coordinator:
         self._last_closed={}
         self._prechecked={}
         self._ordered=set()
+        self._last_signal_prune=0.0
         self._fair={"stock":0,"coin":0}
         self._positions={}
         self._virtual={}
@@ -156,6 +158,9 @@ class Coordinator:
 
     def _recover_positions(self):
         for record in self.journal.open_positions():
+            # v054 stop metadata accidentally stored as parent position in an
+            # earlier release. MT54 positions are canonical only in MT54 DB.
+            if record["strategy"]=="trend":continue
             try:
                 data=json.loads(record["payload"])
                 p=mt.TrendPosition(record["market"],record["strategy"],record["frame"],
@@ -521,7 +526,40 @@ class Coordinator:
                 if virtual_changed:
                     self.journal.save_virtual(json.dumps(virtual_key,ensure_ascii=False),v)
 
+    def _prune_evaluation_cache(self,now):
+        """Bound pre-close signal evidence without discarding current bars.
+
+        One checked RSI per (market,symbol,frame,bar) can accumulate many
+        thousands of keys per day. Keys with an end >2 hours in the past
+        cannot lead to any new order and are safe to discard from memory.
+        Persisted latches and execution event keys remain unchanged.
+        """
+        checked=getattr(self,'_prechecked',None)
+        ordered=getattr(self,'_ordered',None)
+        if checked is None or ordered is None:return
+        if len(checked)+len(ordered)<3000:return
+        mono=time.monotonic()
+        last=getattr(self,'_last_signal_prune',0.0)
+        if last and mono-last<300:return
+        self._last_signal_prune=mono
+        cutoff=(_when(now)-dt.timedelta(hours=2)).isoformat()
+        with self.lock:
+            for key in tuple(self._prechecked):
+                if key[3]<cutoff:self._prechecked.pop(key,None)
+            for key in tuple(self._ordered):
+                if key[3]<cutoff:self._ordered.discard(key)
+
+    @staticmethod
+    def _evaluation_window_passed(now,finish,frame,market):
+        """A missed one-second decision must still expire the RSI35 watch."""
+        target=finish-dt.timedelta(seconds=12)
+        if (market=='stock' and frame in ('30m','60m','day')
+                and finish==mt._krx_session_close(now)):
+            target=finish-dt.timedelta(minutes=10,seconds=12)
+        return now>=target+dt.timedelta(seconds=1)
+
     def _preclose_candidates(self,market,now):
+        self._prune_evaluation_cache(now)
         # Independent trend evaluates regardless of the signed market score.
         # Score bypass must never permit KRX trading outside regular session.
         if market=="stock":
@@ -533,6 +571,12 @@ class Coordinator:
         for frame in mt.FRAMES:
             finish=_end_clock(now,market,frame)
             if finish is None:continue
+            barid=finish.isoformat()
+            if self._evaluation_window_passed(now,finish,frame,market):
+                if self._sealed_watch.get((market,frame))!=barid:
+                    self._sealed_watch[(market,frame)]=barid
+                    self.watch.expire(market,frame,barid)
+                continue
             check=mt.live_rsi_check_due(now,finish,frame,market)
             submit=mt.preclose_due(now,finish,frame,market)
             if check or submit:
@@ -576,7 +620,8 @@ class Coordinator:
         for code,signals in due.items():
             # Broker/ledger duplicate checks and a durable filled-stop ban are
             # mandatory before an entry can consume parent-strategy cash.
-            if self.journal.stop_reentry_blocked(market,code,now):
+            if (self.journal.stop_reentry_blocked(market,code,now) or
+                self.standalone_wallet.stop_reentry_blocked(market,code,now)):
                 for frame,_,barid,_ in signals:
                     self._ordered.add((market,code,frame,barid))
                 continue
@@ -591,6 +636,7 @@ class Coordinator:
             name=str(candidates[code][1]) if isinstance(candidates[code],(tuple,list)) else code
             disposition="NO_FILL"
             result=None
+            unsafe_result=False
             try:
                 p,disposition=self.standalone_wallet.buy(market,frame,code,name,
                         q["ask"],q["ask_size"],now,barid,rsi)
@@ -598,18 +644,22 @@ class Coordinator:
                     self._positions[(market,assigned,frame,code)]=p;result=p
             except Exception as exc:
                 disposition="UNSAFE:"+type(exc).__name__
+                unsafe_result=True
                 self._last_fetch_error[market]=disposition
+            if str(disposition).startswith(('BROKER:', 'UNSAFE:')):
+                unsafe_result=True
             # ACTUAL is reserved for broker-confirmed fills, PAPER for
             # simulated fills, and VIRTUAL for missed / unfilled signals.
             signal_mode=("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
-                         else "PAPER") if result else "VIRTUAL"
+                         else "PAPER") if result else ("UNSAFE" if unsafe_result else "VIRTUAL")
             self.journal.event("MT54:SIG:"+market+":"+code+":"+frame+":"+barid,
                 market,assigned,frame,code,signal_mode,
                 disposition,price=q["ask"],rsi20_live=rsi,
                 payload={"selected_frame":frame,"score":self.scores.get(market),
                          "execution_mode":signal_mode})
-            if not result:
-                # Missed actual entry is shadow-only; never reserves wallet cash.
+            if not result and not unsafe_result:
+                # Only a confirmed unfilled entry is a counterfactual trade.
+                # Unknown broker outcomes must never become invented VIRTUALs.
                 try:
                     v=mt.TrendPosition(market,assigned,frame,code,now,q["ask"],1,barid)
                     key=(market,assigned,frame,code,barid)
@@ -631,17 +681,16 @@ class Coordinator:
                 try:
                     owner=self.standalone_wallet if p.strategy=='trend' else self.wallet
                     sold,status=owner.sell(p,q["bid"],now,result[0],bid_size=q["bid_size"])
-                    if not sold and status in ("LIVE_POSITION_BROKER_DISABLED",
-                            "PAPER_POSITION_LIVE_MODE","POSITION_FILL_MODE_UNVERIFIED"):
+                    if not sold and (status in ("LIVE_POSITION_BROKER_DISABLED",
+                            "PAPER_POSITION_LIVE_MODE","POSITION_FILL_MODE_UNVERIFIED")
+                            or str(status).startswith(('BROKER:', 'UNSAFE:'))):
                         self._last_fetch_error[market]="SELL:"+status
                     if sold:
                         if result[0]=="MT_STOP_9PCT":
                             p.__dict__["stop_fill_at"]=now.isoformat()
                             if p.strategy=='trend':
                                 self.standalone_wallet.save_position(p)
-                                # A closed MT54 stop may populate the v043 dedicated
-                                # re-entry ban without borrowing any parent cash.
-                                self.journal.save_position(p,p.position_id)
+                                self.journal.record_stop_fill(p.market,p.symbol,now)
                             else:self.journal.save_position(p,p.position_id)
                         if p.qty<=0:self._positions.pop(key,None)
                 except Exception as exc:
@@ -696,7 +745,7 @@ class Coordinator:
                 finally:self._record_latency(market,"holds",started)
             except Exception as exc:
                 self._last_fetch_error[market]="COORD:"+type(exc).__name__
-                self.modes[market]="PAUSED"
+                # A trend-only failure must not pause native AT/MA entries.
             self.stop_event.wait(.45)
 
     def _watch_loop(self,market):
@@ -742,7 +791,7 @@ class Coordinator:
                             observed_at=time.time(),price=price)
             except Exception as exc:
                 self._last_fetch_error[market]='WATCH:'+type(exc).__name__
-            self.stop_event.wait(30)
+            self.stop_event.wait(5)
 
     def _rank_loop(self,market):
         while not self.stop_event.is_set():
@@ -911,10 +960,12 @@ class Coordinator:
                   "score":None,"bought":x["mode"] in ("ACTUAL","PAPER"),
                   "entry_observed":x["mode"]=="VIRTUAL",
                   "execution_mode":"UNKNOWN_FILLED_LEDGER" if x["mode"]=="ACTUAL"
-                      else "PAPER" if x["mode"]=="PAPER" else "SHADOW_UNFILLED",
+                      else "PAPER" if x["mode"]=="PAPER" else
+                      "UNVERIFIED_ORDER" if x["mode"]=="UNSAFE" else "SHADOW_UNFILLED",
                   "reason":x["reason"],"price":x["price"],
                   "outcome":"REAL_FILL" if x["mode"]=="ACTUAL" else
-                      "PAPER_FILL" if x["mode"]=="PAPER" else "VIRTUAL"}
+                      "PAPER_FILL" if x["mode"]=="PAPER" else
+                      "UNVERIFIED_ORDER" if x["mode"]=="UNSAFE" else "VIRTUAL"}
             try:
                 info=json.loads(x["payload"])
                 item["score"]=info.get("score")

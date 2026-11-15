@@ -117,6 +117,39 @@ class TrendWalletV054:
                           (symbol,)).fetchone()
             return bool(row)
 
+    def stop_reentry_blocked(self,market,symbol,at):
+        """Recover the stop-loss ban from the authoritative MT54 SELL ledger.
+
+        This also survives a crash between the trade commit and the optional
+        legacy-journal reentry marker, without duplicating any position.
+        """
+        day=_as_kst(at).date().isoformat()
+        with self._connect(market) as c:
+            return c.execute("""SELECT 1 FROM executions
+                WHERE side='SELL' AND reason='MT_STOP_9PCT' AND symbol=?
+                  AND substr(at,1,10)=? LIMIT 1""",(symbol,day)).fetchone() is not None
+
+    @staticmethod
+    def _check_fill(fill,requested_qty,mode,market,budget=None):
+        """Validate broker/PAPER fill provenance and limits before ledger IO."""
+        try:
+            qty=float(fill['qty']);price=float(fill['price'])
+            received=str(fill['mode'])
+        except (TypeError,KeyError,ValueError,OverflowError) as exc:
+            raise UnsafeFill('BROKER_FILL_FIELDS_UNVERIFIED') from exc
+        requested=float(requested_qty)
+        if (received!=mode or not all(math.isfinite(x) for x in (qty,price,requested))
+                or qty<=0 or price<=0 or requested<=0
+                or qty>requested+max(1e-8,requested*1e-9)
+                or (market=='stock' and abs(qty-round(qty))>1e-8)):
+            raise UnsafeFill('BROKER_FILL_QTY_OR_MODE_UNVERIFIED')
+        if budget is not None:
+            gross=_money(qty*price)
+            fee=_money(gross*(STOCK_FEE if market=='stock' else COIN_FEE))
+            if gross+fee>budget:
+                raise UnsafeFill('BROKER_FILL_EXCEEDS_SLOT_BUDGET')
+        return qty,price
+
     def _is_live(self,market):
         try:
             approved=bool(getattr(self.rt,'trend_live_enabled',lambda _:False)(market))
@@ -169,6 +202,9 @@ class TrendWalletV054:
                 with self._connect(market) as c:
                     r=c.execute('SELECT * FROM accounts WHERE tf=?',(frame,)).fetchone()
                     if r is None:return None,'MISSING_TREND_FRAME'
+                    if c.execute('SELECT 1 FROM executions WHERE event_key=? LIMIT 1',
+                                 (key,)).fetchone():
+                        return None,'ENTRY_ALREADY_PROCESSED_BAR'
                     held=c.execute("SELECT COUNT(*) FROM positions WHERE tf=? AND status='TREND_OPEN'",
                                    (frame,)).fetchone()[0]
                     if int(held)>=int(r['max_positions']):return None,'FRAME_MAX_POSITIONS'
@@ -197,7 +233,13 @@ class TrendWalletV054:
                         try:self.rt.halt_market(market,'MT54_BUY_UNCERTAIN',exc)
                         except Exception:pass
                     return None,'BROKER:'+type(exc).__name__
-                real_qty=float(filled['qty']);real_price=float(filled['price'])
+                try:
+                    real_qty,real_price=self._check_fill(filled,qty,mode,market,budget)
+                except UnsafeFill as exc:
+                    if mode=='LIVE':
+                        try:self.rt.halt_market(market,'MT54_BUY_FILL_UNVERIFIED',exc)
+                        except Exception:pass
+                    raise
                 total=_money(real_qty*real_price)
                 real_fee=_money(total*(STOCK_FEE if market=='stock' else COIN_FEE))
                 try:
@@ -240,7 +282,7 @@ class TrendWalletV054:
         if pos.strategy!='trend':raise UnsafeFill('WRONG_POSITION_OWNER')
         with self.order_lock,self._connect(pos.market) as c:
             c.execute('''UPDATE positions SET qty=?,mark=?,status=?,payload=?,updated_at=?
-                         WHERE id=? AND tf=? AND symbol=?''',
+                         WHERE id=? AND tf=? AND symbol=? AND status='TREND_OPEN' ''',
                       (pos.qty,pos.last_price,'TREND_OPEN' if pos.qty>0 else 'CLOSED',
                        json.dumps(pos.to_dict(),ensure_ascii=False),dt.datetime.now(KST).isoformat(),
                        int(pos.position_id),pos.frame,pos.symbol))
@@ -273,6 +315,10 @@ class TrendWalletV054:
                 r=c.execute('SELECT * FROM positions WHERE id=? AND tf=? AND symbol=? AND status=?',
                            (int(pos.position_id),frame,symbol,'TREND_OPEN')).fetchone()
                 if r is None:return 0,'NOT_OPEN'
+                key='MT54:SELL:'+':'.join((market,str(pos.position_id),reason,str(int(at.timestamp()))))
+                if c.execute('SELECT 1 FROM executions WHERE event_key=? LIMIT 1',
+                             (key,)).fetchone():
+                    return 0,'SALE_ALREADY_PROCESSED_SECOND'
                 if pos.execution_mode!='PAPER' and not self._is_live(market):
                     return 0,'LIVE_POSITION_BROKER_DISABLED'
                 if pos.execution_mode=='PAPER' and self._is_live(market):
@@ -297,7 +343,6 @@ class TrendWalletV054:
                     limit=_coin_qty(Decimal(str(bid_size))*Decimal('.5'))
                     qty=min(_coin_qty(balance if fraction>=.999 else balance*fraction),limit)
                 if qty<=0:return 0,'INSUFFICIENT_FRESH_BID_DEPTH'
-            key='MT54:SELL:'+':'.join((market,str(pos.position_id),reason,str(int(at.timestamp()))))
             mode=str(pos.execution_mode)
             try:
                 fill=self._order_fill(market,symbol,'SELL',qty,price,key,reason)
@@ -306,7 +351,13 @@ class TrendWalletV054:
                     try:self.rt.halt_market(market,'MT54_SELL_UNCERTAIN',exc)
                     except Exception:pass
                 return 0,'BROKER:'+type(exc).__name__
-            sold=float(fill['qty']);px=float(fill['price'])
+            try:
+                sold,px=self._check_fill(fill,qty,mode,market)
+            except UnsafeFill as exc:
+                if mode=='LIVE':
+                    try:self.rt.halt_market(market,'MT54_SELL_FILL_UNVERIFIED',exc)
+                    except Exception:pass
+                raise
             gross=_money(sold*px)
             fee=_money(gross*(STOCK_FEE if market=='stock' else COIN_FEE))
             tax=_money(gross*STOCK_SELL_TAX) if market=='stock' else 0
@@ -323,16 +374,21 @@ class TrendWalletV054:
                     c.execute('UPDATE accounts SET cash=cash+?,realized=realized+? WHERE tf=?',
                               (gross-fee-tax,pnl,frame))
                     new_cash=c.execute('SELECT cash FROM accounts WHERE tf=?',(frame,)).fetchone()[0]
-                    pos.apply_sell(reason,sold,px)
+                    # Never mutate the in-memory position until the DB transaction
+                    # commits: a failed write must not desynchronize next sells.
+                    import copy
+                    confirmed=copy.copy(pos)
+                    confirmed.apply_sell(reason,sold,px)
                     c.execute('''UPDATE positions SET qty=?,mark=?,status=?,payload=?,updated_at=? WHERE id=?''',
                               (rest,px,'CLOSED' if rest<=1e-8 else 'TREND_OPEN',
-                               json.dumps(pos.to_dict(),ensure_ascii=False),at.isoformat(),pos.position_id))
+                               json.dumps(confirmed.to_dict(),ensure_ascii=False),at.isoformat(),pos.position_id))
                     c.execute('''INSERT INTO executions(event_key,position_id,tf,symbol,at,side,qty,
                        price,fees,tax,net_pnl,cash_after,execution_mode,broker_order_id,reason)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (key,pos.position_id,frame,symbol,at.isoformat(),'SELL',sold,px,fee,tax,
                        pnl,new_cash,mode,str(fill.get('order_id') or ''),reason))
                     c.commit()
+                pos.__dict__.update(confirmed.__dict__)
             except Exception as exc:
                 if mode=='LIVE':
                     try:self.rt.halt_market(market,'MT54_LEDGER_AFTER_SELL',exc)
@@ -343,8 +399,16 @@ class TrendWalletV054:
     def snapshot(self,market):
         with self._connect(market) as c:
             accounts=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY tf')]
-            positions=[dict(r) for r in c.execute('SELECT * FROM positions ORDER BY id DESC LIMIT 500')]
+            # A high-turnover strategy can have >500 CLOSED rows while an
+            # older position is still open. Never omit a live holding from UI.
+            open_rows=[dict(r) for r in c.execute(
+                "SELECT * FROM positions WHERE status='TREND_OPEN' AND qty>0 ORDER BY id DESC")]
+            recent_closed=[dict(r) for r in c.execute(
+                "SELECT * FROM positions WHERE status!='TREND_OPEN' OR qty<=0 ORDER BY id DESC LIMIT 500")]
+            positions=sorted(open_rows+recent_closed,key=lambda r:r['id'],reverse=True)
             executions=[dict(r) for r in c.execute('SELECT * FROM executions ORDER BY id DESC LIMIT 1500')]
+            position_total=int(c.execute('SELECT COUNT(*) FROM positions').fetchone()[0])
+            execution_total=int(c.execute('SELECT COUNT(*) FROM executions').fetchone()[0])
         for p in positions:
             p.update({'code':p['symbol'],'market':p['symbol'] if market=='coin' else 'KRX',
                       'tf':p['tf'],'entry_price':p['entry'],'entry_at':p['entry_at'],
@@ -355,6 +419,8 @@ class TrendWalletV054:
             x.update({'code':x['symbol'],'market':x['symbol'] if market=='coin' else 'KRX',
                       'strategy':'trend','entry_mode':'MARKET_TREND'})
         return {'accounts':accounts,'positions':positions,'executions':executions,
+                'positions_source_total':position_total,'executions_source_total':execution_total,
+                'preview_truncated':len(positions)<position_total or len(executions)<execution_total,
                 'realized_pnl':sum(x['realized'] for x in accounts),
                 'unrealized_pnl':sum(p['paper_pnl'] for p in positions if p['status']=='TREND_OPEN'),
                 'pending':[],'strategy':'trend'}

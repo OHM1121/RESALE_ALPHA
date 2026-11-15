@@ -38,7 +38,12 @@ def _read(root,market,limit=None):
                   sql+=(" ORDER BY "+("at" if key=="events" else "updated_at")+
                         " DESC LIMIT ?")
                   params.append(int(limit))
-              result[key]=[dict(r) for r in c.execute(sql,params)]
+              rows=[dict(r) for r in c.execute(sql,params)]
+              # Pre-fix MT54 stops could leave a second 'trend' position in
+              # MT43 position_state. The standalone DB is authoritative; do
+              # not delete or rewrite the historical journal row.
+              result[key]=([r for r in rows if r.get('strategy')!='trend']
+                           if key=='positions' else rows)
     # New MT54 own ledger is read-only. Its synthetic decision rows are
     # deduplicated against MT54:SIG events in the original research journal.
     new_db=Path(root)/market/'trend'/'market_trend_wallet_v054.sqlite3'
@@ -47,6 +52,7 @@ def _read(root,market,limit=None):
             c.row_factory=sqlite3.Row
             existing={x['event_key'] for x in result['events']}
             positions=[dict(x) for x in c.execute('SELECT * FROM positions')]
+            bar_keys={int(p['id']):str(p['bar_key']) for p in positions}
             for p in positions:
                 data=json.loads(p.get('payload') or '{}')
                 result['positions'].append({'market':market,'strategy':'trend',
@@ -56,13 +62,14 @@ def _read(root,market,limit=None):
             for e in (dict(x) for x in c.execute('SELECT * FROM executions ORDER BY id')):
                 mode='ACTUAL' if e['execution_mode']=='LIVE' else 'PAPER'
                 if e['side']=='BUY':
-                    key='MT54:SIG:'+market+':'+e['symbol']+':'+e['tf']+':'+str(e['at'])
-                    prefix='MT54:SIG:'+market+':'+e['symbol']+':'+e['tf']+':'
-                    if not any(str(x).startswith(prefix) for x in existing):
+                    key='MT54:SIG:'+market+':'+e['symbol']+':'+e['tf']+':'+bar_keys.get(
+                        int(e['position_id']),str(e['at']))
+                    if key not in existing:
                         result['events'].append(dict(event_key=key,at=e['at'],market=market,
                              strategy='trend',frame=e['tf'],symbol=e['symbol'],
                              mode=mode,reason='BOUGHT',price=e['price'],
                              rsi20_live=None,payload='{}'))
+                        existing.add(key)
                     result['events'].append(dict(event_key=e['event_key']+':FILLED',
                         at=e['at'],market=market,strategy='trend',frame=e['tf'],
                         symbol=e['symbol'],mode=mode,reason='MT_BUY_FILLED',
@@ -247,7 +254,8 @@ def research_rows(root,market,limit=350):
         # fills. Preserve them as unverified unless provenance is explicit.
         origin=(("LIVE" if meta.get("execution_mode")=="ACTUAL"
                  else "UNKNOWN_FILLED_LEDGER") if e["mode"]=="ACTUAL"
-                else "PAPER" if e["mode"]=="PAPER" else "SHADOW_UNFILLED")
+                else "PAPER" if e["mode"]=="PAPER" else
+                "UNVERIFIED_ORDER" if e["mode"]=="UNSAFE" else "SHADOW_UNFILLED")
         rows.append({"id":key,"strategy":e["strategy"],
             "entry_mode":"MARKET_TREND","tf":e["frame"],"code":e["symbol"],
             "at":e["at"],"price":e["price"],
@@ -255,7 +263,8 @@ def research_rows(root,market,limit=350):
             "entry_observed":e["mode"]=="VIRTUAL","execution_mode":origin,
             "outcome":"REAL_FILL" if origin=="LIVE" else
                       "PAPER_FILL" if origin=="PAPER" else
-                      "UNVERIFIED_FILL" if origin=="UNKNOWN_FILLED_LEDGER" else "VIRTUAL",
+                      "UNVERIFIED_FILL" if origin=="UNKNOWN_FILLED_LEDGER" else
+                      "UNVERIFIED_ORDER" if origin=="UNVERIFIED_ORDER" else "VIRTUAL",
             "reason":e["reason"],"rsi20_live":e["rsi20_live"],
             "original_mode":e["mode"],"evidence_source":"TREND_JOURNAL_OR_STANDALONE_LEDGER"})
     return rows

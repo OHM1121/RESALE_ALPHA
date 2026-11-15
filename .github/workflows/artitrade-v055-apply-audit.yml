@@ -1,0 +1,72 @@
+name: ARTITRADE v055 audited market trend source patch
+on:
+  push:
+    branches:
+      - feature-artitrade-v055-market-trend-audit-20261115
+    paths:
+      - ARTITRADE_ANDROID/v055_audit_patch.xz.b64
+permissions:
+  contents: write
+jobs:
+  audit-patch:
+    if: "github.event.head_commit.message == 'ci: stage v055 market trend audit patch'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Check hash and apply audited diff without overwriting originals
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d ARTITRADE_ANDROID/v055_audit_patch.xz.b64 > /tmp/artitrade-v055.patch.xz
+          echo '14ba5e482759a9a14a6776afbcb2f98e6993bd6e0c997f66f82f8ac70b26f96d  /tmp/artitrade-v055.patch.xz' | sha256sum -c -
+          xz -dc /tmp/artitrade-v055.patch.xz > /tmp/artitrade-v055.patch
+          git apply --check --directory=ARTITRADE_ANDROID /tmp/artitrade-v055.patch
+          git apply --directory=ARTITRADE_ANDROID /tmp/artitrade-v055.patch
+          git rm ARTITRADE_ANDROID/v055_audit_patch.xz.b64
+          git add ARTITRADE_ANDROID
+          git diff --cached --check
+      - name: Verify first-run cache pruning under new runner uptime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py')
+          s=p.read_text()
+          old="if mono-getattr(self,'_last_signal_prune',0.0)<300:return"
+          new="last=getattr(self,'_last_signal_prune',0.0)\n        if last and mono-last<300:return"
+          assert old in s
+          p.write_text(s.replace(old,new))
+          t=Path('ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py')
+          v=t.read_text()
+          needle='    def test_partial_profit_sales_survive_restart_and_keep_frame_ledger(self):'
+          assert needle in v
+          test="    def test_new_process_prunes_old_cache_even_when_uptime_below_five_minutes(self):\n        from unittest.mock import patch\n        co=Coordinator(self.rt)\n        now=dt.datetime(2026,11,15,10,10,tzinfo=mt.KST)\n        past=(now-dt.timedelta(days=3)).isoformat()\n        for i in range(3500):\n            key=('coin','KRW-A'+str(i),'5m',past)\n            co._prechecked[key]=25\n            co._ordered.add(key)\n        with patch('market_trend_runtime_v043.time.monotonic',return_value=20.0):\n            co._prune_evaluation_cache(now)\n        self.assertLess(len(co._prechecked),100)\n        self.assertLess(len(co._ordered),100)\n\n"
+          assert 'test_new_process_prunes_old_cache' not in v
+          t.write_text(v.replace(needle,test+needle))
+          PY
+          git add ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py
+          git diff --cached --check
+      - name: New trading, history, watch and original regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v054_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v053_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v046_perf_evidence_ui.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v045_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v051_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v052_*.py' -v
+      - name: Commit verified changes exclusively to v055 development branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ARTITRADE Audit CI'
+          git config user.email 'artitrade-audit-ci@users.noreply.github.com'
+          git commit -m 'fix(v055): audit market trend fills, RSI35 watch, stops and history'
+          git push origin 'HEAD:refs/heads/feature-artitrade-v055-market-trend-audit-20261115'
