@@ -1785,7 +1785,28 @@ def _patched_gmo(self):
 
         gmo.start(lambda: self.stock_runner.api,
                   lambda: dict(self.stock_runner.market_map))
-    return _ORIG_PATCH_GMO(self)
+    # The v071 live bridge replaces GMO paper_match with a broker-only
+    # wrapper, which silently ignores all PAPER orders when live is OFF.
+    # Preserve the original simulated matcher and the explicitly labelled
+    # 0B PAPER proxy. Only dispatch to the broker wrapper while LIVE is ON.
+    engine=self.stock_runner.gmo.engine
+    if not hasattr(engine,"_android_original_paper_match_v050"):
+        engine._android_original_paper_match_v050=engine.paper_match
+        engine._android_original_print_proxy_v050=engine.paper_match_krx_print_proxy
+    _ORIG_PATCH_GMO(self)
+    broker_match=engine.paper_match
+    original_paper=engine._android_original_paper_match_v050
+    original_print=engine._android_original_print_proxy_v050
+    def mode_scoped_match(quote):
+        if self.live_enabled("stock"):
+            return broker_match(quote)
+        return original_paper(quote)
+    def mode_scoped_print(quote, volume, **kwargs):
+        if self.live_enabled("stock"):
+            return 0
+        return original_print(quote,volume,**kwargs)
+    engine.paper_match=mode_scoped_match
+    engine.paper_match_krx_print_proxy=mode_scoped_print
 
 
 def _patched_stop(self):
