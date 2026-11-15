@@ -9,6 +9,8 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
       - 'ARTITRADE_ANDROID/app/build.gradle'
       - 'ARTITRADE_ANDROID/ui_tests/test_v062_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v048_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v061_*.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v060_*.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v059_*.py'
