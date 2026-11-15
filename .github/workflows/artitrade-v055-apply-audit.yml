@@ -45,21 +45,7 @@ jobs:
           v=t.read_text()
           needle='    def test_partial_profit_sales_survive_restart_and_keep_frame_ledger(self):'
           assert needle in v
-          test='''    def test_new_process_prunes_old_cache_even_when_uptime_below_five_minutes(self):
-              from unittest.mock import patch
-              co=Coordinator(self.rt)
-              now=dt.datetime(2026,11,15,10,10,tzinfo=mt.KST)
-              past=(now-dt.timedelta(days=3)).isoformat()
-              for i in range(3500):
-                  key=('coin','KRW-A'+str(i),'5m',past)
-                  co._prechecked[key]=25
-                  co._ordered.add(key)
-              with patch('market_trend_runtime_v043.time.monotonic',return_value=20.0):
-                  co._prune_evaluation_cache(now)
-              self.assertLess(len(co._prechecked),100)
-              self.assertLess(len(co._ordered),100)
-
-          '''
+          test="    def test_new_process_prunes_old_cache_even_when_uptime_below_five_minutes(self):\n        from unittest.mock import patch\n        co=Coordinator(self.rt)\n        now=dt.datetime(2026,11,15,10,10,tzinfo=mt.KST)\n        past=(now-dt.timedelta(days=3)).isoformat()\n        for i in range(3500):\n            key=('coin','KRW-A'+str(i),'5m',past)\n            co._prechecked[key]=25\n            co._ordered.add(key)\n        with patch('market_trend_runtime_v043.time.monotonic',return_value=20.0):\n            co._prune_evaluation_cache(now)\n        self.assertLess(len(co._prechecked),100)\n        self.assertLess(len(co._ordered),100)\n\n"
           assert 'test_new_process_prunes_old_cache' not in v
           t.write_text(v.replace(needle,test+needle))
           PY
