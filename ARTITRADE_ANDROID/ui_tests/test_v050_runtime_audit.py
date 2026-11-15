@@ -22,36 +22,78 @@ def load_module(name,file):
 
 
 class V050Audit(TestCase):
-    def test_gmo_paper_and_live_are_routed_independently(self):
+    def test_gmo_paper_live_quote_scope_and_broker_provenance(self):
         source=(PY/"android_runtime_v078.py").read_text(encoding="utf-8")
         node=next(n for n in ast.parse(source).body
                   if isinstance(n,ast.FunctionDef) and n.name=="_patched_gmo")
         observed=[]
         class Engine:
-            def paper_match(self,q):observed.append(("ORIGINAL_PAPER",q))
+            def __init__(self):
+                self.orders={}
+            def paper_match(self,q):observed.append(("ORIGINAL_PAPER",q.code))
             def paper_match_krx_print_proxy(self,q,volume,**kw):
-                observed.append(("PAPER_0B",q,volume));return 1
+                observed.append(("PAPER_0B",q.code,volume));return 1
+            def _order(self,code,side,purpose,ref,limit,qty,at):
+                order=types.SimpleNamespace(id="GMO-"+str(len(self.orders)+1),code=code,
+                     state="NEW",side=side,purpose=purpose,limit=limit,
+                     requested=qty,filled=0,time=at)
+                self.orders[order.id]=order
+                return order
+            def _d1_buy_window_ok(self,order,at):return True
+            def mark_submitted(self,oid,at):self.orders[oid].state="OPEN"
+            def fill(self,oid,qty,price,at):
+                self.orders[oid].filled+=qty
+                self.orders[oid].state="FILLED"
+            def _log(self,*args):observed.append(("GMO_LOG",args))
         eng=Engine()
         gmo=types.SimpleNamespace(engine=eng)
-        rt=types.SimpleNamespace(
-            stock_runner=types.SimpleNamespace(gmo=gmo),
-            _live_stock=False,
-            live_enabled=lambda m:rt._live_stock)
+        rt=types.SimpleNamespace(stock_runner=types.SimpleNamespace(gmo=gmo),
+            _live_stock=False,_live={"stock":False},root="unused",
+            kiwoom=types.SimpleNamespace(fok=lambda *args: (
+              observed.append(("BROKER_FOK",args[0],args[1],args[2])) or
+              {"qty":args[3],"price":args[4],"order_id":"OID"})),
+            on_live_fill=lambda *args:observed.append(("LIVE_CONFIRMED",args)),
+            _err=lambda *args:observed.append(("RUNTIME_ERROR",args)))
+        rt.live_enabled=lambda m:rt._live_stock
         def original_live_patch(self):
-            # Reproduce v071 bridge replacement, not the original EXE's
-            # paper matcher: only a LIVE broker request gets through.
-            eng.paper_match=lambda q:observed.append(("BROKER_FOK",q)) if self._live_stock else None
+            eng.paper_match=lambda q:observed.append(("OLD_UNSCOPED_BROKER",q.code))
             eng.paper_match_krx_print_proxy=lambda *a,**k:0
-        scope={"_ORIG_PATCH_GMO":original_live_patch}
+        class NoFill(Exception):pass
+        scope={"_ORIG_PATCH_GMO":original_live_patch,
+               "_core":types.SimpleNamespace(LiveOrderNoFill=NoFill,_safe_key=lambda x:x),
+               "math":__import__("math"),"UnsafePaperExit":RuntimeError,
+               "refuse_paper_sell_if_live_open":lambda *a:None,
+               "verified_gmo_live_quantity":lambda *a:0}
         exec(compile(ast.Module(body=[node],type_ignores=[]),"<gmo>",'exec'),scope)
         scope["_patched_gmo"](rt)
-        eng.paper_match("signal-1")
-        self.assertEqual(observed[-1],("ORIGINAL_PAPER","signal-1"))
-        self.assertEqual(eng.paper_match_krx_print_proxy("tick",20,buy_missing_book=True,sell_missing_book=False),1)
+        q=lambda code,lag=0.5:types.SimpleNamespace(
+            code=code,venue="KRX",receive_delay_seconds=lag,
+            ask=100,ask_size=10,bid=99,bid_size=10,trading_day_index=1,
+            at="2026-11-19T09:00:00+09:00")
+        eng.paper_match(q("005930"))
+        self.assertEqual(observed[-1],("ORIGINAL_PAPER","005930"))
+        self.assertEqual(eng.paper_match_krx_print_proxy(q("005930"),20,
+                         buy_missing_book=True,sell_missing_book=False),1)
+        # An old PAPER order must not be submitted to a real broker on arm.
+        old=eng._order("005930","BUY","D+1_PAPER",100,100,1,q("005930").at)
         rt._live_stock=True
-        eng.paper_match("signal-2")
-        self.assertEqual(observed[-1],("BROKER_FOK","signal-2"))
-        self.assertEqual(eng.paper_match_krx_print_proxy("tick",20,buy_missing_book=True,sell_missing_book=False),0)
+        live=eng._order("005930","BUY","D+1_LIVE",100,100,2,q("005930").at)
+        eng.paper_match(q("000660"))
+        eng.paper_match(q("005930",lag=10))
+        self.assertEqual(len([x for x in observed if x[0]=="BROKER_FOK"]),0)
+        eng.paper_match(q("005930"))
+        placed=[x for x in observed if x[0]=="BROKER_FOK"]
+        self.assertEqual(len(placed),1)
+        self.assertEqual(placed[0][2],"BUY")
+        self.assertEqual(old.state,"NEW")
+        self.assertEqual(live.state,"FILLED")
+        self.assertEqual(eng.paper_match_krx_print_proxy(q("005930"),20,
+                         buy_missing_book=True,sell_missing_book=False),0)
+        # A PAPER position may never trigger a live SELL without GMO broker
+        # position provenance even when a valid top-of-book quote exists.
+        eng._order("005930","SELL","TP1",95,95,1,q("005930").at)
+        eng.paper_match(q("005930"))
+        self.assertEqual(len([x for x in observed if x[0]=="BROKER_FOK"]),1)
 
     def test_corrupt_settings_are_preserved_and_not_replaced_with_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:
