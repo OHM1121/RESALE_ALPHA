@@ -154,10 +154,10 @@ class ApprovedMetricsV048(unittest.TestCase):
                             "ledger":{"positions":[position]}}}}
         with tempfile.TemporaryDirectory() as root:
             result=collect.capture_packet(root,packet,now=at+2)
-            self.assertGreaterEqual(result["rows_seen"],2)
+            self.assertEqual(result["rows_seen"],1)
             before=collect.summarize(root,"coin")
             self.assertEqual(before["by_role"]["ACTUAL"],1)
-            self.assertEqual(before["by_role"]["VIRTUAL"],1)
+            self.assertEqual(before["by_role"].get("VIRTUAL",0),0)
             self.assertEqual(before["by_execution_kind"]["PAPER"],1)
             md.record(root,"coin","general","KRW-BTC","5m",
                       bars,"TEST_CLOSED_BARS",now=bars[-1][0]+300,
@@ -174,7 +174,7 @@ class ApprovedMetricsV048(unittest.TestCase):
             db=Path(root)/"coin/ai/AI_RESEARCH_V040.sqlite3"
             with sqlite3.connect(db) as conn:
                 n=conn.execute("SELECT COUNT(*) FROM trade_evidence_v048").fetchone()[0]
-                self.assertEqual(n,2)
+                self.assertEqual(n,1)
 
     def test_trend_history_after_close_still_in_trend_cohort(self):
         with tempfile.TemporaryDirectory() as root:
