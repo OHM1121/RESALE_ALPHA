@@ -1904,6 +1904,11 @@ _core.Runtime._stock_at_ledger = _stock_at_ledger_v19
 _core.Runtime.hub_records = _hub_records_v078
 _core.Runtime.stop = _patched_stop
 
+# v0.7.59: integrity guard on *completed* reference candles. Reuses the
+# current original Upbit/KRX scanner and account-specific source ledgers.
+from reference_integrity_v059 import install as _install_reference_integrity_v059
+_install_reference_integrity_v059()
+
 # v0.7.43: market trend is an AT/MA entry mode, never an independent account.
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
