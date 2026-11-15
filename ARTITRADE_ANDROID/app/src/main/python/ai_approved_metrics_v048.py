@@ -129,6 +129,34 @@ def _norm_bars(bars):
         except (TypeError,ValueError,IndexError,OverflowError):continue
     return [clean[t] for t in sorted(clean)]
 
+def entry_open_gap(bars,entry_ts,frame):
+    """True entry-candle open vs preceding completed candle close, in percent.
+
+    Missing original opens remain NULL; the last trade price is never used as
+    an opening-price substitute. Bars may arrive after candle finalization,
+    since the OPEN value occurred no later than this bar's entry timestamp.
+    """
+    period=PERIOD.get(frame)
+    if period is None:return _metric(reason="UNKNOWN_TIMEFRAME")
+    series=_norm_bars(bars)
+    for index,bar in enumerate(series):
+        if not bar[0]<=entry_ts<bar[0]+period:continue
+        if index==0:return _metric(reason="NO_PREVIOUS_COMPLETED_CANDLE")
+        prev=series[index-1]
+        opened=_num(bar[6])
+        previous_close=_num(prev[3])
+        if opened is None or opened<=0:
+            return _metric(reason="ENTRY_CANDLE_OPEN_UNAVAILABLE")
+        if previous_close is None or previous_close<=0:
+            return _metric(reason="PREVIOUS_CLOSE_UNAVAILABLE")
+        gap=round(100*(opened/previous_close-1),6)
+        return _metric(gap,source="VERIFIED_ENTRY_OPEN_AND_PREVIOUS_CLOSE",
+                       unit="pct",opening_price=opened,
+                       previous_close=previous_close,
+                       formula="100*(entry_candle_open/previous_close-1)")
+    return _metric(reason="ENTRY_CANDLE_NOT_IN_AVAILABLE_HISTORY")
+
+
 def entry_technicals(bars,entry_ts,frame,entry_price=None,asof=None):
     """Compute #09 after close, #10/#11 from predecessor CLOSED candles only."""
     seconds=PERIOD.get(frame)
