@@ -3024,6 +3024,8 @@ public final class UnifiedVisualActivity extends Activity {
         fields.setPadding(0,dp(4),0,dp(5));
         historyEvidenceCell(fields,"매매전략",HistorySelection.strategyTag(item.source,item.frame),112);
         historyEvidenceCell(fields,"체결시각",fillTimeOf(r,"executions",item.source),148);
+        historyEvidenceCell(fields,"기준봉·D일·매수일",
+            referenceTimelineOf(r,item.source),198);
         historyEvidenceCell(fields,"체결구분",tradeSideOf(r),78);
         historyEvidenceCell(fields,"체결가",formatMaybeMoney(r,"price","fill_price"),116);
         historyEvidenceCell(fields,"체결수량",formatMaybeNumber(r,"qty","fill_qty"),106);
@@ -3035,7 +3037,7 @@ public final class UnifiedVisualActivity extends Activity {
         historyEvidenceCell(fields,"매도 이후 고가",
             e.has("post_sale_peak")?money(e.optDouble("post_sale_peak")):"미기록",136);
         historyEvidenceCell(fields,"매수가 대비 고가",
-            evidenceValue(e,"post_sale_peak_pct_from_buy","%"),133);
+            evidencePercent3(e,"post_sale_peak_pct_from_buy"),133);
         historyEvidenceCell(fields,"후속 관측상태",evidenceValue(e,"post_sale_state",""),146);
         historyEvidenceCell(fields,"포지션 ID",
             r.optString("position_id",r.optString("source_position_id","미기록")),210);
@@ -3173,9 +3175,11 @@ public final class UnifiedVisualActivity extends Activity {
                 panel.addView(pathView,new LinearLayout.LayoutParams(-1,dp(24)));
             }
             String time=fillTimeOf(r,kind,source);
-            TextView when=text("executions".equals(kind)?"체결  "+time:
-                "positions".equals(kind)?"매수  "+time:"접수  "+time,12);
-            when.setTextColor(Color.rgb(151,175,198));when.setMaxLines(4);
+            String phaseLine=referenceTimelineOf(r,source);
+            TextView when=text(("executions".equals(kind)?"체결  "+time:
+                "positions".equals(kind)?"매수  "+time:"접수  "+time)+
+                "\n"+phaseLine,12);
+            when.setTextColor(Color.rgb(151,175,198));when.setMaxLines(5);
             TextView scenario=null;
             if("positions".equals(kind)){
                 scenario=text(scenarioSummary(r),12);
@@ -3294,7 +3298,7 @@ public final class UnifiedVisualActivity extends Activity {
         }
         String id="policy/"+market+"/"+scopeStrategy;
         ColumnQueryV036 query=tableQuery(id,"identity","side","reason","when",
-            "score","price","qty","pnl","position_id","ai_sources",
+            "reference","score","price","qty","pnl","position_id","ai_sources",
             "ai_factors","post_sale_peak","post_sale_pct","post_sale_state");
         File root=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
         java.util.NavigableMap<Long,Double> marketScores=
@@ -3308,6 +3312,7 @@ public final class UnifiedVisualActivity extends Activity {
             values.put("side",tradeSideOf(record));
             values.put("reason",tradeReasonOf(record,tradeSideOf(record)));
             values.put("when",fillTimeOf(record,"executions",item.source));
+            values.put("reference",referenceTimelineOf(record,item.source));
             Double recorded=MarketResearchScoreLookup.atTime(marketScores,item.at);
             values.put("score",recorded==null?"미기록":
                 String.format(Locale.KOREA,"%+.1f",recorded));
@@ -3321,8 +3326,8 @@ public final class UnifiedVisualActivity extends Activity {
             values.put("ai_factors",evidenceValue(evidence,"ai_factor_count","개"));
             values.put("post_sale_peak",evidence.has("post_sale_peak")?
                 money(evidence.optDouble("post_sale_peak")):"미기록");
-            values.put("post_sale_pct",evidenceValue(evidence,
-                "post_sale_peak_pct_from_buy","%"));
+            values.put("post_sale_pct",evidencePercent3(evidence,
+                "post_sale_peak_pct_from_buy"));
             values.put("post_sale_state",evidenceValue(evidence,"post_sale_state",""));
             cached.put(item,values);
         }
@@ -3378,6 +3383,7 @@ public final class UnifiedVisualActivity extends Activity {
                 "side".equals(column)?"매수 / 매도":
                 "reason".equals(column)?"판단 근거":
                 "when".equals(column)?"체결 시점":
+                "reference".equals(column)?"기준봉 발생 / D일 / 매수일":
                 "score".equals(column)?"당시 시장점수":
                 "price".equals(column)?"체결가":
                 "qty".equals(column)?"체결수량":
@@ -5643,6 +5649,36 @@ public final class UnifiedVisualActivity extends Activity {
         String raw=row.optString("side",row.optString("type",row.optString("action","")));
         return TradeExplanation.side(raw);
     }
+    /** Keep event/reference time separate from the actual broker/PAPER fill. */
+    private String referenceTimelineOf(JSONObject row,String originStrategy){
+        if("gmo".equals(originStrategy)){
+            Object day=firstValue(row,"gmo_d_day","gmo_event_date",
+                "event_date","event_day");
+            return "수급 D일  "+(day==null?"미기록":researchMoment(day));
+        }
+        if("close".equals(originStrategy)){
+            Object day=firstValue(row,"close_buy_date","entry_date",
+                "source_buy_at","buy_at","entry_at","entry_ts");
+            return "종가 매수일  "+(day==null?"미기록":researchMoment(day));
+        }
+        if("trend".equals(originStrategy)){
+            Object bar=firstValue(row,"bar_key","signal_bar_end");
+            return "RSI 판정봉  "+(bar==null?"미기록":researchMoment(bar));
+        }
+        Object ref=firstValue(row,"reference_candle_at","ref_ts","ref_at",
+            "reference_ts","reference_at","base_candle_time","selected_ref_at");
+        return "기준봉 발생  "+(ref==null?"미기록":researchMoment(ref));
+    }
+
+    private String evidencePercent3(JSONObject source,String key){
+        if(source==null||!source.has(key)||source.isNull(key))return "미기록";
+        Object raw=source.opt(key);
+        try{
+            double value=Double.parseDouble(String.valueOf(raw));
+            return finite(value)?String.format(Locale.KOREA,"%.3f%%",value):"미기록";
+        }catch(NumberFormatException error){return "미기록";}
+    }
+
     /** The execution fill timestamp must outrank reference-candle/event dates. */
     private String fillTimeOf(JSONObject row,String kind,String originStrategy){
         String[] keys="executions".equals(kind)?

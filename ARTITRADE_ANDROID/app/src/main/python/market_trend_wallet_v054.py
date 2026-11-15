@@ -1,6 +1,6 @@
 """Independent, per-timeframe MT54 ledger: never touches parent AT/MA cash.
 
-PAPER is the default, even when existing market LIVE is enabled. A separate
+Market trend follows the same independently approved market LIVE lease. No separate
 trend approval AND broker-live access are required for external orders. Every
 confirmed fill is journaled with source and broker evidence before reporting.
 """
@@ -151,10 +151,17 @@ class TrendWalletV054:
         return qty,price
 
     def _is_live(self,market):
+        """Mirror the already authorized market LIVE lease, without phantom second opt-in.
+
+        The original runtime/live proxy owns MSERVER approval and startup
+        disarming. No trend-specific flag exists or should silently force
+        PAPER while the original strategies trade LIVE. Per-position execution
+        provenance is still checked separately before any SELL.
+        """
         try:
-            approved=bool(getattr(self.rt,'trend_live_enabled',lambda _:False)(market))
-            return approved and bool(self.rt.live_enabled(market))
-        except Exception:return False
+            return market in ('stock','coin') and bool(self.rt.live_enabled(market))
+        except Exception:
+            return False
 
     def _order_fill(self,market,symbol,side,qty,price,event_key,reason):
         if not self._is_live(market):
@@ -274,6 +281,10 @@ class TrendWalletV054:
                         try:self.rt.halt_market(market,'MT54_LEDGER_AFTER_FILL',exc)
                         except Exception:pass
                     raise UnsafeFill('MT54_FILL_LEDGER_MISMATCH') from exc
+                if mode=='LIVE':
+                    try:self.rt.on_live_fill(market,'BUY',symbol,real_qty,real_price,filled,
+                        'MARKET_TREND_RSI20_BUY',strategy='trend',event_key=key)
+                    except Exception:pass
                 return pos,'BOUGHT'
             finally:
                 self._reservations.discard((market,symbol))
@@ -394,6 +405,10 @@ class TrendWalletV054:
                     try:self.rt.halt_market(market,'MT54_LEDGER_AFTER_SELL',exc)
                     except Exception:pass
                 raise UnsafeFill('MT54_SELL_LEDGER_MISMATCH') from exc
+            if mode=='LIVE':
+                try:self.rt.on_live_fill(market,'SELL',symbol,sold,px,fill,
+                    reason,strategy='trend',event_key=key)
+                except Exception:pass
             return sold,'SOLD'
 
     def snapshot(self,market):
