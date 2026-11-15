@@ -575,7 +575,8 @@ class Coordinator:
                 self._last_fetch_error[market]=disposition
             # ACTUAL is reserved for broker-confirmed fills, PAPER for
             # simulated fills, and VIRTUAL for missed / unfilled signals.
-            signal_mode=("ACTUAL" if self.rt.live_enabled(market) else "PAPER") if result else "VIRTUAL"
+            signal_mode=("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
+                         else "PAPER") if result else "VIRTUAL"
             self.journal.event("MT43:SIG:"+market+":"+code+":"+frame+":"+barid,
                 market,assigned,frame,code,signal_mode,
                 disposition,price=q["ask"],rsi20_live=rsi,
@@ -855,12 +856,20 @@ class Coordinator:
                   "rsi20_live":x["rsi20_live"],"rsi20_closed":x["rsi20_closed"],
                   "score":None,"bought":x["mode"] in ("ACTUAL","PAPER"),
                   "entry_observed":x["mode"]=="VIRTUAL",
-                  "execution_mode":"LIVE" if x["mode"]=="ACTUAL" else
-                      "PAPER" if x["mode"]=="PAPER" else "SHADOW_UNFILLED",
+                  "execution_mode":"UNKNOWN_FILLED_LEDGER" if x["mode"]=="ACTUAL"
+                      else "PAPER" if x["mode"]=="PAPER" else "SHADOW_UNFILLED",
                   "reason":x["reason"],"price":x["price"],
                   "outcome":"REAL_FILL" if x["mode"]=="ACTUAL" else
                       "PAPER_FILL" if x["mode"]=="PAPER" else "VIRTUAL"}
-            try:info=json.loads(x["payload"]);item["score"]=info.get("score")
+            try:
+                info=json.loads(x["payload"])
+                item["score"]=info.get("score")
+                # Historical ACTUAL signals were used for both paper and live.
+                # Only newer rows with explicit execution_mode can prove LIVE.
+                if x["mode"]=="ACTUAL" and info.get("execution_mode")=="ACTUAL":
+                    item["execution_mode"]="LIVE"
+                if item["execution_mode"]=="UNKNOWN_FILLED_LEDGER":
+                    item["outcome"]="UNVERIFIED_FILL"
             except (ValueError,TypeError):pass
             trend_research[x["market"]].append(item)
             if x["market"]=="stock":
