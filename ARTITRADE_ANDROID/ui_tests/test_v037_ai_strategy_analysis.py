@@ -20,7 +20,8 @@ class ReportContract(unittest.TestCase):
         self.assertIn('private void runAiAnalysis()', src)
         self.assertIn('private void renderAiAnalysis()', src)
         self.assertIn('getModule("ai_strategy_analysis_v040")', src)
-        self.assertIn('final String chosenMarket=market,chosenStrategy=strategy;', src)
+        self.assertIn('final String chosenMarket=market;', src)
+        self.assertIn('final String chosenStrategy=aiTrendOnly&&hasTrendCohort()?"trend":strategy;', src)
         self.assertIn('if(scope.equals(aiAnalysisScope))', src)
         for item in ("손실 선행조건", "반복 하락패턴", "반복 상승패턴",
                      "개선 전략", "정량 개선효과"):
