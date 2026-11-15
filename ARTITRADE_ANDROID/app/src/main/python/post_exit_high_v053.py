@@ -23,7 +23,7 @@ FILE="POST_EXIT_HIGH_V053.sqlite3"
 WINDOWS={"5m":5,"30m":5,"60m":10,"day":15,"gmo":5,"close":5}
 MAX_QUEUE=8192
 MAX_WATCH_STOCK=140
-MAX_WATCH_COIN=250
+MAX_WATCH_COIN=120
 
 
 def parsed_at(value):
@@ -110,6 +110,8 @@ class Tracker:
         self._dropped=0
         self._last_scan=0.0
         self._error=""
+        self._last_stock_watch_gap=0
+        self._last_coin_watch_gap=0
         self._init()
         self._refresh_watch()
 
@@ -321,7 +323,14 @@ class Tracker:
         instant=int(time.time() if now is None else now)
         scans,problems=scan(self.root,instant)
         added=0
+        # Historical pre-v053 closes are preserved in the original signed
+        # ledgers; there are no recorded post-sale ticks to backfill blindly.
+        # Only the recent 50 calendar days can have an active 15-session
+        # observation window, even accounting for long holidays.
+        recent=instant-50*86400
         for item in scans:
+            stamp=parsed_at(item.get("exit_at"))
+            if stamp is None or stamp.timestamp()<recent:continue
             try:self.register(**item);added+=1
             except (ValueError,TypeError,sqlite3.Error) as e:
                 problems.append("REGISTER:"+type(e).__name__+":"+str(e)[:100])
@@ -402,6 +411,8 @@ class Tracker:
             "cases":entries,"high_history_preview":recent,
             "total_cases":sum(x["n"] for x in counts),
             "dropped_ticks":self._dropped,
+            "unsubscribed_stock_tracking_symbols":self._last_stock_watch_gap,
+            "unsubscribed_coin_tracking_symbols":self._last_coin_watch_gap,
             "errors_in_journal":error_count,
             "last_error":self._error,
             "raw_research_db":self.path.relative_to(self.root).as_posix(),
