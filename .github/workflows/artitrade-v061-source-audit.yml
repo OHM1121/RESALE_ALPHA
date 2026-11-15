@@ -1,0 +1,47 @@
+name: ARTITRADE v061 original MA source audit
+on:
+  push:
+    branches: [ feature-artitrade-v061-ma-downturn-pivot-20261116 ]
+    paths: [ '.github/workflows/artitrade-v061-source-audit.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export-native-source-for-integrity-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and extract immutable original strategy source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile,shutil
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          assert hashlib.sha256(z).hexdigest()=='e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0'
+          dest=Path('/tmp/extracted_v070')
+          dest.mkdir(exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(z)) as archive:
+              archive.extractall(dest)
+          selected=['d_upbit.py','coin_ma_engine.py','coin_hold_policy.py','coin_v24_policy.py',
+                    'stock_ma_engine.py','d_storage.py','d_broker.py','d_stock.py',
+                    'stock_at_v19.py','stock_at_runner.py','stock_ma_service.py',
+                    'd_kiwoom.py','d_price.py']
+          out=Path('audit_v061');out.mkdir(exist_ok=True)
+          listing=[str(v.relative_to(dest)) for v in dest.rglob('*.py')]
+          (out/'source_manifest.txt').write_text('\n'.join(listing)+'\n',encoding='utf-8')
+          for name in selected:
+              matches=list(dest.rglob(name))
+              if matches:
+                  shutil.copy(matches[0],out/name)
+          print('EXE_V070_SOURCE_HASH_VERIFIED')
+          print('SELECTED_MODULES:',[q.name for q in out.iterdir()])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_v061_native_MA_source_for_code_audit
+          path: audit_v061/
+          retention-days: 2
+          if-no-files-found: error
