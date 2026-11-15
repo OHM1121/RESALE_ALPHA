@@ -106,6 +106,9 @@ def capture(root_path):
     stamp=datetime.now(KST).isoformat(timespec="seconds")
     with closing(sqlite3.connect(journal,timeout=15)) as output:
         _init(output)
+        # closing() does not commit a transaction. Persist migration metadata
+        # even when all source files are unchanged and their scans are skipped.
+        output.commit()
         for rel,strategy in SOURCES.items():
             source=root/rel
             if not source.is_file():
