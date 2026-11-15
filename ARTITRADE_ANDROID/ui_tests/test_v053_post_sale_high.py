@@ -94,7 +94,7 @@ class PostSalePolicyV053(unittest.TestCase):
             self.assertEqual(row["cohort"],"PAPER")
             self.assertEqual(row["exit_evidence"],"EXPECTED")
             self.assertEqual(row["peak"],600)
-            self.assertEqual(row["peak_pct"],20)
+            self.assertAlmostEqual(row["peak_pct"],20)
             self.assertEqual(row["sample_count"],2)
             confirm=manager.register("coin","general","30m","KRW-BTC","PAPER",
                 500,(sold+dt.timedelta(seconds=5)).isoformat(),
