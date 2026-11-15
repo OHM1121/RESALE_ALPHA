@@ -1786,8 +1786,9 @@ public final class UnifiedVisualActivity extends Activity {
         JSONArray filtered=new JSONArray();
         for(int i=0;i<items.length();i++){
             JSONObject r=items.optJSONObject(i);
-            if(r!=null&&("coin".equals(m)||"close".equals(s)||belongs(r,m,s))&&
-                !isTrendRow(r))filtered.put(r);
+            if(r!=null&&("trend".equals(s)||
+                (("coin".equals(m)||"close".equals(s)||belongs(r,m,s))&&
+                 !isTrendRow(r))))filtered.put(r);
         }
         st.research=filtered;
         st.candidates=rs.has("signals")?rs.optInt("signals",filtered.length()):filtered.length();
@@ -4809,7 +4810,11 @@ public final class UnifiedVisualActivity extends Activity {
 
         String filter=activeHistoryFilter();
         String scope="gmo".equals(filter)||"close".equals(filter)?filter:strategy;
-        boolean combined="all".equals(filter);
+        // Each research tab has its own cohort. The 'all timeframe'
+        // filter must not merge AT/MA with independent Trend.
+        boolean combined="all".equals(filter)&&
+            !("ma".equals(strategy)||"at".equals(strategy)||
+              "general".equals(strategy)||"trend".equals(strategy));
         Stats st=stats(market,scope);
         JSONObject rs=research(market,scope);
         java.util.ArrayList<HistoryRow> entries=
