@@ -60,7 +60,8 @@ class PriceDisplayV072(unittest.TestCase):
         self.runner._v072_rest_quotes={'000660':{'price':200000,
             'received_at':T.isoformat()}}
         row=self.annotate()
-        self.assertEqual(row['stock_quote_status'],'NOT_RECEIVED')
+        self.assertEqual(row['stock_quote_status'],'LAST_LEDGER')
+        self.assertEqual(row['stock_quote_source'],'STORED_LEDGER_MARK_NOT_LIVE')
         self.assertNotIn('stock_quote_display_price',row)
 
     def test_rest_worker_calls_verified_ka10001_and_writes_only_ui_cache(self):
@@ -77,6 +78,7 @@ class PriceDisplayV072(unittest.TestCase):
                 runner.stop_event.set()
                 return {'return_code':0,'stk_cd':'005930','cur_prc':'-74100'}
         runner.api=API()
+        runner._v073_display_api_factory=lambda raw:raw
         quote._rest_quote_loop(runner)
         self.assertEqual(calls,[('ka10001','/api/dostk/stkinfo',{'stk_cd':'005930'})])
         self.assertEqual(runner._v072_rest_quotes['005930']['price'],74100)
