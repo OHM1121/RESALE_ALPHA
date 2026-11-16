@@ -1,0 +1,50 @@
+name: ARTITRADE v075 close operational and SKR SMA proof
+on:
+  push:
+    branches: [fix-artitrade-v075-gmo-cw-audit-20261116]
+    paths: ['.github/workflows/artitrade-v075-cw-skr-exact.yml']
+permissions: {contents: read}
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read source accurately and compute exact 09:59:55 slopes
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast,re,json,urllib.parse,urllib.request,sys,datetime as dt
+          from pathlib import Path
+          src=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((src/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for name,spans in [
+              ('at_close_runner.py',[(100,150),(250,335),(360,405),(405,458),(461,573)]),
+              ('at_close_store.py',[(60,123),(166,175),(208,230)]),
+              ('d_live.py',[(1464,1575),(1587,1669)]),
+              ('d_gmo_runtime.py',[(235,258),(850,886),(1075,1118)])
+            ]:
+              l=z.read(name).decode().splitlines()
+              print('=== MODULE',name,'===')
+              for a,b in spans:
+                print('=== SPAN',a,b)
+                for i in range(a,min(b,len(l))+1):print('LINE',i,l[i-1][:260])
+          sys.path.insert(0,'ARTITRADE_ANDROID/app/src/main/python')
+          import ma_v067_policy as policy
+          def get_candles():
+            url='https://api.upbit.com/v1/candles/minutes/60?'+urllib.parse.urlencode({
+                'market':'KRW-SKR','to':'2026-11-16T01:00:00Z','count':200})
+            req=urllib.request.Request(url,headers={'User-Agent':'ARTITRADE-SKR-MA-VERIFICATION/1.0'})
+            with urllib.request.urlopen(req,timeout=18) as r:
+              return sorted(json.load(r),key=lambda x:x['candle_date_time_kst'])
+          arr=get_candles()
+          pre=[float(x['trade_price']) for x in arr if x['candle_date_time_kst']<'2026-11-16T09:00:00']
+          print('=== SKR_09_59_55_MA_PROOF ===')
+          print('PREVIOUS_ROWS',len(pre),'PRICE_AT_09_59_55',15.5)
+          for label,prices in [('PREVIOUS_COMPLETE',pre),('FORMING_15_5',pre+[15.5]),
+                               ('FORMING_15_2',pre+[15.2])]:
+            v=policy.slopes(prices)
+            print('MEASUREMENT',label,{k:{'value':str(v[k]['value']),'delta':str(v[k]['delta'])}
+                   for k in (5,10,20,60,120)} if v else 'UNAVAILABLE')
+          print('OFFICIAL_UPBIT_PRICE_RULE',policy.upward_transition_on_forming(pre,15.5,4.5))
+          PY
