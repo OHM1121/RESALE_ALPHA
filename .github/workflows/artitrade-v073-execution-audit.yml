@@ -1,0 +1,50 @@
+name: ARTITRADE v073 execution-path evidence audit
+on:
+  push:
+    branches: [ fix-artitrade-v073-execution-feed-gmo-ma-trend-20261116 ]
+    paths: [ '.github/workflows/artitrade-v073-execution-audit.yml' ]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract original engine and trace verified quote -> exit -> orders
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,re,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for fname in ('d_gmo_runtime.py','projectgmo/engine.py','projectgmo/adapter.py','projectgmo/service.py','d_live.py','d_upbit.py','stock_ma_engine.py','coin_ma_engine.py'):
+                  if fname not in z.namelist():continue
+                  s=z.read(fname).decode('utf-8');a=s.splitlines()
+                  print('===== MODULE',fname,'LINES',len(a),'=====')
+                  t=ast.parse(s)
+                  selected=[]
+                  for x in ast.walk(t):
+                      if isinstance(x,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                          if re.search(r'quote|tick|book|sell|exit|order|fok|fill|cancel|pending|start|refresh|run|watchlist|subscri|scan|evaluate',x.name,re.I):
+                              selected.append((x.lineno,x.end_lineno,x.name))
+                  print('METHODS',sorted(selected)[:160])
+                  if fname=='d_gmo_runtime.py':
+                      ix=[i+1 for i,row in enumerate(a) if re.search('on_quote\(|on_book\(|on_tick\(|ENTRY_PLUS2_FLOOR|_process|_submit|pending_sell|broker|paper|reserve_sell|orderbook|quote',row,re.I)]
+                      for n in ix[:75]:
+                          print('GMO_SPOT',n,a[n-1][:210])
+                      for st,en in sorted(selected):
+                          if re.search('quote|sell|tick|book|pending|order|submit|on_',en,re.I) and st<=1000:
+                              print('===GMO_METHOD',st,en,'===')
+                              for k in range(st,min(en,st+95)+1):print('GMO_CODE',k,a[k-1][:205])
+                  if fname=='projectgmo/engine.py':
+                      for st,en,name in sorted(selected):
+                          if re.search('on_quote|_exit|process|pending',name):
+                              print('===ENGINE_METHOD',name,st,en,'===')
+                              for k in range(st,min(en,st+100)+1):print('ENGINE',k,a[k-1][:195])
+                  if fname=='d_live.py':
+                      for st,en,name in sorted(selected):
+                          if name in ('_new_tick','_tick_job_loop','_gmo_priority_loop','_v071_feed_worker','_start_market_workers','_refresh_tracked_codes','_refresh_tracked_codes_async'):
+                              print('===D_METHOD',name,st,en,'===')
+                              for k in range(st,min(en,st+130)+1):print('D',k,a[k-1][:195])
+          PY
