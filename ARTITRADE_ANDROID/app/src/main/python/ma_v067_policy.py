@@ -298,6 +298,29 @@ def initial_up_exit_state(frame):
             'peak_after_second':'0','seen_above_entry':False}
 
 
+def up_stage_quantities(state,initial):
+    """Use exact fractions for fractional crypto, verified integer lots for stock.
+
+    Broker/stock shares cannot fill 1.3 units. If confirmed 2-share first
+    sale represents the >=10% target of a 13-share position, the state must
+    advance by those SAME confirmed 2 shares, not silently reject the fill.
+    """
+    n=number(initial)
+    if n is None or n<=0:return Decimal(0),Decimal(0)
+    first=n*UP_FIRST_FRACTION
+    first_integer=number(state.get('rounded_first_goal'))
+    if (first_integer is not None and first_integer>0 and
+        first_integer<=n and first_integer==first_integer.to_integral_value()):
+        first=first_integer
+    second=(n-first)*UP_SECOND_FRACTION_OF_REMAINDER
+    second_integer=number(state.get('rounded_second_goal'))
+    if (second_integer is not None and second_integer>=0 and
+        second_integer<=n-first and
+        second_integer==second_integer.to_integral_value()):
+        second=second_integer
+    return first,second
+
+
 def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
     """One CURRENT book decision for a REVERSAL_UP position.
 
@@ -322,8 +345,7 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
     if forced:
         return _full(avail,forced,state)
     first_target,second_target=up_targets(base,frame)
-    first_goal=initial*UP_FIRST_FRACTION
-    second_goal=(initial-first_goal)*UP_SECOND_FRACTION_OF_REMAINDER
+    first_goal,second_goal=up_stage_quantities(state,initial)
     first_sold=number(state.get('first_sold')) or Decimal(0)
     second_sold=number(state.get('second_sold')) or Decimal(0)
 
@@ -373,8 +395,7 @@ def apply_up_fill(state,reason,quantity,filled_at,initial_qty,
         or q<=0 or n<=0 or price<=0
         or not isinstance(filled_at,datetime) or filled_at.tzinfo is None):
         return state
-    first_goal=n*UP_FIRST_FRACTION
-    second_goal=(n-first_goal)*UP_SECOND_FRACTION_OF_REMAINDER
+    first_goal,second_goal=up_stage_quantities(state,n)
     if reason=='MA_V065_UP_FIRST_10PCT':
         was=number(state.get('first_sold')) or Decimal(0)
         # Wrong/duplicate sizes should not silently advance to stage 2.
