@@ -2037,6 +2037,7 @@ public final class UnifiedVisualActivity extends Activity {
         else if("positions".equals(page))renderList("보유 종목",stats(market,strategy).positions,"positions");
         else if("pending".equals(page)){
             if("trend".equals(strategy))renderTrendWatchPending();
+            else if("ma".equals(strategy))renderMaEntryObservations();
             else renderList("매수 대기",stats(market,strategy).pending,"pending");
         }
         else if("executions".equals(page))renderList("체결 이력",stats(market,strategy).executions,"executions");
@@ -2047,6 +2048,65 @@ public final class UnifiedVisualActivity extends Activity {
         else if("errors".equals(page))renderErrors();
         else if("policyHistory".equals(page))renderPolicyHistory();
         else renderMore();
+    }
+
+    private void renderMaEntryObservations(){
+        // Original MA wallet is the only authority for a real PENDING/FILLED
+        // order. The independent MA watch is evidence, not a second order.
+        renderList("실제 매수대기 · 원본 주문원장",stats(market,"ma").pending,"pending");
+        TextView title=text("MA 조건감시 · 미진입 사유",18);
+        title.setTextColor(Color.rgb(155,205,250));
+        title.setPadding(dp(2),dp(14),0,dp(6));
+        content.addView(title);
+        TextView hint=text("MA120 기울기 +0.0050 이하는 신규 매수판정에서 하락으로 간주 · "+
+            "마감 4~5초 전 실제 체결가·호가 확인 필요 · 아래는 실제 매수주문이 아닌 관측이력",12);
+        hint.setTextColor(PremiumUi.MUTED);hint.setMaxLines(4);
+        content.addView(hint);
+        JSONObject local=copyCache().optJSONObject("local_records");
+        JSONObject maWatch=local==null?null:local.optJSONObject("ma_watch_v076");
+        JSONArray rows=maWatch==null?null:maWatch.optJSONArray(market);
+        if(rows==null||rows.length()==0){
+            empty("MA 관측이력 없음 · 종목별 확정봉과 마감 5초 전 "+
+                "시세 수신 여부를 기록하는 중. 관측이력 0건은 매수조건 만족을 뜻하지 않음");
+            return;
+        }
+        int shown=0;
+        for(int i=0;i<rows.length()&&shown<75;i++){
+            JSONObject r=rows.optJSONObject(i);
+            if(r==null||!"MA_OBSERVATION_ONLY".equals(r.optString("status","")))continue;
+            LinearLayout tile=card();
+            String symbol=r.optString("code","코드 미확인");
+            String frame=r.optString("tf","");
+            String reason=r.optString("reason","판단 사유 미기록");
+            TextView name=text(symbol+" · "+tfLabel(frame)+" · 미주문 관측",15);
+            name.setTextColor(Color.rgb(186,219,250));
+            tile.addView(name);
+            TextView what=text("MA 진입 판단: "+reason,12);
+            what.setTextColor(Color.rgb(228,199,149));
+            what.setMaxLines(4);tile.addView(what);
+            JSONObject facts=r.optJSONObject("ma_details");
+            if(facts!=null&&facts.length()>0){
+                StringBuilder detail=new StringBuilder();
+                for(String k:new String[]{"ma_120_delta","ma120_delta","ma_60_delta",
+                                         "ma120_down_tolerance","book_age_sec","trade_price","ask"}){
+                    if(!facts.has(k))continue;
+                    if(detail.length()>0)detail.append(" · ");
+                    detail.append(k).append(" ").append(facts.optString(k,""));
+                }
+                if(detail.length()>0){
+                    TextView values=text(detail.toString(),11);
+                    values.setTextColor(Color.rgb(143,180,206));
+                    values.setMaxLines(4);tile.addView(values);
+                }
+            }
+            TextView when=text("기준봉 마감 "+r.optString("bar_end","미확인")+
+                " · 진단 기록 "+formatKst(r.opt("at")),11);
+            when.setTextColor(PremiumUi.MUTED);when.setMaxLines(3);
+            tile.addView(when);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+            lp.setMargins(0,dp(5),0,dp(5));content.addView(tile,lp);
+            shown++;
+        }
     }
 
     private void renderTrendWatchPending(){
