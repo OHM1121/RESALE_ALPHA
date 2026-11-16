@@ -58,6 +58,23 @@ class TrendTickerFreshnessV069(unittest.TestCase):
         l.completed('2026-11-16T10:50:00+09:00',30.914)
         self.assertTrue(l.offer('2026-11-16T10:55:00+09:00',29.823))
         self.assertFalse(l.offer('2026-11-16T10:55:00+09:00',29.823))
+    def test_rest_mark_updates_cache_but_never_renews_live_trade_age(self):
+        import market_trend_runtime_v043 as t
+        seen=[]
+        box=t._PriceMemory({},lambda code,price:seen.append((code,price)))
+        box['KRW-MPLX']=86.9
+        self.assertEqual(seen,[('KRW-MPLX',86.9)])
+        previous=getattr(t._PRICE_OBSERVATION_CONTEXT,'rest_only',False)
+        t._PRICE_OBSERVATION_CONTEXT.rest_only=True
+        try:
+            box['KRW-MPLX']=86.7
+        finally:
+            t._PRICE_OBSERVATION_CONTEXT.rest_only=previous
+        self.assertEqual(box['KRW-MPLX'],86.7)
+        self.assertEqual(seen,[('KRW-MPLX',86.9)])
+        box['KRW-MPLX']=86.6
+        self.assertEqual(seen[-1],('KRW-MPLX',86.6))
+
     def test_block_audit_is_bounded_and_not_a_fake_order(self):
         import collections
         self.c._recent_blocked_entries={'stock':collections.deque(maxlen=160),
