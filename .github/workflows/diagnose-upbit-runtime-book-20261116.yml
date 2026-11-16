@@ -1,0 +1,46 @@
+name: Diagnose Upbit live ticker and orderbook refresh (source only)
+on:
+  push:
+    branches: [ diagnose-mplx-markettrend-20261116 ]
+    paths: [ '.github/workflows/diagnose-upbit-runtime-book-20261116.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect frozen original Upbit receiver and orderbook scheduling without broker
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast,zipfile,base64,io,hashlib,re
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(raw).hexdigest()+'"' in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              s=z.read('d_upbit.py').decode('utf8').splitlines()
+          tree=ast.parse('\n'.join(s))
+          for cl in tree.body:
+              if isinstance(cl,ast.ClassDef) and cl.name=='UpbitPaperRunner':
+                  print('CLASS UpbitPaperRunner',cl.lineno,cl.end_lineno)
+                  funcs=[(f.name,f.lineno,f.end_lineno) for f in cl.body if isinstance(f,(ast.FunctionDef,ast.AsyncFunctionDef))]
+                  print('ALL_METHODS',funcs)
+                  for name,start,end in funcs:
+                      if re.search('book|watch|track|websocket|connect|sync|stream|refresh|run|ticker|subscribe',name,re.I):
+                          print('=== SOURCE',name,start,end,'===')
+                          for i in range(start,min(end,start+240)+1):
+                              print('%5d %s'%(i,s[i-1]))
+          print('=== KEYWORD CONTEXT ===')
+          seen=set()
+          keys=['latest_prices[','latest_prices =','self.latest_prices','_both_watched_codes','self.last_book','orderbook','tracked','websockets.connect','websocket','ws.recv']
+          for i,line in enumerate(s):
+              if any(x in line for x in keys):
+                  for j in range(max(0,i-2),min(len(s),i+3)):
+                      if j in seen:continue
+                      seen.add(j)
+                      print('%5d %s'%(j+1,s[j]))
+          PY
