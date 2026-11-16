@@ -25,6 +25,10 @@ jobs:
                   data=z.read(name)
                   lines=data.decode('utf8').splitlines()
                   print('MODULE',name,'LINES',len(lines),'SHA256',hashlib.sha256(data).hexdigest())
+                  if name=='d_live.py':
+                      for a,b in [(836,890),(2220,2334),(1270,1310)]:
+                          print('=== RANGE',a,b)
+                          for n in range(a,b+1): print('TAIL_%d %s'%(n,lines[n-1]))
                   tree=ast.parse(data,name)
                   classes=[n for n in tree.body if isinstance(n,ast.ClassDef)]
                   funcs={n.name:(n.lineno,n.end_lineno) for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
