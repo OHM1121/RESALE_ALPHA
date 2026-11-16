@@ -151,6 +151,72 @@ def _phone_runtime_snapshot(self):
                 '_watch_feed_last_epoch',0) or 0)),1) if runner and getattr(runner,
                 '_watch_feed_last_epoch',0) else None,
         }
+        # v081 startup readiness is read-only telemetry from BOTH existing
+        # exchange sessions. No second login/socket and no synthetic ticks.
+        now_mono=time.monotonic()
+        cr=getattr(self,'coin_runner',None)
+        def preload(runner):
+            try:return runner.preload_gate.snapshot() if runner else {}
+            except (AttributeError,ValueError,TypeError,RuntimeError):return {}
+        stock_gate=preload(runner)
+        coin_gate=preload(cr)
+        stock_keys=bool(getattr(getattr(self,'kiwoom',None),'key','') and
+                        getattr(getattr(self,'kiwoom',None),'secret',''))
+        stock_session=False
+        try:
+            from d_live import now_kst,calendar_status,load_closed_overrides,live_session
+            current=now_kst()
+            open_day,_=calendar_status(current,load_closed_overrides(runner.store.root)) if runner else (False,'')
+            stock_session=bool(open_day and (live_session(current,'KRX') or
+                                                   live_session(current,'NXT')))
+        except (ImportError,AttributeError,ValueError,TypeError,OSError):
+            # Unknown calendar is not proof of a working stock feed.
+            stock_session=bool(stock_keys)
+        quote_stamp=float(getattr(cr,'_last_ws_quote',0) or 0) if cr else 0.0
+        frame_stamp=float(getattr(cr,'_ws_last_frame',0) or 0) if cr else 0.0
+        coin_socket=bool(cr is not None and getattr(cr,'_ws_connected',False) and
+                         frame_stamp>0 and 0<=now_mono-frame_stamp<=15.0)
+        coin_trade=bool(coin_socket and quote_stamp>0 and
+                        0<=now_mono-quote_stamp<=15.0)
+        coin_node=snapshot.get('coin') or {}
+        coin_node['rest_connected']=bool(coin_node.get('connected',False))
+        # REST marks alone can never be reported as an authenticated live WS.
+        coin_node['connected']=coin_trade
+        snapshot['coin']=coin_node
+        trend=getattr(self,'market_trend',None)
+        warm={}
+        for m in ('stock','coin'):
+            required=0
+            loaded=0
+            try:
+                if trend:
+                    with trend.lock:
+                        required=len(trend._candidates.get(m,{}) or {})*4
+                        loaded=sum(1 for k,rows in trend._history.items()
+                                   if k[0]==m and len(rows)>=21)
+            except (AttributeError,TypeError,ValueError,RuntimeError):
+                pass
+            warm[m]={'rsi20_ready':loaded,'candidate_frames':required}
+        stock_ws=bool(stock.get('connected',False))
+        stock_subs=len(getattr(runner,'subscriptions',[]) or []) if runner else 0
+        coin_codes=len(getattr(cr,'tracked',[]) or []) if cr else 0
+        coin_watching=bool(cr is not None and getattr(cr,'ws_thread',None) is not None and
+                           cr.ws_thread.is_alive())
+        snapshot['startup_preload_v081']={
+            'updated_at_ms':int(time.time()*1000),
+            'engine_initialized':bool(getattr(self,'started',False)),
+            'stock':{'keys_present':stock_keys,'session_required':stock_session,
+                     'ws_ready':stock_ws,'subscriptions':stock_subs,
+                     'preload':stock_gate,
+                     'state':str(stock.get('status') or '')[:160]},
+            'coin':{'session_required':True,'ws_session':coin_socket,
+                    'ws_ready':coin_trade,'ws_supervisor_running':coin_watching,
+                    'subscriptions_requested':coin_codes,
+                    'preload':coin_gate,
+                    'state':str(coin_node.get('status') or '')[:160]},
+            'rsi_history':warm,
+            'both_feeds_available':bool(coin_trade and
+                (not stock_session or not stock_keys or stock_ws))}
         return json.dumps(snapshot, ensure_ascii=False, default=str)
     except Exception:
         return raw
@@ -158,6 +224,41 @@ def _phone_runtime_snapshot(self):
 _core.Runtime._stock_progress = _phone_stock_progress
 _core.Runtime.snapshot = _phone_runtime_snapshot
 _stock_feed_core.LivePaperRunner.run = _phone_guard_stock_run
+
+# v081: The original coin supervisor previously waited up to 75 seconds for
+# OHLCV/ledger preload before opening its *first* public Upbit websocket.
+# Start the SAME single existing socket immediately after a real universe is
+# confirmed, then keep REST/history preparation going in the original worker.
+# Early WS frames prime real prices/books but cannot dispatch new entries
+# before existing ledger/preload verification reports ready.
+import d_upbit as _v081_upbit
+_V081_COIN_UNIVERSE_ORIG=_v081_upbit.UpbitPaperRunner._universe
+_V081_COIN_WS_EVENT_ORIG=_v081_upbit.UpbitPaperRunner._enqueue_ws_event
+
+def _v081_coin_universe_then_single_ws(self,*args,**kwargs):
+    result=_V081_COIN_UNIVERSE_ORIG(self,*args,**kwargs)
+    if (getattr(self,'tracked',None) and not self.stop_event.is_set()
+            and not self.preload_gate.snapshot().get('ready',False)):
+        # _ensure_ws_workers() is the original idempotent worker supervisor;
+        # no new socket implementation, no duplicate login, no private keys.
+        try:self._ensure_ws_workers()
+        except (AttributeError,RuntimeError,OSError,ValueError) as exc:
+            try:self._safe_ws_issue('V081_PRELOAD_WS_START',
+                                    type(exc).__name__+': '+str(exc)[:130])
+            except (OSError,RuntimeError,AttributeError):pass
+    return result
+
+def _v081_coin_verified_ws_prime_before_orders(self,kind,*args,**kwargs):
+    if (kind in ('book','mark') and
+        not self.preload_gate.snapshot().get('ready',False)):
+        # _ws() already stores genuine ticker in latest_prices and real book
+        # in last_book. Ignore broker/paper-entry side effects during preload.
+        # The original scan thread also waits until preload completes.
+        return False
+    return _V081_COIN_WS_EVENT_ORIG(self,kind,*args,**kwargs)
+
+_v081_upbit.UpbitPaperRunner._universe=_v081_coin_universe_then_single_ws
+_v081_upbit.UpbitPaperRunner._enqueue_ws_event=_v081_coin_verified_ws_prime_before_orders
 
 _ORIG_PATCH_GMO = _core.Runtime._patch_gmo
 _ORIG_STOP = _core.Runtime.stop
