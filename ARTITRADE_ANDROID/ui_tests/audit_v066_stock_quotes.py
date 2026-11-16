@@ -52,3 +52,16 @@ with zipfile.ZipFile(io.BytesIO(raw)) as z:
    print('TARGET_RANGE',name,lo,hi)
    for idx in range(lo-1,min(hi,len(lines))):
     print('TARGET_SOURCE',name,idx+1,lines[idx][:280])
+
+print('QUOTE_METHOD_DETAILS')
+with zipfile.ZipFile(io.BytesIO(raw)) as z:
+ for name in ('d_live.py','d_gmo_runtime.py','d_api.py','d_storage.py','d_minute_repair_fast.py','at_close_runner.py'):
+  if name not in z.namelist():continue
+  src=z.read(name).decode('utf8').splitlines()
+  for word in ('def parse_venue_real(', 'def _pinned_stocks(', 'def _register_subscriptions(', 'def _switch_venue_subscriptions(', 'def exchange_stamp_is_fresh(', 'def _last_mark(', 'def snapshot(', 'class ReadOnlyMarketAPI', 'def stock_price(', 'def current_price(', 'def quote('):
+   matches=[i for i,line in enumerate(src) if word in line]
+   for i in matches[:2]:
+    e=min(len(src),i+80)
+    print('METHOD',name,word,i+1,e)
+    for idx in range(max(0,i-3),e):
+     print('METHOD_SOURCE',name,idx+1,src[idx][:280])
