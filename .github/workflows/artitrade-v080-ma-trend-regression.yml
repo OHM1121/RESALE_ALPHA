@@ -9,6 +9,7 @@ on:
       - 'ARTITRADE_ANDROID/ui_tests/test_v077_ma_watchdog_krx_session.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v074_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v069_*.py'
       - 'ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/**'
       - 'ARTITRADE_ANDROID/app/build.gradle'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
