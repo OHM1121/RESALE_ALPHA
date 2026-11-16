@@ -4,6 +4,7 @@ on:
     branches: [ fix-artitrade-v071-feed-order-error-export-20261116 ]
     paths:
       - 'ARTITRADE_ANDROID/ui_tests/test_v071_ws_ordering.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v063_gmo_exit_and_cold_boot.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
       - '.github/workflows/artitrade-v071-regression.yml'
