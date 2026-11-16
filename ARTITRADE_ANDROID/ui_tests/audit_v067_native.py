@@ -28,3 +28,13 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
 
 with zipfile.ZipFile(io.BytesIO(data)) as z:
     print("CORE_COIN_MA_FILE_NAMES",[x for x in z.namelist() if 'coin' in x.lower() or 'ma' in x.lower()][:100])
+
+with zipfile.ZipFile(io.BytesIO(data)) as z:
+    p='coin_ma_engine.py'
+    root=ast.parse(z.read(p).decode(),p)
+    for c in root.body:
+        if isinstance(c,ast.ClassDef):
+            print('COIN_CLASS',c.name,c.lineno,c.end_lineno)
+            for n in c.body:
+                if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                    print('COIN_METHOD',c.name,n.name,n.lineno,n.end_lineno)
