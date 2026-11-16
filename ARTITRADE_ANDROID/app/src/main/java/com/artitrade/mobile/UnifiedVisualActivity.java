@@ -3337,6 +3337,7 @@ public final class UnifiedVisualActivity extends Activity {
                     .put("strategy",item.source).put("frame",item.frame)
                     .put("symbol",symbol).put("position_id",pid)
                     .put("side","매도".equals(tradeSideOf(row))?"SELL":"BUY")
+                    .put("execution_id",row.optString("id",""))
                     .put("at",item.at);
                 requests.put(request);
                 requestedKeys.add(key);
@@ -3394,6 +3395,9 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderExecutionEvidenceStrip(LinearLayout panel,HistoryRow item){
         JSONObject r=item.row,e=readTradeEvidence(item);
+        boolean sell="매도".equals(tradeSideOf(r));
+        String rowKey=tradeEvidenceKey(item);
+        boolean loading=pendingTradeEvidence.contains(rowKey);
         HorizontalScrollView details=new HorizontalScrollView(this);
         details.setHorizontalScrollBarEnabled(true);
         details.setFillViewport(false);
@@ -3413,18 +3417,52 @@ public final class UnifiedVisualActivity extends Activity {
         historyEvidenceCell(fields,"체결수량",formatMaybeNumber(r,"qty","fill_qty"),106);
         historyEvidenceCell(fields,"판단점수",formatMaybeNumber(r,"score","signal_score"),92);
         historyEvidenceCell(fields,"매수·매도 근거",tradeReasonOf(r,tradeSideOf(r)),250);
+        if(!sell && e.has("entry_signal_reason"))
+            historyEvidenceCell(fields,"MA 실제 진입신호",
+                e.optString("entry_signal_reason",""),310);
+        if(!sell && e.has("entry_signal_ma120_delta"))
+            historyEvidenceCell(fields,"매수봉 MA120 기울기",
+                e.optString("entry_signal_ma120_delta",""),138);
+        if(!sell && e.has("entry_signal_source"))
+            historyEvidenceCell(fields,"후보 기록 출처",
+                e.optString("entry_signal_source",""),245);
         historyEvidenceCell(fields,"AI 연계 출처",evidenceValue(e,"ai_source_count","개"),115);
         historyEvidenceCell(fields,"AI 검증 요인",evidenceValue(e,"ai_factor_count","개"),115);
         historyEvidenceCell(fields,"실현 수익률",evidenceValue(e,"ai_realized_roi","%"),116);
-        historyEvidenceCell(fields,"매도 이후 고가",
-            e.has("post_sale_peak")?money(e.optDouble("post_sale_peak")):"미기록",136);
+        String postHigh=!sell?"매도 전 · 해당없음":
+            e.has("post_sale_peak")?money(e.optDouble("post_sale_peak")):
+            loading?"자료 불러오는 중":
+            e.has("post_sale_state")?"실제 후속 시세 미관측":
+            "매도후 추적원장 연결 대기";
+        historyEvidenceCell(fields,"매도 이후 고가",postHigh,182);
         historyEvidenceCell(fields,"매수가 대비 고가",
-            evidencePercent3(e,"post_sale_peak_pct_from_buy"),133);
-        historyEvidenceCell(fields,"후속 관측상태",evidenceValue(e,"post_sale_state",""),146);
+            !sell?"매도 전":evidencePercent3(e,"post_sale_peak_pct_from_buy"),154);
+        String postState=!sell?"아직 매도 체결 없음":
+            (e.has("post_sale_anchor_kind")?
+                ("PARTIAL_SELL".equals(e.optString("post_sale_anchor_kind"))?
+                    "부분매도 후 · ":"전량매도 후 · "):"")+
+            (loading?"조회 중":
+             e.has("post_sale_state")?e.optString("post_sale_state",""):
+             "후속 관측 기록 미연결");
+        historyEvidenceCell(fields,"후속 관측상태",postState,196);
         historyEvidenceCell(fields,"포지션 ID",
             r.optString("position_id",r.optString("source_position_id","미기록")),210);
         details.addView(fields,new HorizontalScrollView.LayoutParams(-2,-2));
         panel.addView(details,new LinearLayout.LayoutParams(-1,dp(56)));
+        if(!sell && e.has("candidate_reason")){
+            TextView sourceReason=text("원본 매수후보 판단 · "+
+                e.optString("candidate_reason",""),12);
+            sourceReason.setTextColor(Color.rgb(181,202,221));
+            sourceReason.setMaxLines(4);
+            panel.addView(sourceReason,new LinearLayout.LayoutParams(-1,-2));
+        }
+        if(sell && e.has("post_sale_state") &&
+            !e.has("post_sale_peak")){
+            TextView note=text("실제 매도는 원장에 기록됨. 후속고가는 매도체결 이후 수신한 실제 시세만 집계하며, 관측값이 아직 없으면 고가를 임의 계산하지 않음.",11);
+            note.setTextColor(PremiumUi.MUTED);
+            note.setMaxLines(4);
+            panel.addView(note,new LinearLayout.LayoutParams(-1,-2));
+        }
     }
 
     private void renderList(String title,JSONArray a,String kind){
