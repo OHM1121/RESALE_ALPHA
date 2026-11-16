@@ -15,7 +15,23 @@ BRIDGE=ROOT/'app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java'
 GRADLE=ROOT/'app/build.gradle'
 ORIGINAL='2ee2dfd6e743800c4246e7ea7ac9f9049686935500b3e87a2ac9775fb3466f10'
 raw=base64.b64decode(''.join(p.read_text('ascii') for p in PARTS))
-assert hashlib.sha256(raw).hexdigest()==ORIGINAL,'v072 signed source changed: abort'
+current_digest=hashlib.sha256(raw).hexdigest()
+if current_digest!=ORIGINAL:
+    # Repeated CI on the already-patched development branch is expected.
+    # Verify exact version, source digest and active sell callback; do NOT
+    # apply the patch twice or modify any accepted trading condition.
+    j=BRIDGE.read_text('utf-8')
+    g=GRADLE.read_text('utf-8')
+    with zipfile.ZipFile(io.BytesIO(raw)) as already:
+        gmo=already.read('d_gmo_runtime.py').decode('utf-8')
+        d=already.read('d_live.py').decode('utf-8')
+    if not ('CORE_SHA256="'+current_digest+'"' in j
+            and 'versionCode 79' in g
+            and 'self.engine.on_quote(q)' in gmo
+            and 'self.gmo.holding_codes()' in d):
+        raise AssertionError('unexpected core or partial patch: stop')
+    print('V073_ALREADY_PATCHED_SHA256',current_digest)
+    raise SystemExit(0)
 with zipfile.ZipFile(io.BytesIO(raw)) as archive:
     meta=archive.infolist()
     src={x.filename:archive.read(x.filename) for x in meta}
