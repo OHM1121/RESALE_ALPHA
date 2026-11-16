@@ -24,6 +24,9 @@ _CORE=None
 _INSTALLED=False
 _MA_GUARD=threading.local()
 _STOCK_TICK_LOCK=threading.RLock()
+# A genuine Upbit last-trade tick remains a verified price during quiet seconds.
+# Extend RSI observation only; executable Upbit book must still be <=3s fresh.
+COIN_VERIFIED_TRADE_MAX_AGE_SEC=10.0
 
 
 def _parent(market):
@@ -140,6 +143,9 @@ class Coordinator:
         self._watch_after={}
         self._position_snapshot_at={}
         self._entry_block_counts={market:collections.Counter() for market in ('stock','coin')}
+        # Bounded in-memory, per-symbol decision evidence; NOT an order/virtual fill.
+        self._recent_blocked_entries={market:collections.deque(maxlen=160)
+                                      for market in ('stock','coin')}
         # In-memory performance counters only. No trading-ledger writes.
         self._performance={market:{
             "preclose_cycles":0,"preclose_no_due_cycles":0,
@@ -291,7 +297,8 @@ class Coordinator:
 
     def _quote(self,market,code):
         with self.lock:raw=self._quotes[market].get(code)
-        if raw is None or time.monotonic()-raw[1]>3.0:return None
+        max_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
+        if raw is None or time.monotonic()-raw[1]>max_age:return None
         price=raw[0]
         if market=="stock":
             runner=self.rt.stock_runner
@@ -568,6 +575,23 @@ class Coordinator:
         # Production must use the real present-time clock before every order.
         return dt.datetime.now(mt.KST)
 
+    def _record_entry_block(self,market,code,frame,barid,reason,rsi=None,trade_age_sec=None):
+        """Keep exact symbol/frame/reason for missing entries without DB or broker IO."""
+        try:
+            rsi_value=mt._finite(rsi)
+            age=mt._finite(trade_age_sec)
+            item={"code":str(code),"frame":str(frame),"bar_end":str(barid),
+                  "reason":str(reason),"rsi20_live":rsi_value,
+                  "last_trade_age_sec":round(age,3) if age is not None else None,
+                  "logged_at":dt.datetime.now(mt.KST).isoformat()}
+            with self.lock:
+                q=self._recent_blocked_entries[market]
+                if q and all(q[-1].get(k)==item[k] for k in ("code","frame","bar_end","reason")):
+                    return
+                q.append(item)
+        except (ValueError,TypeError,AttributeError):
+            return
+
     def _preclose_candidates(self,market,now):
         self._prune_evaluation_cache(now)
         # Independent trend evaluates regardless of the signed market score.
@@ -613,8 +637,10 @@ class Coordinator:
         for code in candidates:
             observed=observed_prices.get(code)
             observed_trade=None
+            max_trade_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
+            trade_age=observed_at-observed[1] if observed is not None else None
             if (observed is not None and
-                    -0.5<=observed_at-observed[1]<=3.0):
+                    -0.5<=trade_age<=max_trade_age):
                 observed_trade=mt._finite(observed[0])
             if observed_trade is None:
                 # Compatibility for read-only injected/synthetic proven
@@ -625,6 +651,9 @@ class Coordinator:
                                 if isinstance(backed,dict) else None)
             if observed_trade is None or observed_trade<=0:
                 self._entry_block_counts[market]['FRESH_0B_TRADE_MISSING_AT_PRECHECK']+=1
+                for frame,finish,_,submit in scheduled:
+                    if submit:self._record_entry_block(market,code,frame,finish.isoformat(),
+                        'VERIFIED_TRADE_STALE_OR_MISSING',trade_age_sec=trade_age)
                 continue
             for frame,finish,check,submit in scheduled:
                 barid=finish.isoformat()
@@ -632,10 +661,14 @@ class Coordinator:
                 closed=self._closed_series(market,code,frame,finish)
                 if not closed:
                     self._entry_block_counts[market]['CLOSED_CANDLE_HISTORY_MISSING']+=1
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'CLOSED_CANDLE_HISTORY_MISSING',trade_age_sec=trade_age)
                     continue
                 rsi=mt.rsi20([x["close"] for x in closed],observed_trade)
                 if rsi is None:
                     self._entry_block_counts[market]['RSI_20_HISTORY_INVALID']+=1
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'RSI_20_HISTORY_INVALID',trade_age_sec=trade_age)
                     continue
                 if check:
                     # Store precheck even when no 0D quote exists.
@@ -645,6 +678,8 @@ class Coordinator:
                         'PRECHECK_MISSING_OR_RSI_ABOVE_30'
                         if entry not in self._prechecked else 'RSI_ABOVE_30'
                     ]+=1
+                    if rsi<=30:self._record_entry_block(market,code,frame,barid,
+                        'RSI_TRIGGER_PRECHECK_MISSING',rsi,trade_age)
                     continue
                 if submit and entry not in self._ordered:
                     # Financial execution gates remain independent from RSI.
@@ -652,6 +687,8 @@ class Coordinator:
                     q=self._quote(market,code)
                     if q is None:
                         self._entry_block_counts[market]['FRESH_BOOK_MISSING_AT_SUBMIT']+=1
+                        self._record_entry_block(market,code,frame,barid,
+                            'FRESH_BOOK_MISSING_AT_SUBMIT',rsi,trade_age)
                         continue
                     due[code].append((frame,rsi,barid,q))
         # The -12s decision closes the observation queue for this bar.
@@ -667,6 +704,9 @@ class Coordinator:
             if (self.journal.stop_reentry_blocked(market,code,now) or
                 self.standalone_wallet.stop_reentry_blocked(market,code,now)):
                 self._entry_block_counts[market]['STOP_REENTRY_LOCK']+=1
+                for frame,rsi_value,barid,_ in signals:
+                    self._record_entry_block(market,code,frame,barid,
+                        'STOP_REENTRY_LOCK',rsi_value)
                 for frame,_,barid,_ in signals:
                     self._ordered.add((market,code,frame,barid))
                 continue
@@ -679,16 +719,22 @@ class Coordinator:
             finish=dt.datetime.fromisoformat(barid)
             if not mt.preclose_due(fresh_now,finish,frame,market):
                 self._entry_block_counts[market]['ONE_SECOND_DECISION_DEADLINE_MISSED']+=1
+                self._record_entry_block(market,code,frame,barid,
+                    'ONE_SECOND_DECISION_DEADLINE_MISSED',rsi)
                 continue
             verified=self._quote(market,code)
             if verified is None:
                 self._entry_block_counts[market]['QUOTE_OR_BOOK_STALE_BEFORE_ORDER']+=1
+                self._record_entry_block(market,code,frame,barid,
+                    'QUOTE_OR_BOOK_STALE_BEFORE_ORDER',rsi)
                 continue
             q=verified
             self._ordered.add((market,code,frame,barid))
             latch=self.journal.latch(market,code,frame)
             if not latch.offer(barid,rsi):
                 self._entry_block_counts[market]['SIGNAL_LATCH_NOT_ARMED']+=1
+                self._record_entry_block(market,code,frame,barid,
+                    'SIGNAL_LATCH_NOT_ARMED',rsi)
                 continue
             self.journal.save_latch(market,code,frame,latch)
             assigned='trend'
@@ -709,6 +755,7 @@ class Coordinator:
                 unsafe_result=True
             if result is None:
                 self._entry_block_counts[market][str(disposition)[:80]]+=1
+                self._record_entry_block(market,code,frame,barid,str(disposition)[:80],rsi)
             # ACTUAL is reserved for broker-confirmed fills, PAPER for
             # simulated fills, and VIRTUAL for missed / unfilled signals.
             signal_mode=("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
@@ -839,7 +886,8 @@ class Coordinator:
                     quotes=dict(self._quotes[market])
                 for code in candidates:
                     raw=quotes.get(code)
-                    if raw is None or since-raw[1]>3:
+                    max_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
+                    if raw is None or since-raw[1]>max_age:
                         self._entry_block_counts[market]['WATCH_TICK_STALE']+=1
                         for frame in mt.FRAMES:self.watch.discard(market,code,frame)
                         continue
@@ -959,6 +1007,8 @@ class Coordinator:
                     "candidates":len(self._candidates[market]),
                     "error":self._last_fetch_error.get(market,""),
                     "entry_block_reasons":dict(self._entry_block_counts[market].most_common(18)),
+                    "recent_entry_blocks":list(self._recent_blocked_entries[market])[-30:],
+                    "verified_coin_trade_max_age_sec":COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=="coin" else 3.0,
                     "rsi_basis":"WILDER_RSI_20_MAIN_ONLY",
                     "rsi_signal_ma9_used":False}
                 if include_performance:
