@@ -14,8 +14,8 @@ and during the SECOND bar AFTER the buy bar (d+1) the forming close below
 entry causes an instant full exit.
 
 First bear case has high-based 30% / high+2% next 50% / -3% peak exit.
-The user did not provide separate case-2 profit targets here; they are
-intentionally not invented in this policy.
+Case 2 uses the user's subsequent explicit first/second targets and
+confirmed-fill-only 10% / 50%-of-remainder exit stages.
 """
 from __future__ import annotations
 from decimal import Decimal, InvalidOperation
@@ -253,4 +253,141 @@ def mark_stage_completion(state,initial_qty,at,execution_price=None):
         p=number(execution_price)
         if p is not None and p>0:
             state['peak_after_second']=str(max(number(state.get('peak_after_second')) or Decimal(0),p))
+    return state
+
+
+# Case 2, the upward-forming reversal (REVERSAL_UP). These targets apply to
+# this case only; case 1 (REVERSAL_BEAR) remains entirely separate.
+UP_FIRST_TARGET_PCT={
+    '5m':Decimal('2'), '30m':Decimal('2.5'),
+    '60m':Decimal('3'), 'day':Decimal('5'),
+}
+UP_SECOND_EXTRA_PCT={
+    '5m':Decimal('2'), '30m':Decimal('2.5'),
+    '60m':Decimal('3'), 'day':Decimal('3'),
+}
+UP_FIRST_FRACTION=Decimal('.10')
+UP_SECOND_FRACTION_OF_REMAINDER=Decimal('.50')
+UP_TRAIL_FROM_SECOND=Decimal('.03')
+UP_FIRST_TO_SECOND_HARD_STOP=Decimal('.01')
+
+
+def up_targets(entry,frame):
+    """Targets derived from entry and the FIRST target (not an actual fill).
+
+    The real confirmed first/second sale prices must never be used as a
+    substitute for these configured target prices.
+    """
+    base=number(entry)
+    if frame not in FRAMES:raise ValueError('unsupported timeframe')
+    if base is None or base<=0:raise ValueError('invalid entry')
+    first=base*(1+UP_FIRST_TARGET_PCT[frame]/100)
+    return first,first*(1+UP_SECOND_EXTRA_PCT[frame]/100)
+
+
+def initial_up_exit_state(frame):
+    """No sale, no target touch, no synthetic execution at position opening."""
+    if frame not in FRAMES:raise ValueError('unsupported timeframe')
+    return {'policy':'MA_V065_REVERSAL_UP','frame':frame,
+            'first_sold':'0','second_sold':'0',
+            'first_completed_at':'','second_completed_at':'',
+            'peak_after_second':'0','seen_above_entry':False}
+
+
+def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
+    """One CURRENT book decision for a REVERSAL_UP position.
+
+    Returns (persistable state, wanted sell qty, precise reason). Stages are
+    determined by confirmed executed quantities, not touching a price.
+    Common MA forced-exit rules are passed by caller as 'forced' and precede
+    all profit targets. A missing/faulty quote may not trigger a fictitious
+    sell. No brokerage order is sent by this pure function.
+    """
+    state=dict(state)
+    if state.get('policy')!='MA_V065_REVERSAL_UP':
+        return state,Decimal(0),''
+    frame=state.get('frame')
+    if frame not in FRAMES:
+        return state,Decimal(0),''
+    price,base,avail,initial=map(number,
+        (bid,entry,available_qty,initial_qty))
+    if (any(x is None for x in (price,base,avail,initial))
+        or price<=0 or base<=0 or avail<0 or initial<=0
+        or not isinstance(now,datetime) or now.tzinfo is None):
+        return state,Decimal(0),''
+    if forced:
+        return _full(avail,forced,state)
+    first_target,second_target=up_targets(base,frame)
+    first_goal=initial*UP_FIRST_FRACTION
+    second_goal=(initial-first_goal)*UP_SECOND_FRACTION_OF_REMAINDER
+    first_sold=number(state.get('first_sold')) or Decimal(0)
+    second_sold=number(state.get('second_sold')) or Decimal(0)
+
+    if first_sold<first_goal:
+        # Only an observed climb followed by a RETURN to entry can trigger
+        # the user's pre-first retrace rule. Do not invent a prior price path.
+        if price>base:
+            state['seen_above_entry']=True
+        if state.get('seen_above_entry') and price<=base:
+            return _full(avail,'MA_V065_UP_PRE_FIRST_ENTRY_RETURN',state)
+        if price>=first_target:
+            return state,min(avail,first_goal-first_sold),'MA_V065_UP_FIRST_10PCT'
+        return state,Decimal(0),''
+
+    if second_sold<second_goal:
+        # A completed FIRST sale, with second NOT yet fully executed:
+        # at <=entry+1% sell the entire currently held remainder.
+        if price<=base*(1+UP_FIRST_TO_SECOND_HARD_STOP):
+            return _full(avail,'MA_V065_UP_AFTER_FIRST_ENTRY_PLUS_1',state)
+        if price>=second_target:
+            return state,min(avail,second_goal-second_sold),'MA_V065_UP_SECOND_HALF_REMAINING'
+        return state,Decimal(0),''
+
+    # The SECOND stage must have actually filled 50% of the remaining
+    # post-first position. First-target protection outranks peak trailing.
+    if price<=first_target:
+        return _full(avail,'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR',state)
+    peak=max(number(state.get('peak_after_second')) or Decimal(0),price)
+    state['peak_after_second']=str(peak)
+    if price<=peak*(1-UP_TRAIL_FROM_SECOND):
+        return _full(avail,'MA_V065_UP_PEAK_MINUS_3',state)
+    return state,Decimal(0),''
+
+
+def apply_up_fill(state,reason,quantity,filled_at,initial_qty,
+                  execution_price):
+    """Record confirmed fill only. Partial fills do NOT advance a stage.
+
+    Caller persists this state in the same durable transaction as the
+    accepted PAPER or real broker fill, then calls up_exit on subsequent
+    fresh order books. Never call on rejected/cancelled/ambiguous orders.
+    """
+    state=dict(state)
+    if state.get('policy')!='MA_V065_REVERSAL_UP':return state
+    q,n,price=map(number,(quantity,initial_qty,execution_price))
+    if (any(x is None for x in (q,n,price))
+        or q<=0 or n<=0 or price<=0
+        or not isinstance(filled_at,datetime) or filled_at.tzinfo is None):
+        return state
+    first_goal=n*UP_FIRST_FRACTION
+    second_goal=(n-first_goal)*UP_SECOND_FRACTION_OF_REMAINDER
+    if reason=='MA_V065_UP_FIRST_10PCT':
+        was=number(state.get('first_sold')) or Decimal(0)
+        # Wrong/duplicate sizes should not silently advance to stage 2.
+        if was>=first_goal or q>first_goal-was:return state
+        total=was+q
+        state['first_sold']=str(total)
+        if total>=first_goal and not state.get('first_completed_at'):
+            state['first_completed_at']=filled_at.isoformat()
+    elif reason=='MA_V065_UP_SECOND_HALF_REMAINING':
+        if (number(state.get('first_sold')) or Decimal(0))<first_goal:
+            return state
+        was=number(state.get('second_sold')) or Decimal(0)
+        if was>=second_goal or q>second_goal-was:return state
+        total=was+q
+        state['second_sold']=str(total)
+        if total>=second_goal and not state.get('second_completed_at'):
+            state['second_completed_at']=filled_at.isoformat()
+            # Start following highest bid only AFTER the second fill.
+            state['peak_after_second']=str(price)
     return state
