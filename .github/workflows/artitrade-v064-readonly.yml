@@ -1,0 +1,21 @@
+name: ARTITRADE v064 read-only broker/source diagnosis
+on:
+  push:
+    branches: [ feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/audit_v064_readonly.py'
+      - '.github/workflows/artitrade-v064-readonly.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read-only-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect pinned packaged modules without starting any engine
+        run: python3 ARTITRADE_ANDROID/ui_tests/audit_v064_readonly.py
