@@ -50,3 +50,17 @@ with zipfile.ZipFile(io.BytesIO(compressed)) as archive:
             for k in range(max(0,i-2),min(len(lines),i+3)):keep.add(k)
         for k in sorted(keep)[:380]:
             print(f"{k+1:04d} {lines[k][:220]}")
+
+    slices={
+        "projectgmo/engine.py":[(1,100),(260,370),(420,645)],
+        "d_live.py":[(620,710),(1650,1795),(1840,2110),(2140,2300)],
+        "d_gmo_runtime.py":[(1,105),(390,550),(740,930)],
+    }
+    for name,regions in slices.items():
+        if name not in entries:continue
+        text=archive.read(name).decode("utf-8",errors="replace").splitlines()
+        print("SLICE_FILE",name,len(text))
+        for start,end in regions:
+            print("SLICE_RANGE",name,start,end)
+            for i in range(start-1,min(end,len(text))):
+                print(f"SLICE {name}:{i+1:04d} {text[i][:240]}")
