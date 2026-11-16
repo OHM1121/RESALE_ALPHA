@@ -3897,12 +3897,8 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
-        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/zip");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        intent.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_FULL_LEDGER_"+stamp+".zip");
-        startActivityForResult(intent,REQUEST_EXPORT_FULL_LEDGER);
+        beginPreparedLedgerExport(REQUEST_EXPORT_FULL_LEDGER,
+            "ARTITRADE_FULL_LEDGER_"+stamp+".zip",null,"research");
     }
 
     private static String hex(byte[] bytes){
@@ -4070,14 +4066,11 @@ public final class UnifiedVisualActivity extends Activity {
             pendingResearchExport=null; // Old preview-only in-memory ZIP is not full evidence.
             String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA)
                 .format(new Date());
-            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            i.addCategory(Intent.CATEGORY_OPENABLE);
-            i.setType("application/zip");
-            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
-                Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            i.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_"+market+"_"+strategy+
-                "_RESEARCH_ALL_ORIGINALS_"+stamp+".zip");
-            startActivityForResult(i,REQUEST_EXPORT_RESEARCH);
+            beginPreparedLedgerExport(REQUEST_EXPORT_RESEARCH,
+                "ARTITRADE_"+market+"_"+strategy+
+                "_RESEARCH_ALL_ORIGINALS_"+stamp+".zip",
+                pendingResearchReports,"research");
+            pendingResearchReports=null;
         }catch(Exception e){
             pendingResearchReports=null;
             new AlertDialog.Builder(this).setTitle("연구자료 추출 실패")
@@ -4124,13 +4117,11 @@ public final class UnifiedVisualActivity extends Activity {
                 "실제 매수·매도는 주문/체결 원장의 확인된 기록으로만 판단\\n");
             pendingErrorsReports=reports.toString();
             String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
-            Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            picker.addCategory(Intent.CATEGORY_OPENABLE);
-            picker.setType("application/zip");
-            picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            picker.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_"+market+
-                "_ERROR_HISTORY_ALL_ORIGINALS_"+stamp+".zip");
-            startActivityForResult(picker,REQUEST_EXPORT_ERRORS);
+            beginPreparedLedgerExport(REQUEST_EXPORT_ERRORS,
+                "ARTITRADE_"+market+
+                "_ERROR_HISTORY_ALL_ORIGINALS_"+stamp+".zip",
+                pendingErrorsReports,"errors");
+            pendingErrorsReports=null;
         }catch(Exception e){
             pendingErrorsReports=null;
             new AlertDialog.Builder(this).setTitle("오류이력 ZIP 준비 실패")
@@ -4264,26 +4255,16 @@ public final class UnifiedVisualActivity extends Activity {
                 exportFullLedgerToDocument(data.getData(),report,scope);
             return;
         }
-        if(requestCode==REQUEST_EXPORT_ERRORS){
-            String reports=pendingErrorsReports;
-            pendingErrorsReports=null;
-            if(resultCode==RESULT_OK&&reports!=null&&data!=null&&data.getData()!=null)
-                exportFullLedgerToDocument(data.getData(),reports);
-            return;
-        }
-        if(requestCode==REQUEST_EXPORT_FULL_LEDGER){
+        if(requestCode==REQUEST_EXPORT_ERRORS||
+           requestCode==REQUEST_EXPORT_RESEARCH||
+           requestCode==REQUEST_EXPORT_FULL_LEDGER){
+            pendingErrorsReports=null;pendingResearchReports=null;
+            pendingResearchExport=null;
             if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null)
-                exportFullLedgerToDocument(data.getData());
+                finishPreparedLedgerExport(requestCode,data.getData());
+            else cancelPreparedLedgerExport(requestCode);
             return;
         }
-        if(requestCode!=REQUEST_EXPORT_RESEARCH)return;
-        String reports=pendingResearchReports;
-        pendingResearchReports=null;pendingResearchExport=null;
-        if(resultCode!=RESULT_OK||reports==null||data==null||data.getData()==null)
-            return;
-        // Stream and SHA-verify the entire EXE/phone SQLite history, not the
-        // current UI's limited 3,000-row research preview.
-        exportFullLedgerToDocument(data.getData(),reports);
     }
 
     /** A date-only D-day is not a UTC instant and must not shift calendar day. */
