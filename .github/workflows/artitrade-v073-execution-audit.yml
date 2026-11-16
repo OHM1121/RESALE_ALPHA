@@ -33,8 +33,8 @@ jobs:
                       ix=[i+1 for i,row in enumerate(a) if re.search('on_quote\(|on_book\(|on_tick\(|ENTRY_PLUS2_FLOOR|_process|_submit|pending_sell|broker|paper|reserve_sell|orderbook|quote',row,re.I)]
                       for n in ix[:75]:
                           print('GMO_SPOT',n,a[n-1][:210])
-                      for st,en in sorted(selected):
-                          if re.search('quote|sell|tick|book|pending|order|submit|on_',en,re.I) and st<=1000:
+                      for st,en,name in sorted(selected):
+                          if re.search('quote|sell|tick|book|pending|order|submit|on_',name,re.I) and st<=1000:
                               print('===GMO_METHOD',st,en,'===')
                               for k in range(st,min(en,st+95)+1):print('GMO_CODE',k,a[k-1][:205])
                   if fname=='projectgmo/engine.py':
