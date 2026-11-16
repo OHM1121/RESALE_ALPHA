@@ -30,7 +30,7 @@ def patch_method(method_name, before, after):
     segment="".join(lines[node.lineno-1:node.end_lineno])
     assert segment.count(before)==1, (method_name,"expected exact statement",segment.count(before))
     segment=segment.replace(before,after,1)
-    lines[node.lineno-1:node.end_lineno]=[segment]
+    lines[node.lineno-1:node.end_lineno]=segment.splitlines(keepends=True)
 
 patch_method("_switch_venue_subscriptions",
     "        want = self._desired_subscriptions()\n",
