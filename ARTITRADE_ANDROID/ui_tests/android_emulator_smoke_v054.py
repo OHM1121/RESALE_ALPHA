@@ -292,11 +292,17 @@ def real_boot():
     print("WARM_RESUME_NO_PRELOAD_PASS",flush=True)
     # v076: actual Android 15 right drawer must show BOTH horizontal
     # export progress controls. No ZIP request or broker call in this smoke.
-    tree=choose("☰",tree)
+    tree=choose("설정 열기",tree)
     check_screen("v076_export_progress_drawer",
                  ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=2)
     print("V076_RIGHT_DRAWER_EXPORT_PROGRESS_BARS_VISIBLE",flush=True)
-    tree=choose("×")
+    # Touch the dark scrim to the left of the right-aligned drawer.
+    # Its close icon may be offscreen after scrolling the long drawer.
+    adb("shell","input","tap","14","430")
+    time.sleep(.7)
+    tree=dump("v076_export_drawer_closed")
+    if contains(tree,"오류이력 ZIP 추출"):
+        raise AssertionError("RIGHT_DRAWER_DID_NOT_CLOSE")
     # v053: the actual service-enabled app must initialize the new research
     # journal. Dashboard-only checks can pass even when Python failed to start.
     tracker="files/ARTITRADE_PHONE_MAIN_V070/POST_EXIT_HIGH_V053.sqlite3"
