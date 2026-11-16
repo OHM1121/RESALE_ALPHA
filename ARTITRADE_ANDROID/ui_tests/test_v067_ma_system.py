@@ -84,6 +84,24 @@ class SustainedAlignment(unittest.TestCase):
         self.assertEqual(why,'MA_V065_UP_SECOND_HALF_REMAINING')
         self.assertEqual(want,D(45))
 
+    def test_integer_stock_qty_13_confirms_2_share_first_and_6_share_second(self):
+        state=ma.initial_up_exit_state('5m')
+        state['rounded_first_goal']='2'
+        state['rounded_second_goal']='6'
+        goal1,goal2=ma.up_targets(D(100),'5m')
+        _,qty,reason=ma.up_exit(state,goal1,100,13,13,NOW)
+        self.assertEqual((qty,reason),(D(2),'MA_V065_UP_FIRST_10PCT'))
+        filled=ma.apply_up_fill(state,reason,2,NOW,13,goal1)
+        self.assertEqual(D(filled['first_sold']),D(2))
+        _,qty,reason=ma.up_exit(filled,goal2,100,11,13,NOW)
+        self.assertEqual((qty,reason),(D(6),'MA_V065_UP_SECOND_HALF_REMAINING'))
+        second=ma.apply_up_fill(filled,reason,6,NOW,13,goal2)
+        self.assertEqual(D(second['second_sold']),D(6))
+        self.assertTrue(second['second_completed_at'])
+        _,qty,reason=ma.up_exit(second,goal1,100,5,13,NOW)
+        self.assertEqual((qty,reason),(D(5),
+                        'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR'))
+
     def test_upward_order_is_not_eligible_after_15s(self):
         self.assertTrue(ma.within_up_fill_deadline(NOW,NOW+dt.timedelta(seconds=15)))
         self.assertFalse(ma.within_up_fill_deadline(NOW,NOW+dt.timedelta(seconds=15.001)))
