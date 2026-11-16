@@ -173,6 +173,11 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private DrawerProgressViews drawerPublishProgress;
     private DrawerProgressViews drawerImportProgress;
+    private DrawerProgressViews drawerErrorExportProgress;
+    private DrawerProgressViews drawerResearchExportProgress;
+    private static final String EXPORT_PROGRESS_PREF="artitrade_export_progress_v076";
+    private static final String EXPORT_READY_PREF="artitrade_export_prepared_v076";
+    private static final String PY_EXPORT_PROGRESS="artitrade_py_backup_progress_v076.json";
     // Refresh only the visible progress widgets, not the whole drawer or its scroll position.
     // Import and publish progress are stored locally by the service after each completed unit.
     private final Runnable drawerProgressTicker=new Runnable(){
@@ -708,9 +713,15 @@ public final class UnifiedVisualActivity extends Activity {
         int total=state==null?0:state.optInt("total",0);
         boolean active=total>0||(!stage.isEmpty()&&
             !"IDLE".equalsIgnoreCase(stage)&&!"WAIT".equalsIgnoreCase(stage));
-        views.detail.setText(SyncStatusV036.phase(
-            state!=null&&state.optBoolean("complete",false),
-            error,done,total,active));
+        if(state!=null&&state.optBoolean("export_progress_v076",false)){
+            String detail=state.optString("detail","");
+            views.detail.setText(stage+(detail.isEmpty()?"":" · "+detail));
+            views.detail.setMaxLines(3);
+        }else{
+            views.detail.setText(SyncStatusV036.phase(
+                state!=null&&state.optBoolean("complete",false),
+                error,done,total,active));
+        }
     }
 
     private DrawerProgressViews addProgressBlock(LinearLayout parent,String title,JSONObject state,int accent){
@@ -759,6 +770,34 @@ public final class UnifiedVisualActivity extends Activity {
         return state;
     }
 
+    private JSONObject drawerExportProgress(String kind){
+        android.content.SharedPreferences pref=getSharedPreferences(
+            EXPORT_PROGRESS_PREF,MODE_PRIVATE);
+        JSONObject state=new JSONObject();
+        try{state=new JSONObject(pref.getString(kind,"{}"));}catch(Exception ignored){}
+        if(!state.optBoolean("active",false)||
+            !"PREPARE".equals(state.optString("stage_key","")))return state;
+        // Python writes a <250-byte atomic stage file after each WAL-backed
+        // source snapshot and ZIP member. Safe 750ms UI ticker, no broker I/O.
+        try{
+            File p=new File(getCacheDir(),PY_EXPORT_PROGRESS);
+            if(p.isFile()&&p.length()<2048){
+                byte[] bytes=new byte[(int)p.length()];
+                try(InputStream in=new FileInputStream(p)){
+                    if(in.read(bytes)!=bytes.length)return state;
+                }
+                JSONObject current=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+                if(current.optLong("updated_ms",0)>=state.optLong("started_ms",Long.MAX_VALUE)){
+                    state.put("percent",Math.max(state.optInt("percent",0),
+                        current.optInt("percent",0)));
+                    state.put("stage",current.optString("stage","ZIP 준비"));
+                    state.put("detail",current.optString("detail",""));
+                }
+            }
+        }catch(Exception ignored){}
+        return state;
+    }
+
     private void refreshOpenDrawerProgress(){
         if(drawerOverlay==null)return;
         updateHeader();
@@ -769,12 +808,16 @@ public final class UnifiedVisualActivity extends Activity {
             drawerLocalProgress("artitrade_mserver_sync_v078",false));
         updateDrawerProgressView(drawerImportProgress,
             effectiveImportProgress(drawerLocalProgress("artitrade_pc_ledger_import_progress_v078",true),snapshot));
+        updateDrawerProgressView(drawerErrorExportProgress,drawerExportProgress("errors"));
+        updateDrawerProgressView(drawerResearchExportProgress,drawerExportProgress("research"));
     }
 
     private void stopDrawerProgressTicker(){
         main.removeCallbacks(drawerProgressTicker);
         drawerPublishProgress=null;
         drawerImportProgress=null;
+        drawerErrorExportProgress=null;
+        drawerResearchExportProgress=null;
     }
 
     private void logMserverIssue(String key,String original){
@@ -949,6 +992,17 @@ public final class UnifiedVisualActivity extends Activity {
         advancedLp.setMargins(0,dp(5),0,0);
         tools.addView(advanced,advancedLp);
         panel.addView(tools);
+
+        TextView exportTitle=text("내보내기 진행 상황",13);
+        exportTitle.setTextColor(Color.rgb(174,196,231));
+        exportTitle.setPadding(0,dp(15),0,dp(7));
+        panel.addView(exportTitle);
+        LinearLayout exports=card();
+        drawerErrorExportProgress=addProgressBlock(exports,"오류이력 ZIP 추출",
+            drawerExportProgress("errors"),Color.rgb(255,174,112));
+        drawerResearchExportProgress=addProgressBlock(exports,"연구이력 ZIP 추출",
+            drawerExportProgress("research"),Color.rgb(92,194,244));
+        panel.addView(exports);
 
         FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(width,-1,Gravity.END);overlay.addView(scroll,pp);
         drawerOverlay=overlay;root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
