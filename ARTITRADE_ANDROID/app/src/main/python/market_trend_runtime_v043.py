@@ -388,9 +388,46 @@ class Coordinator:
             if time.monotonic()-self._last_rank[market]>600:
                 with self.lock:self._candidates[market]={}
 
+    @staticmethod
+    def _native_coin_history(frame,code,now):
+        """Reuse actual native MA officially verified bars; never fill gaps."""
+        try:
+            import ma_v061_coin_runtime as ma
+            with ma._HISTORY_LOCK:
+                captured=ma._HISTORY.get((frame,code))
+            if not captured or len(captured[1])<21:return []
+            # A fresh copy of the full MA-verified history can eliminate a
+            # redundant Upbit REST fetch. A stale native cache cannot be used
+            # for the executable RSI20 decision.
+            end_expected=_end_clock(now,'coin',frame)-dt.timedelta(
+                seconds=mt.FRAME_SECS[frame])
+            stamp=mt._as_kst(captured[0])
+            if stamp!=end_expected:return []
+            bars={}
+            for bar in captured[1]:
+                start=mt._as_kst(bar['start'])
+                finish=start+dt.timedelta(seconds=mt.FRAME_SECS[frame])
+                close=mt._finite(bar.get('close'))
+                high=mt._finite(bar.get('high'))
+                low=mt._finite(bar.get('low'))
+                if (finish>now or close is None or high is None or
+                    low is None or low<=0 or high<close or close<low):
+                    continue
+                bars[start.isoformat()]={'start':start,'end':finish,
+                    'close':close,'high':high,'low':low,
+                    'source':'NATIVE_UPBIT_VERIFIED_COMPLETED'}
+            result=sorted(bars.values(),key=lambda x:x['end'])[-125:]
+            if len(result)<21 or result[-1]['end']!=end_expected:return []
+            return result
+        except (ImportError,AttributeError,KeyError,TypeError,ValueError,
+                OverflowError):
+            return []
+
     def _raw_history(self,market,code,frame):
         now=dt.datetime.now(mt.KST)
         if market=="coin":
+            native=self._native_coin_history(frame,code,now)
+            if len(native)>=21:return native
             client=self.rt.coin_runner.minute_client
             data=client.candles(code,frame,count=200)
             return _bars_from_upbit(data,frame,now)
