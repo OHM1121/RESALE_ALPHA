@@ -53,14 +53,14 @@ class Ma120ToleranceTests(unittest.TestCase):
                                                     Decimal('15.5'),Decimal('4.5'))
         self.assertEqual(result['kind'],'REVERSAL_UP')
         self.assertIn('ma_120_delta',result)
-        self.assertEqual(result['reason'],'FIRST_FORMING_SHORT4_UP_AT_MINUS_5')
+        self.assertEqual(result['reason'],'FIRST_FORMING_SHORT4_UP_AT_MINUS_10_TO_2')
 
-    def test_strict_5_second_deadline_and_existing_protective_exit_unchanged(self):
+    def test_strict_10_to_2_second_deadline_and_existing_protective_exit_unchanged(self):
         with patch.object(ma,'slopes',side_effect=[
                 self.movement('-.02'),self.movement('0.001')]):
             self.assertEqual(
-                ma.upward_transition_on_forming([Decimal(12)]*121,15.5,3.9)['reason'],
-                'NOT_CLOSE_MINUS_FIVE_SECONDS')
+                ma.upward_transition_on_forming([Decimal(12)]*121,15.5,1.9)['reason'],
+                'NOT_CLOSE_MINUS_TEN_TO_TWO_SECONDS')
         src=(APP/'ma_v067_policy.py').read_text()
         self.assertIn("if m[120]['delta']>0 and all(",src)
         self.assertIn('MAX_UP_FILL_DELAY_SECONDS=15',src)
