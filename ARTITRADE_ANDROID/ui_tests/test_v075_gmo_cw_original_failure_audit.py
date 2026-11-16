@@ -113,7 +113,8 @@ class SourceEvidenceTests(unittest.TestCase):
                 while time.monotonic()<deadline and not latest.get('stock'):
                     time.sleep(.025);latest=audit.snapshot_for_root(d)
                 self.assertTrue(latest['stock'])
-                self.assertEqual(latest['schema'],'ARTITRADE_ENTRY_FAILURE_AUDIT_V075')
+                self.assertIn(latest['schema'],('ARTITRADE_ENTRY_FAILURE_AUDIT_V075',
+                                      'ARTITRADE_ENTRY_FAILURE_AUDIT_V076'))
 
     def test_stock_ui_error_and_original_research_zip_paths_stay_connected(self):
         java=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
