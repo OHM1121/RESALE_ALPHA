@@ -257,6 +257,26 @@ def install():
     ma.MACoinLedger.record_candidate=record
     original_buy=ma.MACoinLedger._buy
     def buy(self,c,order,book,seen,available):
+        # Pending DOWN_BEAR limit buys may be filled several minutes after
+        # their source candle. A newer live quote can already match the
+        # existing forced SELL pattern. Never turn that into a fresh BUY.
+        try:
+            frame=str(order['tf']);symbol=str(order['market'])
+            stamp=seen if isinstance(seen,dt.datetime) else dt.datetime.fromisoformat(str(seen))
+            if stamp.tzinfo is not None and isinstance(book,dict):
+                asks=rule.dec(book.get('ask'))
+                bids=rule.dec(book.get('bid'))
+                if asks is not None and bids is not None and asks>=bids>0:
+                    forced=_verified_forced(frame,symbol,asks,stamp) or _verified_forced(frame,symbol,bids,stamp)
+                    if forced:
+                        c.execute('INSERT INTO issues(at,severity,code,message) VALUES(?,?,?,?)',
+                                  (stamp.isoformat(),'WARN','MA_V064_ENTRY_SELL_CONFLICT',
+                                   frame+' '+symbol+' '+forced+'; new buy suppressed'))
+                        return 0
+        except (KeyError,ValueError,TypeError,sqlite3.Error):
+            # Never manufacture a bypass order on a failed guard. The original
+            # order path remains authoritative and independently fail-closed.
+            return 0
         result=original_buy(self,c,order,book,seen,available)
         if result:
             row=c.execute("""SELECT p.* FROM positions p
