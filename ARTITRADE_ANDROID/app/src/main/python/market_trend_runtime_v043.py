@@ -894,7 +894,12 @@ class Coordinator:
                     max_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
                     if raw is None or since-raw[1]>max_age:
                         self._entry_block_counts[market]['WATCH_TICK_STALE']+=1
-                        for frame in mt.FRAMES:self.watch.discard(market,code,frame)
+                        # A new BUY may not use this price. However, deleting
+                        # a PREVIOUSLY verified RSI watch every 5s made quiet
+                        # stocks invisible even though WatchBook has a 45s
+                        # explicit expiry. Keep that proven old watch labelled
+                        # by its original observation time until TTL expires.
+                        # Actual -12s BUY still requires a NEW fresh trade/book.
                         continue
                     price=raw[0]
                     for frame in mt.FRAMES:
