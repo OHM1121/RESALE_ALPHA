@@ -1,8 +1,8 @@
 """MA v067 coin: current verified Upbit orderbook and live ticker only.
 
 V067 bear candidate decision replaces V061 first-next-bar restriction.
-Close-minus-five positive turnpoint is created only on actual exchange
-prints + fresh ask/size. Native MACoinLedger remains sole order/fill owner.
+Close-minus-10 to minus-2s positive turnpoint is created only on actual
+exchange prints + fresh ask/size; a 30s preview never creates an order. Native MACoinLedger remains sole order/fill owner.
 """
 from __future__ import annotations
 import datetime as dt
@@ -121,7 +121,9 @@ def _recent_trade(self,market,now):
 
 def _bar_close(now,frame):
     if frame=='day':
-        finish=now.replace(hour=0,minute=0,second=0,microsecond=0)+dt.timedelta(days=1)
+        # Upbit daily candles close at 00:00 UTC = 09:00 KST.
+        finish=now.replace(hour=9,minute=0,second=0,microsecond=0)
+        if finish<=now:finish+=dt.timedelta(days=1)
     elif frame=='60m':
         finish=now.replace(minute=0,second=0,microsecond=0)+dt.timedelta(hours=1)
     else:
@@ -177,13 +179,13 @@ def _v074_coin_tick_worker(runner):
         try:code,queued_at=tasks.get(timeout=.2)
         except queue.Empty:continue
         try:
-            if time.monotonic()-queued_at>1.0:
+            if time.monotonic()-queued_at>1.5:
                 _record_v074_ma_observation(code,'all','LIVE',
                                             'OPERATIONAL_MA_TICK_WORKER_LATE')
                 continue
             now=dt.datetime.now(KST)
             due=[(tf,end) for tf in ('5m','30m','60m','day')
-                 for remain,end in [_bar_close(now,tf)] if 4<=remain<=5]
+                 for remain,end in [_bar_close(now,tf)] if 2<=remain<=30]
             if not due:continue
             lock=getattr(runner,'_lock',None)
             if lock is not None:
@@ -193,13 +195,15 @@ def _v074_coin_tick_worker(runner):
             if not isinstance(book,dict):
                 for tf,end in due:
                     _record_v074_ma_observation(code,tf,end.isoformat(),
-                                                'UP_NO_BOOK_AFTER_FRESH_TICKER')
+                        ('MA_PREWATCH_BOOK_NOT_READY' if policy.in_ma_prewatch_window(_bar_close(now,tf)[0])
+                         else 'UP_NO_BOOK_AFTER_FRESH_TICKER'))
                 continue
             stamp=book.get('timestamp')
             if not isinstance(stamp,(int,float)) or abs(now.timestamp()-stamp/1000)>3:
                 for tf,end in due:
                     _record_v074_ma_observation(code,tf,end.isoformat(),
-                                                'UP_CACHED_BOOK_STALE_AFTER_TICKER')
+                        ('MA_PREWATCH_BOOK_STALE' if policy.in_ma_prewatch_window(_bar_close(now,tf)[0])
+                         else 'UP_CACHED_BOOK_STALE_AFTER_TICKER'))
                 continue
             ledger=getattr(runner,'ma_ledger',None)
             if ledger is not None:
@@ -213,7 +217,7 @@ def _v074_coin_tick_worker(runner):
 
 
 def _record_v074_ma_observation(symbol,frame,bar_end,reason,details=None):
-    """No broker calls or SQLite on the 5-second decision thread."""
+    """No broker calls or SQLite on the genuine WS decision thread."""
     try:
         import market_trend_runtime_v043 as trend
         core=getattr(trend,"_CORE",None)
@@ -230,9 +234,34 @@ def _new_up_candidate(self,book,now):
     if not isinstance(book,dict):return
     symbol=str(book.get('market') or '')
     if not symbol.startswith('KRW-'):return
-    # The original 4~5 second time gate remains exactly unchanged.
-    due=[(tf,_bar_close(now,tf)[1]) for tf in ('5m','30m','60m','day')
-         if 4<=_bar_close(now,tf)[0]<=5]
+    # Read-only 30..10s observation; only a genuine 10..2s trade+book
+    # with the original native account/FOK path may register a candidate.
+    watch=[(tf,end,remain) for tf in ('5m','30m','60m','day')
+           for remain,end in [_bar_close(now,tf)]
+           if policy.in_ma_prewatch_window(remain)]
+    due=[(tf,end) for tf in ('5m','30m','60m','day')
+         for remain,end in [_bar_close(now,tf)]
+         if policy.in_up_entry_window(remain)]
+    if not watch and not due:return
+    if watch:
+        if not hasattr(self,'_ma_v079_prewatch_keys'):self._ma_v079_prewatch_keys=set()
+        for tf,end,remain in watch:
+            mark=(symbol,tf,end.isoformat(),int(remain//5))
+            if mark in self._ma_v079_prewatch_keys:continue
+            self._ma_v079_prewatch_keys.add(mark)
+            trade=_recent_trade(self,symbol,now)
+            evidence={'seconds_to_close':round(remain,3),'observation_only':True,
+                      'live_source':'UPBIT_VERIFIED_TICKER'}
+            if trade is None:
+                reason='MA_PREWATCH_NO_VERIFIED_TICK'
+            else:
+                history=_prior_verified_closes(tf,symbol,now)
+                preview=policy.prewatch_upward_alignment(history,trade)
+                reason='MA_PREWATCH_'+str(preview.get('reason') or 'UNKNOWN')
+                evidence.update({k:preview[k] for k in ('ma_120_delta','ma_60_delta','ma120_down_tolerance') if k in preview})
+                evidence['trade_price']=str(trade)
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),reason,evidence)
+        if len(self._ma_v079_prewatch_keys)>12000:self._ma_v079_prewatch_keys.clear()
     if not due:return
     price=_recent_trade(self,symbol,now)
     if price is None or price<=0:
@@ -276,6 +305,34 @@ def _new_up_candidate(self,book,now):
                                             'ma_120_delta','ma_60_delta',
                                             'ma120_down_tolerance') if k in verdict})
             continue
+        # Latest verified ticker and book must STILL satisfy the same rule
+        # at submission. A 30s preview and an earlier passing tick are never
+        # treated as executable evidence or manufactured broker fills.
+        submit_now=dt.datetime.now(KST)
+        submit_remaining,submit_end=_bar_close(submit_now,tf)
+        if submit_end!=end or not policy.in_up_entry_window(submit_remaining):
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'UP_LAST_RECHECK_OUTSIDE_10_TO_2_SECONDS')
+            continue
+        final_price=_recent_trade(self,symbol,submit_now)
+        if final_price is None:
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'UP_LAST_RECHECK_GENUINE_TICK_STALE')
+            continue
+        if abs(submit_now.timestamp()-book['timestamp']/1000)>3:
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'UP_LAST_RECHECK_BOOK_STALE')
+            continue
+        checked=policy.upward_transition_on_forming(history,final_price,submit_remaining)
+        if checked.get('kind')!='REVERSAL_UP':
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'UP_LAST_RECHECK_ALIGNMENT_LOST',
+                                        {'last_trade_price':str(final_price),
+                                         'reason':str(checked.get('reason') or 'NO_MATCH')})
+            continue
+        now=submit_now
+        verdict=checked
+        price=final_price
         limit=floor_tick(ask,tick)
         if limit<ask:limit+=tick
         target=limit*(Decimal(1)+policy.UP_FIRST_TARGET_PCT[tf]/100)
@@ -292,7 +349,7 @@ def _new_up_candidate(self,book,now):
             'ma_bear_override':True,'ma_special_reference':False,
             'v24_first_fraction':'.10',
             'tick_size':str(tick),
-            'source':'UPBIT_V067_FORMING_FRESH_TICK_AND_BOOK'}
+            'source':'UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK'}
         candidate={'frame':tf,'market':symbol,
             'ref_at':start.astimezone(dt.timezone.utc).isoformat(),
             'ref_end':end.astimezone(dt.timezone.utc).isoformat(),
@@ -493,7 +550,7 @@ def install():
             ledger._ma_v067_live_ticks[str(code)]=(price,time.monotonic())
             try:
                 now=dt.datetime.now(KST)
-                if any(4<=_bar_close(now,tf)[0]<=5
+                if any(2<=_bar_close(now,tf)[0]<=30
                        for tf in ('5m','30m','60m','day')):
                     pending=getattr(runner,'_ma_v074_tick_queue',None)
                     if pending is None:
@@ -506,7 +563,24 @@ def install():
                             name='ARTITRADE_V074_UPBIT_MA_FIRST_FLIP')
                         runner._ma_v074_tick_thread=worker
                         worker.start()
-                    try:pending.put_nowait((str(code),time.monotonic()))
+                    # Prewatch samples every 5s; during the 10..2s execution
+                    # window allow a genuine-ticker retry every 250ms.
+                    with _LOCK:
+                        gate=getattr(runner,'_ma_v079_ws_queue_gate',None)
+                        if gate is None:
+                            gate={};runner._ma_v079_ws_queue_gate=gate
+                        remaining=min(_bar_close(now,tf)[0] for tf in ('5m','30m','60m','day')
+                                      if 2<=_bar_close(now,tf)[0]<=30)
+                        cooldown=.25 if policy.in_up_entry_window(remaining) else 5.0
+                        stamped=time.monotonic()
+                        permitted=stamped-gate.get(str(code),0)>cooldown
+                        if permitted:gate[str(code)]=stamped
+                        if len(gate)>200:gate.clear()
+                    if permitted:
+                        try:pending.put_nowait((str(code),time.monotonic()))
+                        except queue.Full:
+                            _record_v074_ma_observation(str(code),'all',now.isoformat(),
+                                'OPERATIONAL_MA_TICK_QUEUE_FULL')
                     except queue.Full:
                         _record_v074_ma_observation(str(code),'all',now.isoformat(),
                             'OPERATIONAL_MA_TICK_QUEUE_FULL')
