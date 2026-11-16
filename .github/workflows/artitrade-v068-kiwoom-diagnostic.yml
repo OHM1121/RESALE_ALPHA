@@ -55,7 +55,7 @@ jobs:
           for node in tree.body:
               if isinstance(node,ast.ClassDef) and node.name=="LivePaperRunner":
                   for fn in node.body:
-                      if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)) and fn.name in ("_repair_gmo_depth_on_existing_ws","_switch_venue_subscriptions","_register_subscriptions","_startup_preload"):
+                      if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)) and fn.name in ("_repair_gmo_depth_on_existing_ws","_switch_venue_subscriptions","_register_subscriptions","_startup_preload","_warmup","_boot_market","_has_usable_history"):
                           print("=== EXTRA",fn.name,"===")
                           for i in range(fn.lineno,fn.end_lineno+1):
                               print("%5d %s"%(i,lines[i-1]))
