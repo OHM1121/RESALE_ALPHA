@@ -41,6 +41,13 @@ class TrendAudit(unittest.TestCase):
         self.at = dt.datetime(2026, 11, 15, 10, 4, 48, tzinfo=mt.KST)
         self.wallet = TrendWalletV054(self.rt)
 
+    def make_co(self):
+        # Every async forensic writer must finish before the test's temp DB
+        # directory is deleted. This also prevents nondeterministic test leaks.
+        co=Coordinator(self.rt)
+        self.addCleanup(co.stop)
+        return co
+
     def buy(self, symbol='KRW-BTC', bar='2026-11-15T10:05:00+09:00'):
         p, status = self.wallet.buy('coin', '5m', symbol, symbol, 10000, 100,
                                      self.at, bar, 29.0)
@@ -74,7 +81,7 @@ class TrendAudit(unittest.TestCase):
         self.assertEqual(report['closed'],1, 'One closed trade must not count twice')
 
     def test_original_at_ma_mode_survives_market_trend_monitor_failure(self):
-        co=Coordinator(self.rt)
+        co=self.make_co()
         co._update_score=lambda m: co.modes.__setitem__(m,'ORIGINAL')
         def broken(_market):
             raise RuntimeError('temporary history unavailable')
@@ -109,7 +116,7 @@ class TrendAudit(unittest.TestCase):
         self.assertEqual(self.wallet.allocation('coin','5m')['positions'],0)
 
     def test_existing_legacy_duplicate_mt54_row_is_read_once_in_trend_ai(self):
-        co=Coordinator(self.rt)
+        co=self.make_co()
         co.standalone_wallet.legacy_owned=lambda market,symbol:False
         p,status=co.standalone_wallet.buy('coin','5m','KRW-BTC','BTC',10000,100,
                      self.at,'2026-11-15T10:05:00+09:00',29)
@@ -123,7 +130,7 @@ class TrendAudit(unittest.TestCase):
         self.assertEqual(analyze(self.root,'coin')['closed'],1)
 
     def test_uncertain_buy_does_not_create_virtual_fill(self):
-        co=Coordinator(self.rt)
+        co=self.make_co()
         now=self.at
         finish=dt.datetime(2026,11,15,10,5,tzinfo=mt.KST)
         co._candidates['coin']={'KRW-BTC':('CRYPTO','KRW-BTC')}
@@ -185,7 +192,7 @@ class TrendAudit(unittest.TestCase):
         self.assertFalse(fresh.stop_reentry_blocked('coin','KRW-BTC',self.at+dt.timedelta(days=1)))
 
     def test_old_precheck_and_order_cache_bounded_after_many_bars(self):
-        co=Coordinator(self.rt)
+        co=self.make_co()
         now=dt.datetime(2026,11,15,10,10,tzinfo=mt.KST)
         past=(now-dt.timedelta(days=3)).isoformat()
         for i in range(3500):
@@ -198,7 +205,7 @@ class TrendAudit(unittest.TestCase):
 
     def test_new_process_prunes_old_cache_even_when_uptime_below_five_minutes(self):
         from unittest.mock import patch
-        co=Coordinator(self.rt)
+        co=self.make_co()
         now=dt.datetime(2026,11,15,10,10,tzinfo=mt.KST)
         past=(now-dt.timedelta(days=3)).isoformat()
         for i in range(3500):
@@ -261,7 +268,7 @@ class TrendAudit(unittest.TestCase):
     def test_audit_release_increments_versioncode_for_in_place_upgrade(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf8')
         self.assertRegex(gradle,r'versionCode (?:6[2-9]|[7-9][0-9])')
-        self.assertIn("versionName '0.7.73-GMO-EXIT-WATCH-QUOTE'", gradle)
+        self.assertIn("versionName '0.7.74-RSI-MA-FORENSIC'", gradle)
 
     def test_trend_ui_is_not_mislabeled_as_actual_broker_account(self):
         ui=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text('utf8')
