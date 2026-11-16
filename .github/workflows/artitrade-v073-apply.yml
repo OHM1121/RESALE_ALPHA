@@ -3,7 +3,11 @@ on:
   workflow_dispatch:
   push:
     branches: [ fix-artitrade-v073-execution-feed-gmo-ma-trend-20261116 ]
-    paths: [ '.github/workflows/artitrade-v073-apply.yml' ]
+    paths:
+      - '.github/workflows/artitrade-v073-apply.yml'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v073_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v066_stock_quote_truth.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v072_stock_quote_display.py'
 permissions:
   contents: write
 concurrency:
