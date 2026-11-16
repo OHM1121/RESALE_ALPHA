@@ -1,4 +1,4 @@
-"""Regression tests for an owner-requested 1% GMO floor and true cold start.
+"""Regression tests for an retained current 2% GMO floor and true cold start.
 
 Uses only the SHA-pinned packaged core and synthetic quotes. No broker,
 network, or real account paths are invoked.
@@ -48,8 +48,8 @@ class V063GmoSafeguards(unittest.TestCase):
                                trading_day_index=2,last=price,bid=price,ask=price,
                                bid_size=200,ask_size=200,venue="KRX",receive_delay_seconds=0)
 
-    def test_new_gmo_accounts_default_to_entry_plus_one_percent(self):
-        self.assertAlmostEqual(self.Engine().cfg.entry_profit_floor,0.01)
+    def test_new_gmo_accounts_default_to_entry_plus_two_percent(self):
+        self.assertAlmostEqual(self.Engine().cfg.entry_profit_floor,0.02)
 
     def test_existing_gmo_state_policy_migrates_without_erasing_fills(self):
         old=self.Engine()
@@ -57,17 +57,17 @@ class V063GmoSafeguards(unittest.TestCase):
         old.fills.append({"code":"089890","qty":2,"price":104,"purpose":"TP4_FIRST_20PCT"})
         original=old.export_state()
         upgraded=self.Engine.from_state(original)
-        self.assertAlmostEqual(upgraded.cfg.entry_profit_floor,0.01)
+        self.assertAlmostEqual(upgraded.cfg.entry_profit_floor,0.02)
         self.assertEqual(upgraded.positions["089890"].qty,8)
         self.assertEqual(upgraded.fills[0]["qty"],2)
 
-    def test_first_target_protection_waits_until_buy_plus_one(self):
+    def test_first_target_protection_waits_until_entry_plus_two(self):
         eng=self.Engine()
         eng.positions["089890"]=self.position()
-        self.assertEqual(eng.on_quote(self.tick(101.5,1)),[])
-        intents=eng.on_quote(self.tick(100.9,2))
+        self.assertEqual(eng.on_quote(self.tick(103.0,1)),[])
+        intents=eng.on_quote(self.tick(101.9,2))
         self.assertEqual(len(intents),1)
-        self.assertEqual(intents[0].purpose,"ENTRY_PLUS1_FLOOR")
+        self.assertEqual(intents[0].purpose,"ENTRY_PLUS2_FLOOR")
         self.assertEqual(intents[0].requested,8)
 
     def test_first_target_exit_preempts_unfilled_tp2_intent_safely(self):
