@@ -64,3 +64,16 @@ with zipfile.ZipFile(io.BytesIO(compressed)) as archive:
             print("SLICE_RANGE",name,start,end)
             for i in range(start-1,min(end,len(text))):
                 print(f"SLICE {name}:{i+1:04d} {text[i][:240]}")
+
+    extra={
+        "projectgmo/engine.py":[(368,428),(646,743)],
+        "d_live.py":[(2110,2146),(2290,2349)],
+        "d_gmo_runtime.py":[(105,220),(550,740)],
+    }
+    for name,regions in extra.items():
+        if name not in entries:continue
+        lines=archive.read(name).decode("utf-8",errors="replace").splitlines()
+        for start,end in regions:
+            print("EXTRA_RANGE",name,start,end)
+            for i in range(start-1,min(end,len(lines))):
+                print(f"EXTRA {name}:{i+1:04d} {lines[i][:240]}")
