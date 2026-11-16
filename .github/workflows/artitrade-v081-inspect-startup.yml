@@ -1,0 +1,45 @@
+name: ARTITRADE v081 inspect verified startup/feed APIs
+on:
+  push:
+    branches: [ artitrade-v081-preload-both-feeds-20261116 ]
+    paths: [ '.github/workflows/artitrade-v081-inspect-startup.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect original SHA-pinned core startup/sockets without modifying source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,zipfile,io,re
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          p=root/'assets/strategy_v070'
+          z=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          bridge=(root/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          assert 'CORE_SHA256="'+hashlib.sha256(z).hexdigest()+'"' in bridge
+          with zipfile.ZipFile(io.BytesIO(z)) as f:
+              assert f.testzip() is None
+              for name in ['android_live_bridge.py','d_live.py','d_upbit.py']:
+                  src=f.read(name).decode()
+                  lines=src.splitlines()
+                  print('===FILE===',name,'lines',len(lines))
+                  if name=='android_live_bridge.py':
+                      pattern=r'^    def (start|snapshot|_start|_coin|_stock|stop)\b|^def (start|snapshot)|coin_runner|stock_runner|threading.Thread|asyncio|create_task'
+                  elif name=='d_live.py':
+                      pattern=r'^    async def run\b|^    def run\b|_confirmed_ws_session|preload_gate|^    def _.*preload|^    async def .*feed|_tracked_codes|self\.subscriptions|auth'
+                  else:
+                      pattern=r'^    def (run|_ws|_both_watched_codes|_refresh|_load|_ensure|start|__init__|candles)\b|_ws_connected|_ws_last_frame|_ws_last_reason|self\.tracked|latest_prices|\.markets|last_book'
+                  found=[i for i,l in enumerate(lines) if re.search(pattern,l)]
+                  for i in found[:90]:
+                      print('HIT',i+1,lines[i][:230])
+                      if (re.match(r'^    def (start|snapshot|_both_watched_codes|__init__|run)',lines[i]) or
+                          re.match(r'^    async def run',lines[i]) or
+                          'self._ws_connected' in lines[i] or 'preload_gate' in lines[i]):
+                          for j in range(max(0,i-1),min(len(lines),i+10)):
+                              print('CTX',j+1,lines[j][:205])
+          PY
