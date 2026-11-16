@@ -6,6 +6,8 @@ on:
       - '.github/workflows/artitrade-v080-ma-trend-regression.yml'
       - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_v043.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v080_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v077_ma_watchdog_krx_session.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
       - 'ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/**'
       - 'ARTITRADE_ANDROID/app/build.gradle'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
