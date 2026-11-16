@@ -2665,6 +2665,16 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject probes=all.optJSONObject("broker_probe");
         JSONObject oauth=probes==null?null:probes.optJSONObject("kiwoom");
         JSONObject auth=all.optJSONObject("broker_storage");
+        JSONObject liveFlags=engine==null?null:engine.optJSONObject("live_enabled");
+        JSONObject mserverAuth=all.optJSONObject("mserver_auth");
+        long lastFrame=feed==null?0L:feed.optLong("last_frame_ms",0L);
+        String feedAge=lastFrame<=0L?"유효 체결 미수신":
+            Math.max(0L,(System.currentTimeMillis()-lastFrame)/1000L)+"초 전";
+        String orderMode=liveFlags==null?"확인 불가":
+            liveFlags.optBoolean("stock",false)?"설정상 ON":"설정상 OFF";
+        // Local MSERVER authorization is separate from broker OAuth and WS.
+        String mserverState=mserverAuth==null?"상태 미수신":
+            mserverAuth.optBoolean("ok",false)?"인증 완료":"인증 실패/대기";
         String credential=auth!=null&&auth.optBoolean("kiwoom_saved",false)?"키 저장됨":"키 미등록 / 복호화 실패";
         String oauthState=oauth==null?"인증검사 미실시":
             oauth.optBoolean("ok",false)?"REST 토큰 발급 성공":
@@ -2675,7 +2685,10 @@ public final class UnifiedVisualActivity extends Activity {
             "\n상세: "+(feed==null?"":feed.optString("detail",""))+
             "\nWebSocket: "+(transport==null?"정보 없음":transport.optString("state","정보 없음"))+
             (transport==null?"":" · "+transport.optString("reason",""))+
-            "\n구독 요청: "+(feed==null?0:feed.optInt("subscribed",0))+"종목";
+            "\n구독 요청: "+(feed==null?0:feed.optInt("subscribed",0))+"종목"+
+            "\n마지막 확인 체결: "+feedAge+
+            "\n실주문 모드(주식): "+orderMode+
+            "\nMSERVER: "+mserverState;
         if(stages!=null)msg+="\n사전 로딩: "+stages.optString("stage","")+
             (stages.optBoolean("failed",false)?" · 실패":"")+
             " · "+stages.optString("detail","");
