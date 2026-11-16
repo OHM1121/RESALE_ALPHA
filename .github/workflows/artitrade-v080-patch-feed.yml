@@ -1,0 +1,82 @@
+name: ARTITRADE v080 broker-feed native Upbit WS bounded keepalive repair
+on:
+  push:
+    branches: [ fix-artitrade-v080-ma-trend-feed-preclose-20261116 ]
+    paths: [ '.github/workflows/artitrade-v080-patch-feed.yml' ]
+permissions:
+  contents: write
+jobs:
+  patch-native-public-feed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove supported websockets 15 receive queue before touching immutable strategy
+        run: |
+          python3 -m pip install -q websockets==15.0.1
+          python3 - <<'PY'
+          from websockets.sync.client import connect
+          from inspect import signature
+          assert 'max_queue' in signature(connect).parameters
+          print('PINNED_WEBSOCKETS15_SYNC_MAX_QUEUE_SUPPORTED')
+          PY
+      - name: Repair ONLY real Upbit websocket heartbeat and bounded read queue in native archive
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          bridge=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java')
+          before=bridge.read_text()
+          original=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          original_sha=hashlib.sha256(original).hexdigest()
+          assert ('CORE_SHA256="'+original_sha+'"') in before
+          changed=io.BytesIO()
+          names=[]
+          with zipfile.ZipFile(io.BytesIO(original)) as existing,zipfile.ZipFile(changed,'w') as out:
+              assert existing.testzip() is None
+              for info in existing.infolist():
+                  raw=existing.read(info)
+                  if info.filename=='d_upbit.py':
+                      src=raw.decode('utf-8')
+                      old='ping_interval=20,ping_timeout=15,max_size=2**20,'
+                      new='ping_interval=20,ping_timeout=30,max_size=2**20,max_queue=64,'
+                      assert src.count(old)==1,(src.count(old),'WS_PIN_NOT_EXACT')
+                      src=src.replace(old,new)
+                      assert src.count(new)==1
+                      assert 'codes=frozenset(codes | bids)' in src
+                      assert 'next_codes=frozenset(next_codes | next_bids)' in src
+                      compile(src,'d_upbit.py','exec')
+                      raw=src.encode('utf-8')
+                      names.append(info.filename)
+                  out.writestr(info,raw)
+          assert names==['d_upbit.py']
+          updated=changed.getvalue()
+          updated_sha=hashlib.sha256(updated).hexdigest()
+          encoded=base64.b64encode(updated).decode('ascii')
+          assert len(encoded)<=22*28000
+          for i in range(22):
+              (root/f'part_{i:02d}.txt').write_text(encoded[i*28000:(i+1)*28000])
+          bridge.write_text(before.replace('CORE_SHA256="'+original_sha+'"','CORE_SHA256="'+updated_sha+'"'))
+          again=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert again==updated
+          with zipfile.ZipFile(io.BytesIO(original)) as old, zipfile.ZipFile(io.BytesIO(again)) as new:
+              assert new.testzip() is None
+              assert old.namelist()==new.namelist()
+              assert all(old.read(n)==new.read(n) for n in old.namelist() if n!='d_upbit.py')
+          print('V080_NATIVE_UPBIT_FEED_ONLY_PATCH',original_sha,updated_sha)
+          PY
+      - name: Commit only verified modified archive and runtime digest to working branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git diff --cached --check
+          git commit -m "fix(v080): Upbit public WS tolerate 30s ping under bursts with max queue64; keep entry TTL and native strategy"
+          git push origin HEAD:fix-artitrade-v080-ma-trend-feed-preclose-20261116
