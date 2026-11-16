@@ -1,0 +1,21 @@
+name: ARTITRADE v065 strict MA requirements (no broker)
+on:
+  push:
+    branches: [ feature-artitrade-v065-strict-ma-handoff-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v065_policy.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v065_ma_handoff.py'
+      - '.github/workflows/artitrade-v065-strict-spec.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+      - run: python3 ARTITRADE_ANDROID/ui_tests/test_v065_ma_handoff.py
