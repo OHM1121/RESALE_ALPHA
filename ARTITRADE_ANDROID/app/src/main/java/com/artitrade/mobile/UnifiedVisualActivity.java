@@ -2771,7 +2771,7 @@ public final class UnifiedVisualActivity extends Activity {
                 case "b":return "매수가 "+formatMaybeMoney(r,"entry_price","avg_buy_price","buy_price");
                 case "c":
                     double last=positionMark(r);
-                    return finite(last)?"현재가 "+money(last):"현재가 실시간 미수신";
+                    return finite(last)?"현재가 "+money(last):"현재가 조회 중";
                 default:return "1차 목표 "+formatMaybeMoney(r,"first_target","target","target_price");
             }
         }
@@ -2864,32 +2864,46 @@ public final class UnifiedVisualActivity extends Activity {
     private String stockQuoteCaption(JSONObject r){
         if(!isStockPosition(r))return "";
         if(!r.optBoolean("stock_quote_checked_v066",false))
-            return "개별 종목 실시간 시세 확인 불가 · 원장 저장가격을 현재가로 사용하지 않음";
+            return "키움 현재가 조회 준비 중 · 원장 저장가격과 별도";
+        String state=r.optString("stock_quote_status","");
         String venue=r.optString("stock_quote_venue","");
-        String at=r.optString("stock_quote_exchange_at","");
-        String moment=at.length()>=19?at.substring(0,10)+" "+at.substring(11,19):"수신시각 미확인";
+        String exchange=r.optString("stock_quote_exchange_at","");
+        String received=r.optString("stock_quote_received_at","");
+        String sourceAt="REST_FRESH".equals(state)||"LAST_REST".equals(state)?received:exchange;
+        String moment=sourceAt.length()>=19?sourceAt.substring(0,10)+" "+sourceAt.substring(11,19):"시각 확인 중";
         if(stockQuoteCurrent(r))
-            return "키움 "+venue+" 실시간 0B 체결 · "+moment+" KST";
-        return "현재가 실시간 확인 불가 · 마지막 "+venue+" 체결 "+moment+
-            " · 원장 저장가격과 구분";
+            return "키움 "+venue+" 0B 실시간 체결 · "+moment+" KST";
+        if("REST_FRESH".equals(state))
+            return "키움 공식 REST 현재가(ka10001) · 조회 "+moment+" KST · WS 0B와 구분";
+        if("LAST_0B".equals(state)||"FRESH".equals(state))
+            return "키움 "+venue+" 마지막 실체결가 · "+moment+" KST · 새 체결 대기";
+        if("LAST_REST".equals(state))
+            return "키움 마지막 REST 조회가 · "+moment+" KST · 갱신 대기";
+        return "키움 개별 종목 0B·공식 현재가 조회 대기 · 원장 가격 별도 보존";
     }
     private String displayPositionMark(JSONObject r){
         double n=positionMark(r);
-        return finite(n)&&n>0?money(n):"실시간 미수신";
+        return finite(n)&&n>0?money(n):"가격 조회 중";
     }
     private double positionMark(JSONObject r){
         if(isStockPosition(r)){
-            if(!stockQuoteCurrent(r))return Double.NaN;
-            return usefulNumber(r,"last_price");
+            // Only the separately proven market-price overlay may be shown.
+            // REST and aged 0B are labelled as such, never promoted to LIVE.
+            if(!r.optBoolean("stock_quote_checked_v066",false))return Double.NaN;
+            return usefulNumber(r,"stock_quote_display_price");
         }
         return usefulNumber(r,"last_price","mark","current_price","market_price");
     }
     private double tradePnL(JSONObject r,String kind){
         if("positions".equals(kind)){
             if(isStockPosition(r)){
-                if(!finite(positionMark(r)))return Double.NaN;
+                double mark=positionMark(r);
+                if(!finite(mark))return Double.NaN;
                 double liveEstimate=usefulNumber(r,"stock_quote_unrealized_estimate");
-                if(finite(liveEstimate))return liveEstimate;
+                if(finite(liveEstimate)&&stockQuoteCurrent(r))return liveEstimate;
+                double entry=positionBuyPrice(r),qty=usefulNumber(r,"qty","quantity","holding_qty");
+                if(finite(entry)&&entry>0&&finite(qty)&&qty>0)return (mark-entry)*qty;
+                return Double.NaN;
             }
             double value=usefulNumber(r,"net_pnl","unrealized_pnl","paper_pnl","pnl");
             if(finite(value))return value;
@@ -3213,7 +3227,7 @@ public final class UnifiedVisualActivity extends Activity {
             figures.setPadding(0,dp(7),0,dp(3));
             if("positions".equals(kind)){
                 tradeMetricTile(figures,"매수가",finite(price)?money(price):"—",true);
-                tradeMetricTile(figures,"현재가",finite(current)&&current>0?money(current):"실시간 미수신",true);
+                tradeMetricTile(figures,"현재가",finite(current)&&current>0?money(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
                 tradeMetricTile(figures,"1차 목표",formatMaybeMoney(r,"first_target","target","target_price"),false);
             }else if("pending".equals(kind)){
