@@ -293,8 +293,24 @@ def real_boot():
     # v076: actual Android 15 right drawer must show BOTH horizontal
     # export progress controls. No ZIP request or broker call in this smoke.
     tree=choose("설정 열기",tree)
+    # Cold Android 15 service/activity refresh can invalidate a queued gear
+    # tap. Verify the drawer actually opened; retry only the real accessible
+    # Settings control (no false success from source-string assertions).
+    opened=False
+    for attempt in range(5):
+        tree=dump("v080_settings_drawer_probe_"+str(attempt))
+        if contains(tree,"내보내기 진행 상황") or contains(tree,"오류 이력   ·"):
+            opened=True
+            break
+        print("V080_DRAWER_GEAR_TAP_RETRY",attempt+1,
+              str(describe(tree)[-16:]),flush=True)
+        if contains(tree,"설정 열기"):
+            tap(tree,"설정 열기")
+        time.sleep(1.4)
+    if not opened:
+        raise AssertionError("REAL_SETTINGS_DRAWER_NOT_OPENING_AFTER_RETRIES")
     check_screen("v076_export_progress_drawer",
-                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=2)
+                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4)
     print("V076_RIGHT_DRAWER_EXPORT_PROGRESS_BARS_VISIBLE",flush=True)
     # Touch the dark scrim to the left of the right-aligned drawer.
     # Its close icon may be offscreen after scrolling the long drawer.
