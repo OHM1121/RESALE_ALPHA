@@ -784,7 +784,13 @@ public final class UnifiedVisualActivity extends Activity {
             if(p.isFile()&&p.length()<2048){
                 byte[] bytes=new byte[(int)p.length()];
                 try(InputStream in=new FileInputStream(p)){
-                    if(in.read(bytes)!=bytes.length)return state;
+                    int offset=0;
+                    while(offset<bytes.length){
+                        int count=in.read(bytes,offset,bytes.length-offset);
+                        if(count<0)return state;
+                        if(count==0)continue;
+                        offset+=count;
+                    }
                 }
                 JSONObject current=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
                 if(current.optLong("updated_ms",0)>=state.optLong("started_ms",Long.MAX_VALUE)){
@@ -888,6 +894,18 @@ public final class UnifiedVisualActivity extends Activity {
         drawerBackgroundHealth.setMaxLines(3);
         healthPanel.addView(drawerBackgroundHealth);
         panel.addView(healthPanel);
+
+        TextView exportTitle=text("내보내기 진행 상황",13);
+        exportTitle.setTextColor(Color.rgb(174,196,231));
+        exportTitle.setPadding(0,dp(15),0,dp(7));
+        panel.addView(exportTitle);
+        LinearLayout exports=card();
+        drawerErrorExportProgress=addProgressBlock(exports,"오류이력 ZIP 추출",
+            drawerExportProgress("errors"),Color.rgb(255,174,112));
+        drawerResearchExportProgress=addProgressBlock(exports,"연구이력 ZIP 추출",
+            drawerExportProgress("research"),Color.rgb(92,194,244));
+        panel.addView(exports);
+
         updateHeader();
 
         String brokerKey="stock".equals(market)?"kiwoom":"upbit";
@@ -992,17 +1010,6 @@ public final class UnifiedVisualActivity extends Activity {
         advancedLp.setMargins(0,dp(5),0,0);
         tools.addView(advanced,advancedLp);
         panel.addView(tools);
-
-        TextView exportTitle=text("내보내기 진행 상황",13);
-        exportTitle.setTextColor(Color.rgb(174,196,231));
-        exportTitle.setPadding(0,dp(15),0,dp(7));
-        panel.addView(exportTitle);
-        LinearLayout exports=card();
-        drawerErrorExportProgress=addProgressBlock(exports,"오류이력 ZIP 추출",
-            drawerExportProgress("errors"),Color.rgb(255,174,112));
-        drawerResearchExportProgress=addProgressBlock(exports,"연구이력 ZIP 추출",
-            drawerExportProgress("research"),Color.rgb(92,194,244));
-        panel.addView(exports);
 
         FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(width,-1,Gravity.END);overlay.addView(scroll,pp);
         drawerOverlay=overlay;root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
@@ -3776,7 +3783,7 @@ public final class UnifiedVisualActivity extends Activity {
                     "원본 ZIP·매니페스트 SHA-256 확인",true,false);
                 JSONObject checked=new JSONObject(Python.getInstance()
                     .getModule("android_ledger_backup")
-                    .callAttr("validate_backup",archive.getAbsolutePath()).toString());
+                    .callAttr("validate_backup_json",archive.getAbsolutePath()).toString());
                 if(!checked.optBoolean("ok",false))
                     throw new IOException("ZIP 내부 매니페스트와 원본 해시 검사 실패");
                 try(java.util.zip.ZipFile zipped=new java.util.zip.ZipFile(archive)){
