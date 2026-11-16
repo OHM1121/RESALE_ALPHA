@@ -130,6 +130,8 @@ public final class UnifiedVisualActivity extends Activity {
     private static final long BACKGROUND_HEARTBEAT_FRESH_MS=14_000L;
     private static final long PRELOAD_WATCHDOG_MS=5_000L;
     private volatile boolean refreshRunning=false;
+    // Delayed UI refresh must never submit work after this Activity is destroyed.
+    private volatile boolean uiDestroyed=false;
     private volatile boolean runtimeStartIssued=false;
     private volatile boolean brokerProbeIssued=false;
     // Keep the first visible frame as a real preparation screen, not an empty main UI.
@@ -1008,7 +1010,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void refresh(boolean first){
-        if(refreshRunning)return;
+        if(uiDestroyed||refreshRunning)return;
         refreshRunning=true;
         io.execute(()->{
             JSONObject packet=new JSONObject();JSONObject records=new JSONObject();
@@ -1194,6 +1196,7 @@ public final class UnifiedVisualActivity extends Activity {
             // Home has live feed indicators; historical pages need not recreate
             // hundreds of views when the ledger version has not changed.
             main.post(()->{
+                if(uiDestroyed)return;
                 if(!preloadScreenReady){
                     JSONObject engine=packet.optJSONObject("strategy_runtime");
                     boolean engineReady=packet.optLong("local_records_at",0L)>0 &&
@@ -6115,5 +6118,11 @@ public final class UnifiedVisualActivity extends Activity {
 
     @Override protected void onResume(){super.onResume();ensureBackgroundServiceOnResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
     @Override protected void onPause(){persistNavigation();main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
-    @Override protected void onDestroy(){main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);io.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){
+        uiDestroyed=true;
+        // Cancel queued preload/retry callbacks before closing the UI worker pool.
+        main.removeCallbacksAndMessages(null);
+        io.shutdownNow();
+        super.onDestroy();
+    }
 }
