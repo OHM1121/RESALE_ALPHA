@@ -1,0 +1,44 @@
+name: ARTITRADE v076 MA120 export regression and core invariance
+on:
+  push:
+    branches: [fix-artitrade-v076-export-ma120-diagnostics-20261116]
+    paths: ['.github/workflows/artitrade-v076-tests.yml']
+permissions: {contents: read}
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify 82 original order strategy modules and unpack read-only
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          a=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((a/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          digest=hashlib.sha256(raw).hexdigest()
+          j=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          assert 'CORE_SHA256="'+digest+'"' in j
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            assert len(z.namelist())==82
+            assert 'def _audit_d1_nonorder(' in z.read('d_gmo_runtime.py').decode()
+            z.extractall('/tmp/artitrade-v076-original')
+          print('CORE_STRATEGY_SHA256',digest)
+          PY
+      - name: Python syntax and full relevant no-broker test suites
+        env:
+          PYTHONPATH: /tmp/artitrade-v076-original:ARTITRADE_ANDROID/app/src/main/python
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v076_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_android_ledger_backup.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v075_*.py' -v
+          for pattern in 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v051_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
+          done
+          echo 'V076_MA120_ALLOW_THROUGH_0050_SOURCE_ZIP_FORENSIC_EXPORT_UI_PASS'
