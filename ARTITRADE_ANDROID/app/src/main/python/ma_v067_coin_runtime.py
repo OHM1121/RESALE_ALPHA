@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import queue
 import threading
 import time
 from decimal import Decimal
@@ -152,33 +153,67 @@ def _second_followup(tf,symbol,state,entry,trade,now):
         return False
 
 
+def _record_v074_ma_observation(symbol,frame,bar_end,reason):
+    """No broker calls or SQLite on the 5-second decision thread."""
+    try:
+        import market_trend_runtime_v043 as trend
+        core=getattr(trend,"_CORE",None)
+        rt=getattr(core,"_RUNTIME",None) if core else None
+        co=getattr(rt,"market_trend",None) if rt else None
+        if co is not None:
+            co.record_ma_decision('coin',symbol,frame,bar_end,reason)
+    except (AttributeError,ImportError,TypeError,ValueError):
+        pass
+
+
 def _new_up_candidate(self,book,now):
-    import ma_v061_coin_runtime as old
     from d_upbit import floor_tick,SECONDS
-    from coin_ma_engine import MACoinLedger
     if not isinstance(book,dict):return
     symbol=str(book.get('market') or '')
     if not symbol.startswith('KRW-'):return
+    # The original 4~5 second time gate remains exactly unchanged.
+    due=[(tf,_bar_close(now,tf)[1]) for tf in ('5m','30m','60m','day')
+         if 4<=_bar_close(now,tf)[0]<=5]
+    if not due:return
     price=_recent_trade(self,symbol,now)
-    if price is None or price<=0:return
+    if price is None or price<=0:
+        for tf,end in due:
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'UP_TICK_STALE_OR_MISSING')
+        return
     try:
         if not isinstance(book.get('timestamp'),(int,float)) or abs(now.timestamp()-book['timestamp']/1000)>3:
+            for tf,end in due:
+                _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                            'UP_ORDERBOOK_STALE')
             return
         ask=policy.number(book['ask'])
         bid=policy.number(book['bid'])
         size=policy.number(book['ask_size'])
-        tick=policy.number(self.sr_instrument_ticks.get(symbol) or book.get('sr_tick_size'))
-        if any(x is None or x<=0 for x in (ask,bid,size,tick)) or ask<bid:return
-    except (KeyError,TypeError,ValueError):return
+        instrument_ticks=getattr(self,'sr_instrument_ticks',{}) or {}
+        tick=policy.number(instrument_ticks.get(symbol) or book.get('sr_tick_size'))
+        if any(x is None or x<=0 for x in (ask,bid,size,tick)) or ask<bid:
+            for tf,end in due:
+                _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                            'UP_BOOK_DEPTH_OR_TICKSIZE_INVALID')
+            return
+    except (KeyError,TypeError,ValueError,AttributeError,OverflowError) as exc:
+        for tf,end in due:
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'OPERATIONAL_MA_BOOK_'+type(exc).__name__)
+        return
     if not hasattr(self,'_ma_v067_up_keys'):self._ma_v067_up_keys=set()
-    for tf in ('5m','30m','60m','day'):
-        remaining,end=_bar_close(now,tf)
-        if remaining<4 or remaining>5:continue
+    for tf,end in due:
         key=(symbol,tf,end.isoformat())
         if key in self._ma_v067_up_keys:continue
+        remaining,_=_bar_close(now,tf)
         history=_prior_verified_closes(tf,symbol,now)
         verdict=policy.upward_transition_on_forming(history,price,remaining)
-        if verdict.get('kind')!='REVERSAL_UP':continue
+        if verdict.get('kind')!='REVERSAL_UP':
+            reason=str(verdict.get('reason') or 'NO_MATCH')
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'UP_RULE_'+reason)
+            continue
         limit=floor_tick(ask,tick)
         if limit<ask:limit+=tick
         target=limit*(Decimal(1)+policy.UP_FIRST_TARGET_PCT[tf]/100)
@@ -196,17 +231,23 @@ def _new_up_candidate(self,book,now):
             'v24_first_fraction':'.10',
             'tick_size':str(tick),
             'source':'UPBIT_V067_FORMING_FRESH_TICK_AND_BOOK'}
-        candidate={'frame':tf,'market':symbol,'ref_at':start.astimezone(dt.timezone.utc).isoformat(),
+        candidate={'frame':tf,'market':symbol,
+            'ref_at':start.astimezone(dt.timezone.utc).isoformat(),
             'ref_end':end.astimezone(dt.timezone.utc).isoformat(),
             'limit':str(limit),'target':str(target),
             'score':80.,'features':features}
-        # Only the original MA candidate/Upbit orderbook path is allowed to
-        # open a real or PAPER position. No manual insert of a BUY execution.
         try:
             accepted=self.record_candidate(candidate,symbol,now)
-            if accepted:self._ma_v067_up_keys.add(key)
-        except (KeyError,ValueError,TypeError):
-            pass
+            if accepted:
+                self._ma_v067_up_keys.add(key)
+                _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                            'UP_CANDIDATE_REGISTERED_NATIVE_FILL_PENDING')
+            else:
+                _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                            'UP_CANDIDATE_REJECTED_BY_NATIVE_WALLET')
+        except (KeyError,ValueError,TypeError,AttributeError) as exc:
+            _record_v074_ma_observation(symbol,tf,end.isoformat(),
+                                        'OPERATIONAL_MA_CANDIDATE_'+type(exc).__name__)
     if len(self._ma_v067_up_keys)>5000:
         self._ma_v067_up_keys=set(list(self._ma_v067_up_keys)[-1000:])
 
