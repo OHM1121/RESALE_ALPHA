@@ -17,12 +17,12 @@ public final class HubService extends Service {
     private static final String CHANNEL="artitrade_hub_active";
     private static final int NOTIFICATION_ID=1147;
     private static volatile boolean active=false;
-    private static volatile String bindIp="";
+    private static volatile HubServer activeServer;
     private HubServer server;
     private SyncStore data;
 
     static boolean isActive(){return active;}
-    static String vpnAddress(){return bindIp;}
+    static String vpnAddress(){HubServer s=activeServer;return s==null?"":s.tailnetIp();}
 
     @Override public void onCreate(){
         super.onCreate();
@@ -40,8 +40,8 @@ public final class HubService extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this,CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("ARTITRADE 폰 서버 실행 중")
-            .setContentText("로컬 데이터·실행 권한 서버 | 누르면 설정")
+            .setContentTitle("ARTITRADE MSERVER 실행 중")
+            .setContentText("모바일 기준원장·실행권한 서버 | 누르면 설정")
             .setOngoing(true)
             .setContentIntent(pending)
             .build();
@@ -51,7 +51,7 @@ public final class HubService extends Service {
         if(STOP.equals(action)){stopSelf();return START_NOT_STICKY;}
         if(UPDATE_VPN.equals(action)){
             if(server!=null)server.setTailnetEnabled(getSharedPreferences("hub_ui",MODE_PRIVATE)
-                    .getBoolean("tailscale_enabled",false));
+                    .getBoolean("tailscale_enabled",true));
             return START_STICKY;
         }
         try{
@@ -62,7 +62,8 @@ public final class HubService extends Service {
                 data=new SyncStore(this,secrets);
                 server=new HubServer(secrets,data);
                 server.start(getSharedPreferences("hub_ui",MODE_PRIVATE)
-                    .getBoolean("tailscale_enabled",false));
+                    .getBoolean("tailscale_enabled",true));
+                activeServer=server;
             }
             active=true;
         }catch(Exception e){
@@ -76,7 +77,7 @@ public final class HubService extends Service {
         active=false;
         if(server!=null){server.stop();server=null;}
         if(data!=null){data.close();data=null;}
-        bindIp="";
+        activeServer=null;
         super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent){return null;}

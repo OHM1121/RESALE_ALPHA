@@ -1,0 +1,153 @@
+name: ARTITRADE v0.7.71 Original Signed Feed First CW MA GMO Trend Error ZIP
+on:
+  push:
+    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
+    paths: [ '.github/workflows/artitrade-v071-original-signed.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v071-original-signed
+  cancel-in-progress: false
+jobs:
+  verified-original-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      CI: 'true'
+      SOURCE: '77cf2d24fe6d921983caa84fb96eb87d19f0973f'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.71_20261116'
+      TAG: 'ARTITRADE-v0.7.71-20261116'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '77cf2d24fe6d921983caa84fb96eb87d19f0973f'
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore original signed-app certificate only
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Prove exact installed-app certificate identity before touching build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          test -f "$HOME/.android/debug.keystore"
+          actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+      - name: Verify SHA-pinned bundled Python and extract to temporary QA directory only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          assert ('CORE_SHA256="'+hashlib.sha256(z).hexdigest()+'"') in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          t=Path('/tmp/artitrade-core-verified');t.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(z)) as f:f.extractall(t)
+          from pathlib import Path
+          g=(t/'projectgmo/engine.py').read_text()
+          assert 'entry_profit_floor: float = 0.02' in g
+          assert 'ENTRY_PLUS2_FLOOR' in g
+          d=(t/'d_live.py').read_text()
+          assert 'ping_timeout=45' in d and 'await asyncio.to_thread(_persist_universe_db)' in d
+          assert "self._v071_enqueue_feed('raw',msg)" in d
+          assert 'async def _v071_background_preload' in d and 'V071_KRX_0B_SILENT_45S_RECONNECT' in d
+          assert "self._health('실시간 연결됨','키움 REG 승인" in d
+          print('EXACT_GMO_V062_POLICY_AND_V071_RECEIVER_SOURCE_VERIFIED')
+          PY
+      - name: Run MA, Market Trend, GMO legacy and v067 broker-independent regression
+        shell: bash
+        env:
+          PYTHONPATH: '/tmp/artitrade-core-verified:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for pat in 'test_v071_*.py' 'test_v069_*.py' 'test_v063_*.py' 'test_v051_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+      - name: Enable KVM for Android 15 emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build executable x86_64 APKs for isolated emulator UI smoke
+        env:
+          ARTITRADE_EMULATOR_ABI: x86_64
+        working-directory: ARTITRADE_ANDROID
+        run: |
+          gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+          mkdir -p ../downloaded-apks
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk
+          ARTITRADE_EMULATOR_FIXTURE=1 gradle --no-daemon :app:assembleUnifiedDebug --rerun-tasks --stacktrace
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_FIXTURE_x86_64.apk
+      - name: Boot Android 15 and verify eight strategy screens, warm return and research
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py
+      - name: Rebuild actual Samsung ARM64 signed update from same pinned source
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --rerun-tasks --stacktrace
+      - name: Verify package, monotonic version, ABI, original signing cert and SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='77' versionName='0.7.71-WS-ORDERED-RECV-HISTORY'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" >/tmp/v067-signer.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v067-signer.txt
+          unzip -l "$apk" | grep -F 'assets/chaquopy/app.imy'
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
+          cp "$apk" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" >"$ARTIFACT.sha256"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=77\nversionName=v0.7.71\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\ngmo_policy=v062\nLIVE_broker_fills_verified=false\n' "$SOURCE" >"$ARTIFACT.compatibility.txt"
+      - name: Upload independently verified original-signed APK and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.71_20261116
+          path: |
+            ARTITRADE_UNIFIED_v0.7.71_20261116.apk
+            ARTITRADE_UNIFIED_v0.7.71_20261116.sha256
+            ARTITRADE_UNIFIED_v0.7.71_20261116.compatibility.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish direct APK as clearly marked prerelease only after all verifications
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.compatibility.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE v0.7.71 (verified test build)" --notes "v0.7.71 stock unified: verified 200-code Kiwoom WS starts after DB integrity and universe and BEFORE slow indicator-history warmup; all REAL message processing is bounded, generation-scoped and ordered off recv/PING, preserving real receive timestamp. CW shared WS REG transport state now changes to connected. If no genuine KRX 0B tick for 45sec after connect during regular session, automatically reconnect safely; no stale or synthetic fills. Full error history ZIP exports original SQLite/JSON and diagnostics using SHA256 validation. All 81 other native strategy policy modules, stock/coin ledgers and MA/GMO/Trend thresholds unchanged; paper tests only, live broker fills/network endurance unverified." --prerelease
+      - name: Upload Android 15 smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V071_ANDROID15_SIGNED_SOURCE_EVIDENCE
+          path: ui-smoke/**
+          retention-days: 14
+          if-no-files-found: ignore

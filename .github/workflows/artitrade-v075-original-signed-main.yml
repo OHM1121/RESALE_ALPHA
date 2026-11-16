@@ -1,0 +1,201 @@
+name: ARTITRADE v0.7.75 Original Signed GMO/CW No-Entry Forensic Audit
+on:
+  push:
+    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
+    paths: [ '.github/workflows/artitrade-v075-original-signed-main.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v075-original-signed-main
+  cancel-in-progress: false
+jobs:
+  verified-original-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      CI: 'true'
+      SOURCE: '3111cc8d3930b4091efc43af1c5866fb9bd4bb3a'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.75_20261116'
+      TAG: 'ARTITRADE-v0.7.75-20261116'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '3111cc8d3930b4091efc43af1c5866fb9bd4bb3a'
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore original signed-app certificate only
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Prove exact installed-app certificate identity before touching build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          test -f "$HOME/.android/debug.keystore"
+          actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+      - name: Verify SHA-pinned bundled Python and extract to temporary QA directory only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          assert ('CORE_SHA256="'+hashlib.sha256(z).hexdigest()+'"') in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          t=Path('/tmp/artitrade-core-verified');t.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(z)) as f:f.extractall(t)
+          from pathlib import Path
+          g=(t/'projectgmo/engine.py').read_text()
+          assert 'entry_profit_floor: float = 0.02' in g
+          assert 'ENTRY_PLUS2_FLOOR' in g
+          d=(t/'d_live.py').read_text()
+          assert 'ping_timeout=45' in d and 'await asyncio.to_thread(_persist_universe_db)' in d
+          assert "self._v071_enqueue_feed('raw',msg)" in d
+          assert 'async def _v071_background_preload' in d and 'V071_KRX_0B_SILENT_45S_RECONNECT' not in d
+          assert "self._health('실시간 연결됨','키움 REG 승인" in d
+          assert 'elif not ack_group and seen_reg_acks < expected_reg_acks:' in d
+          ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          quote=Path('ARTITRADE_ANDROID/app/src/main/python/stock_quote_truth_v066.py').read_text()
+          assert 'KIWOOM_REST_KA10001' in quote and "api.post('ka10001'" in quote
+          assert 'stock_quote_display_price' in ui
+          assert '실시간 미수신' not in ui
+          gmo=(t/'d_gmo_runtime.py').read_text()
+          assert 'self.engine.on_quote(q)' in gmo and 'def holding_codes(self)' in gmo
+          assert 'self.gmo.holding_codes()' in d
+          assert "'LAST_LEDGER'" in quote and "REST_REFRESH_SECONDS=35.0" in quote
+          assert 'market_trend_watch' in ui and 'entry_block_reasons' in ui
+          ma=Path('ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py').read_text()
+          lane=ma.split('    def observe_live(self,tick):',1)[1].split('    d_live.LivePaperRunner._new_tick=observe_live',1)[0]
+          assert lane.index('q.put_nowait(tuple(tick))') < lane.index('return orig_feed(self,tick)')
+          print('VERIFIED_V075_GMO_LIVE_CALLBACK_RSI_WATCH_MA_PRIORITY_AND_DISPLAY_PROVENANCE')
+          PY
+      - name: Verify immutable entry conditions and integrated GMO/CW original error overlay
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path('ARTITRADE_ANDROID/app/src/main/python')
+          engine=(Path('/tmp/artitrade-core-verified')/'d_gmo_runtime.py').read_text()
+          assert 'def _audit_d1_nonorder(self, code, reason, detail, at):' in engine
+          assert 'if q.last <= ceiling and entry_ask <= ceiling and paper:' in engine
+          assert 'GMO_D1_NO_ORDER_PRICE_ABOVE_ALLOWED_CEILING' not in engine or 'PRICE_ABOVE_ALLOWED_CEILING' in engine
+          overlay=(base/'entry_failure_audit_v075.py').read_text()
+          assert 'mode=ro' in overlay
+          assert 'research_scan_skips' in overlay and 'gmo_scan' in overlay
+          assert 'snapshot_for_root' in (base/'android_runtime_v078.py').read_text()
+          assert 'entry_failure_audit' in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert "versionName '0.7.75-ENTRY-ERROR-AUDIT'" in Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
+          print('V075_ORIGINAL_BUY_RULES_UNCHANGED_ENTRY_FAIL_AUDIT_VISIBLE')
+          PY
+      - name: Verify new evidence storage and native Upbit MA lane, no core policy edits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path('ARTITRADE_ANDROID/app/src/main/python')
+          evidence=(base/'execution_evidence_v074.py').read_text()
+          trend=(base/'market_trend_runtime_v043.py').read_text()
+          coin=(base/'ma_v067_coin_runtime.py').read_text()
+          ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'class ForensicLedger' in evidence
+          assert 'def _v074_audit_worker(self)' in trend
+          assert 'def record_ma_decision(self,market,code,frame,bar_end,reason)' in trend
+          assert 'market_trend_audit_errors' in ui and 'market_trend_audit_errors' in trend
+          assert 'def _v074_coin_tick_worker(runner)' in coin
+          assert 'UP_TICK_STALE_OR_MISSING' in coin
+          print('VERIFIED_INDEPENDENT_FORENSIC_SQLITE_AND_UPBIT_GENUINE_TICKER_WAKE')
+          PY
+      - name: Run MA, Market Trend, GMO legacy and v067 broker-independent regression
+        shell: bash
+        env:
+          PYTHONPATH: '/tmp/artitrade-core-verified:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for pat in 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v063_*.py' 'test_v051_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+      - name: Enable KVM for Android 15 emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build executable x86_64 APKs for isolated emulator UI smoke
+        env:
+          ARTITRADE_EMULATOR_ABI: x86_64
+        working-directory: ARTITRADE_ANDROID
+        run: |
+          gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+          mkdir -p ../downloaded-apks
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk
+          ARTITRADE_EMULATOR_FIXTURE=1 gradle --no-daemon :app:assembleUnifiedDebug --rerun-tasks --stacktrace
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_FIXTURE_x86_64.apk
+      - name: Boot Android 15 and verify eight strategy screens, warm return and research
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py
+      - name: Rebuild actual Samsung ARM64 signed update from same pinned source
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --rerun-tasks --stacktrace
+      - name: Verify package, monotonic version, ABI, original signing cert and SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='81' versionName='0.7.75-ENTRY-ERROR-AUDIT'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" >/tmp/v067-signer.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v067-signer.txt
+          unzip -l "$apk" | grep -F 'assets/chaquopy/app.imy'
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
+          cp "$apk" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" >"$ARTIFACT.sha256"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=81\nversionName=v0.7.75\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\ngmo_policy=v062\nLIVE_broker_fills_verified=false\n' "$SOURCE" >"$ARTIFACT.compatibility.txt"
+      - name: Upload independently verified original-signed APK and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.75_20261116
+          path: |
+            ARTITRADE_UNIFIED_v0.7.75_20261116.apk
+            ARTITRADE_UNIFIED_v0.7.75_20261116.sha256
+            ARTITRADE_UNIFIED_v0.7.75_20261116.compatibility.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish direct APK as clearly marked prerelease only after all verifications
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.compatibility.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE v0.7.75 (verified test build)" --notes "v0.7.75: GMO 2026-11-13/16, Samyang 11/16, Seeker 60m and Close-betting investigation without modifying original buy/sell thresholds. Original GMO 82-module core preserved byte-for-byte except diagnostic-only append in d_gmo_runtime.py: records previously silent verified D+1 price-above-ceiling, insufficient slots/budget, and LIVE-mode PAPER-only blockers to the existing persistent GMO engine audit. Additional asynchronous read-only forensic overlay exposes persisted original GMO gmo_scan/gmo_issues/gmo_candidates and original CLOSE research_scan_skips/research_candidates/signals/research_events in integrated error history and full error ZIP. Legitimate rule rejections are clearly labelled as rule misses, not code errors or broker fills. Official/public historical comparison: HanjinCal 2026-11-13 close 203500 > prior 203000 and 2026-11-16 close 215500 > prior 203500; Samyang Foods 11/16 bullish day excludes GMO D events under existing decline rule. Coin Seeker 2026-11-16 09:59:55 trade 15.5 caused MA120 delta +0.001667, violating required negative 120 slope, while MA5/10/20/60 rose, so original 60m rule disallows entry. Existing MA/Trend/GMO order rules, 3s book freshness, source broker accounting and CW 15:10-15:20 windows unchanged. Offline regressions and Android 15 emulator only; real phone WS, broker order submission/fills and account token status unverified. Install over old app with unchanged signing certificate and package; do not clear ledger." --prerelease
+      - name: Upload Android 15 smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V075_ANDROID15_SIGNED_SOURCE_EVIDENCE
+          path: ui-smoke/**
+          retention-days: 14
+          if-no-files-found: ignore

@@ -16,7 +16,7 @@ import java.util.concurrent.*;
  *  PC traffic MUST use Tailscale or another encrypted VPN. Never port-forward.
  */
 final class HubServer {
-    private static final int PORT=8765, MAX_BODY=600000;
+    private static final int PORT=8765, MAX_BODY=36*1024*1024;
     private static final String TAG="ArtitradeHub";
     private final SecureBox secrets;
     private final SyncStore store;
@@ -166,7 +166,7 @@ final class HubServer {
     }
     private void handle(Socket socket){
         try(Socket client=socket){
-            client.setSoTimeout(7000);
+            client.setSoTimeout(30000);
             InputStream in=new BufferedInputStream(client.getInputStream());
             OutputStream out=client.getOutputStream();
             String request=readLine(in);
@@ -196,7 +196,7 @@ final class HubServer {
             try{uri=new URI(target);}catch(Exception e){send(out,400,json("ok",false,"error","bad_uri"));return;}
             String path=uri.getPath();
             if("/health".equals(path) && method.equals("GET")){
-                send(out,200,json("ok",true,"name","ARTITRADE phone hub","api",1));return;
+                send(out,200,json("ok",true,"name","ARTITRADE MSERVER","api",1));return;
             }
             String auth=headers.getOrDefault("authorization","");
             if(!auth.startsWith("Bearer ") || !secrets.compareToken(auth.substring(7))){
@@ -216,17 +216,51 @@ final class HubServer {
             JSONObject body;
             try{body=length>0?new JSONObject(new String(readBody(in,length),StandardCharsets.UTF_8)):new JSONObject();}
             catch(Exception e){send(out,400,json("ok",false,"error","invalid_json"));return;}
-            JSONObject result=route(method,path,query(uri.getRawQuery()),body);
+            JSONObject result;
+            try{
+                result=route(method,path,query(uri.getRawQuery()),body);
+            }catch(Exception e){
+                // No abrupt close on a database/Keystore failure. The client must
+                // receive a usable error code and must never assume a write worked.
+                Log.e(TAG,"Authenticated MSERVER request failed: "+method+" "+path,e);
+                send(out,500,json("ok",false,"error","server_storage_failed","type",e.getClass().getSimpleName()));
+                return;
+            }
             String error=result.optString("error","");
             int status="revision_conflict".equals(error)?409:
+                     "data_too_large".equals(error)?413:
                     "previous_device_still_active".equals(error)||"manual_order_review_required".equals(error)?423:
                     error.isEmpty()?200:"device_is_read_only".equals(error)||"switch_requested_stop_orders".equals(error)||"lease_invalid_or_expired".equals(error)?409:400;
             send(out,status,result);
         }catch(Exception e){Log.w(TAG,"Request aborted (no credentials logged)");}
     }
     private JSONObject route(String method,String path,Map<String,String> q,JSONObject b){
+        if("POST".equals(method)&&"/v1/migration/begin".equals(path)){
+            return store.migrationBegin(b.optString("session"),b.optInt("total_chunks",-1),
+                b.optLong("total_bytes",-1),b.optString("archive_sha256"),b.optJSONObject("source"));
+        }
+        if("POST".equals(method)&&"/v1/migration/chunk".equals(path)){
+            return store.migrationPutChunk(b.optString("session"),b.optInt("index",-1),
+                b.optString("data_b64"),b.optString("sha256"));
+        }
+        if("POST".equals(method)&&"/v1/migration/commit".equals(path)){
+            return store.migrationCommit(b.optString("session"));
+        }
+        if("GET".equals(method)&&"/v1/migration/status".equals(path)){
+            return store.migrationStatus();
+        }
+        if("GET".equals(method)&&"/v1/migration/chunk".equals(path)){
+            int index=-1;try{index=Integer.parseInt(val(q,"index"));}catch(Exception ignored){}
+            return store.migrationReadChunk(val(q,"session"),index);
+        }
+        if("POST".equals(method)&&"/v1/migration/ack".equals(path)){
+            return store.migrationAcknowledge(b.optString("session"),b.optString("archive_sha256"));
+        }
         if("GET".equals(method)&&"/v1/status".equals(path)){
             return json("ok",true,"api",1,"owner","phone","stock",store.owner("stock"),"coin",store.owner("coin"),"vpn_endpoint",vpnBoundIp);
+        }
+        if("GET".equals(method)&&"/v1/record/meta".equals(path)){
+            return store.getRecordMeta(val(q,"market"),val(q,"strategy"),val(q,"bucket"));
         }
         if("GET".equals(method)&&"/v1/record".equals(path)){
             return store.getRecord(val(q,"market"),val(q,"strategy"),val(q,"bucket"));

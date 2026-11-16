@@ -166,10 +166,10 @@ final class UpbitRealtimeClient {
     }
 
     private static String jwt(String access,String secret)throws Exception{
-        String head=b64("{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
+        String head=b64("{\"alg\":\"HS512\",\"typ\":\"JWT\"}");
         JSONObject p=new JSONObject().put("access_key",access).put("nonce",UUID.randomUUID().toString());
         String body=b64(p.toString()),input=head+"."+body;
-        Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
+        Mac mac=Mac.getInstance("HmacSHA512");mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA512"));
         return input+"."+Base64.encodeToString(mac.doFinal(input.getBytes(StandardCharsets.UTF_8)),Base64.URL_SAFE|Base64.NO_WRAP|Base64.NO_PADDING);
     }
     private static String b64(String s){return Base64.encodeToString(s.getBytes(StandardCharsets.UTF_8),Base64.URL_SAFE|Base64.NO_WRAP|Base64.NO_PADDING);}

@@ -10,6 +10,7 @@ import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -18,14 +19,18 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.zip.GZIPInputStream;
 
 /** Runs the exact latest uploaded EXE Python strategy state machines inside Android. */
 final class StrategyRuntimeBridge {
     private static final int PARTS=22;
+    private static final int LIVE_BRIDGE_PARTS=8; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
     private static final String CORE_SHA256="e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0";
+    private static final String LIVE_BRIDGE_SHA256="e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e";
     private final Context context;
     private final RuntimeCrashStore crashes;
     private PyObject module;
+    private PyObject operationModule;
     private boolean started=false;
 
     StrategyRuntimeBridge(Context c){
@@ -44,7 +49,8 @@ final class StrategyRuntimeBridge {
             Python py=Python.getInstance();
             PyObject sys=py.getModule("sys");
             sys.get("path").callAttr("insert",0,source.getAbsolutePath());
-            module=py.getModule("android_live_bridge");
+            module=py.getModule("android_runtime_v078");
+            operationModule=py.getModule("android_operation_bridge");
             File root=new File(context.getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
             if(!root.exists()&&!root.mkdirs())throw new IllegalStateException("strategy runtime directory unavailable");
             BrokerSecretStore s=new BrokerSecretStore(context);
@@ -52,6 +58,10 @@ final class StrategyRuntimeBridge {
                 s.kiwoomKey(),s.kiwoomSecret(),s.upbitAccess(),s.upbitSecret(),
                 liveEnabled("stock"),liveEnabled("coin"));
             started=true;
+            try{
+                JSONObject applied=parse(operationModule.callAttr("apply_saved"));
+                if(!applied.optBoolean("ok",true))crashes.add("operation_apply_saved",new IllegalStateException(applied.toString()));
+            }catch(Throwable op){crashes.add("operation_apply_saved",op);}
             return parse(result);
         }catch(Throwable e){
             crashes.add("python_strategy_start",e);started=false;
@@ -67,7 +77,10 @@ final class StrategyRuntimeBridge {
             try(InputStream in=new java.io.FileInputStream(marker)){
                 byte[] b=new byte[(int)marker.length()];
                 int n=in.read(b);
-                if(n>0&&CORE_SHA256.equals(new String(b,0,n,StandardCharsets.US_ASCII).trim()))return dir;
+                if(n>0&&CORE_SHA256.equals(new String(b,0,n,StandardCharsets.US_ASCII).trim())){
+                    applyLiveBridgeOverlay(dir);
+                    return dir;
+                }
             }catch(Exception ignored){}
         }
         deleteTree(dir);
@@ -104,11 +117,36 @@ final class StrategyRuntimeBridge {
                 zin.closeEntry();
             }
         }
+        applyLiveBridgeOverlay(dir);
         try(FileOutputStream out=new FileOutputStream(marker)){
             out.write(CORE_SHA256.getBytes(StandardCharsets.US_ASCII));
         }
         if(!main.isFile())throw new IllegalStateException("strategy bridge missing after extraction");
         return dir;
+    }
+
+    private void applyLiveBridgeOverlay(File dir) throws Exception{
+        File target=new File(dir,"android_live_bridge.py");
+        byte[] buf=new byte[8192];
+        ByteArrayOutputStream encoded=new ByteArrayOutputStream(70000);
+        for(int i=0;i<LIVE_BRIDGE_PARTS;i++){
+            String name=String.format(java.util.Locale.ROOT,"live_bridge_v071/part_%02d.txt",i);
+            try(InputStream in=context.getAssets().open(name)){
+                int n;while((n=in.read(buf))!=-1)encoded.write(buf,0,n);
+            }
+        }
+        byte[] compressed=Base64.decode(encoded.toByteArray(),Base64.DEFAULT);
+        ByteArrayOutputStream plain=new ByteArrayOutputStream(50000);
+        try(GZIPInputStream gz=new GZIPInputStream(new ByteArrayInputStream(compressed))){
+            int n;while((n=gz.read(buf))!=-1)plain.write(buf,0,n);
+        }
+        byte[] decoded=plain.toByteArray();
+        if(!LIVE_BRIDGE_SHA256.equals(sha256(decoded)))throw new SecurityException("v0.7.1 live bridge digest mismatch");
+        try(FileOutputStream out=new FileOutputStream(target,false)){
+            out.write(decoded);
+            out.flush();
+        }
+        if(!target.isFile()||target.length()<40000)throw new IllegalStateException("v0.7.1 live bridge overlay unavailable");
     }
 
     private static void deleteTree(File f){
@@ -141,6 +179,23 @@ final class StrategyRuntimeBridge {
         try{return parse(module.callAttr("hub_records"));}
         catch(Throwable e){crashes.add("python_hub_records",e);return new JSONObject();}
     }
+    synchronized JSONObject ledgerAudit(JSONObject manifest){
+        if(module==null)return error("PYTHON_LEDGER_AUDIT_NOT_READY",null);
+        try{return parse(module.callAttr("ledger_audit",
+            manifest==null?"{}":manifest.toString()));}
+        catch(Throwable e){crashes.add("python_ledger_audit",e);return error("PYTHON_LEDGER_AUDIT",e);}
+    }
+    synchronized JSONObject operationSnapshot(){
+        if(operationModule==null)return new JSONObject();
+        try{return parse(operationModule.callAttr("snapshot"));}
+        catch(Throwable e){crashes.add("operation_snapshot",e);return error("OPERATION_SNAPSHOT",e);}
+    }
+    synchronized JSONObject applyOperation(JSONObject settings){
+        if(operationModule==null)return error("OPERATION_RUNTIME_NOT_READY",null);
+        try{return parse(operationModule.callAttr("apply",settings==null?"{}":settings.toString()));}
+        catch(Throwable e){crashes.add("operation_apply",e);return error("OPERATION_APPLY",e);}
+    }
+
     synchronized JSONObject setLive(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))return new JSONObject();
         prefs().edit().putBoolean("live_"+market,enabled).commit();

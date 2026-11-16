@@ -1,0 +1,24 @@
+ARTITRADE v0.7.19: complete EXE research and GMO single-archive import, original GMO read fallback, Naver/Upbit four-tap browser navigation; Android regression CI.
+CI retry: update original APK versionCode check and dynamic research archive paths.
+ARTITRADE v0.7.20: additive missing-only PC research supplement on existing migrated accounts; never overwrite current Android data.
+ARTITRADE v0.7.21 native UI: exact KRW (51,000원), compact icon-number cards, landscape dashboard and two-column research; 2026-11-13.
+v0.7.21 final layout QA: fit 51dp navigation and header, 131dp research donuts, preserve exact full won figures.
+v0.7.22 2026-11-13: atomic MSERVER journal, missing research supplement auto-ack, original GMO paper fill parity, full WAL-safe ledger export with reread validation.
+Ledger safety CI retry: reflect split no-overwrite guard assertions; 2026-11-13.
+
+ARTITRADE v0.7.23 OLED PREMIUM: restored GitHub connection; signed Android build, dark native UI, button ripple/press, font layout tests, five repeated frozen PC GMO parity checks, 2026-11-13.
+ARTITRADE v0.7.23 final rerun: 12sp chart typography (corrected CI), OLED UI, original EXE GMO research parity 5x, 2026-11-13.
+2026-11-13 v0.7.23 OLED PREMIUM second-pass: black theme and dialog, 12sp minimum labels, compact 2-column TF and score matrix, tactile 85/155ms ripple, original GMO paper research parity x5, updated UI tests.
+v0.7.24: Korean BUY/SELL reasons, exact KST fill timestamps, append-only real+virtual observations, full untruncated all-source research ZIP. Run all Android tests.
+v0.7.24 FINAL reason parity: validated original MA recovery/second/third exits, CLOSE target/breakeven/deadline; GMO original sell purpose & timestamp in research details; rerun full APK CI and signature tests.
+v0.7.24 FINAL: real target HIT requires first actual SELL in AT/MA/coin and GMO; frozen EXE sell reasons and KST; full untruncated original research ZIP, synthetic 3205 rows, append-only journal; run all tests, signed APK.
+
+v0.7.25: on-emulator boot and UI fixture coverage, per-bucket MSERVER ledger gap recovery, exact MA candidate schema and BUY/KST timestamps; signed arm64 build regression.
+
+v0.7.26: Android15 real-install emulator evidence, missing MA/GMO nested fallback, restored coin/MA/GMO fill timestamps, original MA no-reason schema, source-specific remote gap poll, OLED status/navigation inset protection.
+
+v0.7.27 2026-11-14: repair PC research SQL, independent per-strategy collection, preserve GMO historical PC PAPER fills/holdings and P&L, signed CI regression.
+v0.7.27 CI test assertion synchronization (OLED suite) 2026-11-14.
+v0.7.28 2026-11-14: original EXE candidate/unselected followups, all-market net PnL and buy cost, screen-off Wi-Fi hold, geometric view, regression/signed APK.
+v0.7.28 2026-11-14 CI rerun after isolated MA test helper dependency fix.
+v0.7.28 CI restart after matching original CLOSE followups SQLite fixture PK.

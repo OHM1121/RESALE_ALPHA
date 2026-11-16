@@ -1,0 +1,1 @@
+One-time build: ARTITRADE PC Ledger Migrator FIX1 2026-11-13. GUI source list height bounded. Connection test and transfer buttons fixed above log.

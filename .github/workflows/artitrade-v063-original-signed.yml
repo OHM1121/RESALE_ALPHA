@@ -1,0 +1,102 @@
+name: ARTITRADE v0.7.63 Original Signed APK
+on:
+  push:
+    branches:
+      - artitrade-phone-main-v070-live-orders-20261112
+    paths:
+      - '.github/workflows/artitrade-v063-original-signed.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: artitrade-v063-signer
+  cancel-in-progress: false
+jobs:
+  signed-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      SOURCE: '5e9f7ed4a53dc35116845c5bdcb0765caa5474f6'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.63_20261116'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '5e9f7ed4a53dc35116845c5bdcb0765caa5474f6'
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore only the original in-place compatible signing certificate
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Strict signing identity proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          test -f "$HOME/.android/debug.keystore"
+          actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+      - name: Extract SHA-verified legacy EXE for regression tests only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          assert hashlib.sha256(z).hexdigest()=='88cd3f30d6a327ce7d2dbffb275de16ad0d47d04e9530cc737a714d4fdb18d87'
+          dest=Path('/tmp/artitrade-core-verified')
+          dest.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(z)) as f:f.extractall(dest)
+          print('IMMUTABLE_EXE_VERIFIED')
+          PY
+      - name: Verify targeted v062 and unchanged legacy regressions
+        shell: bash
+        env:
+          PYTHONPATH: '/tmp/artitrade-core-verified:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for pat in 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+      - name: Build originally signed arm64 package for existing S21+ app
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Verify package, monotonic version and original signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk"
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='70' versionName='0.7.63-GMO-FLOOR-COLDSTART'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" >/tmp/v062-apksigner.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v062-apksigner.txt
+          unzip -l "$apk" | grep -F 'assets/chaquopy/app.imy'
+          cp "$apk" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=70\nversionName=v0.7.63\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\nno_ledger_reset=true\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
+      - name: Upload original-certified installable APK and verification files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.63_20261116
+          path: |
+            ARTITRADE_UNIFIED_v0.7.63_20261116.apk
+            ARTITRADE_UNIFIED_v0.7.63_20261116.sha256
+            ARTITRADE_UNIFIED_v0.7.63_20261116.compatibility.txt
+          if-no-files-found: error
+          retention-days: 30

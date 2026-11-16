@@ -11,7 +11,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
-/** Local client for ARTITRADE apps accessing the separate Phone Hub application. */
+/** Local client for ARTITRADE apps accessing the separate MSERVER (mobile server) application. */
 final class LocalHubClient {
     private static final String BASE="http://127.0.0.1:8765";
     private final Context context;
@@ -21,11 +21,26 @@ final class LocalHubClient {
         if(raw==null || !raw.matches("[0-9a-fA-F]{64}")) throw new IllegalArgumentException("Invalid pairing token");
         if(!context.getSharedPreferences("hub_pairing",Context.MODE_PRIVATE).edit()
                 .putString("token",crypt.seal(raw.toLowerCase(java.util.Locale.ROOT))).commit())
-            throw new IllegalStateException("Cannot save phone server pairing");
+            throw new IllegalStateException("Cannot save MSERVER pairing");
     }
     String savedPairingToken(){
         String sealed=context.getSharedPreferences("hub_pairing",Context.MODE_PRIVATE).getString("token",null);
         return sealed==null?"":crypt.unseal(sealed);
+    }
+    JSONObject pairingStatus(){
+        JSONObject out=new JSONObject();
+        android.content.SharedPreferences p=context.getSharedPreferences("hub_pairing",Context.MODE_PRIVATE);
+        boolean encrypted=p.contains("token");
+        try{
+            String token=savedPairingToken();
+            String masked=token.isEmpty()?"":("••••"+token.substring(Math.max(0,token.length()-6)));
+            return out.put("encrypted_present",encrypted).put("saved",!token.isEmpty())
+                .put("decrypt_ok",!encrypted||!token.isEmpty()).put("masked",masked)
+                .put("storage","ANDROID_KEYSTORE_LOCAL");
+        }catch(Exception e){
+            try{return out.put("encrypted_present",encrypted).put("saved",false).put("decrypt_ok",false)
+                .put("storage","ANDROID_KEYSTORE_LOCAL");}catch(Exception ignored){return new JSONObject();}
+        }
     }
     private static String encode(String s){
         try{return URLEncoder.encode(s,"UTF-8");}catch(Exception e){throw new IllegalArgumentException(e);}
@@ -37,7 +52,7 @@ final class LocalHubClient {
         ByteArrayOutputStream buffer=new ByteArrayOutputStream();
         byte[] chunk=new byte[4096];int n;
         while((n=in.read(chunk))!=-1){
-            if(buffer.size()+n>524288)throw new IllegalStateException("Response too large");
+            if(buffer.size()+n>36*1024*1024)throw new IllegalStateException("MSERVER response too large");
             buffer.write(chunk,0,n);
         }
         JSONObject reply=new JSONObject(new String(buffer.toByteArray(),StandardCharsets.UTF_8));
@@ -46,7 +61,7 @@ final class LocalHubClient {
     }
     JSONObject request(String path) throws Exception {
         HttpURLConnection c=(HttpURLConnection)new URL(BASE+path).openConnection();
-        c.setConnectTimeout(1800);c.setReadTimeout(2200);
+        c.setConnectTimeout(3500);c.setReadTimeout(12000);
         c.setRequestMethod("GET");
         c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Authorization","Bearer "+savedPairingToken());
@@ -57,7 +72,7 @@ final class LocalHubClient {
     private JSONObject send(String method,String path,JSONObject payload)throws Exception{
         byte[] body=payload.toString().getBytes(StandardCharsets.UTF_8);
         HttpURLConnection c=(HttpURLConnection)new URL(BASE+path).openConnection();
-        c.setConnectTimeout(1800);c.setReadTimeout(2600);
+        c.setConnectTimeout(3500);c.setReadTimeout(20000);
         c.setRequestMethod(method);
         c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Authorization","Bearer "+savedPairingToken());
@@ -73,6 +88,14 @@ final class LocalHubClient {
     }
     private JSONObject post(String path,JSONObject payload)throws Exception{return send("POST",path,payload);}
     private JSONObject put(String path,JSONObject payload)throws Exception{return send("PUT",path,payload);}
+    JSONObject migrationStatus() throws Exception {return request("/v1/migration/status");}
+    JSONObject migrationChunk(String session,int index)throws Exception{
+        return request("/v1/migration/chunk?session="+encode(session)+"&index="+index);
+    }
+    JSONObject migrationAck(String session,String archiveSha)throws Exception{
+        return post("/v1/migration/ack",new JSONObject().put("session",session).put("archive_sha256",archiveSha));
+    }
+
     JSONObject control(String market,String desired) throws Exception {
         if(!("stock".equals(market)||"coin".equals(market)))throw new IllegalArgumentException("Unsupported market");
         if(!("pc".equals(desired)||"phone".equals(desired)||"off".equals(desired)))throw new IllegalArgumentException("Unsupported device");
@@ -94,17 +117,23 @@ final class LocalHubClient {
     JSONObject record(String market,String strategy,String bucket)throws Exception {
         return request("/v1/record?market="+encode(market)+"&strategy="+encode(strategy)+"&bucket="+encode(bucket));
     }
+    JSONObject recordMeta(String market,String strategy,String bucket)throws Exception {
+        return request("/v1/record/meta?market="+encode(market)+"&strategy="+encode(strategy)+"&bucket="+encode(bucket));
+    }
     JSONObject putRecord(String market,String strategy,String bucket,JSONObject data)throws Exception{
-        JSONObject current=record(market,strategy,bucket);
-        int revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
-        JSONObject payload=new JSONObject().put("market",market).put("strategy",strategy)
-            .put("bucket",bucket).put("expected_revision",revision).put("data",data);
-        JSONObject reply=put("/v1/record",payload);
-        if(reply.optInt("http_status",200)==409 || "revision_conflict".equals(reply.optString("error"))){
-            current=record(market,strategy,bucket);
-            revision=current.optBoolean("ok")&&current.optBoolean("exists")?current.optInt("revision",0):0;
-            payload.put("expected_revision",revision);
+        JSONObject reply=new JSONObject().put("ok",false).put("error","revision_conflict");
+        for(int attempt=0;attempt<4;attempt++){
+            JSONObject current=recordMeta(market,strategy,bucket);
+            if(!current.optBoolean("ok",false))return current;
+            int revision=current.optBoolean("exists")?current.optInt("revision",0):0;
+            JSONObject payload=new JSONObject().put("market",market).put("strategy",strategy)
+                .put("bucket",bucket).put("expected_revision",revision).put("data",data);
             reply=put("/v1/record",payload);
+            if(reply.optBoolean("ok",false))return reply;
+            if(!"revision_conflict".equals(reply.optString("error","")))return reply;
+            // The record was updated between GET meta and PUT. Never assume
+            // success or bypass revision checks; refetch the authoritative revision.
+            if(attempt<3)Thread.sleep(100L*(attempt+1));
         }
         return reply;
     }

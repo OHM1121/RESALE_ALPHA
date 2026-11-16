@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.content.Intent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -90,8 +93,14 @@ public final class MainActivity extends Activity {
         }
         setContentView(root);
         if (Build.VERSION.SDK_INT >= 30) root.requestApplyInsets();
-        if ("hub".equals(BuildConfig.MARKET)) showHub();
-        else showModernDashboard();
+        if ("hub".equals(BuildConfig.MARKET)) {
+            try{
+                Intent server=new Intent(this,HubService.class);
+                server.setAction(HubService.START);
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(server);else startService(server);
+            }catch(Exception ignored){}
+            new Handler(getMainLooper()).postDelayed(this::showHub,350);
+        } else showModernDashboard();
     }
 
     private int dp(float value) { return (int)(value * getResources().getDisplayMetrics().density + 0.5f); }
@@ -111,7 +120,7 @@ public final class MainActivity extends Activity {
     }
 
     /** Number-first landscape UI. All finance figures come exclusively from the
-     *  authenticated local phone hub; missing records render as dashes.
+     *  authenticated local MSERVER; missing records render as dashes.
      *  No trading buttons or order execution are exposed by this client.
      */
     private void showModernDashboard() {
@@ -238,8 +247,8 @@ public final class MainActivity extends Activity {
         panel.addView(label("ARTITRADE  |  " + market, 22));
         panel.addView(label("Galaxy S21+ 가로 화면 / Samsung DeX",14));
         panel.addView(label("클라우드 서버 URL 설정이 필요합니다.\n현재 설치파일은 연결용 시험 앱이며 거래 엔진이 아닙니다.",14));
-        panel.addView(button("갤럭시 데이터 서버 연결 토큰 입력",this::configurePhoneHub));
-        panel.addView(button("갤럭시 데이터 서버 상태 조회",this::readPhoneHubStatus));
+        panel.addView(button("MSERVER 연결 토큰 입력",this::configurePhoneHub));
+        panel.addView(button("MSERVER 상태 조회",this::readPhoneHubStatus));
         panel.addView(button("동기화 기록 확인",this::selectHubRecord));
         panel.addView(button("기존 HTTPS 서버 연결 설정",this::configure));
         panel.addView(button("저장된 서버에 연결",this::connectSaved));
@@ -340,8 +349,8 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18),dp(8),dp(18),dp(20));
         scroll.addView(panel);
-        panel.addView(label("ARTITRADE | 갤럭시 S21+ 데이터 서버",21));
-        panel.addView(label("PC와 휴대폰의 설정·장부 동기화 및 실행 기기 권한 관리 (시험용)",12));
+        panel.addView(label("ARTITRADE | MSERVER(모바일 서버)",21));
+        panel.addView(label("S21+ 기준원장 · PC 조회 동기화 · 실행권한 관리",12));
         panel.addView(label("서버 상태: "+(HubService.isActive()?"실행 중":"중지됨"),15));
         LinearLayout actions=new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -361,8 +370,12 @@ public final class MainActivity extends Activity {
         }));
         actions.addView(button("새로고침",this::showHub));
         panel.addView(actions);
-        panel.addView(label("같은 휴대폰 앱에서 접속: http://127.0.0.1:8765",13));
-        boolean vpn=getSharedPreferences("hub_ui",MODE_PRIVATE).getBoolean("tailscale_enabled",false);
+        panel.addView(label("127.0.0.1은 휴대폰 내부 전용 · Windows PC 접속 주소가 아닙니다.",12));
+        boolean vpn=getSharedPreferences("hub_ui",MODE_PRIVATE).getBoolean("tailscale_enabled",true);
+        String publicVpnIp=HubService.vpnAddress();
+        panel.addView(label(!vpn?"PC 연결: Tailscale 접속 설정을 켜십시오":
+            publicVpnIp.isEmpty()?"PC 연결: Tailscale 주소 감지 대기 · 연결 후 새로고침":
+            "PC 연결 주소: http://"+publicVpnIp+":8765",15));
         panel.addView(label("Tailscale 전용 접속: "+(vpn?"사용 설정":"사용 안 함")+" (공유기 포트 개방 금지)",12));
         panel.addView(button(vpn?"Tailscale 접속 끄기":"Tailscale 접속 켜기",()->{
             boolean next=!getSharedPreferences("hub_ui",MODE_PRIVATE).getBoolean("tailscale_enabled",false);
@@ -373,18 +386,31 @@ public final class MainActivity extends Activity {
             }
             showHub();
         }));
-        panel.addView(button("PC 연결용 토큰 보기",()->{
+        panel.addView(button("MSERVER 연결 토큰 복사",()->{
+            try{
+                String token=new SecureBox(this).token();
+                ClipboardManager cb=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+                if(cb==null)throw new IllegalStateException("클립보드 사용 불가");
+                cb.setPrimaryClip(ClipData.newPlainText("ARTITRADE MSERVER token",token));
+                new AlertDialog.Builder(this).setTitle("복사 완료")
+                    .setMessage("MSERVER 64자리 연결 토큰을 클립보드에 복사했습니다. ARTITRADE 통합앱 설정에 붙여넣으십시오.")
+                    .setPositiveButton("확인",null).show();
+            }catch(Exception e){
+                new AlertDialog.Builder(this).setTitle("토큰 복사 실패").setMessage(String.valueOf(e.getMessage())).setPositiveButton("확인",null).show();
+            }
+        }));
+        panel.addView(button("MSERVER 연결 토큰 보기",()->{
             try {
                 android.widget.EditText token=new android.widget.EditText(this);
                 token.setSingleLine(true);token.setText(new SecureBox(this).token());
                 token.setSelectAllOnFocus(true);
-                new android.app.AlertDialog.Builder(this).setTitle("민감한 연결 토큰")
-                    .setMessage("PC 동기화 도구에만 입력하십시오. GitHub나 채팅에 절대로 올리지 마십시오.")
+                new android.app.AlertDialog.Builder(this).setTitle("MSERVER 연결 토큰")
+                    .setMessage("ARTITRADE 통합앱과 PC 원장 승계 도구에만 입력하십시오. 외부에 공유하지 마십시오.")
                     .setView(token).setPositiveButton("닫기",null).show();
             }catch(Exception e){new android.app.AlertDialog.Builder(this)
                 .setMessage("Keystore 오류: 앱 저장공간 상태를 확인하십시오.").setPositiveButton("확인",null).show();}
         }));
-        panel.addView(button("연결 토큰 재발급 (기존 PC 연결 해제)",()->{
+        panel.addView(button("연결 토큰 재발급 (기존 연결 해제)",()->{
             new android.app.AlertDialog.Builder(this)
                 .setTitle("기존 연결이 모두 끊어집니다")
                 .setMessage("연동 기기에 새 토큰을 다시 입력해야 합니다.")
@@ -441,9 +467,9 @@ public final class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
             android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setHint("허브 APK에서 표시한 64자리 연결 토큰");
-        new android.app.AlertDialog.Builder(this).setTitle("폰 서버 페어링")
-            .setMessage("같은 S21+에 설치한 'ARTITRADE 폰 서버' 앱의 토큰을 붙여넣으십시오.")
+        input.setHint("MSERVER 앱에서 표시한 64자리 연결 토큰");
+        new android.app.AlertDialog.Builder(this).setTitle("MSERVER(모바일 서버) 연결")
+            .setMessage("같은 S21+에 설치한 ARTITRADE MSERVER 앱의 64자리 토큰을 붙여넣으십시오.")
             .setView(input).setNegativeButton("취소",null)
             .setPositiveButton("저장",(d,w)->{
                 try{
@@ -460,9 +486,9 @@ public final class MainActivity extends Activity {
         new Thread(()->{
             try{
                 org.json.JSONObject status=new LocalHubClient(this).status();
-                runOnUiThread(()->showHubResult("폰 서버 상태",status.toString()));
-            }catch(Exception e){runOnUiThread(()->showHubResult("폰 서버 연결 오류",
-                "폰 서버 앱이 실행 중이고 페어링 토큰이 맞는지 확인하십시오."));}
+                runOnUiThread(()->showHubResult("MSERVER 상태",status.toString()));
+            }catch(Exception e){runOnUiThread(()->showHubResult("MSERVER 연결 오류",
+                "MSERVER 앱이 실행 중이고 연결 토큰이 맞는지 확인하십시오."));}
         },"hub-client-status").start();
     }
     /** Download a bounded JSON snapshot through the Android system file picker.
@@ -528,7 +554,7 @@ public final class MainActivity extends Activity {
                     catch(Exception ex){pendingRecordExport=null;showHubResult("내보내기 오류","저장할 파일 위치를 선택할 수 없습니다.");}
                 });
             }catch(Exception ex){
-                runOnUiThread(()->showHubResult("내보내기 오류","폰 서버 연결 및 기록을 확인하십시오."));
+                runOnUiThread(()->showHubResult("내보내기 오류","MSERVER 연결 및 원장을 확인하십시오."));
             }
         },"artitrade-export").start();
     }
@@ -578,7 +604,7 @@ public final class MainActivity extends Activity {
                                     loadDashboardRecords();
                                 });
                             }catch(Exception e){
-                                runOnUiThread(()->showHubResult("변경 실패","폰 서버 연결 상태와 인증 토큰을 확인하십시오."));
+                                runOnUiThread(()->showHubResult("변경 실패","MSERVER 연결 상태와 인증 토큰을 확인하십시오."));
                             }
                         },"hub-device-control").start();
                     }).show();
