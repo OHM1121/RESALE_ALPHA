@@ -100,6 +100,17 @@ def _join_new_positions(self,c,code):
                    if kind=='REVERSAL_BEAR' else policy.initial_up_exit_state(str(p['tf'])))
             state['entry_at']=str(p['entry_at'])
             state['entry_bar_start']=str(f.get('ma_v067_bar_start') or '')
+            if kind=='REVERSAL_UP':
+                # Set physical stock-share stage targets before the first
+                # sell. 13 shares -> first ceil(1.3)=2, post-first 11 shares
+                # -> second ceil(5.5)=6. Never round a confirmed fill to
+                # fractional stock shares or reject its actual 2/6 prints.
+                initial=int(p['qty0'])
+                stock_first=max(1,min(initial,int(math.ceil(initial*.10))))
+                stock_second=(max(1,int(math.ceil((initial-stock_first)*.50)))
+                              if initial>stock_first else 0)
+                state['rounded_first_goal']=str(stock_first)
+                state['rounded_second_goal']=str(stock_second)
         except (TypeError,ValueError,KeyError):continue
         at=str(p['entry_at'])
         c.execute("""INSERT OR IGNORE INTO ma_v067_positions
@@ -109,7 +120,8 @@ def _join_new_positions(self,c,code):
         first_target=(float(state['ref_high']) if kind=='REVERSAL_BEAR'
                       else float(policy.up_targets(p['entry'],p['tf'])[0]))
         fraction=.30 if kind=='REVERSAL_BEAR' else .10
-        first=max(1,int(math.ceil(int(p['qty0'])*fraction)))
+        first=(int(state['rounded_first_goal']) if kind=='REVERSAL_UP'
+               else max(1,int(math.ceil(int(p['qty0'])*fraction))))
         c.execute('UPDATE positions SET target=?,first_qty=? WHERE id=?',
                   (int(math.ceil(first_target)),first,p['id']))
 
