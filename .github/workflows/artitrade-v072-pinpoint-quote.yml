@@ -1,0 +1,42 @@
+name: ARTITRADE v072 pinpoint stock quote & subscription source
+on:
+  push:
+    branches: [ fix-artitrade-v072-preload-heartbeat-freshness-20261116 ]
+    paths:
+      - '.github/workflows/artitrade-v072-pinpoint-quote.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Read actual bundled source and show record ownership
+        run: |
+          python3 - <<'PY'
+          import zipfile,io,base64,ast,re
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for fname in ('d_live.py','d_venue.py','d_market.py','d_upbit.py','startup_preload_v1.py'):
+              if fname not in z.namelist():continue
+              src=z.read(fname).decode()
+              rows=src.splitlines()
+              print('\n=== FILE',fname,'===')
+              if fname=='d_live.py':
+                intervals=[(20,63),(370,440),(900,995),(1510,1580),(1663,1725),(1875,1935),(2170,2185),(2238,2280),(2310,2350),(2360,2430)]
+              else:
+                intervals=[]
+              for start,end in intervals:
+                for line in range(start,min(end,len(rows))+1):
+                  print(str(line).rjust(5),rows[line-1][:245])
+              if fname!='d_live.py':
+                for i,ln in enumerate(rows):
+                  if any(s in ln for s in ('def parse_venue_real','def parse_realtime','exchange_at','seen_at','_pinned_stocks')):
+                    print(str(i+1).rjust(5),ln[:245])
+          PY
