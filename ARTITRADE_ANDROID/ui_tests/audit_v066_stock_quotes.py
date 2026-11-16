@@ -36,3 +36,19 @@ with zipfile.ZipFile(io.BytesIO(raw)) as z:
   indices=[i for i,line in enumerate(src) if any(key in line for key in keys)]
   print('MATCHES',len(indices))
   for i in indices[:95]:print('MATCH',name,i+1,src[i][:260])
+
+print('TARGETED_EXCERPTS')
+ranges={
+ 'd_live.py':[(285,370),(455,545),(885,966),(1435,1555),(1840,1930),(1930,2040),(2040,2195),(2195,2290)],
+ 'd_gmo_runtime.py':[(80,132),(478,563),(565,736),(1075,1195)],
+ 'stock_ma_engine.py':[(350,398)],
+ 'at_close_bridge.py':[(85,122)],
+}
+with zipfile.ZipFile(io.BytesIO(raw)) as z:
+ for name,parts in ranges.items():
+  if name not in z.namelist():continue
+  lines=z.read(name).decode('utf8').splitlines()
+  for lo,hi in parts:
+   print('TARGET_RANGE',name,lo,hi)
+   for idx in range(lo-1,min(hi,len(lines))):
+    print('TARGET_SOURCE',name,idx+1,lines[idx][:280])
