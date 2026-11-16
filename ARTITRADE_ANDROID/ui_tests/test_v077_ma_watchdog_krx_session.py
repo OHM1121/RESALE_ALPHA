@@ -42,7 +42,7 @@ class NoFalseAfterhoursMaAudit(unittest.TestCase):
         stock=watchdog.split("                if market=='stock':",1)[1].split(
             '                else:',1)[0]
         coin=watchdog.split('                else:',1)[1]
-        self.assertIn("if not live_session(now,'KRX'):",stock)
+        self.assertIn("if not is_regular_open(now) or not live_session(now,'KRX'):",stock)
         self.assertIn("self.stop_event.wait(.8)",stock)
         self.assertIn('ma_v067_coin_runtime',coin)
         self.assertNotIn("live_session(now,'KRX')",coin)
