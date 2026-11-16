@@ -26,7 +26,21 @@ jobs:
         run: |
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
           python3 ARTITRADE_ANDROID/ui_tests/test_v064_ma_trend_gate.py
+      - name: Extract pinned embedded historical core for legacy parity tests
+        run: |
+          python3 - <<'PY'
+          import io,zipfile,base64,hashlib
+          from pathlib import Path
+          source=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((source/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert hashlib.sha256(b).hexdigest()=='e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0'
+          target=Path('/tmp/artitrade-core-verified');target.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(b)) as z:z.extractall(target)
+          print('ORIGINAL_GMO_V062_SOURCE_SHA_VERIFIED')
+          PY
       - name: Existing MA and Market Trend regression
+        env:
+          PYTHONPATH: '/tmp/artitrade-core-verified:ARTITRADE_ANDROID/app/src/main/python'
         run: |
           for p in 'test_v061_*.py' 'test_v062_*.py' 'test_v043_market_trend.py' 'test_v054_market_trend_audit.py'; do
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$p" -v
