@@ -192,12 +192,14 @@ public final class UnifiedVisualActivity extends Activity {
     private static final int REQUEST_EXPORT_FULL_LEDGER=7712;
     private static final int REQUEST_EXPORT_COMBINED_RESEARCH=7713;
     private static final int REQUEST_EXPORT_AI_EVIDENCE=7714;
+    private static final int REQUEST_EXPORT_ERRORS=7715;
     private String pendingAiExportScope;
     private String pendingAiExportReport;
     private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
         new java.util.concurrent.atomic.AtomicBoolean(false);
     private byte[] pendingResearchExport;
     private String pendingResearchReports;
+    private String pendingErrorsReports;
     private String pendingCombinedResearchScope;
     private static final long REFRESH_MS=3500L;
 
@@ -3559,6 +3561,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void exportFullLedgerToDocument(Uri target,String reportsJson,String aiScope){
         final boolean research=reportsJson!=null;
         final boolean aiExport=aiScope!=null;
+        final boolean errorExport=reportsJson!=null&&reportsJson.contains("ARTITRADE_ERROR_HISTORY_V071");
         if(!fullExportRunning.compareAndSet(false,true))return;
         new Thread(()->{
             File archive=new File(getCacheDir(),"artitrade_full_ledger_"+System.nanoTime()+".zip");
@@ -3630,13 +3633,15 @@ public final class UnifiedVisualActivity extends Activity {
                     "용량 "+String.format(Locale.KOREA,"%,d",confirmed)+"바이트\n"+
                     "ZIP SHA-256 "+expected+"\n"+
                     "과거·현재 실제/가상매매 원본 SQLite 전체 및 저장본을 검증했습니다.",
-                    research,aiExport?"AI 심층 정량자료 추출":null);
+                    research,aiExport?"AI 심층 정량자료 추출":
+                        errorExport?"오류이력 ZIP 추출":null);
             }catch(Throwable e){
                 new RuntimeCrashStore(this).add(research?"research_full_export":"full_ledger_backup",e);
                 fullLedgerExportResult(false,
                     "기존 원장 데이터는 변경되지 않았습니다.\n"+e.getClass().getSimpleName()+
                     ": "+String.valueOf(e.getMessage()),research,
-                    aiExport?"AI 심층 정량자료 추출":null);
+                    aiExport?"AI 심층 정량자료 추출":
+                        errorExport?"오류이력 ZIP 추출":null);
             }finally{
                 if(archive.exists()&&!archive.delete())
                     new RuntimeCrashStore(this).add("full_ledger_backup_cache_cleanup",
@@ -3699,6 +3704,59 @@ public final class UnifiedVisualActivity extends Activity {
             pendingResearchReports=null;
             new AlertDialog.Builder(this).setTitle("연구자료 추출 실패")
                 .setMessage(String.valueOf(e.getMessage()))
+                .setPositiveButton("확인",null).show();
+        }
+    }
+
+    /** Export the original error SQLite/JSON records, not just visible cards.
+     * No user credential fields or market orders are created by this export.
+     * The existing full-ledger backup verifies the saved ZIP with SHA-256.
+     */
+    private void requestErrorHistoryExport(){
+        if(fullExportRunning.get()){
+            new AlertDialog.Builder(this).setTitle("오류이력 추출 진행 중")
+                .setMessage("기존 ZIP 추출 완료 후 다시 실행할 수 있습니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        try{
+            JSONObject snapshot=copyCache();
+            JSONArray records=marketErrors();
+            JSONObject runtime=snapshot.optJSONObject("strategy_runtime");
+            JSONObject feed=runtime==null?null:runtime.optJSONObject("stock_feed");
+            JSONObject trend=runtime==null?null:runtime.optJSONObject("market_trend_status");
+            JSONObject summary=new JSONObject()
+                .put("schema","ARTITRADE_ERROR_HISTORY_V071")
+                .put("market",market)
+                .put("exported_at_kst",new SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss",Locale.KOREA).format(new Date())+" KST")
+                .put("displayed_error_rows",records.length())
+                .put("preview_may_be_truncated",true)
+                .put("source","현재 UI 진단 기록 + 기존 전체 원본 SQLite/JSON 무결성 백업")
+                .put("stock_feed",feed==null?new JSONObject():feed)
+                .put("market_trend_status",trend==null?new JSONObject():trend);
+            JSONObject reports=new JSONObject();
+            reports.put("analysis/error_history_summary.json",summary.toString(2));
+            reports.put("analysis/error_history_visible.json",records.toString(2));
+            reports.put("analysis/error_history_guide_ko.txt",
+                "화면에 표시된 오류는 최근·중복제거 기록으로 원본 전체와 다를 수 있음\\n"+
+                "ZIP의 원본 SQLite/JSON에서 주식 종가베팅·MA·수급매매·마켓트렌드·실시간 스트림 오류를 확인\\n"+
+                "REST 인증 성공과 WebSocket 실체결 수신은 별개의 상태임\\n"+
+                "TICK_PROCESS_DELAY 등 오류는 체결 실패와 반드시 일대일 대응하지 않음\\n"+
+                "실제 매수·매도는 주문/체결 원장의 확인된 기록으로만 판단\\n");
+            pendingErrorsReports=reports.toString();
+            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
+            Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            picker.addCategory(Intent.CATEGORY_OPENABLE);
+            picker.setType("application/zip");
+            picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            picker.putExtra(Intent.EXTRA_TITLE,"ARTITRADE_"+market+
+                "_ERROR_HISTORY_ALL_ORIGINALS_"+stamp+".zip");
+            startActivityForResult(picker,REQUEST_EXPORT_ERRORS);
+        }catch(Exception e){
+            pendingErrorsReports=null;
+            new AlertDialog.Builder(this).setTitle("오류이력 ZIP 준비 실패")
+                .setMessage(e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()))
                 .setPositiveButton("확인",null).show();
         }
     }
@@ -3826,6 +3884,13 @@ public final class UnifiedVisualActivity extends Activity {
             if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null
                 &&scope!=null&&report!=null)
                 exportFullLedgerToDocument(data.getData(),report,scope);
+            return;
+        }
+        if(requestCode==REQUEST_EXPORT_ERRORS){
+            String reports=pendingErrorsReports;
+            pendingErrorsReports=null;
+            if(resultCode==RESULT_OK&&reports!=null&&data!=null&&data.getData()!=null)
+                exportFullLedgerToDocument(data.getData(),reports);
             return;
         }
         if(requestCode==REQUEST_EXPORT_FULL_LEDGER){
@@ -5364,6 +5429,11 @@ public final class UnifiedVisualActivity extends Activity {
             tableOptionsDialog(tableId,query,this::render));
         filter.setTextSize(11);
         errorsHead.addView(filter,new LinearLayout.LayoutParams(dp(87),dp(37)));
+        Button zip=button("오류 ZIP",false,this::requestErrorHistoryExport);
+        zip.setTextSize(11);
+        LinearLayout.LayoutParams zp=new LinearLayout.LayoutParams(dp(92),dp(37));
+        zp.setMargins(dp(5),0,0,0);
+        errorsHead.addView(zip,zp);
         content.addView(errorsHead,new LinearLayout.LayoutParams(-1,dp(45)));
         TextView note=text("선택 전략과 무관하게 해당 시장의 실시간·전략·주문·원장 오류를 통합 표시",10);note.setTextColor(Color.rgb(135,160,190));note.setPadding(0,dp(3),0,dp(9));content.addView(note);
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
