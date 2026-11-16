@@ -52,7 +52,8 @@ class TrendTickerFreshnessV069(unittest.TestCase):
         finish=dt.datetime(2026,11,16,10,55,tzinfo=KST)
         self.assertTrue(live_rsi_check_due(finish-dt.timedelta(seconds=15),finish,'5m','coin'))
         self.assertTrue(preclose_due(finish-dt.timedelta(seconds=12),finish,'5m','coin'))
-        self.assertFalse(preclose_due(finish-dt.timedelta(seconds=11),finish,'5m','coin'))
+        self.assertTrue(preclose_due(finish-dt.timedelta(seconds=11),finish,'5m','coin'))
+        self.assertFalse(preclose_due(finish-dt.timedelta(seconds=6),finish,'5m','coin'))
     def test_rsi_30_latch_is_unchanged(self):
         l=SignalLatch()
         l.completed('2026-11-16T10:50:00+09:00',30.914)
