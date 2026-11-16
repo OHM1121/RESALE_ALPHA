@@ -42,4 +42,4 @@ jobs:
           for pat in 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v054_*.py'; do
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
           done
-          echo 'PASS_V074_NO_ORDER_RESEARCH_AND_STALE_BOOK_BROKER_GATES'
+          echo 'PASS_V074_NO_ORDER_RESEARCH_AND_STALE_BOOK_BROKER_GATES_RERUN_AFTER_BACKCOMPAT_FIX'
