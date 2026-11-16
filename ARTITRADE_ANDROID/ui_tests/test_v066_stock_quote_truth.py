@@ -90,6 +90,7 @@ class StockDisplayTests(unittest.TestCase):
         self.assertNotIn('paper_pnl',row)
         self.assertNotIn('mark',row)
         self.assertEqual(row['ledger_last_price'],70000)
+        self.assertEqual(row['stock_quote_display_source'],'LAST_LEDGER')
         self.assertEqual(row['stock_quote_status'],'LAST_0B')
         self.assertEqual(row['stock_quote_last_observed_price'],73400)
         self.assertEqual(row['stock_quote_display_price'],73400)
@@ -98,16 +99,17 @@ class StockDisplayTests(unittest.TestCase):
     def test_no_quote_cannot_use_entry_price_as_gmo_current(self):
         p=q.annotate_stock_packet(sample(),self.r,now=T)
         row=p['stock']['at']['ledger']['gmo']['positions'][0]
-        self.assertEqual(row['stock_quote_status'],'NOT_RECEIVED')
+        self.assertEqual(row['stock_quote_status'],'LAST_LEDGER')
         self.assertNotIn('last_price',row)
         self.assertNotIn('paper_pnl',row)
         self.assertEqual(row['ledger_last_price'],70000)
+        self.assertEqual(row['stock_quote_display_source'],'LAST_LEDGER')
 
     def test_wrong_symbol_never_fills_other_symbol(self):
         self.r._new_tick(tick('000660',price=133000))
         p=q.annotate_stock_packet(sample(),self.r,now=T)
         row=p['stock']['at']['ledger']['gmo']['positions'][0]
-        self.assertEqual(row['stock_quote_status'],'NOT_RECEIVED')
+        self.assertEqual(row['stock_quote_status'],'LAST_LEDGER')
 
     def test_venue_not_merged_and_explicit_venue_label(self):
         self.r._new_tick(tick(price=73400))
