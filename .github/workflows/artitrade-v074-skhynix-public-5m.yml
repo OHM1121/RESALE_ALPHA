@@ -1,0 +1,50 @@
+name: ARTITRADE v074 SK Hynix public five-minute RSI evidence
+on:
+  push:
+    branches: [fix-artitrade-v074-ma-trend-forensic-20261116]
+    paths: ['.github/workflows/artitrade-v074-skhynix-public-5m.yml']
+permissions: {contents: read}
+jobs:
+  price:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check if independent public KRX 5m OHLC is retrievable; do not use user trading keys
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json,datetime as dt,zoneinfo,sys
+          sys.path.insert(0,'ARTITRADE_ANDROID/app/src/main/python')
+          import market_trend_v043 as mt
+          KST=zoneinfo.ZoneInfo('Asia/Seoul')
+          first=int(dt.datetime(2026,11,12,tzinfo=KST).timestamp())
+          last=int(dt.datetime(2026,11,17,tzinfo=KST).timestamp())
+          for ticker in ('000660.KS','005930.KS','035420.KS','000270.KS'):
+            try:
+              url='https://query1.finance.yahoo.com/v8/finance/chart/'+ticker+'?'+urllib.parse.urlencode({
+                  'period1':first,'period2':last,'interval':'5m','events':'history'})
+              req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})
+              with urllib.request.urlopen(req,timeout=12) as r:
+                d=json.load(r);result=d['chart']['result'][0]
+              times=result['timestamp']
+              values=result['indicators']['quote'][0]
+              bars=[]
+              for i,secs in enumerate(times):
+                px=values['close'][i]
+                if px is None:continue
+                stamp=dt.datetime.fromtimestamp(secs,KST)
+                bars.append((stamp,px,values['low'][i]))
+              selection=[(i,t,c,l) for i,(t,c,l) in enumerate(bars)
+                         if t.date()==dt.date(2026,11,16) and
+                         dt.time(10,0)<=t.time()<=dt.time(10,15)]
+              print('PUBLIC_THIRD_PARTY',ticker,'bar_count',len(bars),'TARGET_WINDOW',selection)
+              for i,t,close,lo in selection:
+                past=[float(p) for _,p,_ in bars[:i]]
+                if len(past)<21:continue
+                print('WILDER_RSI20',ticker,t.isoformat(),
+                      'AT_BAR_LOW',round(mt.rsi20(past,float(lo)) or -1,5),
+                      'AT_BAR_CLOSE',round(mt.rsi20(past,float(close)) or -1,5),
+                      'APP_10_09_45_RECEIPT_BOOK_LATCH_NOT_PROVEN')
+            except Exception as exc:
+              print('NO_RELIABLE_PUBLIC_5M',ticker,type(exc).__name__,str(exc)[:180])
+          PY
