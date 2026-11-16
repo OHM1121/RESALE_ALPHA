@@ -90,8 +90,9 @@ class StockDisplayTests(unittest.TestCase):
         self.assertNotIn('paper_pnl',row)
         self.assertNotIn('mark',row)
         self.assertEqual(row['ledger_last_price'],70000)
-        self.assertEqual(row['stock_quote_status'],'STALE')
+        self.assertEqual(row['stock_quote_status'],'LAST_0B')
         self.assertEqual(row['stock_quote_last_observed_price'],73400)
+        self.assertEqual(row['stock_quote_display_price'],73400)
         self.assertEqual(row['stock_quote_expires_ms'],0)
 
     def test_no_quote_cannot_use_entry_price_as_gmo_current(self):
@@ -127,9 +128,18 @@ class StockDisplayTests(unittest.TestCase):
         self.r._new_tick(tick(exchange=T+dt.timedelta(seconds=10)))
         self.assertEqual(self.r._v066_quote_by_venue,{})
 
-    def test_old_exchange_with_new_receipt_rejected(self):
+    def test_delayed_true_exchange_tick_kept_for_display_but_not_live(self):
         self.r._new_tick(tick(exchange=T-dt.timedelta(seconds=7),receive=T))
-        self.assertEqual(self.r._v066_quote_by_venue,{})
+        self.assertEqual(len(self.r._v066_quote_by_venue),1)
+        p=q.annotate_stock_packet(sample(),self.r,now=T)
+        pos=p['stock']['at']['ledger']['positions'][0]
+        self.assertEqual(pos['stock_quote_status'],'LAST_0B')
+        self.assertEqual(pos['stock_quote_display_price'],73400)
+        self.assertNotIn('last_price',pos)
+
+    def test_incorrect_delays_are_rejected_even_for_display(self):
+        self.r._new_tick(tick(exchange=T-dt.timedelta(seconds=150),receive=T))
+        self.assertEqual(len(self.r._v066_quote_by_venue),0)
 
     def test_out_of_order_older_trade_cannot_replace_latest(self):
         self.r._new_tick(tick(price=73400))
@@ -144,7 +154,7 @@ class StockDisplayTests(unittest.TestCase):
         p=q.annotate_stock_packet(sample(),self.r,now=T+dt.timedelta(seconds=2))
         row=p['stock']['at']['ledger']['gmo']['positions'][0]
         self.assertNotIn('last_price',row)
-        self.assertEqual(row['stock_quote_status'],'STALE')
+        self.assertEqual(row['stock_quote_status'],'LAST_0B')
 
     def test_bad_code_and_malformed_price_never_refreshed(self):
         self.r._new_tick(tick('KRW-BTC'))
@@ -166,7 +176,7 @@ class StockDisplayTests(unittest.TestCase):
         self.r._confirmed_ws_session=False
         p=q.annotate_stock_packet(sample(),self.r,now=T+dt.timedelta(seconds=1))
         self.assertEqual(p['stock']['at']['ledger']['positions'][0]['stock_quote_source'],
-                         'NO_FRESH_VERIFIED_0B')
+                         'KIWOOM_REAL_0B_LAST')
 
     def test_runtime_wrapper_preserves_packet_type_and_calls_original(self):
         class Core:
