@@ -51,7 +51,7 @@ jobs:
           from pathlib import Path
           p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
           z=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
-          assert hashlib.sha256(z).hexdigest()=='88cd3f30d6a327ce7d2dbffb275de16ad0d47d04e9530cc737a714d4fdb18d87''
+          assert hashlib.sha256(z).hexdigest()=='88cd3f30d6a327ce7d2dbffb275de16ad0d47d04e9530cc737a714d4fdb18d87'
           t=Path('/tmp/artitrade-core-verified');t.mkdir(parents=True,exist_ok=True)
           with zipfile.ZipFile(io.BytesIO(z)) as f:f.extractall(t)
           print('EXE_SOURCE_SHA_VERIFIED')
