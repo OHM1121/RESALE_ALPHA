@@ -46,6 +46,7 @@ jobs:
           test "${{ steps.signing.outputs.cache-hit }}" = "true"
           test -f "$HOME/.android/debug.keystore"
           actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "SIGNING_CERT_ACTUAL=$actual; SIGNING_CERT_EXPECTED=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
           test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
       - name: Verify SHA-pinned bundled Python and extract to temporary QA directory only
         shell: bash
