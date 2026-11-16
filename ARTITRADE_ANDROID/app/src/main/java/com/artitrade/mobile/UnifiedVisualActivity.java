@@ -1997,7 +1997,13 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderTrendWatchPending(){
         // Distinguish live RSI observation from a broker order or virtual buy.
-        JSONArray pending=stats(market,"trend").pending;
+        // The RSI WatchBook lives in market_trend_watch, NOT the trend
+        // broker wallet (whose pending is correctly empty for FOK orders).
+        // Never treat these observed symbols as placed or executable orders.
+        JSONObject local=copyCache().optJSONObject("local_records");
+        JSONObject watch=local==null?null:local.optJSONObject("market_trend_watch");
+        JSONArray pending=watch==null?null:watch.optJSONArray(market);
+        if(pending==null)pending=stats(market,"trend").pending;
         TextView title=text("마켓트렌드 · RSI(20) ≤ 35 매수대기",20);
         title.setTypeface(null,Typeface.BOLD);
         content.addView(title);
@@ -2005,7 +2011,17 @@ public final class UnifiedVisualActivity extends Activity {
         detail.setTextColor(PremiumUi.MUTED);
         detail.setPadding(dp(2),dp(6),0,dp(10));
         content.addView(detail);
-        if(pending.length()==0){empty("RSI 35 이하 관측종목 없음 · RSI 40 이하는 내부 테스트만 진행");return;}
+        if(pending.length()==0){
+            JSONObject diagnosis=local==null?null:local.optJSONObject("market_trend_status");
+            JSONObject marketDiag=diagnosis==null?null:diagnosis.optJSONObject(market);
+            int candidates=marketDiag==null?0:marketDiag.optInt("candidates",0);
+            String err=marketDiag==null?"":marketDiag.optString("error","");
+            String info="현재 관측 대기 0건 · 스캔 후보 "+candidates+
+                "종목 · RSI 35 이하 실시간 증거 없음";
+            if(!err.isEmpty())info+=" · 마지막 진단: "+err;
+            empty(info);
+            return;
+        }
         for(int i=0;i<pending.length();i++){
             JSONObject row=pending.optJSONObject(i);
             if(row==null||!"WATCH_PENDING".equals(row.optString("status","")))continue;
@@ -2879,6 +2895,8 @@ public final class UnifiedVisualActivity extends Activity {
             return "키움 "+venue+" 마지막 실체결가 · "+moment+" KST · 새 체결 대기";
         if("LAST_REST".equals(state))
             return "키움 마지막 REST 조회가 · "+moment+" KST · 갱신 대기";
+        if("LAST_LEDGER".equals(state))
+            return "마지막 저장 평가가 · 실시간 시세 아님 · 키움 0B/REST 갱신 중";
         return "키움 개별 종목 0B·공식 현재가 조회 대기 · 원장 가격 별도 보존";
     }
     private String displayPositionMark(JSONObject r){
@@ -3227,7 +3245,12 @@ public final class UnifiedVisualActivity extends Activity {
             figures.setPadding(0,dp(7),0,dp(3));
             if("positions".equals(kind)){
                 tradeMetricTile(figures,"매수가",finite(price)?money(price):"—",true);
-                tradeMetricTile(figures,"현재가",finite(current)&&current>0?money(current):"가격 조회 중",true);
+                String quoteStatus=r.optString("stock_quote_status","");
+                String quoteLabel=isStockPosition(r)&&"LAST_LEDGER".equals(quoteStatus)
+                    ?"저장 평가가":isStockPosition(r)&&("LAST_0B".equals(quoteStatus)||
+                    "LAST_REST".equals(quoteStatus))?"마지막 확인가":"현재가";
+                tradeMetricTile(figures,quoteLabel,
+                    finite(current)&&current>0?money(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
                 tradeMetricTile(figures,"1차 목표",formatMaybeMoney(r,"first_target","target","target_price"),false);
             }else if("pending".equals(kind)){
