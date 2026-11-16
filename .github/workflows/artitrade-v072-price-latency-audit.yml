@@ -1,0 +1,29 @@
+name: ARTITRADE verified root cause price latency trace
+on:
+  push:
+    branches: [ fix-artitrade-v072-preload-heartbeat-freshness-20261116 ]
+    paths: [ '.github/workflows/artitrade-v072-price-latency-audit.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trace critical code paths without credentials
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile
+          root=Path('ARTITRADE_ANDROID')
+          chunks=root/'app/src/main/assets/strategy_v070'
+          blob=base64.b64decode(''.join((chunks/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              src=z.read('d_live.py').decode('utf8').splitlines()
+          print('=== REST LOCK ===')
+          for lo,hi in [(119,146),(1945,2014),(2014,2081),(2080,2169),(2190,2237),(2275,2310)]:
+              print('--- D_LIVE',lo,hi,'---')
+              for i in range(lo,hi+1):
+                  if i<=len(src):print('D',i,src[i-1])
+          PY
