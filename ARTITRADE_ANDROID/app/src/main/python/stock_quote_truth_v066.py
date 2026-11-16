@@ -105,7 +105,10 @@ def install_ui_quote_tap(runner):
     lock=threading.RLock()
     runner._v066_quote_lock=lock
     runner._v066_quote_by_venue={}
-    original=runner._new_tick
+    # Test/migration stubs can expose a snapshot without an active Kiwoom
+    # 0B receiver. A display-only observer must not fail the whole strategy.
+    original=getattr(runner,'_new_tick',None)
+    if not callable(original):return False
 
     def quote_only_then_native(tick):
         try:
