@@ -5450,7 +5450,16 @@ public final class UnifiedVisualActivity extends Activity {
             appendErrorItems(raw,record("coinGeneralErrors"));
             appendErrorItems(raw,record("coinMaErrors"));
         }
-        JSONObject c=copyCache();JSONArray run=c.optJSONArray("runtime_diagnostics");
+        JSONObject c=copyCache();
+        JSONObject localRecords=c.optJSONObject("local_records");
+        JSONObject audits=localRecords==null?null:
+            localRecords.optJSONObject("market_trend_audit_errors");
+        JSONArray auditRows=audits==null?null:audits.optJSONArray(market);
+        if(auditRows!=null)for(int i=0;i<auditRows.length();i++){
+            JSONObject a=auditRows.optJSONObject(i);
+            if(a!=null)raw.put(a);
+        }
+        JSONArray run=c.optJSONArray("runtime_diagnostics");
         if(run!=null)for(int i=0;i<run.length();i++){JSONObject r=run.optJSONObject(i);if(errorForMarket(r,market))raw.put(r);}
         JSONObject py=c.optJSONObject("strategy_runtime");JSONArray pe=py==null?null:py.optJSONArray("errors");
         if(pe!=null)for(int i=0;i<pe.length();i++){JSONObject r=pe.optJSONObject(i);if(errorForMarket(r,market))raw.put(r);}
