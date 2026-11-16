@@ -117,5 +117,33 @@ class TrendPendingVisibility(unittest.TestCase):
         finally:
             sys.path.remove(str(root))
 
+class MaTrendLiveFeedCadence(unittest.TestCase):
+    def test_stock_ma_preclose_dispatch_is_before_general_queue(self):
+        src=(ROOT/'app/src/main/python/ma_v067_stock_runtime.py').read_text()
+        start=src.index('    def observe_live(self,tick):')
+        end=src.index('    d_live.LivePaperRunner._new_tick=observe_live',start)
+        lane=src[start:end]
+        self.assertLess(lane.index('q.put_nowait(tuple(tick))'),
+                        lane.index('return orig_feed(self,tick)'))
+        self.assertIn('exchange_stamp_is_fresh(tick[8],tick[6])',lane)
+
+    def test_stale_stock_watches_keep_original_timestamp_until_ttl(self):
+        src=(ROOT/'app/src/main/python/market_trend_runtime_v043.py').read_text()
+        start=src.index('if raw is None or since-raw[1]>max_age:')
+        end=src.index('price=raw[0]',start)
+        self.assertNotIn('watch.discard(',src[start:end])
+        sys.path.insert(0,str(ROOT/'app/src/main/python'))
+        try:
+            from market_trend_watch_v054 import WatchBook
+            book=WatchBook(ttl=45)
+            at=time.time()
+            book.observe('stock','005930','5m','2026-11-16T12:00:00+09:00',
+                34.0,False,observed_at=at,price=71300)
+            self.assertEqual(len(book.snapshot('stock',now=at+39)),1)
+            self.assertEqual(len(book.snapshot('stock',now=at+46)),0)
+        finally:
+            sys.path.remove(str(ROOT/'app/src/main/python'))
+
+
 if __name__=='__main__':
     unittest.main(verbosity=2)
