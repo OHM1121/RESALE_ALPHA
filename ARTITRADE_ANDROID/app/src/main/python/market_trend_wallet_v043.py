@@ -95,22 +95,56 @@ class TrendWallet:
         return int(r[0])
 
     def native_owned(self,market,symbol):
+        """Check original and V062 MA ledgers without treating a missing
+        historical MA archive as an active position.
+
+        An absent actual source may be skipped in PAPER research only.
+        LIVE remains fail-closed unless every authoritative current source is
+        readable; a missing/corrupt file cannot prove broker ownership is flat.
+        """
         for strategy in (("at","ma") if market=="stock" else ("general","ma")):
-            try:
-                with self._connect(market,strategy) as c:
-                    codecol="code" if market=="stock" else "market"
-                    row=c.execute("SELECT 1 FROM positions WHERE "+codecol+"=? AND status IN ('OPEN','TREND_OPEN') AND qty NOT IN ('0',0) LIMIT 1",
-                        (symbol,)).fetchone()
-                    if row:return True
-                    if market=="stock" and strategy=="at":
-                        row=c.execute("SELECT 1 FROM pending WHERE code=? LIMIT 1",(symbol,)).fetchone()
-                    elif market=="stock":
-                        row=c.execute("SELECT 1 FROM candidates WHERE code=? AND status='PENDING' LIMIT 1",(symbol,)).fetchone()
-                    else:
-                        row=c.execute("SELECT 1 FROM orders WHERE market=? AND status='PENDING' LIMIT 1",(symbol,)).fetchone()
-                    if row:return True
-            except (sqlite3.Error,OSError,UnsafeFill):
-                return True   # Unknown ownership is never safe to buy.
+            source=self._path(market,strategy)
+            paths=[source]
+            archive_optional=False
+            if strategy=="ma":
+                try:
+                    from ma_epoch_v062 import epoch_state,active_db
+                    if epoch_state(self.rt.root,market) is not None:
+                        current=active_db(self.rt.root,market)
+                        if not current.is_file():
+                            return True  # New MA active database unavailable.
+                        paths=[current,source] if current!=source else [current]
+                        archive_optional=True
+                except (OSError,ValueError,RuntimeError,ImportError):
+                    return True
+            for db in paths:
+                if not db.is_file():
+                    if archive_optional and db==source:
+                        continue  # Missing optional OLD MA archive isn't an open holding.
+                    if not self.rt.live_enabled(market):
+                        continue  # PAPER only; never a real broker order.
+                    return True
+                try:
+                    with sqlite3.connect(db.resolve().as_uri()+"?mode=ro",
+                                         uri=True,timeout=12,
+                                         factory=_AutoClosingSqlite) as c:
+                        codecol="code" if market=="stock" else "market"
+                        row=c.execute("SELECT 1 FROM positions WHERE "+codecol+
+                                      "=? AND status IN ('OPEN','TREND_OPEN') AND qty NOT IN ('0',0) LIMIT 1",
+                                      (symbol,)).fetchone()
+                        if row:return True
+                        if market=="stock" and strategy=="at":
+                            row=c.execute("SELECT 1 FROM pending WHERE code=? LIMIT 1",
+                                          (symbol,)).fetchone()
+                        elif market=="stock":
+                            row=c.execute("SELECT 1 FROM candidates WHERE code=? AND status='PENDING' LIMIT 1",
+                                          (symbol,)).fetchone()
+                        else:
+                            row=c.execute("SELECT 1 FROM orders WHERE market=? AND status='PENDING' LIMIT 1",
+                                          (symbol,)).fetchone()
+                        if row:return True
+                except (sqlite3.Error,OSError,ValueError):
+                    return True  # Malformed existing file is always unknown.
         return False
 
     def trend_owned(self,market,symbol):
