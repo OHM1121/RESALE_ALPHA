@@ -296,9 +296,11 @@ public final class UnifiedVisualActivity extends Activity {
         // Activity recreation and a verified service heartbeat are independent
         // reasons to avoid the full-screen startup cover. UI status remains
         // 'waiting' until a new strategy snapshot confirms market connectivity.
-        // A known prior UI session also restores the non-blocking shell.
-        // Stale data stay explicitly stale until the service confirms them.
-        return saved!=null||isRecentBackgroundHeartbeat()||priorUiSessionKnown;
+        // Prior UI PID alone does not prove a running trading service.
+        // After a genuine service/process stop, show cold-start progress again.
+        // Foreground service heartbeat still bypasses repeated preload when
+        // returning from sleep, another app, or Activity recreation.
+        return saved!=null||isRecentBackgroundHeartbeat();
     }
 
     private void preloadWatchdog(){
@@ -1610,8 +1612,9 @@ public final class UnifiedVisualActivity extends Activity {
                     if(seen.add(key))merged.put(row);
                 }
             }
-            JSONObject scoped=data==null?new JSONObject():new JSONObject(data.toString());
+            JSONObject scoped=new JSONObject();
             try{
+                if(data!=null)scoped=new JSONObject(data.toString());
                 scoped.put("items",merged);
                 scoped.put("signals",merged.length());
                 scoped.put("loaded_items",merged.length());
