@@ -1,0 +1,51 @@
+name: ARTITRADE v074 DRV and SKH prior completed RSI20 latch audit
+on:
+  push:
+    branches: [fix-artitrade-v074-ma-trend-forensic-20261116]
+    paths: ['.github/workflows/artitrade-v074-prior-latch-audit.yml']
+permissions: {contents: read}
+jobs:
+  prior-rsi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json,datetime as dt,zoneinfo,sys
+          sys.path.insert(0,'ARTITRADE_ANDROID/app/src/main/python')
+          import market_trend_v043 as mt
+          target='2026-11-16T10:45:00'
+          req=urllib.request.Request('https://api.upbit.com/v1/candles/minutes/5?'+
+              urllib.parse.urlencode({'market':'KRW-DRV','to':'2026-11-16T01:50:00Z','count':200}),
+              headers={'User-Agent':'ARTITRADE-READ-ONLY/1.0'})
+          try:
+            with urllib.request.urlopen(req,timeout=15) as r:bars=json.load(r)
+            bars=sorted(bars,key=lambda x:x['candle_date_time_kst'])
+            i=next(i for i,x in enumerate(bars) if x['candle_date_time_kst']==target)
+            for index in range(i-4,i+1):
+              b=bars[index]
+              prev=[float(x['trade_price']) for x in bars[:index]]
+              print('DRV_COMPLETED_OR_FORMING',b['candle_date_time_kst'],'price',b['trade_price'],'RSI20_FINAL',round(mt.rsi20(prev,b['trade_price']) or -1,5),'LOW_RSI',round(mt.rsi20(prev,b['low_price']) or -1,5),'is_preceding_completed',index<i)
+            previous=bars[i-1];rsiprev=mt.rsi20([float(x['trade_price']) for x in bars[:i-1]],previous['trade_price'])
+            print('DRV_LATCH_COMPLETED_PREVIOUS_GT30',rsiprev>30,'prev_rsi',rsiprev)
+          except Exception as e:
+            print('DRV_SOURCE_UNAVAILABLE',type(e).__name__,str(e)[:200])
+          KST=zoneinfo.ZoneInfo('Asia/Seoul')
+          ts1=int(dt.datetime(2026,11,12,tzinfo=KST).timestamp());ts2=int(dt.datetime(2026,11,17,tzinfo=KST).timestamp())
+          url='https://query1.finance.yahoo.com/v8/finance/chart/000660.KS?'+urllib.parse.urlencode({
+              'period1':ts1,'period2':ts2,'interval':'5m'})
+          req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})
+          try:
+            with urllib.request.urlopen(req,timeout=12) as r:d=json.load(r)['chart']['result'][0]
+            data=d['indicators']['quote'][0];bars=[]
+            for i,epoch in enumerate(d['timestamp']):
+              if data['close'][i] is not None:
+                bars.append((dt.datetime.fromtimestamp(epoch,KST),float(data['close'][i])))
+            idx=next(i for i,(t,v) in enumerate(bars) if t.date()==dt.date(2026,11,16) and t.hour==10 and t.minute==5)
+            prev=[v for _,v in bars[:idx]]
+            print('SKH_PREVIOUS_COMPLETE',bars[idx-1][0].isoformat(),bars[idx-1][1],round(mt.rsi20(prev[:-1],prev[-1]) or -1,5))
+            print('SKH_PREVIOUS_COMPLETE_GT30',mt.rsi20(prev[:-1],prev[-1])>30)
+          except Exception as e:
+            print('SKH_SOURCE_UNAVAILABLE',type(e).__name__,str(e)[:180])
+          PY
