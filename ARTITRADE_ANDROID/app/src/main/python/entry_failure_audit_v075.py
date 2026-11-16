@@ -171,27 +171,94 @@ def _cw(root):
     return result
 
 
+def _native_ma(root):
+    """Read original MA epoch databases from both markets without any writes.
+
+    These native candidate/issue records exist separately from the market
+    trend observation writer. A watch without a real order stays observation.
+    """
+    base=Path(root)
+    targets={
+        'stock':base/'stock'/'MA_EPOCH_V062'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3',
+        'coin':base/'coin'/'ma_epoch_v062'/'upbit_paper.sqlite3'}
+    out={'stock':[],'coin':[]}
+    for market,db in targets.items():
+        if not db.is_file():continue
+        # The original column schemas are versioned. SELECT * preserves
+        # backward compatibility; fields absent in older ledgers stay unknown.
+        for r in _read_rows(db,'SELECT * FROM research ORDER BY rowid DESC LIMIT 350'):
+            decision=str(r.get('verdict',r.get('decision',r.get('status',''))) or '')
+            if decision.upper() in ('BUY','FILLED','BOUGHT','QUALIFIED','ACCEPTED'):
+                continue
+            code=r.get('code',r.get('market',''))
+            stamp=r.get('ts',r.get('at',r.get('created_at','')))
+            explanation=_decode(r.get('detail',r.get('reason',r.get('reason_json',decision))))
+            row=_row(stamp,code,'MA_NATIVE_RESEARCH_'+(decision or 'OBS'),
+                explanation or decision,'RULE_NOT_MET' if decision.upper() in
+                ('REJECT','REJECTED','NO_SIGNAL','SKIP','BLOCK') else
+                'NON_ORDER_OBSERVATION','MA_ORIGINAL_RESEARCH',
+                frame=r.get('tf',r.get('frame','')))
+            row['market']=market
+            out[market].append(row)
+        for r in _read_rows(db,'SELECT * FROM issues ORDER BY rowid DESC LIMIT 300'):
+            text=str(r.get('message',r.get('detail',r.get('reason',''))) or '')
+            row=_row(r.get('at',r.get('ts','')),
+                r.get('code',r.get('market','')),
+                'MA_NATIVE_ISSUE_'+str(r.get('severity',r.get('category',''))),
+                text or 'MA issue recorded','OPERATIONAL_EVENT',
+                'MA_ORIGINAL_ISSUES')
+            row['market']=market
+            out[market].append(row)
+        for r in _read_rows(db,'SELECT * FROM candidates ORDER BY rowid DESC LIMIT 400'):
+            state=str(r.get('status','') or '').upper()
+            if state in ('','OPEN','BOUGHT','FILLED','CLOSED','EXECUTED'):
+                continue
+            code=r.get('code',r.get('market',''))
+            reason=str(r.get('reason') or state)
+            row=_row(r.get('created_at',r.get('ref_ts',r.get('ref_at',''))),
+                code,'MA_NATIVE_CANDIDATE_'+state,
+                reason,'ORDER_PENDING_UNVERIFIED' if state=='PENDING'
+                else 'NATIVE_CANDIDATE_NOT_FILLED',
+                'MA_ORIGINAL_CANDIDATES',
+                name=r.get('name',''),frame=r.get('tf',r.get('frame','')),
+                detail='candidate is not proof of actual broker order or fill')
+            row['market']=market
+            out[market].append(row)
+    return out
+
+
 def _load(root):
-    rows=_gmo(root)+_cw(root)
+    native=_native_ma(root)
+    rows=_gmo(root)+_cw(root)+native['stock']
     seen=set();out=[]
     for r in sorted(rows,key=lambda x:x.get('at') or '',reverse=True):
         key=(r['source'],r['stage'],r['code'],r['at'],r['message'])
         if key in seen:continue
         seen.add(key);out.append(r)
         if len(out)>=_MAX_ITEMS:break
-    return {'stock':out,'coin':[],'schema':'ARTITRADE_ENTRY_FAILURE_AUDIT_V075',
-            'truncated_for_ui':len(rows)>_MAX_ITEMS,
+    coin_out=[];coin_seen=set()
+    for r in sorted(native['coin'],key=lambda x:x.get('at') or '',reverse=True):
+        key=(r['source'],r['stage'],r['code'],r['at'],r['message'])
+        if key in coin_seen:continue
+        coin_seen.add(key);coin_out.append(r)
+        if len(coin_out)>=_MAX_ITEMS:break
+    return {'stock':out,'coin':coin_out,
+            'schema':'ARTITRADE_ENTRY_FAILURE_AUDIT_V076',
+            'truncated_for_ui':len(rows)>_MAX_ITEMS or
+                                len(native['coin'])>_MAX_ITEMS,
             'original_sqlite_files_preserved':True,
             'sources':['gmo_scan','gmo_issues','gmo_candidates',
                        'original GMO account audit','close research_scan_skips',
-                       'close research_candidates','close signals','close research_events']}
+                       'close research_candidates','close signals','close research_events',
+                       'stock/MA_EPOCH_V062 native research/issues/candidates',
+                       'coin/ma_epoch_v062 native research/issues/candidates']}
 
 
 def _work(key,root):
     try:res=_load(root)
     except (OSError,ValueError,TypeError,sqlite3.Error) as exc:
         res={'stock':[],'coin':[],'read_error':type(exc).__name__,
-             'schema':'ARTITRADE_ENTRY_FAILURE_AUDIT_V075'}
+             'schema':'ARTITRADE_ENTRY_FAILURE_AUDIT_V076'}
     with _LOCK:
         job=_JOBS.get(key)
         if job is not None:
@@ -206,7 +273,7 @@ def snapshot_for_root(root):
     now=time.monotonic()
     with _LOCK:
         job=_JOBS.setdefault(key,{'result':{'stock':[],'coin':[],
-            'schema':'ARTITRADE_ENTRY_FAILURE_AUDIT_V075','initializing':True},
+            'schema':'ARTITRADE_ENTRY_FAILURE_AUDIT_V076','initializing':True},
             'started_at':-1e12,'busy':False,'read_completed_at':0})
         if not job['busy'] and now-job['started_at']>=_REFRESH_SECONDS:
             job['busy']=True
