@@ -725,6 +725,15 @@ class Coordinator:
         if market=="stock":
             from krx_session_v041 import is_regular_open
             if not is_regular_open():return
+        elif market=="coin":
+            # The original Upbit ledger/research/candle preload may run while
+            # v081's already-authenticated single public socket primes quotes.
+            # It is observation-only until that authoritative native preflight
+            # validates positions/pending and unlocks new candidate scans.
+            native=getattr(self.rt,'coin_runner',None)
+            gate=getattr(native,'preload_gate',None)
+            if gate is not None and not gate.snapshot().get('ready',False):
+                return
         # Evaluate the time-sensitive gate once per timeframe, not once per
         # instrument. Outside verified -22..12.5 precheck and -12..7 entry,
         # skip quote/book/RSI calls without ever manufacturing live prices.
