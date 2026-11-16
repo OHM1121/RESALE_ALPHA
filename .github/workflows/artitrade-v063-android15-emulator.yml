@@ -1,7 +1,7 @@
-name: ARTITRADE v0.7.63 Android 15 boot and eight-screen smoke
+name: ARTITRADE v0.7.64 Android 15 boot and eight-screen smoke
 on:
   push:
-    branches: [ feature-artitrade-v063-kiwoom-gmo-lifecycle-audit-20261116 ]
+    branches: [ feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116 ]
     paths:
       - 'ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
@@ -18,7 +18,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: artitrade-v063-emulator-${{ github.ref }}
+  group: artitrade-v064-emulator-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   emulator:
@@ -87,7 +87,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_V063_ANDROID15_EMULATOR_EVIDENCE
+          name: ARTITRADE_V064_ANDROID15_EMULATOR_EVIDENCE
           path: ui-smoke/**
           retention-days: 14
           if-no-files-found: ignore
