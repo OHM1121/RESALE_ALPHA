@@ -25,3 +25,6 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
    print('SOURCE_RANGE',path,k,start,end)
    for i in range(max(0,start-2),min(end+2,len(lines))):
     print('SOURCE',path,i+1,lines[i][:420])
+
+with zipfile.ZipFile(io.BytesIO(data)) as z:
+    print("CORE_COIN_MA_FILE_NAMES",[x for x in z.namelist() if 'coin' in x.lower() or 'ma' in x.lower()][:100])
