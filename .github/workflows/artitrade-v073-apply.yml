@@ -8,6 +8,11 @@ on:
       - 'ARTITRADE_ANDROID/ui_tests/test_v073_*.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v066_stock_quote_truth.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v072_stock_quote_display.py'
+      - 'ARTITRADE_ANDROID/ui_tests/patch_v073_gmo_held_exit.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/stock_quote_truth_v066.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
 permissions:
   contents: write
 concurrency:
