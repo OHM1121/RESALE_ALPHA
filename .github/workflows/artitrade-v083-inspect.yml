@@ -42,6 +42,10 @@ jobs:
           print('==== NATIVE HITS (bounded) ====')
           for i in sorted(groups):
               print(f'NATIVE:{i+1:04d}: {lines[i][:240]}')
+          print('==== NATIVE EXACT TARGET RANGES ====')
+          for a,b in ((2747,2786),(2958,3007),(3148,3174),(3608,3640),(3641,3729),(3780,3798)):
+              for i in range(a-1,min(len(lines),b)):
+                  print(f'EXACT:{i+1:04d}: {lines[i][:260]}')
           print('==== 0B/0D/UPBIT SUB RELEVANT OVERLAY ====')
           overlay=(root/'python/market_trend_runtime_v043.py').read_text().splitlines()
           for a,b in ((310,355),(1180,1245),(1630,1650)):
