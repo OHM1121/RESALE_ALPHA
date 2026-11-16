@@ -4,6 +4,12 @@ on:
     branches: [ artitrade-v079-ma-prewatch30-entry10to2-20261116 ]
     paths:
       - '.github/workflows/artitrade-v079-ma-regression.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v079_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v076_export_ma_diagnostics.py'
   workflow_dispatch:
 permissions:
   contents: read
