@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 69
-            versionName '0.7.62-MA-EPOCH-RESEARCH'
+            versionCode 70
+            versionName '0.7.63-GMO-FLOOR-COLDSTART'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
