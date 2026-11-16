@@ -1,0 +1,58 @@
+name: ARTITRADE v068 Kiwoom verified core receiver patch
+on:
+  push:
+    branches: [ fix-artitrade-v068-kiwoom-ws-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/patch_v068_kiwoom_receive.py'
+      - '.github/workflows/artitrade-v068-apply.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v068-patch
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch only pinned D live stream and verify all other bundled modules unchanged
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v068_kiwoom_receive.py
+      - name: Verify original GTA and MA strategy code remains byte-identical and compilation succeeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile,hashlib,ast,re
+          a=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((a/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          source=zipfile.ZipFile(io.BytesIO(raw)).read('d_live.py').decode('utf8')
+          for phrase in ['await asyncio.to_thread(self._new_tick, tick)',
+              'await asyncio.to_thread(self.engine.book.on_message, msg, self.nxt_snapshot, self.market_map)',
+              'await asyncio.to_thread(self.gmo.on_book_message, msg, self.market_map)',
+              'await asyncio.to_thread(self._desired_subscriptions)',
+              'priority=await asyncio.to_thread(self.gmo.priority_watchlist,current)']:
+              assert phrase in source,phrase
+          compile(source,'d_live.py','exec')
+          bridge=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          assert ('CORE_SHA256="'+hashlib.sha256(raw).hexdigest()+'"') in bridge
+          print('V068_BUNDLE_COMPILATION_AND_SHA_VERIFIED')
+          PY
+          git diff --check
+      - name: Commit only pinned source, matching runtime hash, and APK version change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name artitrade-ci
+          git config user.email artitrade-ci@users.noreply.github.com
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v068): isolate Kiwoom synchronous tick and depth callbacks from websocket heartbeat'
+          git push origin HEAD:fix-artitrade-v068-kiwoom-ws-20261116
