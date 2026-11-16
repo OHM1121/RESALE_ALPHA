@@ -17,24 +17,28 @@ jobs:
           import base64,hashlib,zipfile,io,re
           from pathlib import Path
           root=Path('ARTITRADE_ANDROID/app/src/main')
-          for folder,parts in [('strategy_v070',22),('live_bridge_v071',9)]:
-              p=root/'assets'/folder
-              z=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(parts)))
-              print('==== ARCHIVE',folder,'SHA',hashlib.sha256(z).hexdigest())
-              with zipfile.ZipFile(io.BytesIO(z)) as f:
-                  for name in f.namelist():
-                      if not name.endswith('.py'):continue
-                      if re.search('trade_history_evidence|d_upbit|ma.*coin|post_exit|d_live|android_live_bridge',name,re.I):
-                          print('==== SOURCE',name)
-                          if re.search('trade_history_evidence',name):
-                              lines=f.read(name).decode(errors='replace').splitlines()
-                              for i,line in enumerate(lines[:420]):
-                                  print('LINE',i+1,line[:245])
-                          elif name=='d_upbit.py':
-                              lines=f.read(name).decode(errors='replace').splitlines()
-                              for i,line in enumerate(lines):
-                                  if re.search(r'CREATE TABLE IF NOT EXISTS (executions|positions)|INSERT INTO executions|INSERT OR REPLACE INTO executions|CREATE TABLE executions|UPDATE positions SET|INSERT INTO positions',line,re.I):
-                                      print('HIT',i+1,line[:210])
-                                      for j in range(max(0,i-6),min(len(lines),i+13)):
-                                          print('CTX',j+1,lines[j][:235])
+          p=root/'assets/strategy_v070'
+          z=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(z)) as f:
+              print('==== ZIP ENTRIES',len(f.namelist()))
+              for name,ranges in [('d_upbit.py',[(705,760),(2075,2140),(2160,2238)]),
+                                   ('d_live.py',[(200,240)]),
+                                   ('android_live_bridge.py',[(1,120)])]:
+                  if name not in f.namelist():continue
+                  ls=f.read(name).decode(errors='replace').splitlines()
+                  print('==== FILE',name,'TOTAL',len(ls))
+                  for lo,hi in ranges:
+                      for i in range(lo-1,min(hi,len(ls))):
+                          print('LINE',i+1,ls[i][:240])
+              print('==== HAS EVIDENCE MODULE',any('trade_history_evidence' in n for n in f.namelist()))
+          import gzip
+          p=root/'assets/live_bridge_v071'
+          encoded=''.join((p/f'part_{i:02d}.txt').read_text() for i in range(8))
+          live=gzip.decompress(base64.b64decode(encoded))
+          print('==== LIVE BRIDGE SHA',hashlib.sha256(live).hexdigest())
+          ls=live.decode().splitlines()
+          for i,x in enumerate(ls):
+              if re.search('trade_history_evidence|post.sale|reason|execution',x,re.I):
+                  print('BRIDGE HIT',i+1,x[:220])
+
           PY
