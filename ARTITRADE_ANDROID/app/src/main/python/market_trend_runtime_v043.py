@@ -1047,7 +1047,23 @@ class Coordinator:
         out["market_trend_watch"]={m:self.watch.snapshot(m) for m in ('stock','coin')}
         for m in ('stock','coin'):
             node=out.setdefault(m,{})
-            node['trend']={'ledger':self.standalone_wallet.snapshot(m)}
+            ledger=self.standalone_wallet.snapshot(m)
+            # WATCH_PENDING lives in the read-only RSI observer, not the
+            # FOK broker wallet. Earlier UI populated from ledger.pending
+            # only, so every qualified watch appeared empty despite live RSI.
+            # These rows are explicitly NOT orders or broker reservations.
+            watches=[]
+            for observation in out['market_trend_watch'][m]:
+                if observation.get('status')!='WATCH_PENDING':continue
+                watches.append({**observation,'tf':observation.get('frame'),
+                    'strategy':'trend','entry_mode':'MARKET_TREND_RSI_WATCH',
+                    'status':'WATCH_PENDING',
+                    'external_order_pending':False,
+                    'ledger_is_virtual_only':False,
+                    'reason':'RSI20 관측 · 실제 매수주문 없음'})
+            ledger.setdefault('pending',[]).extend(watches)
+            ledger['pending_count']=len(ledger.get('pending') or [])
+            node['trend']={'ledger':ledger}
         trend_research={"stock":[],"coin":[]}
         with self.lock:
             current=tuple(self._positions.values())
