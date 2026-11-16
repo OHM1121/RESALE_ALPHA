@@ -612,12 +612,9 @@ class Coordinator:
 
     @staticmethod
     def _evaluation_window_passed(now,finish,frame,market):
-        """A missed one-second decision must still expire the RSI35 watch."""
-        target=finish-dt.timedelta(seconds=12)
-        if (market=='stock' and frame in ('30m','60m','day')
-                and finish==mt._krx_session_close(now)):
-            target=finish-dt.timedelta(minutes=10,seconds=12)
-        return now>=target+dt.timedelta(seconds=1)
+        """Only expire the watch after the whole verified 12..7s opportunity."""
+        target=mt._entry_reference_close(now,finish,frame,market)
+        return mt._as_kst(now)>target-dt.timedelta(seconds=mt.TREND_BUY_END_SEC)
 
     @staticmethod
     def _decision_clock():
@@ -692,7 +689,8 @@ class Coordinator:
             from krx_session_v041 import is_regular_open
             if not is_regular_open():return
         # Evaluate the time-sensitive gate once per timeframe, not once per
-        # instrument. Outside the -15s/-12s windows skip quote/book/RSI calls.
+        # instrument. Outside verified -22..12.5 precheck and -12..7 entry,
+        # skip quote/book/RSI calls without ever manufacturing live prices.
         scheduled=[]
         for frame in mt.FRAMES:
             finish=_end_clock(now,market,frame)
@@ -722,11 +720,11 @@ class Coordinator:
         with self.lock:
             candidates=dict(self._candidates[market])
             self._performance[market]["preclose_symbols_examined"]+=len(candidates)
-        # v067: PRECHECK at -15s observes actual fresh trade prints, not
+        # v080: PRECHECK at -22..12.5s observes real fresh prints, not
         # full 0D depth. The old precheck required 0D even though only RSI
         # was being observed. This wrongly discarded eligible stock/coin
         # crosses whenever orderbook arrived AFTER the price print.
-        # At -12s, an actual BUY still REQUIRES the same verified fresh
+        # From -12 through -7s, actual BUY still REQUIRES verified fresh
         # 0D/Upbit order book, available quantity and native FOK checks.
         due=collections.defaultdict(list)
         with self.lock:
@@ -800,13 +798,9 @@ class Coordinator:
                             'FRESH_BOOK_MISSING_AT_SUBMIT',rsi,trade_age)
                         continue
                     due[code].append((frame,rsi,barid,q))
-        # The -12s decision closes the observation queue for this bar.
-        # A 35-only candidate never becomes a simulated entry.
-        for frame,finish,_,submit in scheduled:
-            if submit:
-                barid=finish.isoformat()
-                self._sealed_watch[(market,frame)]=barid
-                self.watch.expire(market,frame,barid)
+        # Do NOT expire RSI35 observation on the first -12s attempt: the
+        # native quote may recover before -7s and should then be retried.
+        # _evaluation_window_passed seals the bar only after the final gate.
         for code,signals in due.items():
             # Broker/ledger duplicate checks and a durable filled-stop ban are
             # mandatory before an entry can consume parent-strategy cash.
@@ -968,11 +962,10 @@ class Coordinator:
             self.stop_event.wait(.45)
 
     def _preclose_loop(self,market):
-        """Run the pre-existing -15s/-12s gates independently of slow IO.
+        """Run RSI passive -22..12.5s and executable -12..7s independently.
 
-        Entry rules, 1-second decision timestamps and fail-closed freshness
-        are unchanged. This scheduling change prevents the score and holding
-        database workers from starving the single-second decision window.
+        No stale 0B print or 0D book can authorize an order. A narrow stale
+        interval must not erase the opportunity while genuine quotes recover.
         """
         while not self.stop_event.is_set():
             started=time.monotonic()
