@@ -15,13 +15,13 @@ jobs:
     timeout-minutes: 65
     env:
       CI: 'true'
-      SOURCE: '861df5fdf02f3c9058c7ea221a137322cbf29907'
+      SOURCE: 'cf8a2ae2f054e0d2e34aa6f056d45f8d2dc3c14b'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.68_20261116'
       TAG: 'ARTITRADE-v0.7.68-20261116'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: '861df5fdf02f3c9058c7ea221a137322cbf29907'
+          ref: 'cf8a2ae2f054e0d2e34aa6f056d45f8d2dc3c14b'
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
