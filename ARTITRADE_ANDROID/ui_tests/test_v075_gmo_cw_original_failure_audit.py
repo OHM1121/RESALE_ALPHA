@@ -138,6 +138,28 @@ class SourceEvidenceTests(unittest.TestCase):
             self.assertFalse(verdict.accepted)
             self.assertEqual(verdict.reason,'D-day closing price must decline')
 
+    def test_selector_source_comment_and_active_price_growth_veto_disagree(self):
+        from projectgmo.selector import (DSignal,select,
+            FIVE_DAY_CHANGE_MAX_PCT,TWENTY_DAY_CHANGE_MAX_PCT)
+        # Investigative regression only: preserve live rules unchanged.
+        self.assertIsNone(FIVE_DAY_CHANGE_MAX_PCT)
+        self.assertIsNone(TWENTY_DAY_CHANGE_MAX_PCT)
+        signal=DSignal('180640','한진칼','2026-11-13','2026-11-16',
+            100,99,85,95,-10000,5000,5000,
+            [-1000]*20,'SHORT','KOSPI','SYNTHETIC_TEST')
+        result=select(signal)
+        self.assertFalse(result.accepted)
+        self.assertEqual(result.reason,'previous price growth veto')
+
+    def test_cw_scan_time_budget_is_shorter_than_its_whole_universe(self):
+        import inspect
+        import at_close_runner
+        body=inspect.getsource(at_close_runner)
+        self.assertIn('chunk=min(12,len(ranked))',body)
+        self.assertIn('now-last_scan>10',body)
+        self.assertIn("if not ('1510'<=now_kst().strftime('%H%M')<'1520')",body)
+        self.assertIn("fresh['age']>2",body)
+
     def test_cw_entry_time_and_book_gate(self):
         from at_close_engine import evaluate
         features={'ask':100,'bid':100,'book_age_sec':.1,'spread_pct':0.,
