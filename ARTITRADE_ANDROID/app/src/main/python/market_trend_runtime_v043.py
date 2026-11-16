@@ -625,6 +625,11 @@ class Coordinator:
 
     def _record_entry_block(self,market,code,frame,barid,reason,rsi=None,trade_age_sec=None,strategy='trend'):
         """Do not call a rejected RSI observation a real BUY or virtual fill."""
+        # Some broker-independent unit harnesses allocate Coordinator via
+        # __new__; this must not turn diagnostics into a strategy exception.
+        if not hasattr(self,'_v074_audit_unique'):self._v074_audit_unique=set()
+        if not hasattr(self,'_v074_audit_queue'):self._v074_audit_queue=queue.Queue(maxsize=256)
+        if not hasattr(self,'_v074_audit_dropped'):self._v074_audit_dropped=0
         try:
             value=mt._finite(rsi)
             age=mt._finite(trade_age_sec)
