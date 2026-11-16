@@ -290,6 +290,13 @@ def real_boot():
     if contains(tree,"전략별 원장 데이터 확인"):
         raise AssertionError("WARM_RETURN_SHOULD_NOT_SHOW_BLOCKING_PRELOADER")
     print("WARM_RESUME_NO_PRELOAD_PASS",flush=True)
+    # v076: actual Android 15 right drawer must show BOTH horizontal
+    # export progress controls. No ZIP request or broker call in this smoke.
+    tree=choose("☰",tree)
+    check_screen("v076_export_progress_drawer",
+                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=2)
+    print("V076_RIGHT_DRAWER_EXPORT_PROGRESS_BARS_VISIBLE",flush=True)
+    tree=choose("×")
     # v053: the actual service-enabled app must initialize the new research
     # journal. Dashboard-only checks can pass even when Python failed to start.
     tracker="files/ARTITRADE_PHONE_MAIN_V070/POST_EXIT_HIGH_V053.sqlite3"
@@ -377,6 +384,7 @@ def main():
         fixtures()
         (BASE/"SMOKE_RESULT.json").write_text(json.dumps({
             "ok":True,"real_boot":True,"v053_runtime_journal_created":True,"all_eight_strategy_fixture_views":True,
+            "v076_export_progress_drawer":True,
             "navigated_pages":["home","positions","pending","executions","research"],
             "no_real_broker_api":True,"source":"synthetic fixtures only"},
             ensure_ascii=False,indent=2))
