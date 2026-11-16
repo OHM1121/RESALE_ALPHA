@@ -314,6 +314,17 @@ def install():
     import ma_v061_coin_runtime as previous
     import market_trend_runtime_v043 as trend
     ma.ma_reference_decision=_historical_bear
+    # V061 _process_exits captures its own original_sell pointer. If a
+    # V067 candidate also got a V061 sidecar, legacy staged exits could
+    # bypass the V067 scoped _sell. Suppress the V061 sidecar at birth
+    # for V067 candidates, while retaining all old V061 positions.
+    old_stage=previous._entry_stage
+    def distinct_v067_stage(self,c,p,kind):
+        actual,facts=_kind_for(c,p)
+        if actual in ('REVERSAL_BEAR','REVERSAL_UP'):
+            return None
+        return old_stage(self,c,p,kind)
+    previous._entry_stage=distinct_v067_stage
 
     old_init=ma.MACoinLedger.__init__
     def init(self,*a,**kw):
