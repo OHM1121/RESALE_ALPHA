@@ -1509,6 +1509,14 @@ def _hub_records_v078(self):
         out=json.loads(raw) if isinstance(raw,str) else raw
     except Exception:
         return raw
+    # Read-only forensic summaries use a separate asynchronous reader;
+    # the original GMO/CW strategy, broker and wallet databases are NOT modified.
+    # Existing full error ZIP already contains the original source SQLite.
+    try:
+        from entry_failure_audit_v075 import snapshot_for_root
+        out['entry_failure_audit']=snapshot_for_root(self.root)
+    except Exception as audit_exc:
+        self._err('entry_failure_audit_v075',audit_exc)
     try:
         stock_at=out.setdefault('stock',{}).setdefault('at',{})
         base=stock_at.setdefault('ledger',{})
