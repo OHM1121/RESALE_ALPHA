@@ -20,6 +20,7 @@ import market_trend_v043 as mt
 from market_trend_wallet_v043 import TrendWallet, UnsafeFill
 from market_trend_wallet_v054 import TrendWalletV054
 from market_trend_watch_v054 import WatchBook
+from execution_evidence_v074 import ForensicLedger
 
 _CORE=None
 _INSTALLED=False
@@ -161,6 +162,13 @@ class Coordinator:
                       for name in ("score","closed","preclose","holds","history")}
         } for market in ("stock","coin")}
         self._recover_positions()
+        try:
+            self._v074_evidence=ForensicLedger(rt.root)
+        except (OSError,sqlite3.Error) as exc:
+            # Audit availability must not crash the original trading runtime.
+            self._v074_evidence=None
+            self._last_fetch_error['stock']='AUDIT_INIT:'+type(exc).__name__
+            self._last_fetch_error['coin']='AUDIT_INIT:'+type(exc).__name__
         self._v074_audit_queue=queue.Queue(maxsize=16000)
         self._v074_audit_unique=set()
         self._v074_audit_dropped=0
@@ -607,17 +615,9 @@ class Coordinator:
             except queue.Empty:
                 continue
             try:
-                kind='MA74' if row['strategy']=='ma' else 'MT74'
-                key=':'.join((kind,'AUDIT',row['market'],row['code'],row['frame'],
-                              row['bar_end'],row['reason']))
-                mode='OBSERVED' if row['reason'].startswith('RSI30_OBSERVED') else 'NOT_ORDERED'
-                self.journal.event(key,row['market'],row['strategy'],row['frame'],
-                    row['code'],mode,row['reason'],rsi20_live=row['rsi20_live'],
-                    payload={'bar_end':row['bar_end'],
-                             'last_trade_age_sec':row['last_trade_age_sec'],
-                             'verified_order_placed':False,
-                             'forensic_only':True},
-                    at=row['audit_epoch'])
+                if self._v074_evidence is None:
+                    raise OSError('FORENSIC_LEDGER_UNAVAILABLE')
+                self._v074_evidence.write(row)
             except (sqlite3.Error,ValueError,TypeError,OSError) as exc:
                 self._last_fetch_error[row['market']]='AUDIT_WRITE:'+type(exc).__name__
             finally:
@@ -1211,7 +1211,14 @@ class Coordinator:
                 "ledger_is_virtual_only":True})
         # Only RSI20 entry decisions belong in RSI20 research.
         # SELL and INTENT events cannot masquerade as a new BUY signal.
-        for x in self.journal.events_recent(750):
+        try:
+            forensic=self._v074_evidence.recent(750) if self._v074_evidence else []
+        except (sqlite3.Error,OSError) as exc:
+            forensic=[]
+            self._last_fetch_error['stock']='AUDIT_READ:'+type(exc).__name__
+        # Different physical SQLite files: research audit cannot monopolize
+        # broker, TrendJournal latch, or one-second executable order windows.
+        for x in forensic+self.journal.events_recent(350):
             identity=str(x["event_key"])
             if identity.startswith(("MT74:AUDIT:","MA74:AUDIT:")):
                 m=str(x["market"])
