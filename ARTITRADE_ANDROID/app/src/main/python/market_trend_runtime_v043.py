@@ -562,6 +562,12 @@ class Coordinator:
             target=finish-dt.timedelta(minutes=10,seconds=12)
         return now>=target+dt.timedelta(seconds=1)
 
+    @staticmethod
+    def _decision_clock():
+        # Dependency seam for historical deterministic unit tests only.
+        # Production must use the real present-time clock before every order.
+        return dt.datetime.now(mt.KST)
+
     def _preclose_candidates(self,market,now):
         self._prune_evaluation_cache(now)
         # Independent trend evaluates regardless of the signed market score.
@@ -646,7 +652,7 @@ class Coordinator:
             frame,rsi,barid,q=next(x for x in signals if x[0]==chosen)
             # Recheck the actual decision second and raw source freshness;
             # a slow research/SQLite cycle must never create a late order.
-            fresh_now=dt.datetime.now(mt.KST)
+            fresh_now=self._decision_clock()
             finish=dt.datetime.fromisoformat(barid)
             if not mt.preclose_due(fresh_now,finish,frame,market):
                 self._entry_block_counts[market]['ONE_SECOND_DECISION_DEADLINE_MISSED']+=1
