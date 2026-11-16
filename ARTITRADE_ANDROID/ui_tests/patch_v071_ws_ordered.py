@@ -88,7 +88,7 @@ new_methods="""    def _v071_enqueue_feed(self,kind,payload):
                 lag=max(0.0,time.monotonic()-arrival)
                 self._feed_lag_max_ms=max(self._feed_lag_max_ms,lag*1000)
                 # No buffered tick may become a newly timestamped fill.
-                if lag>3.0:
+                if lag>3.0 and kind!='flush':
                     self._feed_discarded+=1
                     continue
                 if kind=='flush':
@@ -331,6 +331,13 @@ assert gradle.count("versionName '0.7.70-COIN-TREND-WS-VERIFIED'")==1
 GRADLE.write_text(gradle.replace("versionCode 76","versionCode 77")
     .replace("versionName '0.7.70-COIN-TREND-WS-VERIFIED'",
              "versionName '0.7.71-WS-ORDERED-RECV-HISTORY'"),encoding="utf8")
+for name in ("test_v054_market_trend_audit.py","test_v054_ui.py"):
+    test_file=ROOT/"ui_tests"/name
+    test=test_file.read_text("utf8")
+    older="versionName '0.7.70-COIN-TREND-WS-VERIFIED'"
+    newer="versionName '0.7.71-WS-ORDERED-RECV-HISTORY'"
+    assert test.count(older)==1,(name,"version constraint")
+    test_file.write_text(test.replace(older,newer),encoding="utf8")
 print("V071_CHANGED_D_LIVE_SHA256",hashlib.sha256(source.encode('utf8')).hexdigest())
 print("V071_CORE_SHA256",sha)
 print("V071_NON_LIVE_MODULES_BYTE_IDENTICAL",len(original)-1)
