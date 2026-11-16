@@ -1,0 +1,31 @@
+name: ARTITRADE v073 bounded risk path investigation
+on:
+  push:
+    branches: [fix-artitrade-v072-preload-heartbeat-freshness-20261116]
+    paths: ['.github/workflows/artitrade-v073-risk-trace.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import base64,zipfile,io,ast
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for name,spans in {
+               'd_live.py':[(622,712),(785,810),(1925,1966),(2412,2455)],
+               'd_gmo_runtime.py':[(465,568),(930,1045)],
+               'projectgmo/engine.py':[(385,428),(645,698)],
+               'stock_ma_engine.py':[(195,275)],
+               'd_upbit.py':[(3600,3675)]
+            }.items():
+              lines=z.read(name).decode().splitlines()
+              print('=== MODULE',name,'===')
+              for first,last in spans:
+                print('=== SPAN',first,last,'===')
+                for i in range(first,min(last,len(lines))+1):print(i,lines[i-1][:235])
+          PY
