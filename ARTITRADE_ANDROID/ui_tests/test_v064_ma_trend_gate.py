@@ -73,7 +73,7 @@ class TrendTimeGate(unittest.TestCase):
    co._preclose_candidates('coin',decision)
    with co.standalone_wallet._connect('coin') as db:
     buys=db.execute("SELECT COUNT(*) FROM executions WHERE side='BUY' AND execution_mode='PAPER'").fetchone()[0]
-   self.assertEqual(buys,1,'Qualified current RSI 30 must reach independent PAPER ledger')
+   self.assertEqual(buys,1,'Qualified current RSI 30 must reach independent PAPER ledger; blocks='+repr(co._entry_block_counts['coin'])+'; prechecked='+repr(co._prechecked)+'; last='+repr(co._last_fetch_error))
    self.assertFalse(co._virtual,'PAPER fill must not be recorded as virtual')
 
 if __name__=='__main__':unittest.main()
