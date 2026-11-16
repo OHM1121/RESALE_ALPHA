@@ -10,6 +10,7 @@ import contextlib
 import datetime as dt
 import json
 import math
+import queue
 import sqlite3
 import threading
 import time
@@ -139,6 +140,7 @@ class Coordinator:
         self._history_requests={}
         self._last_closed={}
         self._prechecked={}
+        self._v074_window_seen=set()
         self._ordered=set()
         self._last_signal_prune=0.0
         self._fair={"stock":0,"coin":0}
@@ -159,6 +161,13 @@ class Coordinator:
                       for name in ("score","closed","preclose","holds","history")}
         } for market in ("stock","coin")}
         self._recover_positions()
+        self._v074_audit_queue=queue.Queue(maxsize=16000)
+        self._v074_audit_unique=set()
+        self._v074_audit_dropped=0
+        self._v074_audit_thread=threading.Thread(
+            target=self._v074_audit_worker,daemon=True,
+            name="ARTITRADE_V074_NO_ORDER_AUDIT")
+        self._v074_audit_thread.start()
 
     def _record_latency(self,market,stage,started):
         elapsed=max(0.0,(time.monotonic()-started)*1000.0)
@@ -580,22 +589,61 @@ class Coordinator:
         # Production must use the real present-time clock before every order.
         return dt.datetime.now(mt.KST)
 
-    def _record_entry_block(self,market,code,frame,barid,reason,rsi=None,trade_age_sec=None):
-        """Keep exact symbol/frame/reason for missing entries without DB or broker IO."""
+    def _v074_audit_worker(self):
+        """Persist no-order observations without delaying WS, price or order threads."""
+        while not self.stop_event.is_set() or not self._v074_audit_queue.empty():
+            try:
+                row=self._v074_audit_queue.get(timeout=.2)
+            except queue.Empty:
+                continue
+            try:
+                kind='MA74' if row['strategy']=='ma' else 'MT74'
+                key=':'.join((kind,'AUDIT',row['market'],row['code'],row['frame'],
+                              row['bar_end'],row['reason']))
+                mode='OBSERVED' if row['reason'].startswith('RSI30_OBSERVED') else 'NOT_ORDERED'
+                self.journal.event(key,row['market'],row['strategy'],row['frame'],
+                    row['code'],mode,row['reason'],rsi20_live=row['rsi20_live'],
+                    payload={'bar_end':row['bar_end'],
+                             'last_trade_age_sec':row['last_trade_age_sec'],
+                             'verified_order_placed':False,
+                             'forensic_only':True},
+                    at=row['audit_epoch'])
+            except (sqlite3.Error,ValueError,TypeError,OSError) as exc:
+                self._last_fetch_error[row['market']]='AUDIT_WRITE:'+type(exc).__name__
+            finally:
+                self._v074_audit_queue.task_done()
+
+    def _record_entry_block(self,market,code,frame,barid,reason,rsi=None,trade_age_sec=None,strategy='trend'):
+        """Do not call a rejected RSI observation a real BUY or virtual fill."""
         try:
-            rsi_value=mt._finite(rsi)
+            value=mt._finite(rsi)
             age=mt._finite(trade_age_sec)
-            item={"code":str(code),"frame":str(frame),"bar_end":str(barid),
-                  "reason":str(reason),"rsi20_live":rsi_value,
-                  "last_trade_age_sec":round(age,3) if age is not None else None,
-                  "logged_at":dt.datetime.now(mt.KST).isoformat()}
+            row={'market':str(market),'code':str(code),'frame':str(frame),
+                 'bar_end':str(barid),'reason':str(reason),
+                 'rsi20_live':value,'strategy':str(strategy),
+                 'last_trade_age_sec':round(age,3) if age is not None else None,
+                 'logged_at':dt.datetime.now(mt.KST).isoformat(),
+                 'audit_epoch':time.time()}
+            key=(row['strategy'],row['market'],row['code'],row['frame'],
+                 row['bar_end'],row['reason'])
             with self.lock:
-                q=self._recent_blocked_entries[market]
-                if q and all(q[-1].get(k)==item[k] for k in ("code","frame","bar_end","reason")):
+                if key in self._v074_audit_unique:
                     return
-                q.append(item)
-        except (ValueError,TypeError,AttributeError):
-            return
+                self._v074_audit_unique.add(key)
+                if len(self._v074_audit_unique)>24000:
+                    self._v074_audit_unique=set(list(self._v074_audit_unique)[-8000:])
+                self._recent_blocked_entries[market].append(row)
+            try:
+                self._v074_audit_queue.put_nowait(row)
+            except queue.Full:
+                self._v074_audit_dropped+=1
+                self._last_fetch_error[market]='AUDIT_QUEUE_OVERFLOW'
+        except (KeyError,ValueError,TypeError,AttributeError):
+            self._v074_audit_dropped+=1
+
+    def record_ma_decision(self,market,code,frame,bar_end,reason):
+        """Coin MA decision diagnostics share the read-only forensic writer."""
+        self._record_entry_block(market,code,frame,bar_end,reason,strategy='ma')
 
     def _preclose_candidates(self,market,now):
         self._prune_evaluation_cache(now)
@@ -1015,6 +1063,8 @@ class Coordinator:
                        for tf in mt.FRAMES} if hasattr(self,"standalone_wallet") else {}),
                     "status":self.mode_details[market],
                     "candidates":len(self._candidates[market]),
+                    "candidate_symbols":sorted(self._candidates[market]),
+                    "forensic_audit_dropped":self._v074_audit_dropped,
                     "error":self._last_fetch_error.get(market,""),
                     "entry_block_reasons":dict(self._entry_block_counts[market].most_common(18)),
                     "recent_entry_blocks":list(self._recent_blocked_entries[market])[-30:],
