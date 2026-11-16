@@ -126,6 +126,20 @@ def _phone_runtime_snapshot(self):
             'last_frame_ms': int(float(getattr(runner, '_watch_feed_last_epoch', 0) or 0) * 1000) if runner else 0,
             'transport': transport,
             'preload': preload,
+            # Distinguish authenticated socket, received trade, and ordered
+            # strategy processing. Snapshot is read-only and never orders.
+            'ws_session_confirmed': bool(getattr(runner,'_confirmed_ws_session',False)) if runner else False,
+            'receive_queue_depth': getattr(runner,'_feed_message_queue',None).qsize()
+                if runner is not None and getattr(runner,'_feed_message_queue',None) is not None else 0,
+            'receive_queue_high_water': int(getattr(runner,'_feed_high_water',0) or 0) if runner else 0,
+            'receive_packets_processed': int(getattr(runner,'_feed_processed',0) or 0) if runner else 0,
+            'receive_frames_discarded': int(getattr(runner,'_feed_discarded',0) or 0) if runner else 0,
+            'receive_queue_overflows': int(getattr(runner,'_feed_overflows',0) or 0) if runner else 0,
+            'receive_max_lag_ms': round(float(getattr(runner,'_feed_lag_max_ms',0) or 0),1)
+                if runner else 0.0,
+            'last_trade_age_sec': round(max(0.0,time.time()-float(getattr(runner,
+                '_watch_feed_last_epoch',0) or 0)),1) if runner and getattr(runner,
+                '_watch_feed_last_epoch',0) else None,
         }
         return json.dumps(snapshot, ensure_ascii=False, default=str)
     except Exception:
