@@ -52,6 +52,22 @@ jobs:
                           for i in range(fn.lineno, min(fn.end_lineno,fn.lineno+340)+1):
                               print("%5d %s"%(i,lines[i-1]))
           search = ("websockets.connect","recv(","_watch_feed_last_epoch","preload_gate","AT_WS_NOT_STARTED","PRELOAD_BUDGET_EXPIRED","_confirmed_ws_session","self.subscriptions","_on_book_message","_refresh_universe_if_due")
+          for node in tree.body:
+              if isinstance(node,ast.ClassDef) and node.name=="LivePaperRunner":
+                  for fn in node.body:
+                      if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)) and fn.name in ("_repair_gmo_depth_on_existing_ws","_switch_venue_subscriptions","_register_subscriptions","_startup_preload"):
+                          print("=== EXTRA",fn.name,"===")
+                          for i in range(fn.lineno,fn.end_lineno+1):
+                              print("%5d %s"%(i,lines[i-1]))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for name in ("at_close_bridge.py","startup_preload_v1.py"):
+                  print("=== EXTRA",name,"===")
+                  src=z.read(name).decode("utf8").splitlines()
+                  for i,line in enumerate(src):
+                      if any(key in line for key in ("AT_WS_NOT_STARTED","PRELOAD_BUDGET_EXPIRED","def at_pulse","def set_broker_transport","def snapshot","def start")):
+                          print("CONTEXT",name,i+1)
+                          for j in range(max(0,i-3),min(len(src),i+15)):
+                              print("%5d %s"%(j+1,src[j]))
           print("=== KEYWORD CONTEXT ===")
           shown=set()
           for i,line in enumerate(lines):
