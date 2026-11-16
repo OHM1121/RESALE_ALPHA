@@ -612,14 +612,19 @@ class Coordinator:
         observed_at=time.monotonic()
         for code in candidates:
             observed=observed_prices.get(code)
-            if (observed is None or
-                    observed_at-observed[1]>3.0 or
-                    observed_at-observed[1]<-0.5):
-                self._entry_block_counts[market]['FRESH_0B_TRADE_MISSING_AT_PRECHECK']+=1
-                continue
-            observed_trade=mt._finite(observed[0])
+            observed_trade=None
+            if (observed is not None and
+                    -0.5<=observed_at-observed[1]<=3.0):
+                observed_trade=mt._finite(observed[0])
+            if observed_trade is None:
+                # Compatibility for read-only injected/synthetic proven
+                # quotes where the price memory is not populated. This is
+                # only a valid 0D+trade fallback, NEVER an invented trade.
+                backed=self._quote(market,code)
+                observed_trade=(mt._finite(backed.get('trade'))
+                                if isinstance(backed,dict) else None)
             if observed_trade is None or observed_trade<=0:
-                self._entry_block_counts[market]['INVALID_0B_TRADE']+=1
+                self._entry_block_counts[market]['FRESH_0B_TRADE_MISSING_AT_PRECHECK']+=1
                 continue
             for frame,finish,check,submit in scheduled:
                 barid=finish.isoformat()
