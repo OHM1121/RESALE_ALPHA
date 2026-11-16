@@ -1,0 +1,36 @@
+name: ARTITRADE v063 isolated GMO policy asset patch
+on:
+  push:
+    branches:
+      - feature-artitrade-v063-kiwoom-gmo-lifecycle-audit-20261116
+    paths:
+      - "ARTITRADE_ANDROID/ui_tests/apply_v063_gmo_policy_patch.py"
+      - ".github/workflows/artitrade-v063-apply-gmo-policy.yml"
+permissions:
+  contents: write
+jobs:
+  patch-verified-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Apply pinned single-module GMO patch and update Java checksum
+        run: python3 ARTITRADE_ANDROID/ui_tests/apply_v063_gmo_policy_patch.py
+      - name: Test entry guards and true cold boot before any commit
+        run: python3 ARTITRADE_ANDROID/ui_tests/test_v063_gmo_exit_and_cold_boot.py
+      - name: Verify source delta has no other strategy module changes
+        run: |
+          git diff --check
+          git diff --stat
+      - name: Commit only checksum and encoded core assets to isolated branch
+        run: |
+          git config user.name "artitrade-ci"
+          git config user.email "artitrade-ci@users.noreply.github.com"
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt
+          git add ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(v063): GMO 1pct post-TP1 floor with intact 2nd target guard"
+          git push origin HEAD:feature-artitrade-v063-kiwoom-gmo-lifecycle-audit-20261116
