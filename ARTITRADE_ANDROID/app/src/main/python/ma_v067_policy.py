@@ -7,7 +7,7 @@ Buy at the reversal candle low or below, but never after the price has
 fallen below its low and rebounded back to the low.
 
 REVERSAL_UP: first 120-down / all 4-up transition on FORMING candle;
-requires it to still hold at close minus 5 seconds. No 4-below filter.
+requires a genuine recheck inside close-minus-10 to minus-2 seconds. No 4-below filter.
 Any entry fill delayed over 15 seconds is prohibited.
 
 All new positions: forced 120-up / all 4-above-and-down instant exit,
@@ -34,7 +34,9 @@ SECOND_ADDITIONAL=Decimal('.02')
 PEAK_TRAIL=Decimal('.03')
 HARD_AFTER_FIRST=Decimal('.01')
 GRACE=timedelta(minutes=5)
-UP_SUBMIT_BEFORE_CLOSE_SECONDS=5
+MA_PREWATCH_BEFORE_CLOSE_SECONDS=30
+UP_SUBMIT_BEFORE_CLOSE_SECONDS=10
+UP_SUBMIT_END_BEFORE_CLOSE_SECONDS=2
 MAX_UP_FILL_DELAY_SECONDS=15
 # Entry setup only. The protective forced-SELL rule is kept unchanged.
 MA120_DOWN_TOLERANCE=Decimal('0.0050')
@@ -102,11 +104,22 @@ def bear_reversal_completed(bars,frame):
             'reversal_high':str(hi),'frame':frame}
 
 
-def upward_transition_on_forming(prior_closed,price,seconds_before_close):
-    """No forward-lookahead; only at final 5s and only the first flip."""
+def in_up_entry_window(seconds_before_close):
+    """Keep the actual close-minus-10s through minus-2s window inclusive."""
     sec=number(seconds_before_close)
-    if sec is None or not Decimal('4')<=sec<=Decimal('5'):
-        return {'kind':None,'reason':'NOT_CLOSE_MINUS_FIVE_SECONDS'}
+    return (sec is not None and
+        Decimal(UP_SUBMIT_END_BEFORE_CLOSE_SECONDS)<=sec<=Decimal(UP_SUBMIT_BEFORE_CLOSE_SECONDS))
+
+
+def in_ma_prewatch_window(seconds_before_close):
+    """Observation-only, before the buy window; never makes a candidate."""
+    sec=number(seconds_before_close)
+    return (sec is not None and
+        Decimal(UP_SUBMIT_BEFORE_CLOSE_SECONDS)<sec<=Decimal(MA_PREWATCH_BEFORE_CLOSE_SECONDS))
+
+
+def prewatch_upward_alignment(prior_closed, price):
+    """Non-executable verified-price snapshot. The final entry rechecks this."""
     if len(prior_closed)<121:
         return {'kind':None,'reason':'SMA_HISTORY_REQUIRED'}
     prev=slopes(prior_closed)
@@ -114,21 +127,24 @@ def upward_transition_on_forming(prior_closed,price,seconds_before_close):
     if prev is None or cur is None:
         return {'kind':None,'reason':'INVALID_SMA_DATA'}
     qualifies=lambda m:ma120_down_for_entry(m) and all(m[k]['delta']>0 for k in SHORT)
+    fields={'ma_120_delta':str(cur[120]['delta']),
+            'ma_60_delta':str(cur[60]['delta']),
+            'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE)}
     if not qualifies(cur):
-        # Observation-only: show exact slope and tolerance in skipped-entry
-        # research; neither change the actual order time nor create a trade.
-        return {'kind':None,'reason':'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN',
-                'ma_120_delta':str(cur[120]['delta']),
-                'ma_60_delta':str(cur[60]['delta']),
-                'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE)}
+        return {'kind':None,'reason':'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN',**fields}
     if qualifies(prev):
-        return {'kind':None,'reason':'UPWARD_ALIGNMENT_ALREADY_EXISTED',
-                'ma_120_delta':str(cur[120]['delta']),
-                'ma_60_delta':str(cur[60]['delta']),
-                'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE)}
-    return {'kind':'REVERSAL_UP','reason':'FIRST_FORMING_SHORT4_UP_AT_MINUS_5',
-            'ma_120_delta':str(cur[120]['delta'])}
+        return {'kind':None,'reason':'UPWARD_ALIGNMENT_ALREADY_EXISTED',**fields}
+    return {'kind':'REVERSAL_UP','reason':'FIRST_FORMING_SHORT4_UP_OBSERVED',**fields}
 
+
+def upward_transition_on_forming(prior_closed,price,seconds_before_close):
+    """Only genuine near-close prices: 10 to 2 seconds, no forward lookahead."""
+    if not in_up_entry_window(seconds_before_close):
+        return {'kind':None,'reason':'NOT_CLOSE_MINUS_TEN_TO_TWO_SECONDS'}
+    verdict=prewatch_upward_alignment(prior_closed,price)
+    if verdict.get('kind')=='REVERSAL_UP':
+        return dict(verdict,reason='FIRST_FORMING_SHORT4_UP_AT_MINUS_10_TO_2')
+    return verdict
 
 def within_up_fill_deadline(order_submitted_at,filled_at):
     if (not isinstance(order_submitted_at,datetime)
