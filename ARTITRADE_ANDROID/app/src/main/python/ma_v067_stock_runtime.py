@@ -1,7 +1,7 @@
 """MA v067 stock KRX live 0B / native 0D/FOK integration.
 
 No retrospective candle trades; only maintained alignment completed bears
-and strict LIVE close-5s rising transitions. Existing StockMAService remains
+and genuine LIVE close-10s through close-2s rising transitions. Existing StockMAService remains
 sole wallet, official shared depth and broker execution owner.
 """
 from __future__ import annotations
@@ -265,6 +265,7 @@ def _up_worker(runner):
     from d_v19_portfolio import live_session
     from ma_v061_stock_runtime import _slope_closes
     seen=set()
+    prewatched=set()
     while not runner.stop_event.is_set():
         try:tick=runner._ma_v067_up_queue.get(timeout=.15)
         except queue.Empty:continue
@@ -277,14 +278,29 @@ def _up_worker(runner):
             if code not in runner.market_map:
                 for frame in ('5m','30m','60m','day'):
                     left,end=_close_seconds(now,frame)
-                    if 4<=left<=5:
+                    if 2<=left<=30:
                         _record_v076_stock_ma(code,frame,end.isoformat(),
                             'UP_CODE_NOT_IN_KRX_VERIFIED_MARKET_MAP')
                 continue
             for frame in ('5m','30m','60m','day'):
                 remain,finish=_close_seconds(now,frame)
-                if remain<4 or remain>5:continue
+                if not (policy.in_ma_prewatch_window(remain) or policy.in_up_entry_window(remain)):
+                    continue
                 key=(code,frame,finish.isoformat())
+                if policy.in_ma_prewatch_window(remain):
+                    # Read-only 30..10s preview, sampled per five-second bucket.
+                    # No candidate, broker call, pending order or simulated fill.
+                    sample=(code,frame,finish.isoformat(),int(remain//5))
+                    if sample not in prewatched:
+                        prewatched.add(sample)
+                        preview=_slope_closes(service,code,frame,now)
+                        verdict=policy.prewatch_upward_alignment(preview,tick[4])
+                        facts={k:verdict[k] for k in ('ma_120_delta','ma_60_delta','ma120_down_tolerance') if k in verdict}
+                        facts.update({'remaining_sec':round(remain,3),'trade_price':str(tick[4]),
+                                      'observation_only':True,'live_source':'KRX_VERIFIED_0B'})
+                        _record_v076_stock_ma(code,frame,finish.isoformat(),
+                            'MA_PREWATCH_'+str(verdict.get('reason') or 'UNKNOWN'),facts)
+                    continue
                 if key in seen:continue
                 prices=_slope_closes(service,code,frame,now)
                 result=policy.upward_transition_on_forming(prices,tick[4],remain)
@@ -295,19 +311,46 @@ def _up_worker(runner):
                             ('ma_120_delta','ma_60_delta','ma120_down_tolerance')
                             if k in result})
                     continue
-                # Never create a synthetic exchange quote. Limit derives only
-                # from the same symbol's genuine 0B best ask or fresh KRX 0D.
-                latest=runner.engine.book._items.get((code,'KRX'))
+                # Recheck at actual submission time, not merely when the tick
+                # entered the worker queue. Prefer a newer verified same-code
+                # KRX 0B print if it arrived during computation.
+                decision_now=dt.datetime.now(now.tzinfo)
+                fresh_remain,active_finish=_close_seconds(decision_now,frame)
+                if (active_finish!=finish or
+                        not policy.in_up_entry_window(fresh_remain) or
+                        not exchange_stamp_is_fresh(tick[8],tick[6],decision_now)):
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_ENTRY_WINDOW_OR_VERIFIED_TRADE_EXPIRED')
+                    continue
+                decision_tick=tick
+                with runner._quote_lock:
+                    newer=getattr(runner,'_latest_krx_trades',{}).get(code)
+                if (newer is not None and len(newer)>=9 and
+                        str(newer[0])==code and newer[7]=='KRX' and
+                        str(newer[6])>=str(tick[6]) and
+                        exchange_stamp_is_fresh(newer[8],newer[6],decision_now)):
+                    decision_tick=newer
+                checked=policy.upward_transition_on_forming(prices,decision_tick[4],fresh_remain)
+                if checked.get('kind')!='REVERSAL_UP':
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_LAST_VERIFIED_TRADE_RULE_LOST',
+                        {'last_trade_price':str(decision_tick[4]),
+                         'reason':str(checked.get('reason') or 'NO_MATCH')})
+                    continue
+                # Never invent an exchange quote: only the same-symbol genuine
+                # KRX 0D book at this actual recheck moment may authorize entry.
+                with runner.engine.book._lock:
+                    latest=runner.engine.book._items.get((code,'KRX'))
                 if latest is None:
                     _record_v076_stock_ma(code,frame,finish.isoformat(),
                         'UP_0D_KRX_BOOK_NOT_RECEIVED',{'trade_price':str(tick[4])})
                     continue
                 ask,bid,aq,at=latest
-                if ask<=0 or bid<=0 or aq<1 or not (0<=(now-at).total_seconds()<=3):
+                if ask<=0 or bid<=0 or aq<1 or not (0<=(decision_now-at).total_seconds()<=3):
                     _record_v076_stock_ma(code,frame,finish.isoformat(),
                         'UP_0D_DEPTH_OR_FRESHNESS_BLOCKED',
                         {'ask':ask,'bid':bid,'ask_qty':aq,
-                         'book_age_sec':round((now-at).total_seconds(),4)})
+                         'book_age_sec':round((decision_now-at).total_seconds(),4)})
                     continue
                 with service.lock,native._connect(service.db) as c:
                     _table(c)
@@ -320,20 +363,20 @@ def _up_worker(runner):
                               finish-dt.timedelta(seconds={
                                   '5m':300,'30m':1800,'60m':3600}[frame]))
                     signal=barstart.strftime('%Y%m%d%H%M%S')
-                    features={'decision':'QUALIFIED','reason':'MA_V067_UP_5_SECONDS',
+                    features={'decision':'QUALIFIED','reason':'MA_V079_UP_10_TO_2_SECONDS',
                         'ma_v061_kind':'TURNPOINT','ma_v067_kind':'REVERSAL_UP',
-                        'ma_v067_bar_start':signal,'ma_v067_first_observed_at':now.isoformat(),
-                        'ma_v067_submit_deadline':(now+dt.timedelta(seconds=15)).isoformat(),
-                        'ma_v067_120_delta':result['ma_120_delta'],
+                        'ma_v067_bar_start':signal,'ma_v067_first_observed_at':decision_now.isoformat(),
+                        'ma_v067_submit_deadline':(decision_now+dt.timedelta(seconds=15)).isoformat(),
+                        'ma_v067_120_delta':checked['ma_120_delta'],
                         'ma_v067_quote_source':'EXACT_KRX_0B_AND_0D','ma_v067_no_below120_filter':True}
                     c.execute("""INSERT OR IGNORE INTO candidates(tf,code,name,market,
                         ref_ts,created_at,limit_price,target,score,special,low,
                         close_price,high,bodytop,recovery1,first_fraction,features)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (frame,code,str(tick[2]),str(tick[1]),signal,now.isoformat(),
+                        (frame,code,str(decision_tick[2]),str(decision_tick[1]),signal,decision_now.isoformat(),
                          int(ask),int(math.ceil(float(ask)*(
                             1+float(policy.UP_FIRST_TARGET_PCT[frame])/100))),
-                         80,0,int(bid),int(tick[4]),int(ask),int(ask),int(bid),
+                         80,0,int(bid),int(decision_tick[4]),int(ask),int(ask),int(bid),
                          .10,json.dumps(features,ensure_ascii=False)))
                     c.execute("""INSERT INTO research(ts,tf,code,ref_ts,verdict,detail)
                                  VALUES(?,?,?,?,?,?)""",
@@ -343,10 +386,11 @@ def _up_worker(runner):
                 seen.add(key)
                 _record_v076_stock_ma(code,frame,finish.isoformat(),
                     'UP_CANDIDATE_REGISTERED_NATIVE_FILL_UNVERIFIED',
-                    {'trade_price':str(tick[4]),'ask':int(ask),
-                     'ma120_delta':result.get('ma_120_delta')})
-                # Same native KRX 0D/FOK wallet executes the candidate.
-                service.on_tick(tick,runner.engine.book)
+                    {'trade_price':str(decision_tick[4]),'ask':int(ask),
+                     'ma120_delta':checked.get('ma_120_delta'),
+                     'seconds_to_close':round(fresh_remain,3)})
+                # Same native KRX 0D/FOK wallet executes on this true print.
+                service.on_tick(decision_tick,runner.engine.book)
         except Exception as exc:
             try:
                 _record_v076_stock_ma(
@@ -354,10 +398,12 @@ def _up_worker(runner):
                     str(tick[6]) if len(tick)>6 else 'LIVE',
                     'OPERATIONAL_STOCK_MA_WORKER_'+type(exc).__name__)
             except Exception:pass
-            try:runner.store.write_runtime_error(exc,'MA_V067_UP_FIVE_SECONDS')
+            try:runner.store.write_runtime_error(exc,'MA_V079_UP_TEN_TO_TWO_SECONDS')
             except Exception:pass
         finally:
             runner._ma_v067_up_queue.task_done()
+            if len(prewatched)>12000:prewatched.clear()
+            if len(seen)>12000:seen.clear()
             if len(seen)>5000:seen=set(list(seen)[-1000:])
 
 
@@ -368,7 +414,7 @@ def install():
     import d_live
     import ma_v061_stock_runtime as legacy
     # Do not reuse V061 next-bar 5s TURNPOINT. The user now requires
-    # an in-progress candle at exact close-minus-five seconds.
+    # an in-progress candle within the verified close-minus-10..2 seconds.
     legacy._try_open_first5s=lambda *a,**kw:None
     native.ma_reference_decision=lambda bars,tf,when:_candidate_from_closed(bars,tf,when)
 
@@ -415,7 +461,7 @@ def install():
             if (len(tick)>=9 and tick[7]=='KRX' and
                 exchange_stamp_is_fresh(tick[8],tick[6])):
                 now=dt.datetime.fromisoformat(str(tick[6]))
-                if any(4<=_close_seconds(now,frame)[0]<=5
+                if any(2<=_close_seconds(now,frame)[0]<=30
                        for frame in ('5m','30m','60m','day')):
                     q=getattr(self,'_ma_v067_up_queue',None)
                     if q is None:
