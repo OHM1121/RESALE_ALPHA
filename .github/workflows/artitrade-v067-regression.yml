@@ -48,6 +48,18 @@ jobs:
           set -e
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v067_*.py' -v
+      - name: Import and wire the ENTIRE Android Python runtime without starting brokers
+        env:
+          PYTHONPATH: '/tmp/artitrade-v067-original-core:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          python3 - <<'PY'
+          import android_runtime_v078
+          import stock_ma_engine,coin_ma_engine,d_live
+          assert hasattr(stock_ma_engine.StockMAService,'on_tick')
+          assert hasattr(coin_ma_engine.MACoinLedger,'process_book')
+          assert hasattr(d_live.LivePaperRunner,'_refresh_universe_if_due')
+          print('V067_ANDROID_RUNTIME_MODULES_IMPORTED_AND_HOOKS_INSTALLED')
+          PY
       - name: Confirm old MA, Trend, GMO, ledger and updated version legacy parity
         env:
           PYTHONPATH: '/tmp/artitrade-v067-original-core:ARTITRADE_ANDROID/app/src/main/python'
