@@ -1035,6 +1035,12 @@ class Coordinator:
             try:
                 now=dt.datetime.now(mt.KST)
                 if market=='stock':
+                    # A missed stock MA entry only exists during genuine KRX
+                    # trading. Never label after-hours / weekends as failures.
+                    from d_v19_portfolio import live_session
+                    if not live_session(now,'KRX'):
+                        self.stop_event.wait(.8)
+                        continue
                     import ma_v067_stock_runtime as native
                     due=[(frame,finish) for frame in mt.FRAMES
                          for remain,finish in [native._close_seconds(now,frame)]
