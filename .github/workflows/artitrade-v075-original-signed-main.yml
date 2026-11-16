@@ -106,7 +106,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           base=Path('ARTITRADE_ANDROID/app/src/main/python')
-          evidence=(base/'execution_evidence_v075.py').read_text()
+          evidence=(base/'execution_evidence_v074.py').read_text()
           trend=(base/'market_trend_runtime_v043.py').read_text()
           coin=(base/'ma_v067_coin_runtime.py').read_text()
           ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
