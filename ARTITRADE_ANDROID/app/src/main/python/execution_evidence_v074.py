@@ -33,7 +33,9 @@ class ForensicLedger:
         code=row['code']
         event_key=':'.join((kind,'AUDIT',row['market'],code,
                             row['frame'],row['bar_end'],row['reason']))
-        mode='OBSERVED' if row['reason'].startswith('RSI30_OBSERVED') else 'NOT_ORDERED'
+        mode=('OBSERVED' if row['reason'].startswith('RSI30_OBSERVED')
+              else 'CANDIDATE_ONLY' if ('CANDIDATE_REGISTERED' in row['reason'] or
+                  'RULE_QUALIFIED' in row['reason']) else 'NOT_ORDERED')
         body={'bar_end':row['bar_end'],
               'last_trade_age_sec':row.get('last_trade_age_sec'),
               'verified_order_placed':False,
