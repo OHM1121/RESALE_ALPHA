@@ -46,6 +46,9 @@ class IndependentRunner(TestCase):
         bar=finish.isoformat()
         co._prechecked[('coin','KRW-BTC','5m',bar)]=25
         co._update_score('coin')
+        # Historical synthetic sample uses its own clock; the production
+        # entry window continues to use actual current KST time.
+        co._decision_clock=lambda:now
         co._preclose_candidates('coin',now)
         self.assertEqual(co.standalone_wallet.allocation('coin','5m')['positions'],1)
         self.assertEqual(co.standalone_wallet.allocation('coin','30m')['positions'],0)
