@@ -1234,9 +1234,12 @@ class Coordinator:
                     "entry_mode":"MA_COIN_AUDIT" if is_ma else "MARKET_TREND_AUDIT",
                     "rsi20_live":x["rsi20_live"],
                     "bought":False,"entry_observed":False,
-                    "execution_mode":"NO_ORDER","audit_only":True,
+                    "execution_mode":"CANDIDATE_ONLY" if x["mode"]=="CANDIDATE_ONLY"
+                                      else "NO_ORDER","audit_only":True,
                     "verified_order_placed":False,
                     "outcome":"OBSERVED_ONLY" if reason.startswith("RSI30_OBSERVED")
+                              else "CANDIDATE_RECORDED_UNVERIFIED_EXECUTION"
+                                   if x["mode"]=="CANDIDATE_ONLY"
                               else "NO_ORDER_RECORDED",
                     "reason":reason,"bar_end":detail.get("bar_end"),
                     "last_trade_age_sec":detail.get("last_trade_age_sec")}
