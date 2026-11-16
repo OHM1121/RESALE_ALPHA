@@ -246,6 +246,19 @@ def _close_seconds(now,frame):
     return (finish-now).total_seconds(),finish
 
 
+def _record_v076_stock_ma(symbol,frame,bar_end,reason,details=None):
+    """Queue MA evidence only; never touch broker or wallet in this path."""
+    try:
+        import market_trend_runtime_v043 as trend
+        rt=getattr(getattr(trend,'_CORE',None),'_RUNTIME',None)
+        co=getattr(rt,'market_trend',None) if rt is not None else None
+        if co is not None:
+            co.record_ma_decision('stock',str(symbol),str(frame),
+                                  str(bar_end),str(reason),details)
+    except (ImportError,AttributeError,ValueError,TypeError):
+        pass
+
+
 def _up_worker(runner):
     import stock_ma_engine as native
     from d_minute_repair_fast import exchange_stamp_is_fresh
@@ -261,7 +274,13 @@ def _up_worker(runner):
             if not live_session(now,'KRX'):continue
             service=runner.ma
             code=str(tick[0])
-            if code not in runner.market_map:continue
+            if code not in runner.market_map:
+                for frame in ('5m','30m','60m','day'):
+                    left,end=_close_seconds(now,frame)
+                    if 4<=left<=5:
+                        _record_v076_stock_ma(code,frame,end.isoformat(),
+                            'UP_CODE_NOT_IN_KRX_VERIFIED_MARKET_MAP')
+                continue
             for frame in ('5m','30m','60m','day'):
                 remain,finish=_close_seconds(now,frame)
                 if remain<4 or remain>5:continue
@@ -269,13 +288,27 @@ def _up_worker(runner):
                 if key in seen:continue
                 prices=_slope_closes(service,code,frame,now)
                 result=policy.upward_transition_on_forming(prices,tick[4],remain)
-                if result.get('kind')!='REVERSAL_UP':continue
+                if result.get('kind')!='REVERSAL_UP':
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_RULE_'+str(result.get('reason') or 'NO_MATCH'),
+                        {k:result[k] for k in
+                            ('ma_120_delta','ma_60_delta','ma120_down_tolerance')
+                            if k in result})
+                    continue
                 # Never create a synthetic exchange quote. Limit derives only
                 # from the same symbol's genuine 0B best ask or fresh KRX 0D.
                 latest=runner.engine.book._items.get((code,'KRX'))
-                if latest is None:continue
+                if latest is None:
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_0D_KRX_BOOK_NOT_RECEIVED',{'trade_price':str(tick[4])})
+                    continue
                 ask,bid,aq,at=latest
-                if ask<=0 or bid<=0 or aq<1 or not (0<=(now-at).total_seconds()<=3):continue
+                if ask<=0 or bid<=0 or aq<1 or not (0<=(now-at).total_seconds()<=3):
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_0D_DEPTH_OR_FRESHNESS_BLOCKED',
+                        {'ask':ask,'bid':bid,'ask_qty':aq,
+                         'book_age_sec':round((now-at).total_seconds(),4)})
+                    continue
                 with service.lock,native._connect(service.db) as c:
                     _table(c)
                     if c.execute("""SELECT 1 FROM positions WHERE code=? AND status='OPEN'""",
@@ -308,9 +341,19 @@ def _up_worker(runner):
                                json.dumps(features,ensure_ascii=False)))
                 service._refresh_watched()
                 seen.add(key)
+                _record_v076_stock_ma(code,frame,finish.isoformat(),
+                    'UP_CANDIDATE_REGISTERED_NATIVE_FILL_UNVERIFIED',
+                    {'trade_price':str(tick[4]),'ask':int(ask),
+                     'ma120_delta':result.get('ma_120_delta')})
                 # Same native KRX 0D/FOK wallet executes the candidate.
                 service.on_tick(tick,runner.engine.book)
         except Exception as exc:
+            try:
+                _record_v076_stock_ma(
+                    str(tick[0]) if tick else '__ENGINE__','all',
+                    str(tick[6]) if len(tick)>6 else 'LIVE',
+                    'OPERATIONAL_STOCK_MA_WORKER_'+type(exc).__name__)
+            except Exception:pass
             try:runner.store.write_runtime_error(exc,'MA_V067_UP_FIVE_SECONDS')
             except Exception:pass
         finally:
