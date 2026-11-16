@@ -4140,6 +4140,8 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         pendingCombinedResearchScope=scope;
+        exportStage("research","SELECT_DIR","저장 폴더 선택",0,
+            "선택한 폴더에 검증된 연구 ZIP 파트 저장",true,false);
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
@@ -4149,6 +4151,10 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void exportCombinedResearchToFolder(Uri tree,String scope){
         if(!fullExportRunning.compareAndSet(false,true))return;
+        exportStage("research","PREPARE","원본 연구자료 준비",2,
+            "SQLite/WAL 스냅샷·ZIP 생성",true,false);
+        File progressFile=new File(getCacheDir(),PY_EXPORT_PROGRESS);
+        if(progressFile.exists())progressFile.delete();
         new Thread(()->{
             File folder=new File(getCacheDir(),"artitrade_research_bundle_"+System.nanoTime());
             java.util.List<Uri> newDocuments=new java.util.ArrayList<>();
@@ -4167,7 +4173,8 @@ public final class UnifiedVisualActivity extends Activity {
                 File runtime=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
                 String raw=Python.getInstance().getModule("android_research_bundle")
                     .callAttr("make_bundle",runtime.getAbsolutePath(),
-                        folder.getAbsolutePath(),scope).toString();
+                        folder.getAbsolutePath(),scope,500_000_000,
+                        progressFile.getAbsolutePath()).toString();
                 JSONObject info=new JSONObject(raw);
                 if(!info.optBoolean("ok")||info.optInt("parts")<=0)
                     throw new IOException("분할 리서치 생성 검증 실패");
@@ -4176,6 +4183,8 @@ public final class UnifiedVisualActivity extends Activity {
                 JSONArray parts=info.getJSONArray("files");
                 if(parts.length()!=info.optInt("parts"))
                     throw new IOException("분할 파일 목록과 실제 개수 불일치");
+                exportStage("research","COPY","ZIP 파트 저장",94,
+                    "기존 원장 "+info.optInt("source_files",0)+"개 검증 완료",true,false);
                 long verified=0;
                 for(int i=0;i<parts.length();i++){
                     JSONObject item=parts.getJSONObject(i);
@@ -4212,7 +4221,14 @@ public final class UnifiedVisualActivity extends Activity {
                         !expected.equalsIgnoreCase(hex(disk.digest())))
                         throw new IOException("저장된 ZIP 검증 불일치");
                     verified+=bytes;
+                    exportStage("research","COPY","ZIP 파트 저장",
+                        94+Math.min(5,(i+1)*5/Math.max(1,parts.length())),
+                        String.format(Locale.KOREA,"%d/%d파트 · %,d바이트 검증",
+                            i+1,parts.length(),verified),true,false);
                 }
+                exportStage("research","DONE","연구 ZIP 저장 완료",100,
+                    String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
+                    false,false);
                 fullLedgerExportResult(true,
                     ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
                     " 연구이력 "+parts.length()+"개 ZIP 저장 완료\n"+
@@ -4226,6 +4242,9 @@ public final class UnifiedVisualActivity extends Activity {
                     catch(Exception ignored){}
                 }
                 new RuntimeCrashStore(this).add("combined_research_export",e);
+                exportStage("research","FAILED","연구 ZIP 저장 실패",0,
+                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
+                    false,true);
                 fullLedgerExportResult(false,
                     "통합 연구이력 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\\n"+
                     e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),true);
@@ -4233,6 +4252,7 @@ public final class UnifiedVisualActivity extends Activity {
                 File[] files=folder.listFiles();
                 if(files!=null)for(File file:files)if(file.isFile())file.delete();
                 folder.delete();
+                if(progressFile.exists())progressFile.delete();
                 fullExportRunning.set(false);
             }
         },"artitrade-scoped-multipart-research").start();
@@ -4245,6 +4265,8 @@ public final class UnifiedVisualActivity extends Activity {
             pendingCombinedResearchScope=null;
             if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
                 exportCombinedResearchToFolder(data.getData(),scope);
+            else exportStage("research","CANCELLED","연구 ZIP 추출 취소",0,
+                "저장 폴더 선택이 취소됨",false,false);
             return;
         }
         if(requestCode==REQUEST_EXPORT_AI_EVIDENCE){
