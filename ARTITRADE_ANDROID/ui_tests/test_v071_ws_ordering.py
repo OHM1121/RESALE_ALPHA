@@ -155,9 +155,12 @@ class UIAndNativePolicy(unittest.TestCase):
         j=(self.ROOT/"app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java").read_text('utf8')
         for expr in ("REQUEST_EXPORT_ERRORS=7715","requestErrorHistoryExport()",
                      'button("오류 ZIP"', "ARTITRADE_ERROR_HISTORY_V071",
-                     "pendingErrorsReports", "exportFullLedgerToDocument(data.getData(),reports)",
+                     "pendingErrorsReports", "beginPreparedLedgerExport(REQUEST_EXPORT_ERRORS",
+                     "finishPreparedLedgerExport(requestCode,data.getData())",
                      "selectedHistory", "renderErrors()"):
             self.assertIn(expr,j)
+        self.assertIn("validate_backup",j)
+        self.assertIn("removeFailedSafDocument(uri)",j)
     def test_coin_ma_trend_and_stock_other_modules_are_unmodified(self):
         import base64,hashlib,io,zipfile
         p=self.ROOT/"app/src/main/assets/strategy_v070"
