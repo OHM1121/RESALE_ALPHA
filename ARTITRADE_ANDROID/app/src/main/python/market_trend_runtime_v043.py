@@ -600,11 +600,26 @@ class Coordinator:
         with self.lock:
             candidates=dict(self._candidates[market])
             self._performance[market]["preclose_symbols_examined"]+=len(candidates)
+        # v067: PRECHECK at -15s observes actual fresh trade prints, not
+        # full 0D depth. The old precheck required 0D even though only RSI
+        # was being observed. This wrongly discarded eligible stock/coin
+        # crosses whenever orderbook arrived AFTER the price print.
+        # At -12s, an actual BUY still REQUIRES the same verified fresh
+        # 0D/Upbit order book, available quantity and native FOK checks.
         due=collections.defaultdict(list)
+        with self.lock:
+            observed_prices=dict(self._quotes[market])
+        observed_at=time.monotonic()
         for code in candidates:
-            q=self._quote(market,code)
-            if q is None:
-                self._entry_block_counts[market]['QUOTE_OR_BOOK_MISSING_AT_GATE']+=1
+            observed=observed_prices.get(code)
+            if (observed is None or
+                    observed_at-observed[1]>3.0 or
+                    observed_at-observed[1]<-0.5):
+                self._entry_block_counts[market]['FRESH_0B_TRADE_MISSING_AT_PRECHECK']+=1
+                continue
+            observed_trade=mt._finite(observed[0])
+            if observed_trade is None or observed_trade<=0:
+                self._entry_block_counts[market]['INVALID_0B_TRADE']+=1
                 continue
             for frame,finish,check,submit in scheduled:
                 barid=finish.isoformat()
@@ -613,15 +628,12 @@ class Coordinator:
                 if not closed:
                     self._entry_block_counts[market]['CLOSED_CANDLE_HISTORY_MISSING']+=1
                     continue
-                rsi=mt.rsi20([x["close"] for x in closed],q["trade"])
+                rsi=mt.rsi20([x["close"] for x in closed],observed_trade)
                 if rsi is None:
                     self._entry_block_counts[market]['RSI_20_HISTORY_INVALID']+=1
                     continue
                 if check:
-                    # The -15s window has a hard one-second budget. Never
-                    # serialize dozens of SQLite writes/latch reads before
-                    # the independent -12s order window. The five-second
-                    # watch worker persists research and WATCH_PENDING already.
+                    # Store precheck even when no 0D quote exists.
                     self._prechecked[entry]=rsi
                 if submit and (self._prechecked.get(entry,100)>30 or rsi>30):
                     self._entry_block_counts[market][
@@ -630,6 +642,12 @@ class Coordinator:
                     ]+=1
                     continue
                 if submit and entry not in self._ordered:
+                    # Financial execution gates remain independent from RSI.
+                    # Missing/zero depth is reported; never invented.
+                    q=self._quote(market,code)
+                    if q is None:
+                        self._entry_block_counts[market]['FRESH_BOOK_MISSING_AT_SUBMIT']+=1
+                        continue
                     due[code].append((frame,rsi,barid,q))
         # The -12s decision closes the observation queue for this bar.
         # A 35-only candidate never becomes a simulated entry.
