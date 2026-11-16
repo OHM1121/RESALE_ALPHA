@@ -11,11 +11,15 @@ from __future__ import annotations
 import datetime as dt
 import json
 import threading
+import time
 from typing import Any
 
 KST=dt.timezone(dt.timedelta(hours=9))
 FRESH_SECONDS=10.0
-MAX_EXCHANGE_TO_RECEIPT_SECONDS=3.0
+MAX_EXCHANGE_TO_RECEIPT_SECONDS=3.0  # trading freshness stays with original broker
+DISPLAY_MAX_RECEIPT_LAG_SECONDS=120.0  # genuine delayed packets are display-only
+REST_REFRESH_SECONDS=35.0
+REST_DISPLAY_FRESH_SECONDS=60.0
 MAX_TRACKED=650
 MAX_AGE_FOR_AUDIT_SECONDS=86400.0
 _VALID_STOCK_STATES=frozenset(('OPEN','HOLD','HOLDING','TREND_OPEN','ACTIVE'))
@@ -62,7 +66,7 @@ def _verify_event(tick, now):
     delivery_lag=(received-exchange).total_seconds()
     if (recv_age < -0.5 or exchange_age < -0.5
         or delivery_lag < -0.5
-        or delivery_lag > MAX_EXCHANGE_TO_RECEIPT_SECONDS):
+        or delivery_lag > DISPLAY_MAX_RECEIPT_LAG_SECONDS):
         return None
     if recv_age > MAX_AGE_FOR_AUDIT_SECONDS or exchange_age > MAX_AGE_FOR_AUDIT_SECONDS:
         return None
@@ -73,7 +77,8 @@ def _verify_event(tick, now):
             'received_ms':int(received.timestamp()*1000),
             'exchange_ms':int(exchange.timestamp()*1000),
             'expires_ms':int(end*1000),
-            'is_fresh':max(recv_age,exchange_age)<=FRESH_SECONDS}
+            'is_fresh':(max(recv_age,exchange_age)<=FRESH_SECONDS
+                        and delivery_lag<=MAX_EXCHANGE_TO_RECEIPT_SECONDS)}
 
 
 def _observe(runner,tick):
@@ -133,11 +138,12 @@ def _choose_for_code(by_venue,code,now,feed_connected):
         lag=(updated-exchanged).total_seconds()
         recv_age=(now-updated).total_seconds()
         exchange_age=(now-exchanged).total_seconds()
-        if (lag<-0.5 or lag>MAX_EXCHANGE_TO_RECEIPT_SECONDS
+        if (lag<-0.5 or lag>DISPLAY_MAX_RECEIPT_LAG_SECONDS
             or recv_age<-0.5 or exchange_age<-0.5):
             continue
         point=dict(event)
         point['is_fresh']=(bool(feed_connected)
+                            and lag<=MAX_EXCHANGE_TO_RECEIPT_SECONDS
                             and max(recv_age,exchange_age)<=FRESH_SECONDS)
         items.append(point)
     if not items:return None,None
@@ -147,6 +153,71 @@ def _choose_for_code(by_venue,code,now,feed_connected):
     valid.sort(key=lambda e:(e['venue']=='KRX',e['exchange_ms']),reverse=True)
     stale=max(items,key=lambda e:e['exchange_ms'])
     return valid[0] if valid else None,stale
+
+
+def _rest_positive_price(value):
+    # Kiwoom cur_prc can be signed; sign denotes direction, not negative price.
+    if value is None or isinstance(value,bool):return None
+    try:
+        p=int(abs(float(str(value).strip().replace(',',''))))
+    except (TypeError,ValueError,OverflowError):return None
+    return p if p>0 else None
+
+
+def _rest_quote_loop(runner):
+    """Only held symbols. Official ka10001 is displayed as REST, never WS 0B.
+    No order, ledger write, added socket, or synthetic timestamp.
+    """
+    lock=runner._v066_quote_lock
+    while not runner.stop_event.is_set():
+        with lock:
+            codes=sorted(getattr(runner,'_v072_quote_requested',set()))
+            attempted=runner._v072_quote_attempts
+            now=time.monotonic()
+            code=next((c for c in codes
+                       if now-attempted.get(c,0)>=REST_REFRESH_SECONDS),None)
+            if code is not None:attempted[code]=now
+        if code is None:
+            runner.stop_event.wait(.6)
+            continue
+        try:
+            api=getattr(runner,'api',None)
+            if api is None:raise RuntimeError('KIWOOM_REST_API_NOT_READY')
+            reply=api.post('ka10001','/api/dostk/stkinfo',{'stk_cd':code})
+            if not isinstance(reply,dict):raise ValueError('KIWOOM_REST_PAYLOAD_INVALID')
+            returned=_stock_code(reply.get('stk_cd'))
+            if returned and returned!=code:raise ValueError('KIWOOM_REST_CODE_MISMATCH')
+            price=_rest_positive_price(reply.get('cur_prc'))
+            if price is None:raise ValueError('KIWOOM_REST_PRICE_INVALID')
+            observed=dt.datetime.now(KST)
+            with lock:
+                runner._v072_rest_quotes[code]={
+                    'price':price,'received_at':observed.isoformat(timespec='seconds'),
+                    'received_ms':int(observed.timestamp()*1000),
+                    'source':'KIWOOM_REST_KA10001'}
+                runner._v072_rest_errors.pop(code,None)
+        except Exception as exc:
+            with lock:
+                runner._v072_rest_errors[code]=type(exc).__name__+': '+str(exc)[:100]
+        runner.stop_event.wait(.3)
+
+
+def _ensure_rest_lookup_started(runner):
+    if runner is None or not hasattr(runner,'stop_event'):return
+    if getattr(runner,'_v072_rest_lookup_started',False):return
+    lock=getattr(runner,'_v066_quote_lock',None)
+    if lock is None:return
+    with lock:
+        if getattr(runner,'_v072_rest_lookup_started',False):return
+        runner._v072_quote_requested=set()
+        runner._v072_quote_attempts={}
+        runner._v072_rest_quotes={}
+        runner._v072_rest_errors={}
+        runner._v072_rest_lookup_started=True
+        runner._v072_rest_thread=threading.Thread(
+            target=_rest_quote_loop,args=(runner,),daemon=True,
+            name='ARTITRADE_V072_HOLDINGS_REST_DISPLAY_ONLY')
+        runner._v072_rest_thread.start()
 
 
 def _purge_stale_fields(row):
@@ -159,13 +230,14 @@ def _purge_stale_fields(row):
             row.pop(field,None)
 
 
-def _annotate_position(row,quotes,now,connected):
+def _annotate_position(row,quotes,now,connected,rest_cache=None,needed_codes=None):
     if not isinstance(row,dict):
         return row
     state=str(row.get('status') or 'OPEN').upper()
     if state not in _VALID_STOCK_STATES:
         return row
     code=_stock_code(row.get('code') or row.get('symbol'))
+    if code and needed_codes is not None:needed_codes.add(code)
     row['stock_quote_checked_v066']=True
     row['stock_quote_code']=code
     if not code:
@@ -174,11 +246,18 @@ def _annotate_position(row,quotes,now,connected):
         row['stock_quote_source']='NO_VERIFIED_0B'
         return row
     fresh,last=_choose_for_code(quotes,code,now,connected)
+    rest=(rest_cache or {}).get(code)
+    rest_price=_rest_positive_price(rest.get('price')) if isinstance(rest,dict) else None
+    rest_at=_aware(rest.get('received_at')) if isinstance(rest,dict) else None
+    rest_age=(now-rest_at).total_seconds() if rest_at is not None else None
+    if rest_age is not None and rest_age<-0.5:rest_price=None
     _purge_stale_fields(row)
     if fresh is not None:
         row['last_price']=fresh['price']
         row['current_price']=fresh['price']
         row['stock_quote_status']='FRESH'
+        row['stock_quote_display_price']=fresh['price']
+        row['stock_quote_display_source']='LIVE_0B'
         row['stock_quote_source']='KIWOOM_REAL_0B'
         row['stock_quote_venue']=fresh['venue']
         row['stock_quote_exchange_at']=fresh['exchange_at']
@@ -194,18 +273,39 @@ def _annotate_position(row,quotes,now,connected):
         except (TypeError,ValueError,OverflowError):
             pass
     else:
-        row['stock_quote_status']='STALE' if last else 'NOT_RECEIVED'
-        row['stock_quote_source']='NO_FRESH_VERIFIED_0B'
+        # A quiet stock is not a dead connection. Present the last verified
+        # exchange/official REST price with provenance, NEVER as fresh WS.
         row['stock_quote_expires_ms']=0
-        if last:
+        if rest_price is not None and rest_age is not None and rest_age<=REST_DISPLAY_FRESH_SECONDS:
+            row['stock_quote_status']='REST_FRESH'
+            row['stock_quote_source']='KIWOOM_REST_KA10001'
+            row['stock_quote_display_source']='REST_KA10001'
+            row['stock_quote_display_price']=rest_price
+            row['stock_quote_received_at']=rest['received_at']
+            row['stock_quote_rest_age_sec']=round(rest_age,1)
+        elif last is not None:
+            row['stock_quote_status']='LAST_0B'
+            row['stock_quote_source']='KIWOOM_REAL_0B_LAST'
+            row['stock_quote_display_source']='LAST_0B'
+            row['stock_quote_display_price']=last['price']
             row['stock_quote_venue']=last['venue']
             row['stock_quote_exchange_at']=last['exchange_at']
             row['stock_quote_received_at']=last['received_at']
             row['stock_quote_last_observed_price']=last['price']
+        elif rest_price is not None:
+            row['stock_quote_status']='LAST_REST'
+            row['stock_quote_source']='KIWOOM_REST_KA10001_LAST'
+            row['stock_quote_display_source']='LAST_REST'
+            row['stock_quote_display_price']=rest_price
+            row['stock_quote_received_at']=rest['received_at']
+            row['stock_quote_rest_age_sec']=round(rest_age,1) if rest_age is not None else None
+        else:
+            row['stock_quote_status']='NOT_RECEIVED'
+            row['stock_quote_source']='NO_VERIFIED_PRICE'
     return row
 
 
-def _mark_ledger(ledger,quotes,now,connected,visited):
+def _mark_ledger(ledger,quotes,now,connected,visited,rest_cache=None,needed_codes=None):
     if not isinstance(ledger,dict):return
     token=id(ledger)
     if token in visited:return
@@ -213,15 +313,15 @@ def _mark_ledger(ledger,quotes,now,connected,visited):
     rows=ledger.get('positions')
     if isinstance(rows,list):
         for row in rows:
-            _annotate_position(row,quotes,now,connected)
+            _annotate_position(row,quotes,now,connected,rest_cache,needed_codes)
     for key in ('ma_subledger','ma','gmo','wallet','wallets','trend'):
         nested=ledger.get(key)
         if isinstance(nested,dict):
             if key=='wallets':
                 for val in nested.values():
-                    _mark_ledger(val,quotes,now,connected,visited)
+                    _mark_ledger(val,quotes,now,connected,visited,rest_cache,needed_codes)
             else:
-                _mark_ledger(nested,quotes,now,connected,visited)
+                _mark_ledger(nested,quotes,now,connected,visited,rest_cache,needed_codes)
 
 
 def annotate_stock_packet(packet,runner,now=None):
@@ -232,20 +332,24 @@ def annotate_stock_packet(packet,runner,now=None):
     stock=packet.get('stock')
     if not isinstance(stock,dict):return packet
     connected=bool(getattr(runner,'_confirmed_ws_session',False))
+    _ensure_rest_lookup_started(runner)
     lock=getattr(runner,'_v066_quote_lock',None)
     if lock is not None:
         with lock:
             quotes=dict(getattr(runner,'_v066_quote_by_venue',{}) or {})
+            rest_cache=dict(getattr(runner,'_v072_rest_quotes',{}) or {})
+            rest_errors=dict(getattr(runner,'_v072_rest_errors',{}) or {})
     else:
-        quotes={}
+        quotes={};rest_cache={};rest_errors={}
     visited=set()
+    needed=set()
     observed={}
     for strategy in ('at','ma','gmo','cw','close','trend'):
         item=stock.get(strategy)
         if not isinstance(item,dict):continue
         ledger=item.get('ledger')
         if not isinstance(ledger,dict):continue
-        _mark_ledger(ledger,quotes,now,connected,visited)
+        _mark_ledger(ledger,quotes,now,connected,visited,rest_cache,needed)
         # Record a non-invasive strategy-level diagnostics summary.
         codes=[]
         for pos in ledger.get('positions') or []:
@@ -257,8 +361,15 @@ def annotate_stock_packet(packet,runner,now=None):
             'asof':now.isoformat(timespec='seconds'),
             'only_ui':True}
         observed[strategy]=item['display_quote_diagnostic_v066']
+    if lock is not None and hasattr(runner,'_v072_quote_requested'):
+        with lock:
+            runner._v072_quote_requested=set(needed)
+    subscribed=set(str(s).replace('_NX','') for s in getattr(runner,'subscriptions',[]) or [])
     stock['display_quote_diagnostic_v066']={
         'connected':connected,'captured_stock_venue_pairs':len(quotes),
+        'held_symbols':len(needed),'requested_but_unsubscribed':sorted(needed-subscribed),
+        'official_rest_cached':len(rest_cache),
+        'official_rest_errors':{k:rest_errors[k] for k in sorted(rest_errors)[:10]},
         'strategies':observed,'ttl_seconds':FRESH_SECONDS,
         'source':'REAL_0B_NOT_LEDGER_MARK',
         'scope':'DISPLAY_ONLY_NO_ORDERS_NO_LEDGER_WRITES'}
