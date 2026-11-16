@@ -212,7 +212,7 @@ def _v074_coin_tick_worker(runner):
             tasks.task_done()
 
 
-def _record_v074_ma_observation(symbol,frame,bar_end,reason):
+def _record_v074_ma_observation(symbol,frame,bar_end,reason,details=None):
     """No broker calls or SQLite on the 5-second decision thread."""
     try:
         import market_trend_runtime_v043 as trend
@@ -220,7 +220,7 @@ def _record_v074_ma_observation(symbol,frame,bar_end,reason):
         rt=getattr(core,"_RUNTIME",None) if core else None
         co=getattr(rt,"market_trend",None) if rt else None
         if co is not None:
-            co.record_ma_decision('coin',symbol,frame,bar_end,reason)
+            co.record_ma_decision('coin',symbol,frame,bar_end,reason,details)
     except (AttributeError,ImportError,TypeError,ValueError):
         pass
 
@@ -271,7 +271,10 @@ def _new_up_candidate(self,book,now):
         if verdict.get('kind')!='REVERSAL_UP':
             reason=str(verdict.get('reason') or 'NO_MATCH')
             _record_v074_ma_observation(symbol,tf,end.isoformat(),
-                                        'UP_RULE_'+reason)
+                                        'UP_RULE_'+reason,
+                                        {k:verdict[k] for k in (
+                                            'ma_120_delta','ma_60_delta',
+                                            'ma120_down_tolerance') if k in verdict})
             continue
         limit=floor_tick(ask,tick)
         if limit<ask:limit+=tick
@@ -300,7 +303,10 @@ def _new_up_candidate(self,book,now):
             if accepted:
                 self._ma_v067_up_keys.add(key)
                 _record_v074_ma_observation(symbol,tf,end.isoformat(),
-                                            'UP_CANDIDATE_REGISTERED_NATIVE_FILL_PENDING')
+                                            'UP_CANDIDATE_REGISTERED_NATIVE_FILL_PENDING',
+                                            {'trade_price':str(price),
+                                             'ask':str(ask),
+                                             'ma120_delta':verdict.get('ma_120_delta')})
             else:
                 _record_v074_ma_observation(symbol,tf,end.isoformat(),
                                             'UP_CANDIDATE_REJECTED_BY_NATIVE_WALLET')
