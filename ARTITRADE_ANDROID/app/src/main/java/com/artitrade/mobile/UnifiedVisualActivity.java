@@ -3705,7 +3705,20 @@ public final class UnifiedVisualActivity extends Activity {
                 LinearLayout.LayoutParams expandLp=new LinearLayout.LayoutParams(-1,dp(39));
                 expandLp.setMargins(0,dp(6),0,dp(2));
                 panel.addView(detail,expandLp);
-                if(opened)renderExecutionEvidenceStrip(panel,item);
+                if(opened){
+                    Button refreshEvidence=button("열어둔 거래의 근거 다시 조회",false,()->{
+                        // No timer or unseen row prefetch: explicit refresh
+                        // rereads ONLY this position's original research DBs.
+                        tradeEvidenceCache.remove(detailKey);
+                        queryTradeHistoryEvidence(
+                            java.util.Collections.singletonList(fill));
+                        render();
+                    });
+                    refreshEvidence.setTextSize(11);
+                    panel.addView(refreshEvidence,
+                        new LinearLayout.LayoutParams(-1,dp(34)));
+                    renderExecutionEvidenceStrip(panel,item);
+                }
             }
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
             lp.setMargins(0,0,0,dp(6));content.addView(panel,lp);
