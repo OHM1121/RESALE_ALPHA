@@ -235,10 +235,32 @@ def put_pref(name,entries):
     run("adb","shell","run-as",PACKAGE,"tee",
         "shared_prefs/"+name+".xml",input_data=body,timeout=20)
 
+def _launcher_not_responding(tree):
+    # Android 15 system image may cold-boot with Quickstep/Pixel Launcher ANR
+    # before ARTITRADE draws its first frame. Never waive an ARTITRADE crash.
+    return any(contains(tree,name+" isn't responding")
+               for name in ("Quickstep","Pixel Launcher","Launcher3"))
+
 def start_app(stage):
     adb("shell","am","start","-W","-n",PACKAGE+"/"+ACTIVITY,timeout=60)
-    time.sleep(2.8)
+    time.sleep(3.0)
     tree=dump(stage+"_home")
+    for retry in range(2):
+        if contains(tree,"ARTITRADE") or not _launcher_not_responding(tree):
+            break
+        print("ANDROID15_SYSTEM_LAUNCHER_ANR_RETRY",retry+1,
+              str(describe(tree)[:15]),flush=True)
+        # Close ONLY the system HOME process. Never force-stop ARTITRADE or
+        # suppress a startup exception; verify_no_fatal still runs afterwards.
+        adb("shell","input","keyevent","KEYCODE_BACK",check=False)
+        for home_pkg in ("com.android.launcher3",
+                         "com.google.android.apps.nexuslauncher"):
+            adb("shell","am","force-stop",home_pkg,check=False)
+        time.sleep(5)
+        adb("shell","am","start","-W","-n",
+            PACKAGE+"/"+ACTIVITY,timeout=60)
+        time.sleep(4)
+        tree=dump(stage+"_home_launcher_retry_"+str(retry+1))
     if not contains(tree,"ARTITRADE"):
         raise AssertionError("No ARTITRADE initial frame; "+str(describe(tree)[:60]))
     return tree
