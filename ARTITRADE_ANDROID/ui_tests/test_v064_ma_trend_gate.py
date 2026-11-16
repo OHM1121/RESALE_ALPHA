@@ -59,6 +59,9 @@ class TrendTimeGate(unittest.TestCase):
    def halt_market(self,*args):raise AssertionError('PAPER must not send actual orders')
   with TemporaryDirectory() as path:
    co=runtime.Coordinator(FakeRt(path))
+   # Test fixture has no original parent SQLite files. A real missing
+   # authoritative ledger remains fail-closed, never silently treated as free.
+   co.standalone_wallet.legacy_owned=lambda market,symbol:False
    co._candidates['coin']={'KRW-BTC':('CRYPTO','KRW-BTC')}
    co._closed_series=lambda market,code,frame,bar_end:(
        [{'close':100.0} for _ in range(21)] if frame=='5m' else [])
