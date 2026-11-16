@@ -62,8 +62,15 @@ def _exit(row,executions):
 
 
 def _actual(root,market,strategy,relative,problems):
+    """Identify separately verified partial SELLs and the original final SELL.
+
+    A position may remain OPEN after its first 10/30/40% realized sale.
+    Each confirmed SELL event starts an independent forward-price window;
+    no sale event and no public post-sale print means NO observable peak.
+    Existing final-exit case identifiers remain byte-for-byte compatible.
+    """
     positions,error=_rows(root,relative,"positions",
-                          "status IN ('CLOSED','SOLD','DONE','FILLED_EXIT')",order="id")
+        "status IN ('OPEN','CLOSED','SOLD','DONE','FILLED_EXIT')",order="id")
     if error:problems.append(error);return []
     executions,error=_rows(root,relative,"executions",order="id")
     if error:problems.append(error)
@@ -74,39 +81,61 @@ def _actual(root,market,strategy,relative,problems):
     output=[]
     for p in positions:
         state=str(p.get("status") or "").upper()
-        if state not in ("CLOSED","SOLD","DONE","FILLED_EXIT"):continue
+        if state not in ("OPEN","CLOSED","SOLD","DONE","FILLED_EXIT"):
+            continue
         symbol=_symbol(p,market)
         if not symbol:continue
         tf=str(p.get("tf") or p.get("frame") or "day")
         tradeid=str(p.get("id") or "")
         own=by_position.get(tradeid,[])
-        # Parent MARKET_TREND fills are represented by the separate trend
-        # journal and must not be double-counted as original strategy buys.
         if any("MARKET_TREND" in str(x.get("reason") or "") for x in own):
-            continue
-        exit_at=_exit(p,own)
-        if exit_at is None:
-            # A CLOSED status with no SELL confirmation is NOT a sale.
-            problems.append("SELL_TIME_UNVERIFIED:"+relative+":"+tradeid)
             continue
         price=(p.get("entry_price") or p.get("entry") or
                p.get("buy_price") or p.get("avg_buy_price"))
         if finite_positive(price) is None:continue
         original=str(p.get("ref_ts") or p.get("ref_at") or
                      p.get("entry_ts") or p.get("entry_at") or "")
-        # Include original entry stamp so a reset/reused ID cannot collide.
         source=relative+":position:"+tradeid+":"+original
         modes={str(x.get("fill_method") or "").upper() for x in own
-               if x.get("side")=="BUY"}
+               if str(x.get("side") or "").upper()=="BUY"}
         mode="LIVE" if any("LIVE" in x or "BROKER" in x for x in modes) else (
              "ORIGINAL_PAPER_FILL" if modes else "UNVERIFIED_FILLED_LEDGER")
-        output.append(dict(market=market,strategy=strategy,frame=tf,
-            symbol=symbol,cohort="ACTUAL_FILLED",execution_mode=mode,
-            entry_price=price,exit_at=exit_at,source_ref=source,
-            exit_evidence="CONFIRMED",
-            target_price=p.get("target"),notes="Source-confirmed final SELL"))
+        closed=state in ("CLOSED","SOLD","DONE","FILLED_EXIT")
+        sells=[]
+        for row in own:
+            if str(row.get("side") or "").upper()!="SELL":
+                continue
+            when=parsed_at(row.get("ts") or row.get("at") or row.get("time"))
+            if when is not None:
+                sells.append((when,row))
+        sells.sort(key=lambda pair:(pair[0],str(pair[1].get("id") or "")))
+        final_id=None
+        if closed:
+            exit_at=_exit(p,own)
+            if exit_at is None:
+                problems.append("SELL_TIME_UNVERIFIED:"+relative+":"+tradeid)
+                continue
+            if sells:
+                final_id=str(sells[-1][1].get("id") or "")
+            output.append(dict(market=market,strategy=strategy,frame=tf,
+                symbol=symbol,cohort="ACTUAL_FILLED",execution_mode=mode,
+                entry_price=price,exit_at=exit_at,source_ref=source,
+                exit_evidence="CONFIRMED",
+                target_price=p.get("target"),notes="Source-confirmed final SELL"))
+        # OPEN means ALL actually executed SELLs are partial. CLOSED means
+        # every SELL EXCEPT the confirmed final event is a partial exit.
+        for when,sale in sells:
+            fillid=str(sale.get("id") or "")
+            if (not fillid or fillid==final_id or
+                finite_positive(sale.get("qty")) is None):
+                continue
+            output.append(dict(market=market,strategy=strategy,frame=tf,
+                symbol=symbol,cohort="ACTUAL_FILLED",execution_mode=mode,
+                entry_price=price,exit_at=when.isoformat(),
+                source_ref=relative+":partialfill:"+tradeid+":"+fillid,
+                exit_evidence="CONFIRMED",target_price=p.get("target"),
+                notes="Confirmed partial SELL; original position can remain OPEN"))
     return output
-
 
 def _shadows(root,market,strategy,relative,problems,now):
     table="stock_shadow_trials" if market=="stock" else "coin_shadow_trials"
