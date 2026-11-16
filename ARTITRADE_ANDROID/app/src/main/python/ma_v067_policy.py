@@ -115,9 +115,17 @@ def upward_transition_on_forming(prior_closed,price,seconds_before_close):
         return {'kind':None,'reason':'INVALID_SMA_DATA'}
     qualifies=lambda m:ma120_down_for_entry(m) and all(m[k]['delta']>0 for k in SHORT)
     if not qualifies(cur):
-        return {'kind':None,'reason':'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN'}
+        # Observation-only: show exact slope and tolerance in skipped-entry
+        # research; neither change the actual order time nor create a trade.
+        return {'kind':None,'reason':'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN',
+                'ma_120_delta':str(cur[120]['delta']),
+                'ma_60_delta':str(cur[60]['delta']),
+                'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE)}
     if qualifies(prev):
-        return {'kind':None,'reason':'UPWARD_ALIGNMENT_ALREADY_EXISTED'}
+        return {'kind':None,'reason':'UPWARD_ALIGNMENT_ALREADY_EXISTED',
+                'ma_120_delta':str(cur[120]['delta']),
+                'ma_60_delta':str(cur[60]['delta']),
+                'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE)}
     return {'kind':'REVERSAL_UP','reason':'FIRST_FORMING_SHORT4_UP_AT_MINUS_5',
             'ma_120_delta':str(cur[120]['delta'])}
 
