@@ -62,7 +62,8 @@ class PriceDisplayV072(unittest.TestCase):
         row=self.annotate()
         self.assertEqual(row['stock_quote_status'],'LAST_LEDGER')
         self.assertEqual(row['stock_quote_source'],'STORED_LEDGER_MARK_NOT_LIVE')
-        self.assertNotIn('stock_quote_display_price',row)
+        self.assertEqual(row['stock_quote_display_price'],65000)
+        self.assertNotEqual(row['stock_quote_display_price'],200000)
 
     def test_rest_worker_calls_verified_ka10001_and_writes_only_ui_cache(self):
         runner=self.runner
