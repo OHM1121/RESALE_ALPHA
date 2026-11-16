@@ -372,6 +372,9 @@ class Coordinator:
             # property; do not permanently add every past candidate to base.
         except Exception as exc:
             self._last_fetch_error[market]="RANK:"+type(exc).__name__
+            self._record_entry_block(market,'__ENGINE__','all',
+                dt.datetime.now(mt.KST).date().isoformat(),
+                'OPERATIONAL_RANK_'+type(exc).__name__)
             if time.monotonic()-self._last_rank[market]>600:
                 with self.lock:self._candidates[market]={}
 
@@ -431,9 +434,16 @@ class Coordinator:
                     bars=self._raw_history(market,code,frame)
                     if len(bars)>=21:
                         with self.lock:self._history[key]=bars
-                    else:self._last_fetch_error[market]="HISTORY_SHORT:"+str(len(bars))
+                    else:
+                        self._last_fetch_error[market]="HISTORY_SHORT:"+str(len(bars))
+                        self._record_entry_block(market,code,frame,
+                            dt.datetime.now(mt.KST).date().isoformat(),
+                            'OPERATIONAL_HISTORY_SHORT_'+str(len(bars)))
                 except Exception as exc:
                     self._last_fetch_error[market]="HISTORY:"+type(exc).__name__
+                    self._record_entry_block(market,code,frame,
+                        dt.datetime.now(mt.KST).date().isoformat(),
+                        'OPERATIONAL_HISTORY_'+type(exc).__name__)
                 finally:
                     self._record_latency(market,"history",started)
                 self.stop_event.wait(.20 if market=="coin" else .35)
@@ -661,12 +671,18 @@ class Coordinator:
             barid=finish.isoformat()
             if self._evaluation_window_passed(now,finish,frame,market):
                 if self._sealed_watch.get((market,frame))!=barid:
+                    gate=(market,frame,barid)
+                    if gate not in self._v074_window_seen:
+                        self._record_entry_block(market,'__ENGINE__',frame,barid,
+                            'OPERATIONAL_SUBMIT_SECOND_NOT_EVALUATED')
+                        self._v074_window_seen.add(gate)
                     self._sealed_watch[(market,frame)]=barid
                     self.watch.expire(market,frame,barid)
                 continue
             check=mt.live_rsi_check_due(now,finish,frame,market)
             submit=mt.preclose_due(now,finish,frame,market)
             if check or submit:
+                if submit:self._v074_window_seen.add((market,frame,barid))
                 scheduled.append((frame,finish,check,submit))
         with self.lock:
             perf=self._performance[market]
@@ -905,6 +921,9 @@ class Coordinator:
                 finally:self._record_latency(market,"holds",started)
             except Exception as exc:
                 self._last_fetch_error[market]="COORD:"+type(exc).__name__
+                self._record_entry_block(market,'__ENGINE__','all',
+                    dt.datetime.now(mt.KST).date().isoformat(),
+                    'OPERATIONAL_COORD_'+type(exc).__name__)
                 # A trend-only failure must not pause native AT/MA entries.
             self.stop_event.wait(.45)
 
@@ -921,6 +940,9 @@ class Coordinator:
                 self._preclose_candidates(market,dt.datetime.now(mt.KST))
             except Exception as exc:
                 self._last_fetch_error[market]='PRECLOSE:'+type(exc).__name__
+                self._record_entry_block(market,'__ENGINE__','all',
+                    dt.datetime.now(mt.KST).date().isoformat(),
+                    'OPERATIONAL_PRECLOSE_'+type(exc).__name__)
             finally:
                 self._record_latency(market,'preclose',started)
             self.stop_event.wait(.20)
@@ -962,6 +984,8 @@ class Coordinator:
                         rows=self._closed_series(market,code,frame,finish)
                         if not rows:
                             self._entry_block_counts[market]['WATCH_HISTORY_MISSING']+=1
+                            self._record_entry_block(market,code,frame,barid,
+                                'OPERATIONAL_WATCH_HISTORY_MISSING')
                             self.watch.discard(market,code,frame)
                             continue
                         rsi=mt.rsi20([x['close'] for x in rows],price)
@@ -972,11 +996,17 @@ class Coordinator:
                         if rsi<=40:
                             self.journal.record_watch(market,code,frame,
                                 price,rsi,barid,after_trigger=True)
+                        if rsi<=30:
+                            self._record_entry_block(market,code,frame,barid,
+                                'RSI30_OBSERVED_NOT_AN_ORDER',rsi)
                         armed=self.journal.latch(market,code,frame).armed if rsi<=35 else False
                         self.watch.observe(market,code,frame,barid,rsi,armed,
                             observed_at=time.time(),price=price)
             except Exception as exc:
                 self._last_fetch_error[market]='WATCH:'+type(exc).__name__
+                self._record_entry_block(market,'__ENGINE__','all',
+                    dt.datetime.now(mt.KST).date().isoformat(),
+                    'OPERATIONAL_WATCH_'+type(exc).__name__)
             self.stop_event.wait(5)
 
     def _book_evidence_loop(self,market):
@@ -1042,6 +1072,8 @@ class Coordinator:
         for worker in list(self.threads):
             if worker.is_alive() and worker is not threading.current_thread():
                 worker.join(timeout=0.5)
+        if self._v074_audit_thread.is_alive():
+            self._v074_audit_thread.join(timeout=1.0)
 
     def snapshot(self,include_performance=False):
         """Keep high-frequency telemetry out of the large local ledger packet.
