@@ -29,7 +29,12 @@ jobs:
         run: |
           git diff --check
           git diff --stat
-          git diff --name-only | grep -v -E '^(ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_[0-9][0-9]\\.txt|ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge\\.java)$' && exit 1 || true
+          while IFS= read -r changed; do
+            case "$changed" in
+              ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_??.txt|ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java) ;;
+              *) echo "Unexpected modified file: $changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only)
       - name: Commit pinned restoration of original GMO behavior
         run: |
           git config user.name 'artitrade-ci'
