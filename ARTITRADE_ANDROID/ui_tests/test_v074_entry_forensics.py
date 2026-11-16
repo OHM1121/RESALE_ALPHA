@@ -43,7 +43,9 @@ class V074ForensicTests(unittest.TestCase):
             self.assertTrue(mt.live_rsi_check_due(at,finish,'5m',market))
             self.assertTrue(mt.preclose_due(at+dt.timedelta(seconds=3),
                                              finish,'5m',market))
-            self.assertFalse(mt.preclose_due(at+dt.timedelta(seconds=4),
+            self.assertTrue(mt.preclose_due(at+dt.timedelta(seconds=4),
+                                             finish,'5m',market))
+            self.assertFalse(mt.preclose_due(at+dt.timedelta(seconds=9),
                                               finish,'5m',market))
 
     def test_research_and_error_preserve_distinct_no_order_reasons_after_restart(self):
