@@ -19,7 +19,7 @@ def contents(archive):
   return {n:z.read(n) for n in z.namelist()}
 def main():
  before=decode([p.read_text(encoding='ascii') for p in chunks()])
- oldtexts=[subprocess.check_output(['git','show',REFERENCE+':'+str(p.relative_to(ROOT))]).decode('ascii') for p in chunks()]
+ oldtexts=[subprocess.check_output(['git','show',REFERENCE+':ARTITRADE_ANDROID/'+str(p.relative_to(ROOT))]).decode('ascii') for p in chunks()]
  old=decode(oldtexts)
  before_hash=hashlib.sha256(before).hexdigest()
  old_hash=hashlib.sha256(old).hexdigest()
