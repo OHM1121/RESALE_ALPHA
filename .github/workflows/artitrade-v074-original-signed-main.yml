@@ -1,4 +1,4 @@
-name: ARTITRADE v0.7.74 Original Signed GMO Exit and Full-Market Feed Repair
+name: ARTITRADE v0.7.74 Original Signed Historical RSI and Coin MA Entry Audit
 on:
   push:
     branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
@@ -15,13 +15,13 @@ jobs:
     timeout-minutes: 65
     env:
       CI: 'true'
-      SOURCE: 'aba43c7d642393acd53bac5d1c6ccf2f911095a1'
+      SOURCE: 'fe156ed391e0a68d4efbb0f56581156fce98e8b2'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.74_20261116'
       TAG: 'ARTITRADE-v0.7.74-20261116'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 'aba43c7d642393acd53bac5d1c6ccf2f911095a1'
+          ref: 'fe156ed391e0a68d4efbb0f56581156fce98e8b2'
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
