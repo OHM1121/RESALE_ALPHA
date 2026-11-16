@@ -2373,12 +2373,18 @@ public final class UnifiedVisualActivity extends Activity {
             double pnl=tradePnL(p,"positions");
             double rate=tradeReturnPct(p,"positions",pnl);
             String detail="매수가 "+formatMaybeMoney(p,"entry_price","entry","avg_buy_price")+
-                "    현재가 "+formatMaybeMoney(p,"last_price","mark","current_price")+
+                "    현재가 "+displayPositionMark(p)+
                 "    수량 "+formatMaybeNumber(p,"qty","quantity","holding_qty");
             TextView prices=text(detail,12);
             prices.setTextColor(Color.rgb(168,193,219));
             prices.setMaxLines(2);
             tile.addView(prices);
+            if(isStockPosition(p)){
+                TextView quoteProof=text(stockQuoteCaption(p),10);
+                quoteProof.setTextColor(PremiumUi.MUTED);
+                quoteProof.setMaxLines(2);
+                tile.addView(quoteProof);
+            }
             TextView result=text("평가손익 "+
                 (finite(pnl)?WonFormat.signed(pnl):"—")+
                 (finite(rate)?" ("+signedPct(rate)+")":""),14);
@@ -2737,7 +2743,8 @@ public final class UnifiedVisualActivity extends Activity {
         if(!hold.isEmpty())return "보유기간 / 매도 판단 · "+hold;
         String state=r.optString("exit_scenario",r.optString("next_exit_scenario",r.optString("sell_scenario",""))).trim();
         if(!state.isEmpty()&&!state.equalsIgnoreCase("null"))return "가까운 매도 조건 · "+state;
-        double now=usefulNumber(r,"last_price","current_price","market_price","price");
+        double now=isStockPosition(r)?positionMark(r):
+            usefulNumber(r,"last_price","current_price","market_price","price");
         double first=usefulNumber(r,"first_target","target","target_price","first_exit_price");
         double entry=usefulNumber(r,"entry_price","buy_price","avg_buy_price");
         if(finite(now)&&finite(first)&&first>0){
@@ -2754,8 +2761,8 @@ public final class UnifiedVisualActivity extends Activity {
                 case "a":return "보유 "+number(usefulNumber(r,"qty","quantity","holding_qty"));
                 case "b":return "매수가 "+formatMaybeMoney(r,"entry_price","avg_buy_price","buy_price");
                 case "c":
-                    double last=num(r,"last_price","mark","current_price","market_price","price");
-                    return finite(last)?"현재가 "+money(last):"현재가 시세 미수신";
+                    double last=positionMark(r);
+                    return finite(last)?"현재가 "+money(last):"현재가 실시간 미수신";
                 default:return "1차 목표 "+formatMaybeMoney(r,"first_target","target","target_price");
             }
         }
@@ -2834,11 +2841,47 @@ public final class UnifiedVisualActivity extends Activity {
     private double positionBuyPrice(JSONObject r){
         return usefulNumber(r,"entry_price","entry","avg_buy_price","buy_price");
     }
+    private boolean isStockPosition(JSONObject r){
+        String code=r.optString("code",r.optString("symbol","")).trim();
+        return code.matches("A?[0-9]{6}");
+    }
+    private boolean stockQuoteCurrent(JSONObject r){
+        if(!r.optBoolean("stock_quote_checked_v066",false))return false;
+        if(!"FRESH".equals(r.optString("stock_quote_status","")))return false;
+        long expiry=r.optLong("stock_quote_expires_ms",0L);
+        long now=System.currentTimeMillis();
+        return expiry>0 && now<=expiry && now>=expiry-12000L;
+    }
+    private String stockQuoteCaption(JSONObject r){
+        if(!isStockPosition(r))return "";
+        if(!r.optBoolean("stock_quote_checked_v066",false))
+            return "개별 종목 실시간 시세 확인 불가 · 원장 저장가격을 현재가로 사용하지 않음";
+        String venue=r.optString("stock_quote_venue","");
+        String at=r.optString("stock_quote_exchange_at","");
+        String moment=at.length()>=19?at.substring(0,10)+" "+at.substring(11,19):"수신시각 미확인";
+        if(stockQuoteCurrent(r))
+            return "키움 "+venue+" 실시간 0B 체결 · "+moment+" KST";
+        return "현재가 실시간 확인 불가 · 마지막 "+venue+" 체결 "+moment+
+            " · 원장 저장가격과 구분";
+    }
+    private String displayPositionMark(JSONObject r){
+        double n=positionMark(r);
+        return finite(n)&&n>0?money(n):"실시간 미수신";
+    }
     private double positionMark(JSONObject r){
+        if(isStockPosition(r)){
+            if(!stockQuoteCurrent(r))return Double.NaN;
+            return usefulNumber(r,"last_price");
+        }
         return usefulNumber(r,"last_price","mark","current_price","market_price");
     }
     private double tradePnL(JSONObject r,String kind){
         if("positions".equals(kind)){
+            if(isStockPosition(r)){
+                if(!finite(positionMark(r)))return Double.NaN;
+                double liveEstimate=usefulNumber(r,"stock_quote_unrealized_estimate");
+                if(finite(liveEstimate))return liveEstimate;
+            }
             double value=usefulNumber(r,"net_pnl","unrealized_pnl","paper_pnl","pnl");
             if(finite(value))return value;
             double entry=positionBuyPrice(r),mark=positionMark(r);
@@ -3148,13 +3191,20 @@ public final class UnifiedVisualActivity extends Activity {
             int netWidth=Math.max(92,Math.min(142,(screenDp-58)*39/100));
             top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
             panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
+            if("positions".equals(kind)&&isStockPosition(r)){
+                TextView quoteProof=text(stockQuoteCaption(r),10);
+                quoteProof.setTextColor(PremiumUi.MUTED);
+                quoteProof.setPadding(dp(3),0,0,dp(2));
+                quoteProof.setMaxLines(2);
+                panel.addView(quoteProof);
+            }
 
             LinearLayout figures=new LinearLayout(this);
             figures.setOrientation(LinearLayout.HORIZONTAL);
             figures.setPadding(0,dp(7),0,dp(3));
             if("positions".equals(kind)){
                 tradeMetricTile(figures,"매수가",finite(price)?money(price):"—",true);
-                tradeMetricTile(figures,"현재가",finite(current)&&current>0?money(current):"미수신",true);
+                tradeMetricTile(figures,"현재가",finite(current)&&current>0?money(current):"실시간 미수신",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
                 tradeMetricTile(figures,"1차 목표",formatMaybeMoney(r,"first_target","target","target_price"),false);
             }else if("pending".equals(kind)){
