@@ -22,6 +22,12 @@ PRIORITY={"day":4,"60m":3,"30m":2,"5m":1}
 RSI_PERIOD=20
 RSI_ARM=30.0
 RSI_WATCH=40.0
+# Observation is deliberately earlier than execution; neither slot creates
+# a broker fill without a separately fresh 0B trade, 0D/book and native wallet.
+TREND_PRECHECK_OPEN_SEC=22.0
+TREND_PRECHECK_END_SEC=12.5
+TREND_BUY_OPEN_SEC=12.0
+TREND_BUY_END_SEC=7.0
 
 
 def _finite(value):
@@ -130,28 +136,34 @@ def _krx_session_close(now):
                        second=0,microsecond=0)
 
 
-def preclose_due(now,bar_end,frame,market):
-    """Select exactly the intended order-submission second on an aware clock."""
-    now=_as_kst(now);finish=_as_kst(bar_end)
-    target=finish-dt.timedelta(seconds=12)
+def _entry_reference_close(now,bar_end,frame,market):
+    """Keep the KRX session-end 10-minute exclusion and special chronology."""
+    finish=_as_kst(bar_end)
     if market=="stock":
-        session_close=_krx_session_close(now)
+        session_close=_krx_session_close(_as_kst(now))
         if finish==session_close and frame in ("30m","60m","day"):
-            target=session_close-dt.timedelta(minutes=10,seconds=12)
-        # Never submit a regular-market buy inside the last ten minutes.
-        if now>=session_close-dt.timedelta(minutes=10):return False
-    return target<=now<target+dt.timedelta(seconds=1)
+            return session_close-dt.timedelta(minutes=10)
+    return finish
+
+
+def preclose_due(now,bar_end,frame,market):
+    """Retry across five genuine seconds; keep original -12s first chance."""
+    now=_as_kst(now)
+    finish=_entry_reference_close(now,bar_end,frame,market)
+    if market=="stock" and now>=_krx_session_close(now)-dt.timedelta(minutes=10):
+        return False
+    remain=(finish-now).total_seconds()
+    return TREND_BUY_END_SEC<=remain<=TREND_BUY_OPEN_SEC
 
 
 def live_rsi_check_due(now,bar_end,frame,market):
-    now=_as_kst(now);finish=_as_kst(bar_end)
-    target=finish-dt.timedelta(seconds=15)
-    if market=="stock":
-        session_close=_krx_session_close(now)
-        if finish==session_close and frame in ("30m","60m","day"):
-            target=session_close-dt.timedelta(minutes=10,seconds=15)
-    return target<=now<target+dt.timedelta(seconds=1)
-
+    """Precheck over 22..12.5 seconds before the same real candle cutoff."""
+    now=_as_kst(now)
+    finish=_entry_reference_close(now,bar_end,frame,market)
+    if market=="stock" and now>=_krx_session_close(now)-dt.timedelta(minutes=10):
+        return False
+    remain=(finish-now).total_seconds()
+    return TREND_PRECHECK_END_SEC<=remain<=TREND_PRECHECK_OPEN_SEC
 
 def sell_bar3_due(now,bar_end):
     t=_as_kst(now);end=_as_kst(bar_end)
