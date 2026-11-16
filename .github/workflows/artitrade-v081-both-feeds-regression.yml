@@ -1,0 +1,63 @@
+name: ARTITRADE v0.7.81 authentic stock/coin feed preloading regression
+on:
+  push:
+    branches: [ artitrade-v081-preload-both-feeds-20261116 ]
+    paths:
+      - '.github/workflows/artitrade-v081-both-feeds-regression.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_v043.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v080_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v081_*.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java'
+      - 'ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v077_ma_watchdog_krx_session.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v074_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v069_*.py'
+      - 'ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/**'
+      - 'ARTITRADE_ANDROID/app/build.gradle'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v079_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v076_export_ma_diagnostics.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verified-source-ma-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify original signed-app module archive and verify early single Upbit WS and both markets preload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          mkdir -p "$RUNNER_TEMP/artitrade-core"
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          java=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          assert ('CORE_SHA256="'+hashlib.sha256(raw).hexdigest()+'"') in java
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              assert z.testzip() is None
+              z.extractall('/tmp/artitrade-v081-verified-core')
+          PY
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v081-verified-core"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v081_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v080_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v079_*.py' -v
+          for pat in 'test_v077_*.py' 'test_v076_*.py' 'test_android_ledger_backup.py' 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v051_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
