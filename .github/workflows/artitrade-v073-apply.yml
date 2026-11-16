@@ -1,5 +1,6 @@
 name: ARTITRADE v073 guarded execution fix and system regression
 on:
+  workflow_dispatch:
   push:
     branches: [ fix-artitrade-v073-execution-feed-gmo-ma-trend-20261116 ]
     paths: [ '.github/workflows/artitrade-v073-apply.yml' ]
