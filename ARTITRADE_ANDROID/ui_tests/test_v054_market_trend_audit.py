@@ -135,6 +135,9 @@ class TrendAudit(unittest.TestCase):
         co._prechecked[('coin','KRW-BTC','5m',finish.isoformat())]=25
         co.standalone_wallet.buy=lambda *a,**kw: (_ for _ in ()).throw(
                                                   RuntimeError('UNKNOWN_BROKER_OUTCOME'))
+        # The synthetic historical replay clock must not be compared with
+        # live wall-clock time; production still uses the real clock.
+        co._decision_clock=lambda:now
         co._preclose_candidates('coin',now)
         self.assertEqual(co._virtual,{})
         signals=[r for r in co.journal.events_recent(20)
