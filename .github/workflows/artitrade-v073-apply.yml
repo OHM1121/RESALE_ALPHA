@@ -1,0 +1,58 @@
+name: ARTITRADE v073 guarded execution fix and system regression
+on:
+  push:
+    branches: [ fix-artitrade-v073-execution-feed-gmo-ma-trend-20261116 ]
+    paths: [ '.github/workflows/artitrade-v073-apply.yml' ]
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v073-apply
+  cancel-in-progress: false
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch signed-core GMO service callback and held-priority dispatch
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v073_gmo_held_exit.py
+      - name: Compile all Python and prepare pinned embedded engine tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          python3 - <<'PY'
+          import base64,io,zipfile,hashlib
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          dest=Path('/tmp/artitrade-v073-core');dest.mkdir(exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(data)) as z:z.extractall(dest)
+          assert 'CORE_SHA256="'+hashlib.sha256(data).hexdigest()+'"' in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          PY
+      - name: Verify real GMO callback, quote prefetch, MA/Trend signal and original rules
+        shell: bash
+        env:
+          PYTHONPATH: '/tmp/artitrade-v073-core:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          set -euo pipefail
+          for pat in 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v061_*.py' 'test_v059_*.py' 'test_v054_*.py' 'test_v051_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+          git diff --check
+      - name: Persist verified core and original-package monotonic update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name artitrade-ci
+          git config user.email artitrade-ci@users.noreply.github.com
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v073): restore held GMO exits, priority feed, trend pending and quote prefetch'
+          git push origin HEAD:fix-artitrade-v073-execution-feed-gmo-ma-trend-20261116
