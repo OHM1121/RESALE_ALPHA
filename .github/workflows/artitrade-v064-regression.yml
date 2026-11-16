@@ -1,0 +1,33 @@
+name: ARTITRADE v064 isolated nontrading regression
+on:
+  push:
+    branches: [ feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v061_rules.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_v043.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v064_ma_trend_gate.py'
+      - '.github/workflows/artitrade-v064-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing test-only dependencies
+        run: python3 -m pip install -q requests websockets holidays
+      - name: Python syntax and isolated MA / RSI time gate rules
+        run: |
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 ARTITRADE_ANDROID/ui_tests/test_v064_ma_trend_gate.py
+      - name: Existing MA and Market Trend regression
+        run: |
+          for p in 'test_v061_*.py' 'test_v062_*.py' 'test_v043_market_trend.py' 'test_v054_market_trend_audit.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$p" -v
+          done
