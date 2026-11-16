@@ -1076,7 +1076,8 @@ class Coordinator:
                     # A missed stock MA entry only exists during genuine KRX
                     # trading. Never label after-hours / weekends as failures.
                     from d_v19_portfolio import live_session
-                    if not live_session(now,'KRX'):
+                    from krx_session_v041 import is_regular_open
+                    if not is_regular_open(now) or not live_session(now,'KRX'):
                         self.stop_event.wait(.8)
                         continue
                     import ma_v067_stock_runtime as native
