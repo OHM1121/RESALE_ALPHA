@@ -328,3 +328,9 @@ def validate_backup(archive_path: str) -> dict:
             if count!=info.get("size") or digest.hexdigest()!=info.get("sha256"):
                 raise ValueError("Backup member size/SHA mismatch: "+rel)
     return {"ok":True,"files":len(files),"reports":len(reports),"schema":SCHEMA}
+
+
+def validate_backup_json(archive_path: str) -> str:
+    """Stable JSON return contract for Chaquopy Java's JSONObject parser."""
+    return json.dumps(validate_backup(archive_path),ensure_ascii=False)
+
