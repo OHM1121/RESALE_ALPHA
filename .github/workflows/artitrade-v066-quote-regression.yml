@@ -7,6 +7,9 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
       - 'ARTITRADE_ANDROID/ui_tests/test_v066_stock_quote_truth.py'
+      - 'ARTITRADE_ANDROID/app/build.gradle'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_ui.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py'
       - '.github/workflows/artitrade-v066-quote-regression.yml'
   workflow_dispatch:
 permissions:
