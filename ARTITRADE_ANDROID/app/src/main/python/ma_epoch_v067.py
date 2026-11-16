@@ -166,14 +166,26 @@ def install():
         source=str(getattr(self,"_source",""))
         if source in ("stock_ma","coin_ma") and self._rt.live_enabled(
                 "coin" if source=="coin_ma" else "stock"):
-            text=" ".join(str(sql).upper().split())
-            if text.startswith("INSERT INTO EXECUTIONS") or text.startswith("INSERT OR IGNORE INTO EXECUTIONS"):
-                # MA v062 already guards pre-v062 exposure; additionally
-                # guard the now-historical v062 active real positions.
-                market="coin" if source=="coin_ma" else "stock"
-                # Source INSERT typically omits symbol; it can be extracted
-                # from the candidate/position only by the existing broker
-                # execution guard. We do NOT guess symbol or disable safety.
+            import re
+            match=re.search(
+                r"INSERT(?:\s+OR\s+IGNORE|\s+OR\s+REPLACE)?\s+INTO\s+executions\s*\((.*?)\)",
+                " ".join(str(sql).split()),re.I)
+            if match and isinstance(params,(tuple,list)):
+                fields=[v.strip().strip('"[]').lower() for v in match.group(1).split(",")]
+                if len(params)>=len(fields):
+                    row=dict(zip(fields,params))
+                    if str(row.get("side") or "").upper()=="BUY":
+                        market="coin" if source=="coin_ma" else "stock"
+                        symbol=str(row.get("market") if market=="coin" else row.get("code") or "")
+                        if not symbol:
+                            from android_live_bridge import LiveOrderError
+                            raise LiveOrderError("MA_V067_BUY_MISSING_BROKER_SYMBOL")
+                        conflict=_previous_live_conflict(self._rt.root,market,symbol)
+                        if conflict:
+                            # Never erase the prior REAL position or double
+                            # buy it just because the MA display epoch reset.
+                            from android_live_bridge import LiveOrderError
+                            raise LiveOrderError("MA_V067_"+conflict)
         return original_before(self,sql,params)
     broker.LiveConnectionProxy._before=fail_closed_old_ma
     _INSTALLED=True
