@@ -1,0 +1,73 @@
+name: Diagnose November 16 MPLX RSI20 against original Upbit candles
+on:
+  push:
+    branches: [ diagnose-mplx-markettrend-20261116 ]
+    paths: [ '.github/workflows/diagnose-mplx-rsi-20261116.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-market-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reproduce historical coin RSI20 on timestamped official public candles; no credentials or trading
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,datetime as dt,json,time,traceback
+          BASE='https://api.upbit.com'
+          def get(path,params):
+              url=BASE+path+'?'+urllib.parse.urlencode(params)
+              for attempt in range(3):
+                  try:
+                      request=urllib.request.Request(url,headers={'Accept':'application/json','User-Agent':'ARTITRADE-historical-nontrading-verify/1.0'})
+                      with urllib.request.urlopen(request,timeout=12) as response:
+                          raw=response.read()
+                      payload=json.loads(raw)
+                      if not isinstance(payload,list): raise RuntimeError('UnexpectedUpbitResponse:'+str(payload)[:300])
+                      print('PUBLIC_API',path,'COUNT',len(payload),'FIRST',payload[0].get('candle_date_time_kst') if payload else None)
+                      return payload
+                  except Exception as exc:
+                      print('PUBLIC_API_RETRY',path,type(exc).__name__,str(exc)[:130])
+                      time.sleep(2+attempt)
+              return []
+          def rsi(closes,n=20,forming=None):
+              if len(closes)<n+1:return None
+              price=closes[:]+([forming] if forming is not None else [])
+              changes=[price[i]-price[i-1] for i in range(1,len(price))]
+              gain=sum(max(x,0) for x in changes[:n])/n
+              loss=sum(max(-x,0) for x in changes[:n])/n
+              for x in changes[n:]:
+                  gain=(gain*(n-1)+max(x,0))/n
+                  loss=(loss*(n-1)+max(-x,0))/n
+              return 50 if not gain and not loss else 100 if not loss else 100-100/(1+gain/loss)
+          candles=get('/v1/candles/minutes/5',{'market':'KRW-MPLX','to':'2026-11-16T02:05:00Z','count':200})
+          x=sorted(candles,key=lambda t:t['candle_date_time_kst'])
+          for tgt in ('2026-11-16T10:45:00','2026-11-16T10:50:00','2026-11-16T10:55:00','2026-11-16T11:00:00'):
+              row=next((z for z in x if z['candle_date_time_kst']==tgt),None)
+              if not row:
+                  print('TARGET_MISSING',tgt);continue
+              idx=x.index(row)
+              pre=[float(z['trade_price']) for z in x[:idx]]
+              bar=[float(row.get(k,0)) for k in ('opening_price','high_price','low_price','trade_price')]
+              print('TARGET_5M_START_KST',tgt,'OHLC',bar,'R20_CLOSED_AFTER',rsi(pre+[bar[-1]]),'R14_CLOSED_AFTER',rsi(pre+[bar[-1]],14))
+              print('FORMING_RANGE_RSI20',tgt,{'low':rsi(pre,20,bar[2]),'high':rsi(pre,20,bar[1]),'close':rsi(pre,20,bar[3]),'prev_closed':rsi(pre,20)})
+          for mark in ('2026-11-16T01:54:49Z','2026-11-16T01:59:49Z'):
+              seconds=get('/v1/candles/seconds',{'market':'KRW-MPLX','to':mark,'count':60})
+              target=dt.datetime.fromisoformat(mark.replace('Z','+00:00')).astimezone(dt.timezone(dt.timedelta(hours=9)))
+              barstart=target.replace(second=0,microsecond=0,minute=(target.minute//5)*5)
+              prev=[float(z['trade_price']) for z in x if z['candle_date_time_kst']<barstart.strftime('%Y-%m-%dT%H:%M:%S')]
+              print('TARGET_SECONDS',mark,'KST',target.isoformat(),'BAR_START',barstart.isoformat(),'SECONDS_COUNT',len(seconds))
+              for second in (45,48):
+                  tt=target.replace(second=second).strftime('%Y-%m-%dT%H:%M:%S')
+                  at_or_before=sorted((row for row in seconds if row.get('candle_date_time_kst','')<=tt),key=lambda z:z['candle_date_time_kst'])
+                  if at_or_before:
+                      last=at_or_before[-1];v=float(last['trade_price'])
+                      print('SECOND_RECON',tt,'LATEST_TRADE_CANDLE',last['candle_date_time_kst'],'PRICE',v,'RSI20_FORMING',rsi(prev,20,v),'RSI14_FORMING',rsi(prev,14,v))
+                  else:print('SECOND_RECON_MISSING',tt)
+          PY
