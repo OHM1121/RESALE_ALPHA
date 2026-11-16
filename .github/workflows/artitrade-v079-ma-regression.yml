@@ -1,0 +1,41 @@
+name: ARTITRADE v0.7.79 MA 30-second preview and 10-to-2-second entry regression
+on:
+  push:
+    branches: [ artitrade-v079-ma-prewatch30-entry10to2-20261116 ]
+    paths:
+      - '.github/workflows/artitrade-v079-ma-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verified-source-ma-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify original signed-app module archive and run v079 entry tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          mkdir -p "$RUNNER_TEMP/artitrade-core"
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          java=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          assert ('CORE_SHA256="'+hashlib.sha256(raw).hexdigest()+'"') in java
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              assert z.testzip() is None
+              z.extractall('/tmp/artitrade-v079-verified-core')
+          PY
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v079-verified-core"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v079_*.py' -v
+          for pat in 'test_v077_*.py' 'test_v076_*.py' 'test_v075_*.py' 'test_v074_*.py' 'test_v069_*.py' 'test_v067_*.py' 'test_v054_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
