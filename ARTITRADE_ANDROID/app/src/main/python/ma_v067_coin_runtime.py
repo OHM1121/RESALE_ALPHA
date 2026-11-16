@@ -165,6 +165,53 @@ def _second_followup(tf,symbol,state,entry,trade,now):
         return False
 
 
+def _v074_coin_tick_worker(runner):
+    """Catch the ticker-after-book ordering without a second WS or invented quote.
+
+    The source price is an actual Upbit WS ticker, the cached book is actual
+    exchange depth <=3s old, and original MA wallet remains order authority.
+    """
+    tasks=runner._ma_v074_tick_queue
+    stop=getattr(runner,'stop_event',None)
+    while not (stop is not None and stop.is_set()):
+        try:code,queued_at=tasks.get(timeout=.2)
+        except queue.Empty:continue
+        try:
+            if time.monotonic()-queued_at>1.0:
+                _record_v074_ma_observation(code,'all','LIVE',
+                                            'OPERATIONAL_MA_TICK_WORKER_LATE')
+                continue
+            now=dt.datetime.now(KST)
+            due=[(tf,end) for tf in ('5m','30m','60m','day')
+                 for remain,end in [_bar_close(now,tf)] if 4<=remain<=5]
+            if not due:continue
+            lock=getattr(runner,'_lock',None)
+            if lock is not None:
+                with lock:
+                    book=(getattr(runner,'last_book',{}) or {}).get(code)
+            else:book=(getattr(runner,'last_book',{}) or {}).get(code)
+            if not isinstance(book,dict):
+                for tf,end in due:
+                    _record_v074_ma_observation(code,tf,end.isoformat(),
+                                                'UP_NO_BOOK_AFTER_FRESH_TICKER')
+                continue
+            stamp=book.get('timestamp')
+            if not isinstance(stamp,(int,float)) or abs(now.timestamp()-stamp/1000)>3:
+                for tf,end in due:
+                    _record_v074_ma_observation(code,tf,end.isoformat(),
+                                                'UP_CACHED_BOOK_STALE_AFTER_TICKER')
+                continue
+            ledger=getattr(runner,'ma_ledger',None)
+            if ledger is not None:
+                # Same native book and original FOK; never assume a fill.
+                ledger.process_book(dict(book),now)
+        except (KeyError,ValueError,TypeError,AttributeError,OverflowError) as exc:
+            _record_v074_ma_observation(code,'all','LIVE',
+                                        'OPERATIONAL_MA_TICK_LANE_'+type(exc).__name__)
+        finally:
+            tasks.task_done()
+
+
 def _record_v074_ma_observation(symbol,frame,bar_end,reason):
     """No broker calls or SQLite on the 5-second decision thread."""
     try:
@@ -428,20 +475,38 @@ def install():
         return older_book(self,raw,at)
     ma.MACoinLedger.process_book=book
 
-    # v061 coin scan records verified closed candles in _HISTORY, while
-    # Market Trend's existing price memory receives true Upbit WS tickers.
-    # The new observer merely caches the same ticker for a 3s book match.
+    # Observe the same genuine Upbit WS ticker on an independent, short,
+    # bounded worker. No broker/network/SQLite work on the WS thread.
     prior_tick=trend.Coordinator.observe_coin_tick
     def verified_coin_tick(coord,code,price):
-        try:
-            runner=getattr(coord.rt,'coin_runner',None)
-            ledger=getattr(runner,'ma_ledger',None) if runner else None
-            if ledger is not None:
-                if not hasattr(ledger,'_ma_v067_live_ticks'):
-                    ledger._ma_v067_live_ticks={}
-                ledger._ma_v067_live_ticks[str(code)]=(price,time.monotonic())
-        except (AttributeError,TypeError,ValueError):
-            pass
+        runner=getattr(coord.rt,'coin_runner',None)
+        ledger=getattr(runner,'ma_ledger',None) if runner else None
+        if ledger is not None:
+            if not hasattr(ledger,'_ma_v067_live_ticks'):
+                ledger._ma_v067_live_ticks={}
+            ledger._ma_v067_live_ticks[str(code)]=(price,time.monotonic())
+            try:
+                now=dt.datetime.now(KST)
+                if any(4<=_bar_close(now,tf)[0]<=5
+                       for tf in ('5m','30m','60m','day')):
+                    pending=getattr(runner,'_ma_v074_tick_queue',None)
+                    if pending is None:
+                        pending=queue.Queue(maxsize=512)
+                        runner._ma_v074_tick_queue=pending
+                    worker=getattr(runner,'_ma_v074_tick_thread',None)
+                    if worker is None or not worker.is_alive():
+                        worker=threading.Thread(target=_v074_coin_tick_worker,
+                            args=(runner,),daemon=True,
+                            name='ARTITRADE_V074_UPBIT_MA_FIRST_FLIP')
+                        runner._ma_v074_tick_thread=worker
+                        worker.start()
+                    try:pending.put_nowait((str(code),time.monotonic()))
+                    except queue.Full:
+                        _record_v074_ma_observation(str(code),'all',now.isoformat(),
+                            'OPERATIONAL_MA_TICK_QUEUE_FULL')
+            except (ValueError,TypeError,AttributeError,OverflowError) as exc:
+                _record_v074_ma_observation(str(code),'all','LIVE',
+                    'OPERATIONAL_MA_TICK_DISPATCH_'+type(exc).__name__)
         return prior_tick(coord,code,price)
     trend.Coordinator.observe_coin_tick=verified_coin_tick
     _INSTALLED=True
