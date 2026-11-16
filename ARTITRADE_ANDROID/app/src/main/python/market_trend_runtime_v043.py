@@ -1375,7 +1375,8 @@ class Coordinator:
                     # These observations are never pending orders.  Expose
                     # a distinct MA watch pane so it is possible to inspect
                     # failure reasons even when the original order queue is 0.
-                    identity=(x["symbol"],x["frame"])
+                    identity=(x["symbol"],x["frame"],
+                              "PREWATCH" if reason.startswith("MA_PREWATCH_") else "DECISION")
                     if (identity not in ma_watch_keys[m] and
                             len(ma_watch[m])<90 and
                             not str(x["symbol"]).startswith('__')):
