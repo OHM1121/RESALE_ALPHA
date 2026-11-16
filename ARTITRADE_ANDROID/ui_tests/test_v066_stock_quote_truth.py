@@ -90,7 +90,7 @@ class StockDisplayTests(unittest.TestCase):
         self.assertNotIn('paper_pnl',row)
         self.assertNotIn('mark',row)
         self.assertEqual(row['ledger_last_price'],70000)
-        self.assertEqual(row['stock_quote_display_source'],'LAST_LEDGER')
+        self.assertEqual(row['stock_quote_display_source'],'LAST_0B')
         self.assertEqual(row['stock_quote_status'],'LAST_0B')
         self.assertEqual(row['stock_quote_last_observed_price'],73400)
         self.assertEqual(row['stock_quote_display_price'],73400)
