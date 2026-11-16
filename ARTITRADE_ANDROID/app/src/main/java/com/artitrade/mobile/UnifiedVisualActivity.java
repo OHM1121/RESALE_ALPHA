@@ -2152,7 +2152,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text("마켓트렌드 · RSI(20) ≤ 35 매수대기",20);
         title.setTypeface(null,Typeface.BOLD);
         content.addView(title);
-        TextView detail=text("실제 주문 대기가 아닌 RSI 관측 · 30 이하 진입조건 미충족 시 해당 봉에서 자동 해제",12);
+        TextView detail=text("RSI20 관측대기는 미주문 · 사전확인 마감 22~12.5초 전 · 실제 매수 판정 12~7초 전 · RSI30 충족과 신선한 체결가·호가 필요",12);
         detail.setTextColor(PremiumUi.MUTED);
         detail.setPadding(dp(2),dp(6),0,dp(10));
         content.addView(detail);
