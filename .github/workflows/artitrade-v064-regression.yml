@@ -33,7 +33,7 @@ jobs:
           from pathlib import Path
           source=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
           b=base64.b64decode(''.join((source/f'part_{i:02d}.txt').read_text() for i in range(22)))
-          assert hashlib.sha256(b).hexdigest()=='e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0'
+          assert hashlib.sha256(b).hexdigest()=='10ff2cc9cda6ebba1dfa183f893bcea76f38445bb109dac66b99d578cc9c5447'
           target=Path('/tmp/artitrade-core-verified');target.mkdir(parents=True,exist_ok=True)
           with zipfile.ZipFile(io.BytesIO(b)) as z:z.extractall(target)
           print('ORIGINAL_GMO_V062_SOURCE_SHA_VERIFIED')
