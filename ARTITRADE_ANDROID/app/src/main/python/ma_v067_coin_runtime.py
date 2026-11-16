@@ -35,15 +35,25 @@ def _historical_bear(h,tf,market,tick,now):
     from datetime import timezone
     empty={'status':'REJECT','reason':'MA_V067_ALIGNMENT_NOT_SUSTAINED',
            'selected_ref_at':None,'metrics':{}}
-    if tf not in policy.FRAMES or len(h)<122:return empty,None
+    if tf not in policy.FRAMES or len(h)<122:
+        _record_v074_ma_observation(market,tf,now.isoformat(),
+                                    'BEAR_122_VERIFIED_BARS_MISSING')
+        return empty,None
     cur=h[-1]
     if cur['start']+dt.timedelta(seconds=SECONDS[tf])>now.astimezone(timezone.utc):
+        _record_v074_ma_observation(market,tf,cur['start'].isoformat(),
+                                    'BEAR_BAR_NOT_COMPLETED')
         return dict(empty,reason='VERIFIED_BAR_NOT_COMPLETED'),None
     verdict=policy.bear_reversal_completed(h,tf)
     if verdict.get('kind')!='REVERSAL_BEAR':
+        _record_v074_ma_observation(market,tf,cur['start'].isoformat(),
+                                    'BEAR_RULE_'+str(verdict.get('reason') or 'NO_MATCH'))
         return dict(empty,reason=verdict.get('reason')),None
     candidate=_bear_candidate(h,tf,market,tick,now)
-    if not candidate:return dict(empty,reason='NATIVE_BEAR_PRICE_OR_TICK_INVALID'),None
+    if not candidate:
+        _record_v074_ma_observation(market,tf,cur['start'].isoformat(),
+                                    'BEAR_NATIVE_PRICE_OR_TICK_INVALID')
+        return dict(empty,reason='NATIVE_BEAR_PRICE_OR_TICK_INVALID'),None
     features=candidate.setdefault('features',{})
     features.update({
         'ma_v061_kind':'DOWN_BEAR',
@@ -59,6 +69,8 @@ def _historical_bear(h,tf,market,tick,now):
     candidate['features']=features
     # Exit policy uses original verified signal high, not a native trailing
     # preset; the wallet's actual fill price remains the cost basis.
+    _record_v074_ma_observation(market,tf,cur['start'].isoformat(),
+                                'BEAR_CANDIDATE_RULE_QUALIFIED_NATIVE_EXECUTION_PENDING')
     return {'status':'QUALIFIED','reason':'MA_V067_SUSTAINED_LARGE_BEAR',
             'selected_ref_at':candidate['ref_at'],
             'metrics':{'body_pct':verdict['body_pct'],
