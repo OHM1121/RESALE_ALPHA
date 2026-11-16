@@ -364,30 +364,31 @@ def install():
 
     orig_feed=d_live.LivePaperRunner._new_tick
     def observe_live(self,tick):
-        # Queue only, NO SQLite/network work in the broker WebSocket receiver.
-        result=orig_feed(self,tick)
+        # Capture the actual near-close 0B for the independent MA worker
+        # BEFORE normal AT/GMO/Trend dispatch can add Python/SQLite latency.
+        # The original feed ALWAYS still receives exactly this tick once.
         try:
             from d_minute_repair_fast import exchange_stamp_is_fresh
-            if (len(tick)<9 or tick[7]!='KRX' or
-                not exchange_stamp_is_fresh(tick[8],tick[6])):return result
-            now=dt.datetime.fromisoformat(str(tick[6]))
-            if not any(4<=_close_seconds(now,frame)[0]<=5
-                       for frame in ('5m','30m','60m','day')):return result
-            q=getattr(self,'_ma_v067_up_queue',None)
-            if q is None:
-                q=queue.Queue(maxsize=MAX_QUEUE)
-                self._ma_v067_up_queue=q
-            worker=getattr(self,'_ma_v067_up_worker',None)
-            if worker is None or not worker.is_alive():
-                worker=threading.Thread(target=_up_worker,args=(self,),daemon=True,
-                                        name='artitrade-ma-v067-stock-preclose')
-                self._ma_v067_up_worker=worker
-                worker.start()
-            try:q.put_nowait(tuple(tick))
-            except queue.Full:self.store.write_runtime_error(
-                RuntimeError('MA_V067_UP_5S_QUEUE_FULL'),'MA_V067_STOCK_ENTRY_DROP')
+            if (len(tick)>=9 and tick[7]=='KRX' and
+                exchange_stamp_is_fresh(tick[8],tick[6])):
+                now=dt.datetime.fromisoformat(str(tick[6]))
+                if any(4<=_close_seconds(now,frame)[0]<=5
+                       for frame in ('5m','30m','60m','day')):
+                    q=getattr(self,'_ma_v067_up_queue',None)
+                    if q is None:
+                        q=queue.Queue(maxsize=MAX_QUEUE)
+                        self._ma_v067_up_queue=q
+                    worker=getattr(self,'_ma_v067_up_worker',None)
+                    if worker is None or not worker.is_alive():
+                        worker=threading.Thread(target=_up_worker,args=(self,),
+                            daemon=True,name='artitrade-ma-v067-stock-preclose')
+                        self._ma_v067_up_worker=worker
+                        worker.start()
+                    try:q.put_nowait(tuple(tick))
+                    except queue.Full:self.store.write_runtime_error(
+                        RuntimeError('MA_V067_UP_5S_QUEUE_FULL'),'MA_V067_STOCK_ENTRY_DROP')
         except (TypeError,ValueError,AttributeError):
             pass
-        return result
+        return orig_feed(self,tick)
     d_live.LivePaperRunner._new_tick=observe_live
     _INSTALLED=True
