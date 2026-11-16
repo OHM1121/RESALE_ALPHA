@@ -1,0 +1,65 @@
+name: ARTITRADE v071 guarded feed-first websocket core patch
+on:
+  push:
+    branches: [ fix-artitrade-v071-feed-order-error-export-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/patch_v071_ws_ordered.py'
+      - '.github/workflows/artitrade-v071-apply.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v071-patch
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply pinned core patch; only d_live may differ from v070 core
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v071_ws_ordered.py
+      - name: Verify source, all 81 original modules and compilation without brokers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,base64,zipfile,io,ast,pathlib
+          root=pathlib.Path("ARTITRADE_ANDROID")
+          parts=root/"app/src/main/assets/strategy_v070"
+          blob=base64.b64decode("".join((parts/("part_%02d.txt"%i)).read_text() for i in range(22)))
+          java=(root/"app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java").read_text()
+          assert 'CORE_SHA256="'+hashlib.sha256(blob).hexdigest()+'"' in java
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              code=z.read('d_live.py').decode('utf8')
+              tree=ast.parse(code)
+              cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='LivePaperRunner')
+              names={n.name for n in cls.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+              assert {'_v071_feed_worker','_v071_enqueue_feed','_v071_background_preload'}.issubset(names)
+              assert 'await asyncio.to_thread(self.engine.book.on_message' not in code
+              assert 'await self._startup_preload()' in code
+              assert "self._v071_enqueue_feed('raw',msg)" in code
+              assert 'seen_at=received_at' in code
+              assert 'if lag>3.0 and kind' in code
+              assert 'ping_timeout=45' in code
+              compile(code,'d_live.py','exec')
+          assert "versionCode 77" in (root/"app/build.gradle").read_text()
+          assert "REQUEST_EXPORT_ERRORS=7715" in (root/"app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java").read_text()
+          print("V071_BUNDLE_SHA_SIGNER_MATCH, POLICY_UNCHANGED, AST_VALID, ERROR_EXPORT_WIRED")
+          PY
+          git diff --check
+      - name: Commit exact pinned zip assets, Java digest and monotonic APK version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name artitrade-ci
+          git config user.email artitrade-ci@users.noreply.github.com
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py ARTITRADE_ANDROID/ui_tests/test_v054_ui.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v071): start Kiwoom socket before warmup and dispatch frames on ordered worker'
+          git push origin HEAD:fix-artitrade-v071-feed-order-error-export-20261116
