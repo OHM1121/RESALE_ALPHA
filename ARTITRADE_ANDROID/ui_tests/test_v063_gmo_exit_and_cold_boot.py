@@ -100,9 +100,11 @@ class V063GmoSafeguards(unittest.TestCase):
 
     def test_ui_does_not_skip_true_cold_boot_merely_due_to_old_pid(self):
         java=UI.read_text(encoding="utf-8")
-        m=re.search(r"private boolean shouldRestoreShellImmediately\\(Bundle saved\\)\\s*\\{([\\s\\S]*?)\\n    \\}",java)
-        self.assertIsNotNone(m)
-        body=m.group(1)
+        start=java.find("private boolean shouldRestoreShellImmediately(Bundle saved)")
+        end=java.find("    private void preloadWatchdog()",start)
+        self.assertGreaterEqual(start,0)
+        self.assertGreater(end,start)
+        body=java[start:end]
         self.assertIn("isRecentBackgroundHeartbeat()",body)
         self.assertNotIn("priorUiSessionKnown",body)
 
