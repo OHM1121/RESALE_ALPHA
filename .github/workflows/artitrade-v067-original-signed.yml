@@ -7,7 +7,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: artitrade-v067-original-signed
+  group: artitrade-v067-rc2-original-signed
   cancel-in-progress: false
 jobs:
   verified-original-apk:
@@ -15,13 +15,13 @@ jobs:
     timeout-minutes: 65
     env:
       CI: 'true'
-      SOURCE: 'dcdf3ed61a8e21572f633f4d8afed73090a353d7'
+      SOURCE: '69cfcf63ec776e6a4c70dd6fb3679b8f55ae9ef0'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.67_20261116'
-      TAG: 'ARTITRADE-v0.7.67-20261116-rc1'
+      TAG: 'ARTITRADE-v0.7.67-20261116-rc2'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 'dcdf3ed61a8e21572f633f4d8afed73090a353d7'
+          ref: '69cfcf63ec776e6a4c70dd6fb3679b8f55ae9ef0'
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -139,7 +139,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$TAG" "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.compatibility.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE v0.7.67 (verified test build)" --notes "v0.7.67 MA: sustained MA120-down plus short-four-below-and-down large bearish signals, five-second forming upward transition, new stock/coin MA epoch while retaining prior SQLite and broker account. Trend RSI precheck no longer rejects signal solely for absent book before order window. Single Kiwoom WebSocket avoids duplicate GMO receiver processing and blocking universe refresh. Live broker fills, continuous-uptime, zero disconnects and Galaxy S21+ live operation are NOT independently verified. Use only after actual-market validation." --prerelease
+          gh release create "$TAG" "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.compatibility.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE v0.7.67 (verified test build)" --notes "v0.7.67 rc2 MA: confirmed integer-share sale-stage rounding, sustained MA120-down plus short-four-below-and-down large bearish signals, five-second forming upward transition, new stock/coin MA epoch while retaining prior SQLite and broker account. Trend RSI precheck no longer rejects signal solely for absent book before order window. Single Kiwoom WebSocket avoids duplicate GMO receiver processing and blocking universe refresh. Live broker fills, continuous-uptime, zero disconnects and Galaxy S21+ live operation are NOT independently verified. Use only after actual-market validation." --prerelease
       - name: Upload Android 15 smoke evidence
         if: always()
         uses: actions/upload-artifact@v4
