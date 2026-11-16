@@ -1,0 +1,22 @@
+name: ARTITRADE v063 read-only bundled Kiwoom/GMO diagnostic
+on:
+  push:
+    branches:
+      - feature-artitrade-v063-kiwoom-gmo-lifecycle-audit-20261116
+    paths:
+      - "ARTITRADE_ANDROID/ui_tests/diagnose_bundle_v063.py"
+      - ".github/workflows/artitrade-v063-core-readonly-diagnostic.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Inspect packaged source; no network broker calls and no order paths
+        run: python3 ARTITRADE_ANDROID/ui_tests/diagnose_bundle_v063.py
