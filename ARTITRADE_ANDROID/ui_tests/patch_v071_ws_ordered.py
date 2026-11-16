@@ -221,6 +221,7 @@ rewrite_method("run",one(
 rewrite_method("run",one(
     "                    last_session_cutover=''\n",
     "                    last_session_cutover=''\n"
+    "                    last_maintenance_launch=0.0\n"
     "                    last_flush_cutoff=''\n"
     "                    last_repair_cutoff=''\n"))
 rewrite_method("run",one(
@@ -251,7 +252,8 @@ def change_maintenance(s):
                         if switch:
                             last_subscription_check=mono
                             if cutover:last_session_cutover=cutover
-                        if maintenance_task is None:
+                        if maintenance_task is None and (switch or mono-last_maintenance_launch>=4.0):
+                            last_maintenance_launch=mono
                             maintenance_task=asyncio.create_task(
                                 self._v071_subscription_maintenance(ws,switch,
                                     not '1530' <= now.strftime('%H%M') < '1600'))
