@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 77
-            versionName '0.7.71-WS-ORDERED-RECV-HISTORY'
+            versionCode 78
+            versionName '0.7.72-VERIFIED-STOCK-QUOTE'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
