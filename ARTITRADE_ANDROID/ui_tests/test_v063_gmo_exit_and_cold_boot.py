@@ -119,4 +119,16 @@ class V063GmoSafeguards(unittest.TestCase):
         self.assertIn('live_enabled',method)
         self.assertIn('mserver_auth',method)
 
+    def test_destroyed_activity_does_not_schedule_preload_on_shutdown_pool(self):
+        src=UI.read_text(encoding="utf-8")
+        before=src.index("private void refresh(boolean first)")
+        end=src.index("    private void updateHeader()",before)
+        refresh=src[before:end]
+        self.assertIn("if(uiDestroyed||refreshRunning)return;",refresh)
+        self.assertIn("if(uiDestroyed)return;",refresh)
+        lifecycle=src[src.rindex("@Override protected void onResume()"):]
+        self.assertIn("uiDestroyed=true",lifecycle)
+        self.assertIn("main.removeCallbacksAndMessages(null)",lifecycle)
+        self.assertIn("io.shutdownNow()",lifecycle)
+
 if __name__=="__main__":unittest.main(verbosity=2)
