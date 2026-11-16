@@ -113,7 +113,10 @@ jobs:
         env:
           ARTITRADE_EMULATOR_ABI: x86_64
         working-directory: ARTITRADE_ANDROID
-        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+        run: |
+          gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+          mkdir -p ../downloaded-apks
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk
       - name: Android 15 boot, service, warm return and no fatal exceptions
         uses: reactivecircus/android-emulator-runner@v2
         with:
