@@ -112,6 +112,9 @@ class BackupAndMaEvidenceTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertGreater(result['bytes'],128)
         self.assertTrue(backup.validate_backup(str(target))['ok'])
+        safe_reply=json.loads(backup.validate_backup_json(str(target)))
+        self.assertTrue(safe_reply['ok'])
+        self.assertGreater(safe_reply['files'],0)
         with zipfile.ZipFile(target) as z:
             self.assertIsNone(z.testzip())
             self.assertIn('execution_decisions_v074.sqlite3',z.namelist())
@@ -185,6 +188,9 @@ class BackupAndMaEvidenceTests(unittest.TestCase):
         self.assertIn('openOutputStream(uri,"wt")',src)
         self.assertIn('drawerErrorExportProgress=addProgressBlock',src)
         self.assertIn('drawerResearchExportProgress=addProgressBlock',src)
+        self.assertLess(src.index('TextView exportTitle=text("내보내기 진행 상황"'),
+                        src.index('TextView apiTitle=text('))
+        self.assertIn('.callAttr("validate_backup_json",archive.getAbsolutePath())',src)
         self.assertIn('private void renderMaEntryObservations()',src)
         self.assertIn('ma_watch_v076',src)
 
