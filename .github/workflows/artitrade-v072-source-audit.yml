@@ -1,0 +1,43 @@
+name: ARTITRADE v072 source-only internal audit
+on:
+  push:
+    branches: [ fix-artitrade-v072-preload-heartbeat-freshness-20261116 ]
+    paths:
+      - '.github/workflows/artitrade-v072-source-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect bundle methods and exact stale-quote gates (no credentials)
+        run: |
+          python3 - <<'PY'
+          import zipfile,io,base64,ast,re
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              names=z.namelist()
+              print('BUNDLED_MODULES',len(names))
+              for fname in ('d_live.py','d_upbit.py','startup_preload_v1.py','at_close_bridge.py','coin_ma_engine.py'):
+                  if fname not in names:continue
+                  source=z.read(fname).decode('utf-8')
+                  lines=source.splitlines()
+                  print('=== MODULE',fname,'LINES',len(lines),'===')
+                  tree=ast.parse(source)
+                  for node in ast.walk(tree):
+                      if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                          if re.search(r'preload|warmup|register|subscri|websocket|ws_|_ws|run|ping|health|progress|book|fok|connect|_quote|_tick|snapshot|_submit',node.name,re.I):
+                              print('METHOD',getattr(node,'lineno',0),getattr(node,'end_lineno',0),node.name)
+                  match_indexes=[i for i,s in enumerate(lines) if re.search(r'45.0|0B_SILENT|ping_timeout|ping_interval|PING|PONG|return_code|trnm.*REG|fully_registered|_confirmed_ws_session|<.?=.?3\b|> ?3\b|3\.0|3000|book.*timestamp|orderbook|_warmup\(',s,re.I)]
+                  kept=set()
+                  for i in match_indexes[:110]:
+                      for k in range(max(0,i-2),min(len(lines),i+3)):kept.add(k)
+                  for i in sorted(kept):print(str(i+1).rjust(5),lines[i][:210])
+          PY
