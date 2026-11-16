@@ -112,6 +112,10 @@ public final class UnifiedVisualActivity extends Activity {
     // Worker-only parsed record reuse. The service publishes a fresh JSON string
     // frequently, even when all historical records are unchanged.
     private final Map<String,JSONObject> tradeEvidenceCache=new ConcurrentHashMap<>();
+    // Read-only execution enrichment remains dormant until the person expands
+    // that exact fill. No row-page auto fetches from research SQLite.
+    private final java.util.Set<String> expandedTradeEvidenceKeys=
+        java.util.Collections.newSetFromMap(new ConcurrentHashMap<String,Boolean>());
     private final java.util.Set<String> pendingTradeEvidence=java.util.Collections.newSetFromMap(
         new ConcurrentHashMap<String,Boolean>());
     private String cachedLocalRaw;
@@ -3470,8 +3474,6 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         int first=historyStart(kind,total),last=HistoryPager.end(first,total);
-        if("executions".equals(kind)&&marketWide&&first<last&&!showLegacyMaArchive)
-            queryTradeHistoryEvidence(history.subList(first,last));
         addHistoryPager(kind,total);
         for(int i=first;i<last;i++){
             HistoryRow item=marketWide?history.get(i):null;
@@ -3571,6 +3573,7 @@ public final class UnifiedVisualActivity extends Activity {
                 TradeGeometryView pathView=new TradeGeometryView(this,rate,true);
                 panel.addView(pathView,new LinearLayout.LayoutParams(-1,dp(24)));
             }
+            if(!"executions".equals(kind)){
             String time=fillTimeOf(r,kind,source);
             String phaseLine=referenceTimelineOf(r,source);
             String maPhase=r.optString("ma_v061_kind_label","");
@@ -3642,8 +3645,30 @@ public final class UnifiedVisualActivity extends Activity {
             if(wideList)whyLp.setMargins(dp(10),0,0,0);
             listFooterColumns.addView(why,whyLp);
             panel.addView(listFooterColumns,new LinearLayout.LayoutParams(-1,-2));
-            if("executions".equals(kind)&&item!=null)
-                renderExecutionEvidenceStrip(panel,item);
+            }
+            if("executions".equals(kind)&&item!=null){
+                final HistoryRow fill=item;
+                final String detailKey=tradeEvidenceKey(fill);
+                final boolean opened=expandedTradeEvidenceKeys.contains(detailKey);
+                Button detail=button(opened?"상세 접기  ▴":"체결 상세 열기  ▾",false,()->{
+                    if(!expandedTradeEvidenceKeys.remove(detailKey)){
+                        // Every explicit open requests fresh read-only details.
+                        // Original executions stay in their SQLite ledger.
+                        if(expandedTradeEvidenceKeys.size()>180)
+                            expandedTradeEvidenceKeys.clear();
+                        expandedTradeEvidenceKeys.add(detailKey);
+                        tradeEvidenceCache.remove(detailKey);
+                        queryTradeHistoryEvidence(
+                            java.util.Collections.singletonList(fill));
+                    }
+                    render();
+                });
+                detail.setTextSize(12);
+                LinearLayout.LayoutParams expandLp=new LinearLayout.LayoutParams(-1,dp(39));
+                expandLp.setMargins(0,dp(6),0,dp(2));
+                panel.addView(detail,expandLp);
+                if(opened)renderExecutionEvidenceStrip(panel,item);
+            }
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
             lp.setMargins(0,0,0,dp(6));content.addView(panel,lp);
         }
