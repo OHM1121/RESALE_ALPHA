@@ -126,6 +126,7 @@ public final class UnifiedVisualActivity extends Activity {
     private LinearLayout strategyBar;
     private TextView statusText;
     private TextView drawerBackgroundHealth;
+    private TextView drawerFeedReadiness;
     private TextView clockText;
     private static final long BACKGROUND_HEARTBEAT_FRESH_MS=14_000L;
     private static final long PRELOAD_WATCHDOG_MS=40_000L;
@@ -402,6 +403,46 @@ public final class UnifiedVisualActivity extends Activity {
                 preloadExitNote="연결상태 확인 불가 · 백그라운드 재연결 유지";
         }
         main.postDelayed(this::startupReadinessTick,900);
+    }
+
+    private String readableFeedReadiness(){
+        // Accurate per-market readiness from the existing service snapshot.
+        // REST refreshes or an old shared preference cannot claim WS LIVE.
+        try{
+            JSONObject all=new JSONObject(getSharedPreferences(
+                "artitrade_runtime_snapshot",MODE_PRIVATE).getString("snapshot","{}"));
+            JSONObject pre=all.optJSONObject("startup_preload_v081");
+            if(pre==null)return "시세: 원본 서비스 연결상태 확인 중";
+            long at=pre.optLong("updated_at_ms",0L);
+            if(at<=0||Math.abs(System.currentTimeMillis()-at)>10_000L)
+                return "시세: 최근 실시간 연결 확인 없음 · 재연결 점검 중";
+            JSONObject stock=pre.optJSONObject("stock");
+            JSONObject coin=pre.optJSONObject("coin");
+            JSONObject history=pre.optJSONObject("rsi_history");
+            JSONObject sh=history==null?null:history.optJSONObject("stock");
+            JSONObject ch=history==null?null:history.optJSONObject("coin");
+            String stockLine=stock==null?"주식 WS 상태 미확인":
+                !stock.optBoolean("keys_present",false)?"주식 API 키 미등록":
+                !stock.optBoolean("session_required",false)?"주식 장외/휴장 · WS 체결 필수 아님":
+                stock.optBoolean("ws_ready",false)?"주식 WS 구독 정상 · "+
+                    stock.optInt("subscriptions",0)+"종목":
+                    "주식 WS 연결/구독 확인 중";
+            String coinLine=coin!=null&&coin.optBoolean("ws_ready",false)?
+                "코인 WS 실제 체결가 정상 · "+
+                coin.optInt("subscriptions_requested",0)+"종목 구독":
+                coin!=null&&coin.optBoolean("ws_session",false)?
+                "코인 WS 연결됨 · 실제 체결가 수신 대기":
+                "코인 WS 연결/복구 중";
+            JSONObject coinGate=coin==null?null:coin.optJSONObject("preload");
+            String warm=coinGate!=null&&coinGate.optBoolean("ready",false)?
+                "업비트 공식 과거봉 사전점검 완료":
+                "업비트 공식 과거봉·원장 점검 중";
+            return stockLine+"\n"+coinLine+"\n"+warm+
+                "\nRSI20 확정봉 주식 "+(sh==null?0:sh.optInt("rsi20_ready",0))+
+                "/"+(sh==null?0:sh.optInt("candidate_frames",0))+
+                " · 코인 "+(ch==null?0:ch.optInt("rsi20_ready",0))+
+                "/"+(ch==null?0:ch.optInt("candidate_frames",0));
+        }catch(Exception e){return "시세 연결상태 갱신 중 · "+e.getClass().getSimpleName();}
     }
 
     private String readableBackgroundHealth(){
@@ -896,6 +937,8 @@ public final class UnifiedVisualActivity extends Activity {
         updateHeader();
         if(drawerBackgroundHealth!=null)
             drawerBackgroundHealth.setText(readableBackgroundHealth());
+        if(drawerFeedReadiness!=null)
+            drawerFeedReadiness.setText(readableFeedReadiness());
         JSONObject snapshot=copyCache();
         updateDrawerProgressView(drawerPublishProgress,
             drawerLocalProgress("artitrade_mserver_sync_v078",false));
@@ -911,6 +954,7 @@ public final class UnifiedVisualActivity extends Activity {
         drawerImportProgress=null;
         drawerErrorExportProgress=null;
         drawerResearchExportProgress=null;
+        drawerFeedReadiness=null;
     }
 
     private void logMserverIssue(String key,String original){
@@ -980,6 +1024,11 @@ public final class UnifiedVisualActivity extends Activity {
         drawerBackgroundHealth.setPadding(0,dp(4),0,0);
         drawerBackgroundHealth.setMaxLines(3);
         healthPanel.addView(drawerBackgroundHealth);
+        drawerFeedReadiness=text(readableFeedReadiness(),12);
+        drawerFeedReadiness.setTextColor(Color.rgb(152,194,219));
+        drawerFeedReadiness.setMaxLines(8);
+        drawerFeedReadiness.setPadding(0,dp(6),0,0);
+        healthPanel.addView(drawerFeedReadiness);
         panel.addView(healthPanel);
 
         TextView exportTitle=text("내보내기 진행 상황",13);
