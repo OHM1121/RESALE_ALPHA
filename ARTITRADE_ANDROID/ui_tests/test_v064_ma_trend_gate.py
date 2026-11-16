@@ -13,7 +13,7 @@ import market_trend_runtime_v043 as runtime
 class MaSellPriority(unittest.TestCase):
  def test_120up_four_above_and_down_never_buys(self):
   # Long-term SMA still rises, but all 4 shorter SMA slopes fall above it.
-  prices=[100]*62+[220]*28+[220-i for i in range(32)]
+  prices=[100]*50+[220]*40+[220-i for i in range(32)]
   bars=[]
   for p in prices:
    bars.append({'open':str(p+1),'close':str(p),'high':str(p+2),
