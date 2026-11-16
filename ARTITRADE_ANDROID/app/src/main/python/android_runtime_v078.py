@@ -1936,9 +1936,26 @@ _install_ma_v062_stock_lane()
 from ma_v062_ai_scope import install as _install_ma_v062_ai_scope
 _install_ma_v062_ai_scope()
 
+# v067 MA ONLY: both stock and coin receive brand new on-disk strategy
+# epochs and AI roots. Never delete previous databases or real broker state.
+from ma_epoch_v067 import install as _install_ma_epoch_v067
+_install_ma_epoch_v067()
+from ma_v067_stock_runtime import install as _install_ma_v067_stock
+_install_ma_v067_stock()
+
 # v0.7.43: market trend is an AT/MA entry mode, never an independent account.
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
+
+# The coin price observer is installed on the already existing MarketTrend
+# Upbit ticker memory. Both markets retain their original broker/FOK owner.
+from ma_v067_coin_runtime import install as _install_ma_v067_coin
+_install_ma_v067_coin()
+
+# Keep Kiwoom socket receive/PONG independent from periodic universe REST
+# and local DB refresh. Never add a second Kiwoom WebSocket login.
+from kiwoom_ws_v067 import install as _install_kiwoom_ws_v067
+_install_kiwoom_ws_v067()
 
 # v0.7.53: authoritative POST-SELL tracker. This is research-only, listens
 # to the existing verified stock/coin feeds and never changes order logic.
