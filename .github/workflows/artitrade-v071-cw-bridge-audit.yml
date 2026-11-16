@@ -1,0 +1,46 @@
+name: ARTITRADE v071 CW shared broker boot wiring audit
+on:
+  push:
+    branches: [ fix-artitrade-v071-feed-order-error-export-20261116 ]
+    paths: [ '.github/workflows/artitrade-v071-cw-bridge-audit.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect CW registration and combined transport environment without credentials
+        run: |
+          python3 - <<'PY'
+          import base64,zipfile,io,re,os
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              print('PY MODULES',len(z.namelist()))
+              for name in z.namelist():
+                  if not name.endswith('.py'):continue
+                  s=z.read(name).decode('utf8','replace')
+                  lines=s.splitlines()
+                  hits=[i for i,l in enumerate(lines) if re.search('ARTITRADE_AT_CLOSE_COMBINED|at_close_runner|AtCloseRunner|register_close\(|\.shared_mode|start.*close|close.*start',l,re.I)]
+                  if not hits:continue
+                  print('MODULE',name,'HITS',len(hits))
+                  for i in hits[:30]:
+                      print('%5d %s'%(i+1,lines[i][:300]))
+              for name in ('android_live_bridge.py','at_close_runner.py'):
+                  if name in z.namelist():
+                      lines=z.read(name).decode('utf8').splitlines()
+                      for i,l in enumerate(lines):
+                          if 'def start(' in l or 'def run(' in l or 'def __init__(' in l or 'shared_mode' in l:
+                              print('METHOD',name,i+1)
+                              for j in range(max(0,i-3),min(len(lines),i+18)):
+                                  print('%5d %s'%(j+1,lines[j]))
+          for name in Path('ARTITRADE_ANDROID/app/src/main/python').rglob('*.py'):
+              data=name.read_text('utf8')
+              for i,l in enumerate(data.splitlines()):
+                  if 'ARTITRADE_AT_CLOSE_COMBINED' in l or 'AtCloseRunner' in l:
+                      print('OVERLAY',name,i+1,l[:200])
+          PY
