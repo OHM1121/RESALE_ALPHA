@@ -59,9 +59,6 @@ class TrendTimeGate(unittest.TestCase):
    def halt_market(self,*args):raise AssertionError('PAPER must not send actual orders')
   with TemporaryDirectory() as path:
    co=runtime.Coordinator(FakeRt(path))
-   # Test fixture has no original parent SQLite files. A real missing
-   # authoritative ledger remains fail-closed, never silently treated as free.
-   co.standalone_wallet.legacy_owned=lambda market,symbol:False
    co._candidates['coin']={'KRW-BTC':('CRYPTO','KRW-BTC')}
    co._closed_series=lambda market,code,frame,bar_end:(
        [{'close':100.0} for _ in range(21)] if frame=='5m' else [])
@@ -78,5 +75,35 @@ class TrendTimeGate(unittest.TestCase):
     buys=db.execute("SELECT COUNT(*) FROM executions WHERE side='BUY' AND execution_mode='PAPER'").fetchone()[0]
    self.assertEqual(buys,1,'Qualified current RSI 30 must reach independent PAPER ledger; blocks='+repr(co._entry_block_counts['coin'])+'; prechecked='+repr(co._prechecked)+'; last='+repr(co._last_fetch_error))
    self.assertFalse(co._virtual,'PAPER fill must not be recorded as virtual')
+
+
+ def test_epoch_ma_checked_without_optional_old_db_and_live_missing_base_blocks(self):
+  from tempfile import TemporaryDirectory
+  from pathlib import Path
+  import json,sqlite3
+  from market_trend_wallet_v043 import TrendWallet
+  class FakeRt:
+   def __init__(self,path,live):self.root=Path(path);self.live=live
+   def live_enabled(self,market):return self.live
+  with TemporaryDirectory() as path:
+   root=Path(path)
+   active=root/'coin/ma_epoch_v062/upbit_paper.sqlite3'
+   active.parent.mkdir(parents=True,exist_ok=True)
+   marker=active.parent/'ma_epoch_v062.json'
+   marker.write_text(json.dumps({'strategy_version':'MA_V062_NEW_STRATEGY',
+                                 'market':'coin','started_at':'2026-11-16T09:00:00+09:00'}))
+   with sqlite3.connect(active) as db:
+    db.execute("CREATE TABLE positions(market TEXT,status TEXT,qty REAL)")
+    db.execute("CREATE TABLE orders(market TEXT,status TEXT)")
+   co=runtime.Coordinator(FakeRt(root,False))
+   self.assertFalse(co.wallet.native_owned('coin','KRW-BTC'))
+   with sqlite3.connect(active) as db:
+    db.execute("INSERT INTO positions VALUES('KRW-BTC','OPEN',1)")
+   self.assertTrue(co.wallet.native_owned('coin','KRW-BTC'))
+   with sqlite3.connect(active) as db:
+    db.execute("DELETE FROM positions")
+   co_live=runtime.Coordinator(FakeRt(root,True))
+   self.assertTrue(co_live.wallet.native_owned('coin','KRW-BTC'),
+                   'Missing other original LIVE ledger must remain fail closed')
 
 if __name__=='__main__':unittest.main()
