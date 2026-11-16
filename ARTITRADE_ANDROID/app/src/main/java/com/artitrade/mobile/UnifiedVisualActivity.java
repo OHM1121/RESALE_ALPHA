@@ -2032,8 +2032,7 @@ public final class UnifiedVisualActivity extends Activity {
             }
         }
         if(pending.length()==0){
-            JSONObject diagnosis=local==null?null:local.optJSONObject("market_trend_status");
-            JSONObject marketDiag=diagnosis==null?null:diagnosis.optJSONObject(market);
+            // Reuse the diagnostics already resolved above; no redeclaration.
             int candidates=marketDiag==null?0:marketDiag.optInt("candidates",0);
             String err=marketDiag==null?"":marketDiag.optString("error","");
             String info="현재 관측 대기 0건 · 스캔 후보 "+candidates+
