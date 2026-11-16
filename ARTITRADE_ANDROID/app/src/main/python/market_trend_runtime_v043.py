@@ -742,6 +742,9 @@ class Coordinator:
                 if check:
                     # Store precheck even when no 0D quote exists.
                     self._prechecked[entry]=rsi
+                    if rsi<=30:
+                        self._record_entry_block(market,code,frame,barid,
+                            'RSI30_PRECHECK_PASSED_NOT_AN_ORDER',rsi,trade_age)
                 if submit and (self._prechecked.get(entry,100)>30 or rsi>30):
                     self._entry_block_counts[market][
                         'PRECHECK_MISSING_OR_RSI_ABOVE_30'
@@ -1152,6 +1155,7 @@ class Coordinator:
             ledger['pending_count']=len(ledger.get('pending') or [])
             node['trend']={'ledger':ledger}
         trend_research={"stock":[],"coin":[]}
+        audit_errors={"stock":[],"coin":[]}
         with self.lock:
             current=tuple(self._positions.values())
             virtual=tuple(self._virtual.items())
@@ -1207,9 +1211,56 @@ class Coordinator:
                 "ledger_is_virtual_only":True})
         # Only RSI20 entry decisions belong in RSI20 research.
         # SELL and INTENT events cannot masquerade as a new BUY signal.
-        for x in self.journal.events_recent(350):
-            if not (str(x["event_key"]).startswith("MT43:SIG:") or
-                    str(x["event_key"]).startswith("MT54:SIG:")):continue
+        for x in self.journal.events_recent(750):
+            identity=str(x["event_key"])
+            if identity.startswith(("MT74:AUDIT:","MA74:AUDIT:")):
+                m=str(x["market"])
+                if m not in audit_errors:continue
+                is_ma=identity.startswith("MA74:")
+                reason=str(x["reason"])
+                try:detail=json.loads(x["payload"] or "{}")
+                except (ValueError,TypeError):detail={}
+                seen=dt.datetime.fromtimestamp(float(x["at"]),mt.KST).isoformat()
+                evidence={"id":identity,"tf":x["frame"],"code":x["symbol"],
+                    "market":m,"at":seen,"ts":seen,
+                    "strategy":"ma" if is_ma else "trend",
+                    "entry_mode":"MA_COIN_AUDIT" if is_ma else "MARKET_TREND_AUDIT",
+                    "rsi20_live":x["rsi20_live"],
+                    "bought":False,"entry_observed":False,
+                    "execution_mode":"NO_ORDER","audit_only":True,
+                    "verified_order_placed":False,
+                    "outcome":"OBSERVED_ONLY" if reason.startswith("RSI30_OBSERVED")
+                              else "NO_ORDER_RECORDED",
+                    "reason":reason,"bar_end":detail.get("bar_end"),
+                    "last_trade_age_sec":detail.get("last_trade_age_sec")}
+                if is_ma:
+                    if m=="coin":
+                        ma_node=out.get("coin",{}).get("ma",{})
+                        if isinstance(ma_node,dict):
+                            ma_research=ma_node.setdefault("research",{})
+                            if isinstance(ma_research,dict):
+                                ma_research.setdefault("items",[]).append(evidence)
+                else:
+                    trend_research[m].append(evidence)
+                    trend_node=out.get(m,{}).get("trend",{})
+                    if isinstance(trend_node,dict):
+                        target=trend_node.setdefault("research",{})
+                        if isinstance(target,dict):
+                            target.setdefault("items",[]).append(evidence)
+                if (reason.startswith("OPERATIONAL_") or
+                    reason in ("ONE_SECOND_DECISION_DEADLINE_MISSED",
+                        "QUOTE_OR_BOOK_STALE_BEFORE_ORDER",
+                        "FRESH_BOOK_MISSING_AT_SUBMIT",
+                        "CLOSED_CANDLE_HISTORY_MISSING")):
+                    audit_errors[m].append({
+                        "at":seen,"stage":("COIN_MA" if is_ma else "MARKET_TREND")+"_"+reason,
+                        "code":x["symbol"],"frame":x["frame"],
+                        "message":reason+" | "+str(x["symbol"])+" / "+str(x["frame"])+
+                                  " / "+str(detail.get("bar_end") or ""),
+                        "status":"NO_ORDER","source":"V074_PERSISTED_AUDIT"})
+                continue
+            if not (identity.startswith("MT43:SIG:") or
+                    identity.startswith("MT54:SIG:")):continue
             item={"id":x["event_key"],"tf":x["frame"],
                   "code":x["symbol"],"market":x["market"],
                   "at":x["at"],"ts":x["at"],"strategy":x["strategy"],
@@ -1251,6 +1302,7 @@ class Coordinator:
                 if isinstance(target,dict):
                     target.setdefault("research",{}).setdefault("items",[]).append(item)
         out["market_trend_research"]=trend_research
+        out["market_trend_audit_errors"]=audit_errors
         return json.dumps(out,ensure_ascii=False,default=str)
 
 def set_manual_mode(market,enabled):
