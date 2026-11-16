@@ -72,6 +72,12 @@ def candidate_from_closed(bars,frame):
         if width_pct>PIVOT_RANGE_MAX_PCT:
             return dict(attributes,kind=None,reason='TURNPOINT_RANGE_OVER_2PCT')
         return dict(attributes,kind='TURNPOINT',reason='MA120_DOWN_SHORT4_FIRST_UP_BELOW')
+    # Priority: the existing 120-up / top-four-down condition is an
+    # immediate SELL trigger, never an eligible new DOWN_BEAR BUY.
+    if (mas[120]['delta']>0 and all(
+        mas[n]['value']>mas[120]['value'] and mas[n]['delta']<0
+        for n in PERIODS[:-1])):
+        return dict(attributes,kind=None,reason='MA_V061_FORCE_120UP_TOP4_DOWN_NO_BUY')
     if down>=3 and closing<opening:
         return dict(attributes,kind='DOWN_BEAR',reason='MA3PLUS_DOWN_BEAR')
     return dict(attributes,kind=None,reason='NO_MA_ENTRY_SIGNAL')
