@@ -581,9 +581,6 @@ def install():
                         except queue.Full:
                             _record_v074_ma_observation(str(code),'all',now.isoformat(),
                                 'OPERATIONAL_MA_TICK_QUEUE_FULL')
-                    except queue.Full:
-                        _record_v074_ma_observation(str(code),'all',now.isoformat(),
-                            'OPERATIONAL_MA_TICK_QUEUE_FULL')
             except (ValueError,TypeError,AttributeError,OverflowError) as exc:
                 _record_v074_ma_observation(str(code),'all','LIVE',
                     'OPERATIONAL_MA_TICK_DISPATCH_'+type(exc).__name__)
