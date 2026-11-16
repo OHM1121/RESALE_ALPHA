@@ -1,0 +1,44 @@
+name: ARTITRADE v072 guarded stock WebSocket and display quote patch
+on:
+  push:
+    branches: [ fix-artitrade-v072-preload-heartbeat-freshness-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/patch_v072_socket_health.py'
+      - '.github/workflows/artitrade-v072-apply.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v072-apply
+  cancel-in-progress: false
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply exact v071 pinned core patch, preserve 81 policy modules
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v072_socket_health.py
+      - name: Validate all stock quote regressions without broker credentials
+        env:
+          PYTHONPATH: ARTITRADE_ANDROID/app/src/main/python
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/stock_quote_truth_v066.py
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v066_stock_quote_truth.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v072_stock_quote_display.py' -v
+          git diff --check
+      - name: Commit exact broker-core, SHA checksum and versionCode update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name artitrade-ci
+          git config user.email artitrade-ci@users.noreply.github.com
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v072): broker REG ack, no false 0B reconnect and verified quote display'
+          git push origin HEAD:fix-artitrade-v072-preload-heartbeat-freshness-20261116
