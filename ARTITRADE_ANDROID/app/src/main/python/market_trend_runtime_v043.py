@@ -612,11 +612,11 @@ class Coordinator:
                     self._entry_block_counts[market]['RSI_20_HISTORY_INVALID']+=1
                     continue
                 if check:
+                    # The -15s window has a hard one-second budget. Never
+                    # serialize dozens of SQLite writes/latch reads before
+                    # the independent -12s order window. The five-second
+                    # watch worker persists research and WATCH_PENDING already.
                     self._prechecked[entry]=rsi
-                    self.journal.record_watch(market,code,frame,q["trade"],rsi,barid)
-                    armed=self.journal.latch(market,code,frame).armed
-                    self.watch.observe(market,code,frame,barid,rsi,armed,
-                        observed_at=time.time(),price=q['trade'])
                 if submit and (self._prechecked.get(entry,100)>30 or rsi>30):
                     self._entry_block_counts[market][
                         'PRECHECK_MISSING_OR_RSI_ABOVE_30'
@@ -644,6 +644,18 @@ class Coordinator:
             chosen=mt.choose_frame([x[0] for x in signals])
             if chosen is None:continue
             frame,rsi,barid,q=next(x for x in signals if x[0]==chosen)
+            # Recheck the actual decision second and raw source freshness;
+            # a slow research/SQLite cycle must never create a late order.
+            fresh_now=dt.datetime.now(mt.KST)
+            finish=dt.datetime.fromisoformat(barid)
+            if not mt.preclose_due(fresh_now,finish,frame,market):
+                self._entry_block_counts[market]['ONE_SECOND_DECISION_DEADLINE_MISSED']+=1
+                continue
+            verified=self._quote(market,code)
+            if verified is None:
+                self._entry_block_counts[market]['QUOTE_OR_BOOK_STALE_BEFORE_ORDER']+=1
+                continue
+            q=verified
             self._ordered.add((market,code,frame,barid))
             latch=self.journal.latch(market,code,frame)
             if not latch.offer(barid,rsi):
