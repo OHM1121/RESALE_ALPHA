@@ -276,6 +276,17 @@ def real_boot():
     adb("shell","pm","grant",PACKAGE,"android.permission.POST_NOTIFICATIONS",check=False)
     adb("logcat","-c",check=False)
     tree=start_app("real_boot")
+    # A cold v081 boot waits for authentic two-exchange subscriptions and
+    # quote-safe ledger readiness; the emulator has no broker credentials.
+    # It must eventually show an explicitly degraded UI, never fake LIVE.
+    for attempt in range(55):
+        tree=dump("v081_cold_preload_"+str(attempt))
+        if contains(tree,"대시보드"):break
+        if not contains(tree,"ARTITRADE"):
+            raise AssertionError("Cold-start app disappeared before preload")
+        time.sleep(1.0)
+    if not contains(tree,"대시보드"):
+        raise AssertionError("V081_COLD_PRELOAD_NOT_BOUNDED_TO_DASHBOARD")
     check_screen("real_home",["대시보드"],scroll=0)
     for title in ("보유종목","매수대기","체결이력","연구자료","대시보드"):
         tree=choose(title,tree)
