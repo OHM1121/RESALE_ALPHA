@@ -1,7 +1,7 @@
 name: ARTITRADE v0.7.66 Android 15 boot and eight-screen smoke
 on:
   push:
-    branches: [ feature-artitrade-v066-kiwoom-gmo-lifecycle-audit-20261116 ]
+    branches: [ feature-artitrade-v066-stock-fresh-quote-audit-20261116 ]
     paths:
       - 'ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
