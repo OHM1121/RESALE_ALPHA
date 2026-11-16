@@ -1591,7 +1591,34 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject tree=local==null?null:local.optJSONObject(m);
             JSONObject trend=tree==null?null:tree.optJSONObject("trend");
             JSONObject data=trend==null?null:trend.optJSONObject("research");
-            return data==null?new JSONObject():data;
+            // MT54 standalone signal evidence can be present in both fields;
+            // older MT43 evidence may exist only in the shared journal.
+            // Join read-only for display without ever moving or editing a
+            // wallet, a fill, or another strategy's research storage.
+            JSONObject shared=local==null?null:local.optJSONObject("market_trend_research");
+            JSONArray legacy=shared==null?null:shared.optJSONArray(m);
+            JSONArray current=data==null?null:data.optJSONArray("items");
+            JSONArray merged=new JSONArray();
+            java.util.HashSet<String> seen=new java.util.HashSet<>();
+            for(JSONArray source:new JSONArray[]{current,legacy}){
+                if(source==null)continue;
+                for(int i=0;i<source.length();i++){
+                    JSONObject row=source.optJSONObject(i);
+                    if(row==null||!isTrendRow(row))continue;
+                    String id=row.optString("id","");
+                    String key=id.isEmpty()?row.toString():id;
+                    if(seen.add(key))merged.put(row);
+                }
+            }
+            JSONObject scoped=data==null?new JSONObject():new JSONObject(data.toString());
+            try{
+                scoped.put("items",merged);
+                scoped.put("signals",merged.length());
+                scoped.put("loaded_items",merged.length());
+                scoped.put("source_total",merged.length());
+                scoped.put("load_status","OK");
+            }catch(org.json.JSONException ignored){}
+            return scoped;
         }
         if("coin".equals(m))return record(snapshot,"ma".equals(s)?"coinMaResearch":"coinGeneralResearch");
         if("close".equals(s))return record(snapshot,"stockCwResearch");
