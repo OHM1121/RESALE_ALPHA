@@ -67,10 +67,7 @@ jobs:
               live=z.read('d_live.py').decode()
               assert up.count('with connect(WS_URL,')==1
               assert 'self._v083_tick_queue.put_nowait((code,price,stamp))' in up
-              assert 'self._v083_refresh_subscriptions' not in up
-              assert 'self._v083_refresh_subscriptions' not in live
-              assert 'def _v083_refresh_subscriptions' not in up
-              assert 'def _v083_refresh_subscriptions' not in live
+              assert 'def _v083_refresh_subscriptions(self)' in up
               assert 'def _v083_consume_ticks(self)' in up
               assert 'def _v083_refresh_subscriptions(self)' not in up
               assert 'def _v083_refresh_subscriptions(self)' not in live
