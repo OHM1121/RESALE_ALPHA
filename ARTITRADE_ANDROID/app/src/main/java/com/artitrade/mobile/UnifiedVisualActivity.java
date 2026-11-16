@@ -2011,6 +2011,26 @@ public final class UnifiedVisualActivity extends Activity {
         detail.setTextColor(PremiumUi.MUTED);
         detail.setPadding(dp(2),dp(6),0,dp(10));
         content.addView(detail);
+        JSONObject trendDiag=local==null?null:local.optJSONObject("market_trend_status");
+        JSONObject marketDiag=trendDiag==null?null:trendDiag.optJSONObject(market);
+        JSONObject blocked=marketDiag==null?null:marketDiag.optJSONObject("entry_block_reasons");
+        if(blocked!=null&&blocked.length()>0){
+            StringBuilder hint=new StringBuilder("미진입 사유(누적) · ");
+            java.util.Iterator<String> keys=blocked.keys();int shown=0;
+            while(keys.hasNext()&&shown<3){
+                String reason=keys.next();int count=blocked.optInt(reason,0);
+                if(count<=0)continue;
+                if(shown>0)hint.append(" / ");
+                hint.append(reason).append(" ").append(count);
+                shown++;
+            }
+            if(shown>0){
+                TextView why=text(hint.toString(),11);
+                why.setTextColor(PremiumUi.MUTED);
+                why.setMaxLines(4);
+                content.addView(why);
+            }
+        }
         if(pending.length()==0){
             JSONObject diagnosis=local==null?null:local.optJSONObject("market_trend_status");
             JSONObject marketDiag=diagnosis==null?null:diagnosis.optJSONObject(market);
