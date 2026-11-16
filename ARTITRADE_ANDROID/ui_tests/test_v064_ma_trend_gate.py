@@ -48,4 +48,32 @@ class TrendTimeGate(unittest.TestCase):
   end=dt.datetime(2026,11,16,10,30,tzinfo=kst)
   self.assertTrue(mt.preclose_due(now,end,'30m','stock'))
   self.assertTrue(mt.preclose_due(now,end,'30m','coin'))
+
+ def test_qualified_rsi_can_reach_independent_paper_wallet_and_real_ledger(self):
+  from tempfile import TemporaryDirectory
+  from pathlib import Path
+  class FakeRt:
+   def __init__(self,path):
+    self.root=Path(path);self.stock_runner=None;self.coin_runner=None;self._halted={}
+   def live_enabled(self,market):return False
+   def halt_market(self,*args):raise AssertionError('PAPER must not send actual orders')
+  with TemporaryDirectory() as path:
+   co=runtime.Coordinator(FakeRt(path))
+   co._candidates['coin']={'KRW-BTC':('CRYPTO','KRW-BTC')}
+   co._closed_series=lambda market,code,frame,bar_end:(
+       [{'close':100.0} for _ in range(21)] if frame=='5m' else [])
+   co._quote=lambda market,code:{'trade':70.,'ask':70.,'bid':69.,
+                                  'ask_size':10000.,'bid_size':10000.}
+   co.journal.save_latch('coin','KRW-BTC','5m',mt.SignalLatch(True))
+   kst=mt.KST
+   pre=dt.datetime(2026,11,16,10,4,45,tzinfo=kst)
+   decision=dt.datetime(2026,11,16,10,4,48,tzinfo=kst)
+   co._decision_clock=lambda:decision
+   co._preclose_candidates('coin',pre)
+   co._preclose_candidates('coin',decision)
+   with co.standalone_wallet._connect('coin') as db:
+    buys=db.execute("SELECT COUNT(*) FROM executions WHERE side='BUY' AND execution_mode='PAPER'").fetchone()[0]
+   self.assertEqual(buys,1,'Qualified current RSI 30 must reach independent PAPER ledger')
+   self.assertFalse(co._virtual,'PAPER fill must not be recorded as virtual')
+
 if __name__=='__main__':unittest.main()
