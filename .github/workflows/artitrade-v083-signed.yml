@@ -45,6 +45,7 @@ jobs:
           set -euo pipefail
           test "${{ steps.signing.outputs.cache-hit }}" = "true"
           actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "SIGNING_FINGERPRINT_ACTUAL=$actual"
           test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
       - name: Verify v083 core SHA, original strategy and inspect unmodified d_live
         shell: bash
