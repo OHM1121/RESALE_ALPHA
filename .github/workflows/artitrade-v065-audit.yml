@@ -1,0 +1,16 @@
+name: ARTITRADE v065 read-only native MA entry audit
+on:
+  push:
+    branches: [ feature-artitrade-v065-strict-ma-handoff-20261116 ]
+    paths: [ 'ARTITRADE_ANDROID/ui_tests/audit_v065_native_ma.py', '.github/workflows/artitrade-v065-audit.yml' ]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python3 ARTITRADE_ANDROID/ui_tests/audit_v065_native_ma.py
