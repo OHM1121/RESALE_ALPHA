@@ -268,8 +268,12 @@ def _up_worker(runner):
                     _table(c)
                     if c.execute("""SELECT 1 FROM positions WHERE code=? AND status='OPEN'""",
                                  (code,)).fetchone():continue
-                    barstart=finish-dt.timedelta(seconds=(
-                        {'5m':300,'30m':1800,'60m':3600,'day':86400}[frame]))
+                    # An official KRX daily bar starts at the regular
+                    # 09:00 session, NOT 15:30 of the previous date.
+                    barstart=(now.replace(hour=9,minute=0,second=0,microsecond=0)
+                              if frame=='day' else
+                              finish-dt.timedelta(seconds={
+                                  '5m':300,'30m':1800,'60m':3600}[frame]))
                     signal=barstart.strftime('%Y%m%d%H%M%S')
                     features={'decision':'QUALIFIED','reason':'MA_V067_UP_5_SECONDS',
                         'ma_v061_kind':'TURNPOINT','ma_v067_kind':'REVERSAL_UP',
