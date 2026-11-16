@@ -41,6 +41,7 @@ public final class UnifiedTradingService extends Service {
     private volatile String lastAutomaticMigrationSha="";
     private volatile long lastAutomaticMigrationAt=0L;
     private Thread monitor;
+    private Thread preloadObserver;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private long stockEpoch=0,coinEpoch=0;
@@ -140,8 +141,14 @@ public final class UnifiedTradingService extends Service {
                     try{wifiLock.acquire();}
                     catch(SecurityException e){crashes.add("wifi_lock_permission",e);}
                 }
-                // Never initialize broker/network work on Android's main thread.
+                // Both original broker engines initialize on the worker thread;
+                // a separate READ-ONLY readiness observer never opens a socket.
+                getSharedPreferences("artitrade_preload_v081",MODE_PRIVATE).edit()
+                    .putLong("boot_at",System.currentTimeMillis())
+                    .putString("stage","ENGINE_BOOT").putBoolean("complete",false).apply();
                 new Thread(()->safeStartStrategy(),"artitrade-v070-python-start").start();
+                preloadObserver=new Thread(this::observeStartupReadiness,
+                    "artitrade-v081-preload-observer");preloadObserver.start();
                 monitor=new Thread(this::monitorLoop,"artitrade-v070-monitor");
                 monitor.start();
             }
@@ -181,6 +188,13 @@ public final class UnifiedTradingService extends Service {
         if(!started.optBoolean("ok",true))
             crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
         JSONObject records=strategy.hubRecords();
+        // Make verified source ledgers available to the initial dashboard
+        // without waiting for the MSERVER monitor's separate network request.
+        if(records!=null&&records.length()>0){
+            getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE).edit()
+                .putString("records",records.toString())
+                .putLong("updated_at",System.currentTimeMillis()).apply();
+        }
         String state=migration.optString("status","");
         JSONObject audit=new JSONObject();
         if("FILES_INSTALLED".equals(state)||"LOCAL_FILES_PRESENT".equals(state)){
@@ -202,6 +216,49 @@ public final class UnifiedTradingService extends Service {
         catch(Throwable e){crashes.add("strategy_start_thread",e);}
         finally{migrationRestarting.set(false);}
     }
+    private void observeStartupReadiness(){
+        // The original market threads are already starting. Poll their
+        // existing snapshot without creating a second Kiwoom/Upbit login.
+        // Local preflight must progress even when MSERVER is unreachable.
+        final long deadline=System.currentTimeMillis()+55_000L;
+        int errors=0;
+        while(running.get()&&System.currentTimeMillis()<deadline){
+            try{
+                if(strategy!=null&&strategy.isStarted()){
+                    JSONObject snapshot=strategy.snapshot();
+                    JSONObject readiness=snapshot.optJSONObject("startup_preload_v081");
+                    if(readiness!=null&&readiness.optLong("updated_at_ms",0)>0){
+                        getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE)
+                            .edit().putString("snapshot",snapshot.toString()).apply();
+                        JSONObject stock=readiness.optJSONObject("stock");
+                        JSONObject coin=readiness.optJSONObject("coin");
+                        boolean needStock=stock!=null&&stock.optBoolean("keys_present",false)
+                            &&stock.optBoolean("session_required",false);
+                        boolean stockReady=!needStock||stock.optBoolean("ws_ready",false);
+                        boolean coinReady=coin!=null&&coin.optBoolean("ws_ready",false);
+                        JSONObject coinGate=coin==null?null:coin.optJSONObject("preload");
+                        JSONObject stockGate=stock==null?null:stock.optJSONObject("preload");
+                        boolean fullyWarm=coinGate!=null&&coinGate.optBoolean("ready",false)
+                            &&(!needStock||(stockGate!=null&&stockGate.optBoolean("ready",false)));
+                        String stage=fullyWarm&&stockReady&&coinReady?"READY":
+                            stockReady&&coinReady?"WARMING_CANDLES":"CONNECTING";
+                        getSharedPreferences("artitrade_preload_v081",MODE_PRIVATE).edit()
+                            .putString("stage",stage)
+                            .putLong("observed_at",System.currentTimeMillis())
+                            .putBoolean("stock_ready",stockReady)
+                            .putBoolean("coin_ready",coinReady)
+                            .putBoolean("complete",fullyWarm&&stockReady&&coinReady).apply();
+                        if(fullyWarm&&stockReady&&coinReady)break;
+                    }
+                }
+            }catch(Throwable e){
+                if(errors++<2)crashes.add("v081_startup_observer",e);
+            }
+            try{Thread.sleep(1350L);}
+            catch(InterruptedException ie){Thread.currentThread().interrupt();break;}
+        }
+    }
+
     private void checkPendingPCArchive(LocalHubClient hub){
         if(!strategy.isStarted()||migrationRestarting.get())return;
         long now=System.currentTimeMillis();
@@ -605,6 +662,9 @@ public final class UnifiedTradingService extends Service {
         running.set(false);
         try{if(strategy!=null)strategy.stop();}catch(Throwable e){if(crashes!=null)crashes.add("service_stop_strategy",e);}
         if(monitor!=null)monitor.interrupt();
+        if(preloadObserver!=null)preloadObserver.interrupt();
+        getSharedPreferences("artitrade_preload_v081",MODE_PRIVATE).edit()
+            .putString("stage","STOPPED").putBoolean("complete",false).apply();
         if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();
         if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();
         getSharedPreferences("artitrade_background_health_v1",MODE_PRIVATE).edit()
