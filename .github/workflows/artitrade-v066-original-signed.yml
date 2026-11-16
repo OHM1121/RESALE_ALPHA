@@ -17,7 +17,7 @@ jobs:
       CI: 'true'
       SOURCE: '1be3ef240e8a1dffd7453ae04878f5127083e9e8'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.66_20261116'
-      TAG: 'ARTITRADE-v0.7.66-20261116-rc1'
+      TAG: 'ARTITRADE-v0.7.66-20261116-rc2'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,12 +97,12 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: default
           arch: x86_64
-          profile: pixel_5
+          profile: pixel_3a
           cores: 2
-          ram-size: 3072M
-          heap-size: 384M
+          ram-size: 2048M
+          heap-size: 256M
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: python3 ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py
