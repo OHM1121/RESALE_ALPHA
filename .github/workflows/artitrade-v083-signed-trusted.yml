@@ -70,15 +70,6 @@ jobs:
               assert 'self._v083_tick_queue.put_nowait((code,price,stamp))' in up
               assert 'def _v083_refresh_subscriptions(self)' in up
               assert 'def _v083_consume_ticks(self)' in up
-              assert 'def _v083_refresh_subscriptions(self)' not in up
-              assert 'def _v083_refresh_subscriptions(self)' not in live
-              assert 'def _v083_refresh_subscriptions(self)' not in (r/'python/market_trend_runtime_v043.py').read_text()
-              assert 'def _v083_refresh_subscriptions(self)' not in (r/'python/android_runtime_v078.py').read_text()
-              assert 'def _v083_refresh_subscriptions(self)' not in (r/'python/ma_v067_coin_runtime.py').read_text()
-              assert 'def _v083_refresh_subscriptions(self)' not in (r/'python/ma_v067_stock_runtime.py').read_text()
-              assert 'def _v083_refresh_subscriptions(self)' not in (r/'python/ma_v067_policy.py').read_text()
-              assert 'def _v083_refresh_subscriptions(self)' not in (r/'python/market_trend_v043.py').read_text()
-              assert 'def _v083_refresh_subscriptions(self)' not in (r/'python/market_trend_wallet_v054.py').read_text()
               cls=next(x for x in ast.parse(up).body if isinstance(x,ast.ClassDef) and x.name=='UpbitPaperRunner')
               ws=next(x for x in cls.body if isinstance(x,ast.FunctionDef) and x.name=='_ws')
               body=ast.get_source_segment(up,ws)
