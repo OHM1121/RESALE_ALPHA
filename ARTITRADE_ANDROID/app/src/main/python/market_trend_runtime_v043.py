@@ -139,6 +139,8 @@ class Coordinator:
         self._quotes={"stock":{},"coin":{}}
         self._history={}
         self._history_requests={}
+        # One diagnostic per source/bar/window, not every 200ms precheck poll.
+        self._v078_missing_trade_seen=set()
         self._last_closed={}
         self._prechecked={}
         self._v074_window_seen=set()
@@ -409,7 +411,14 @@ class Coordinator:
                     "low":float(row["low"]),"source":"LOCAL_KRX_VERIFIED"}
             except (ValueError,TypeError):continue
         if len(converted)>=25:
-            return sorted(converted.values(),key=lambda x:x["end"])[-80:]
+            # Local KRX bars can be numerically sufficient yet stale after a feed gap.
+            # Retry official historical data during the regular session rather than
+            # permanently returning an old 25+ bar cache and starving RSI20.
+            from krx_session_v041 import is_regular_open
+            newest=max(x['end'] for x in converted.values())
+            if (not is_regular_open() or
+                    (now-newest).total_seconds()<=3*mt.FRAME_SECS[frame]):
+                return sorted(converted.values(),key=lambda x:x['end'])[-80:]
         source=runner.api.history_bars(code,frame)
         for row in source:
             try:
@@ -428,13 +437,22 @@ class Coordinator:
                 held=[(p.symbol,p.frame) for p in self._positions.values() if p.market==market]
             pairs=list(dict.fromkeys(held+[(code,tf) for code in universe
                                                 for tf in mt.FRAMES]))
+            # Populate missing RSI histories before refreshing existing complete
+            # windows. Held positions retain highest repair priority.
+            held_set=set(held)
+            with self.lock:
+                missing={p for p in pairs if len(self._history.get((market,p[0],p[1]),()))<21}
+            pairs.sort(key=lambda p:(p not in held_set,p not in missing,mt.FRAMES.index(p[1]),p[0]))
             if not pairs:
                 self.stop_event.wait(1)
                 continue
             for code,frame in pairs:
                 if self.stop_event.is_set():return
                 key=(market,code,frame)
-                if time.monotonic()-self._history_requests.get(key,0)<45:
+                with self.lock:
+                    complete=len(self._history.get(key,()))>=21
+                retry_after=45 if complete else 12
+                if time.monotonic()-self._history_requests.get(key,0)<retry_after:
                     continue
                 self._history_requests[key]=time.monotonic()
                 started=time.monotonic()
@@ -730,10 +748,18 @@ class Coordinator:
                 observed_trade=(mt._finite(backed.get('trade'))
                                 if isinstance(backed,dict) else None)
             if observed_trade is None or observed_trade<=0:
-                self._entry_block_counts[market]['FRESH_0B_TRADE_MISSING_AT_PRECHECK']+=1
-                for frame,finish,_,submit in scheduled:
+                # The same one-second precheck is polled several times; count
+                # distinct missed opportunities, but keep retrying the real WS
+                # price throughout that second if a genuine trade arrives.
+                for frame,finish,check,submit in scheduled:
+                    key=(market,code,frame,finish.isoformat(),bool(submit))
+                    if key in self._v078_missing_trade_seen:continue
+                    self._v078_missing_trade_seen.add(key)
+                    self._entry_block_counts[market]['FRESH_0B_TRADE_MISSING_AT_PRECHECK']+=1
                     if submit:self._record_entry_block(market,code,frame,finish.isoformat(),
                         'VERIFIED_TRADE_STALE_OR_MISSING',trade_age_sec=trade_age)
+                if len(self._v078_missing_trade_seen)>12000:
+                    self._v078_missing_trade_seen.clear()
                 continue
             for frame,finish,check,submit in scheduled:
                 barid=finish.isoformat()
@@ -966,7 +992,17 @@ class Coordinator:
 
         This research-only loop never submits a broker order or virtual fill.
         """
+        stale_episodes=set()
+        missing_history_reported=set()
         while not self.stop_event.is_set():
+            # KRX does not produce genuine 0B prints outside regular hours.
+            # Do not report a permanent feed outage at nights or weekends.
+            if market=='stock':
+                from krx_session_v041 import is_regular_open
+                if not is_regular_open():
+                    stale_episodes.clear()
+                    self.stop_event.wait(5)
+                    continue
             try:
                 now=dt.datetime.now(mt.KST)
                 since=time.monotonic()
@@ -977,7 +1013,9 @@ class Coordinator:
                     raw=quotes.get(code)
                     max_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
                     if raw is None or since-raw[1]>max_age:
-                        self._entry_block_counts[market]['WATCH_TICK_STALE']+=1
+                        if code not in stale_episodes:
+                            self._entry_block_counts[market]['WATCH_TICK_STALE']+=1
+                            stale_episodes.add(code)
                         # A new BUY may not use this price. However, deleting
                         # a PREVIOUSLY verified RSI watch every 5s made quiet
                         # stocks invisible even though WatchBook has a 45s
@@ -985,6 +1023,7 @@ class Coordinator:
                         # by its original observation time until TTL expires.
                         # Actual -12s BUY still requires a NEW fresh trade/book.
                         continue
+                    stale_episodes.discard(code)
                     price=raw[0]
                     for frame in mt.FRAMES:
                         finish=_end_clock(now,market,frame)
@@ -997,9 +1036,12 @@ class Coordinator:
                             continue
                         rows=self._closed_series(market,code,frame,finish)
                         if not rows:
-                            self._entry_block_counts[market]['WATCH_HISTORY_MISSING']+=1
-                            self._record_entry_block(market,code,frame,barid,
-                                'OPERATIONAL_WATCH_HISTORY_MISSING')
+                            identity=(code,frame,barid)
+                            if identity not in missing_history_reported:
+                                missing_history_reported.add(identity)
+                                self._entry_block_counts[market]['WATCH_HISTORY_MISSING']+=1
+                                self._record_entry_block(market,code,frame,barid,
+                                    'OPERATIONAL_WATCH_HISTORY_MISSING')
                             self.watch.discard(market,code,frame)
                             continue
                         rsi=mt.rsi20([x['close'] for x in rows],price)
@@ -1021,6 +1063,9 @@ class Coordinator:
                 self._record_entry_block(market,'__ENGINE__','all',
                     dt.datetime.now(mt.KST).date().isoformat(),
                     'OPERATIONAL_WATCH_'+type(exc).__name__)
+            # Bounded observation-identity memory; no durable records deleted.
+            if len(missing_history_reported)>12000:
+                missing_history_reported.clear()
             self.stop_event.wait(5)
 
     def _ma_no_result_watchdog(self,market):
