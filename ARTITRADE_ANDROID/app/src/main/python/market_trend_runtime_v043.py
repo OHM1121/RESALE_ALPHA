@@ -24,6 +24,8 @@ _CORE=None
 _INSTALLED=False
 _MA_GUARD=threading.local()
 _STOCK_TICK_LOCK=threading.RLock()
+# REST quote snapshots are marks only; do not turn an old trade into a fresh WS print.
+_PRICE_OBSERVATION_CONTEXT=threading.local()
 # A genuine Upbit last-trade tick remains a verified price during quiet seconds.
 # Extend RSI observation only; executable Upbit book must still be <=3s fresh.
 COIN_VERIFIED_TRADE_MAX_AGE_SEC=10.0
@@ -94,6 +96,9 @@ class _PriceMemory(dict):
         super().__init__(initial);self._callback=callback
     def __setitem__(self,code,price):
         super().__setitem__(code,price)
+        # REST refresh also assigns latest_prices, but that assignment is not
+        # a new exchange trade. Keep UI/mark refresh without arming an entry.
+        if getattr(_PRICE_OBSERVATION_CONTEXT,'rest_only',False):return
         try:self._callback(str(code),float(price))
         except (ValueError,TypeError):pass
 
@@ -1167,6 +1172,18 @@ def install(core):
     if _INSTALLED:return
     _INSTALLED=True;_CORE=core
     import d_v19_portfolio,d_upbit,stock_ma_engine,d_live
+
+    # Upbit WS ticker and official REST ticker both write latest_prices. The
+    # former confirms a newly received trade; REST only republishes a mark.
+    # Tag REST assignments thread-locally, retaining native public API logic
+    # and avoiding fake fresh RSI observations (also used by MA v067).
+    original_rest_quotes=d_upbit.UpbitPaperRunner._rest_quotes
+    def mark_only_rest_quotes(self,*a,**kw):
+        old=getattr(_PRICE_OBSERVATION_CONTEXT,'rest_only',False)
+        _PRICE_OBSERVATION_CONTEXT.rest_only=True
+        try:return original_rest_quotes(self,*a,**kw)
+        finally:_PRICE_OBSERVATION_CONTEXT.rest_only=old
+    d_upbit.UpbitPaperRunner._rest_quotes=mark_only_rest_quotes
 
     stock_buy=d_v19_portfolio.D19PaperEngine._buy_limit_depth
     def gated_stock_buy(self,c,row,*a,**kw):
