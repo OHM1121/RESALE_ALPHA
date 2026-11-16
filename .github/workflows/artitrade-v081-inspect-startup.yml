@@ -24,22 +24,14 @@ jobs:
           assert 'CORE_SHA256="'+hashlib.sha256(z).hexdigest()+'"' in bridge
           with zipfile.ZipFile(io.BytesIO(z)) as f:
               assert f.testzip() is None
-              for name in ['android_live_bridge.py','d_live.py','d_upbit.py']:
-                  src=f.read(name).decode()
-                  lines=src.splitlines()
-                  print('===FILE===',name,'lines',len(lines))
-                  if name=='android_live_bridge.py':
-                      pattern=r'^    def (start|snapshot|_start|_coin|_stock|stop)\b|^def (start|snapshot)|coin_runner|stock_runner|threading.Thread|asyncio|create_task'
-                  elif name=='d_live.py':
-                      pattern=r'^    async def run\b|^    def run\b|_confirmed_ws_session|preload_gate|^    def _.*preload|^    async def .*feed|_tracked_codes|self\.subscriptions|auth'
-                  else:
-                      pattern=r'^    def (run|_ws|_both_watched_codes|_refresh|_load|_ensure|start|__init__|candles)\b|_ws_connected|_ws_last_frame|_ws_last_reason|self\.tracked|latest_prices|\.markets|last_book'
-                  found=[i for i,l in enumerate(lines) if re.search(pattern,l)]
-                  for i in found[:90]:
-                      print('HIT',i+1,lines[i][:230])
-                      if (re.match(r'^    def (start|snapshot|_both_watched_codes|__init__|run)',lines[i]) or
-                          re.match(r'^    async def run',lines[i]) or
-                          'self._ws_connected' in lines[i] or 'preload_gate' in lines[i]):
-                          for j in range(max(0,i-1),min(len(lines),i+10)):
-                              print('CTX',j+1,lines[j][:205])
+              for name,spans in [
+                  ('android_live_bridge.py',[(218,240),(280,315),(435,477)]),
+                  ('d_live.py',[(1880,1930),(1940,2017),(2025,2092),(2180,2248),(2280,2327)]),
+                  ('d_upbit.py',[(2790,2830),(2840,2895),(3730,3805),(3840,3869)])
+              ]:
+                  lines=f.read(name).decode().splitlines()
+                  print('===FILE===',name,len(lines))
+                  for start,end in spans:
+                      for i in range(start-1,min(len(lines),end)):
+                          print('CTX',i+1,lines[i][:230])
           PY
