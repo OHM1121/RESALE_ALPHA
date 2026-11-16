@@ -1767,25 +1767,14 @@ def _patched_gmo(self):
         gmo = GMOService(gmo_root)
         self.stock_runner.gmo = gmo
 
-        original_tick = self.stock_runner._new_tick
-        def tick_with_gmo(tick):
-            try:
-                gmo.on_priority_tick(tick)
-                gmo.on_live_tick(tick)
-            except Exception as exc:
-                self._err('gmo_tick', exc)
-            return original_tick(tick)
-        self.stock_runner._new_tick = tick_with_gmo
-
-        original_book = self.stock_runner.engine.book.on_message
-        def book_with_gmo(message, *args, **kwargs):
-            try:
-                gmo.on_book_message(message, self.stock_runner.market_map)
-            except Exception as exc:
-                self._err('gmo_book', exc)
-            return original_book(message, *args, **kwargs)
-        self.stock_runner.engine.book.on_message = book_with_gmo
-
+        # v067 root cause: d_live.run already routes 0D to GMO and every
+        # 0B to its separate fast/priority worker. The older Android patch
+        # also ran GMO.on_live_tick AND on_book_message in the WebSocket
+        # receiver itself. The SAME feed packet was processed twice,
+        # including synchronous DB/strategy work while the socket needed
+        # to service PING/PONG, causing 1011 keepalive ping timeouts.
+        # Keep the single original socket and native workers authoritative.
+        # No second per-packet GMO calls on the WS event loop.
         gmo.start(lambda: self.stock_runner.api,
                   lambda: dict(self.stock_runner.market_map))
     # The v071 live bridge replaces GMO paper_match with a broker-only
