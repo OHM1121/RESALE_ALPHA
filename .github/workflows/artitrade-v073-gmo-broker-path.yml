@@ -1,0 +1,29 @@
+name: ARTITRADE v073 live GMO submit proof read-only
+on:
+  push:
+    branches: [fix-artitrade-v072-preload-heartbeat-freshness-20261116]
+    paths: ['.github/workflows/artitrade-v073-gmo-broker-path.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: bf42daa6e43ec08fa56b9791f14a5cd8d7503d62}
+      - run: |
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          a=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((a/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(z)) as arc:
+              for name,spans in [
+                ('d_gmo_runtime.py',[(565,650),(655,760)]),
+                ('d_live.py',[(675,712),(1906,1966)]),
+                ('android_live_bridge.py',[(140,230),(360,450)])
+              ]:
+                lines=arc.read(name).decode().splitlines()
+                print('=== MODULE',name)
+                for a,b in spans:
+                  for n in range(a,min(b,len(lines))+1):print('LINE',n,lines[n-1][:235])
+          PY
