@@ -1,0 +1,54 @@
+name: ARTITRADE v071b CW stock socket heartbeat and verified 0B repair
+on:
+  push:
+    branches: [ fix-artitrade-v071-feed-order-error-export-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/patch_v071b_ws_session_health.py'
+      - '.github/workflows/artitrade-v071b-apply.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v071b-patch
+  cancel-in-progress: false
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply strict source digest patch with all trading policy modules unchanged
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v071b_ws_session_health.py
+      - name: Verify 0B silence reconnect and CW broker transport mapping without credentials
+        run: |
+          python3 - <<'PY'
+          import ast,base64,hashlib,zipfile,io
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID')
+          p=root/'app/src/main/assets/strategy_v070'
+          raw=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          code=zipfile.ZipFile(io.BytesIO(raw)).read('d_live.py').decode('utf8')
+          assert "self._health('실시간 연결됨','키움 REG 승인" in code
+          assert "V071_KRX_0B_SILENT_45S_RECONNECT" in code
+          assert "self._v071_enqueue_feed('raw',msg)" in code
+          assert "asyncio.to_thread(self._new_tick, tick)" not in code
+          assert 'CORE_SHA256="'+hashlib.sha256(raw).hexdigest()+'"' in (root/'app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          compile(code,'d_live.py','exec')
+          print("SESSION_ACK_CW_TRANSPORT_REAL_0B_WATCHDOG_VERIFIED")
+          PY
+          git diff --check
+      - name: Commit only exact core assets and runtime bridge checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name artitrade-ci
+          git config user.email artitrade-ci@users.noreply.github.com
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v071): CW shared REG state and bounded zero 0B automatic reconnect'
+          git push origin HEAD:fix-artitrade-v071-feed-order-error-export-20261116
