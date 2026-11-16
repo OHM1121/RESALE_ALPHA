@@ -36,6 +36,8 @@ HARD_AFTER_FIRST=Decimal('.01')
 GRACE=timedelta(minutes=5)
 UP_SUBMIT_BEFORE_CLOSE_SECONDS=5
 MAX_UP_FILL_DELAY_SECONDS=15
+# Entry setup only. The protective forced-SELL rule is kept unchanged.
+MA120_DOWN_TOLERANCE=Decimal('0.0050')
 
 
 def number(x):
@@ -53,12 +55,24 @@ def slopes(prices):
     return legacy.ma_values(values,len(values)-1)
 
 
+def ma120_down_for_entry(ma):
+    """MA120 delta <= +0.0050 is considered falling for new BUY screening.
+
+    This is an absolute moving-average-price delta, not a percentage.
+    """
+    try:
+        value=number(ma[120]['delta'])
+        return value is not None and value<=MA120_DOWN_TOLERANCE
+    except (KeyError,TypeError,AttributeError):
+        return False
+
+
 def bear_setup(closed_bars):
     """True whenever one verified completed bar has full bear alignment."""
     if len(closed_bars)<121:return False
     m=slopes([b['close'] for b in closed_bars])
     if m is None:return False
-    return (m[120]['delta']<0 and all(
+    return (ma120_down_for_entry(m) and all(
         m[n]['value']<m[120]['value'] and m[n]['delta']<0
         for n in SHORT))
 
@@ -99,7 +113,7 @@ def upward_transition_on_forming(prior_closed,price,seconds_before_close):
     cur=slopes(list(prior_closed)+[price])
     if prev is None or cur is None:
         return {'kind':None,'reason':'INVALID_SMA_DATA'}
-    qualifies=lambda m:m[120]['delta']<0 and all(m[k]['delta']>0 for k in SHORT)
+    qualifies=lambda m:ma120_down_for_entry(m) and all(m[k]['delta']>0 for k in SHORT)
     if not qualifies(cur):
         return {'kind':None,'reason':'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN'}
     if qualifies(prev):
