@@ -113,7 +113,7 @@ jobs:
           ui=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
           assert 'class ForensicLedger' in evidence
           assert 'def _v074_audit_worker(self)' in trend
-          assert "if not live_session(now,'KRX'):" in trend
+          assert "if not is_regular_open(now) or not live_session(now,'KRX'):" in trend
           assert 'def record_ma_decision(self,market,code,frame,bar_end,reason,details=None)' in trend
           assert 'market_trend_audit_errors' in ui and 'market_trend_audit_errors' in trend
           assert 'def _v074_coin_tick_worker(runner)' in coin
