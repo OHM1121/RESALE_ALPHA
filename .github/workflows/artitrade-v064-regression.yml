@@ -7,6 +7,10 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_v043.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v064_ma_trend_gate.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_ui.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py'
+      - 'ARTITRADE_ANDROID/app/build.gradle'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v061_coin_runtime.py'
       - '.github/workflows/artitrade-v064-regression.yml'
   workflow_dispatch:
 permissions:
