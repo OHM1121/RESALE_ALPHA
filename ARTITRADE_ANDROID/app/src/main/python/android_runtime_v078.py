@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import hashlib, hmac, json, uuid, time
 import threading
+import asyncio
 import math
 import re
 from collections import Counter
@@ -70,27 +71,36 @@ def _phone_stock_progress(self, item):
     return _ORIGINAL_STOCK_PROGRESS(self, item)
 
 async def _phone_guard_stock_run(self):
-    try:
-        self._progress('주식 원장 사전점검', 0, 1, 'PC 승계 원장 및 키움 시세 엔진 준비', state='running')
-        return await _ORIGINAL_STOCK_RUN(self)
-    except Exception as exc:
-        # The Windows runner's bare background thread previously died silently:
-        # UI remained WAIT while neither the exception nor connection stage was visible.
-        msg = type(exc).__name__ + ': ' + str(exc)[:200]
+    # A fatal worker exception must not leave a service that appears RUNNING
+    # while its single Kiwoom socket has stopped forever. Reconcile pending
+    # orders through the ORIGINAL startup on every retry; never fake a fill.
+    attempt=0
+    while not self.stop_event.is_set():
         try:
-            self._health('연결 끊김 - 재연결 대기', msg)
-            self._progress('키움 실시간 엔진 시작 오류', 0, 0, msg, state='failed')
-            from at_close_bridge import set_broker_transport
-            set_broker_transport('disconnected', msg[:120])
-        except Exception:
-            self.status = '키움 실시간 엔진 시작 오류'
-        try:
-            self.store.issue('ANDROID_KIWOOM_FEED_FATAL',
-                '키움 실시간 수신 엔진이 시작 중 예외로 종료됨',
-                details={'type': type(exc).__name__, 'message': str(exc)[:180]})
-        except Exception:
-            pass
-        return None
+            self._progress('주식 원장 사전점검',0,1,
+                'PC 승계 원장 및 키움 시세 엔진 준비',state='running')
+            return await _ORIGINAL_STOCK_RUN(self)
+        except Exception as exc:
+            attempt+=1
+            msg=type(exc).__name__+': '+str(exc)[:200]
+            try:
+                self._confirmed_ws_session=False
+                self._health('연결 끊김 - 재연결 대기',msg)
+                self._progress('키움 실시간 엔진 복구 대기',0,0,
+                    msg+' · 원본 원장 재검증 후 재시작',state='waiting')
+                from at_close_bridge import set_broker_transport
+                set_broker_transport('disconnected',msg[:120])
+            except Exception:
+                self.status='키움 실시간 엔진 복구 대기'
+            try:
+                self.store.issue('ANDROID_KIWOOM_FEED_FATAL',
+                    '키움 실시간 엔진 예외 종료 · 오류 누적 및 원장 재검증 재시작',
+                    key='android-kiwoom-fatal:'+str(int(time.time()))+':'+str(attempt),
+                    details={'type':type(exc).__name__,'message':str(exc)[:180],
+                             'attempt':attempt})
+            except Exception:pass
+            await asyncio.sleep(min(60,2**min(attempt,6)))
+    return None
 
 def _phone_runtime_snapshot(self):
     raw = _ORIGINAL_RUNTIME_SNAPSHOT(self)
