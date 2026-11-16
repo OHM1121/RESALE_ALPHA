@@ -5459,6 +5459,16 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject a=auditRows.optJSONObject(i);
             if(a!=null)raw.put(a);
         }
+        // V075: original GMO scan decisions, existing GMO issues and original
+        // CLOSE research/entry blocks were persisted, but never reached the
+        // unified error history. No duplicate execution or strategy writes.
+        JSONObject entryAudit=localRecords==null?null:
+            localRecords.optJSONObject("entry_failure_audit");
+        JSONArray noEntries=entryAudit==null?null:entryAudit.optJSONArray(market);
+        if(noEntries!=null)for(int i=0;i<noEntries.length();i++){
+            JSONObject a=noEntries.optJSONObject(i);
+            if(a!=null)raw.put(a);
+        }
         JSONArray run=c.optJSONArray("runtime_diagnostics");
         if(run!=null)for(int i=0;i<run.length();i++){JSONObject r=run.optJSONObject(i);if(errorForMarket(r,market))raw.put(r);}
         JSONObject py=c.optJSONObject("strategy_runtime");JSONArray pe=py==null?null:py.optJSONArray("errors");
