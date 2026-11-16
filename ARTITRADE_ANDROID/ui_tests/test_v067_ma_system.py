@@ -69,7 +69,7 @@ class SustainedAlignment(unittest.TestCase):
         self.assertEqual(v['decision'],'QUALIFIED')
         self.assertEqual(c['audit']['ma_v067_kind'],'REVERSAL_BEAR')
         self.assertGreater(c['target'],c['limit'])
-        self.assertGreater(int(bars[-1]['close']),0)
+        self.assertGreater(D(bars[-1]['close']),0)
         self.assertEqual(c['first_fraction'],0.30)
 
     def test_second_stage_genuinely_requires_first_fill(self):
