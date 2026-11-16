@@ -1,0 +1,41 @@
+name: ARTITRADE v078 Feed and History Source Inspection
+on:
+  push:
+    paths:
+      - '.github/workflows/artitrade-v078-feed-inspect.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect original immutable source and current overlays
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, io, zipfile, re
+          from pathlib import Path
+          base=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          archive=base64.b64decode(''.join((base/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          expected=re.search(r'CORE_SHA256="([0-9a-f]{64})"',Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()).group(1)
+          assert hashlib.sha256(archive).hexdigest()==expected
+          with zipfile.ZipFile(io.BytesIO(archive)) as z:
+              files={x.filename:z.read(x).decode('utf-8','replace') for x in z.infolist() if x.filename.endswith('.py')}
+          root=Path('ARTITRADE_ANDROID/app/src/main/python')
+          files.update({'overlays/'+x.name:x.read_text(errors='replace') for x in root.glob('*.py')})
+          terms=('WATCH_TICK_STALE','FRESH_0B_TRADE_MISSING_AT_PRECHECK','WATCH_HISTORY_MISSING','HISTORY_MISSING','_precheck','_watch_history','tick_stale','history_missing','RSI_HISTORY')
+          for term in terms:
+              print('\n===== SEARCH '+term+' =====')
+              count=0
+              for name,source in files.items():
+                  lines=source.splitlines()
+                  for i,line in enumerate(lines):
+                      if term.lower() in line.lower():
+                          count+=1
+                          if count>16: continue
+                          print('FILE',name,'LINE',i+1)
+                          for j in range(max(0,i-7),min(len(lines),i+9)):
+                              print(f'{j+1:05d} {lines[j][:240]}')
+              print('TOTAL',count)
+          print('PYTHON_FILES',len(files),'ZIP_SHA256',expected)
+          PY
