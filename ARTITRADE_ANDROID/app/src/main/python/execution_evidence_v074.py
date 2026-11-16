@@ -39,7 +39,8 @@ class ForensicLedger:
         body={'bar_end':row['bar_end'],
               'last_trade_age_sec':row.get('last_trade_age_sec'),
               'verified_order_placed':False,
-              'forensic_only':True}
+              'forensic_only':True,
+              'ma_details':row.get('ma_details') or {}}
         with closing(sqlite3.connect(str(self.path),timeout=3)) as c:
             c.execute('PRAGMA busy_timeout=3000')
             c.execute("""INSERT OR IGNORE INTO decisions
@@ -47,8 +48,19 @@ class ForensicLedger:
                  rsi20_live,reason,payload) VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (event_key,float(row['audit_epoch']),row['market'],strategy,
                  row['frame'],code,mode,row.get('rsi20_live'),
-                 row['reason'],json.dumps(body,ensure_ascii=False)))
+                 row['reason'],json.dumps(body,ensure_ascii=False,default=str)))
             c.commit()
+
+    def recent_for_strategy(self,strategy,limit=450):
+        """MA decisions cannot disappear behind thousands of Trend watch rows."""
+        if strategy not in ('ma','trend') or not self.path.is_file():return []
+        with closing(sqlite3.connect(str(self.path),timeout=3)) as c:
+            c.row_factory=sqlite3.Row
+            found=c.execute("""SELECT event_key,at,market,strategy,
+                frame,symbol,mode,rsi20_live,reason,payload
+                FROM decisions WHERE strategy=? ORDER BY at DESC LIMIT ?""",
+                (strategy,max(1,min(1200,int(limit))))).fetchall()
+        return [dict(x) for x in found]
 
     def recent(self,limit=750):
         if not self.path.is_file():return []
