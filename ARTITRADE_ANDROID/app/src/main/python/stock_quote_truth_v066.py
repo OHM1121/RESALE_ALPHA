@@ -201,7 +201,13 @@ def _rest_quote_loop(runner):
             continue
         try:
             owner_api=getattr(runner,'api',None)
-            if owner_api is None:raise RuntimeError('KIWOOM_REST_API_NOT_READY')
+            if owner_api is None:
+                # Runner was created before Kiwoom credentials/API startup.
+                # Do not impose the normal 35s retry on a price lookup that
+                # has not even attempted an HTTP request yet.
+                with lock:runner._v072_quote_attempts.pop(code,None)
+                runner.stop_event.wait(.4)
+                continue
             if display_api is None:
                 factory=getattr(runner,'_v073_display_api_factory',None)
                 if factory is not None:
