@@ -108,4 +108,15 @@ class V063GmoSafeguards(unittest.TestCase):
         self.assertIn("isRecentBackgroundHeartbeat()",body)
         self.assertNotIn("priorUiSessionKnown",body)
 
+    def test_kiwoom_wait_dialog_exposes_feed_freshness_and_true_order_mode(self):
+        java=UI.read_text(encoding="utf-8")
+        start=java.find("private void showKiwoomFeedDiagnosis()")
+        end=java.find("    private void addMini(",start)
+        self.assertGreaterEqual(start,0)
+        self.assertGreater(end,start)
+        method=java[start:end]
+        self.assertIn('last_frame_ms',method)
+        self.assertIn('live_enabled',method)
+        self.assertIn('mserver_auth',method)
+
 if __name__=="__main__":unittest.main(verbosity=2)
