@@ -31,7 +31,7 @@ final class StrategyRuntimeBridge {
     private final RuntimeCrashStore crashes;
     private PyObject module;
     private PyObject operationModule;
-    private boolean started=false;
+    private volatile boolean started=false;
 
     StrategyRuntimeBridge(Context c){
         context=c.getApplicationContext();
