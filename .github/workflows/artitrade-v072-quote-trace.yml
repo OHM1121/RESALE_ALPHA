@@ -1,0 +1,39 @@
+name: ARTITRADE v072 inspect exact quote producers and stock API
+on:
+  push:
+    branches: [ fix-artitrade-v072-preload-heartbeat-freshness-20261116 ]
+    paths:
+      - '.github/workflows/artitrade-v072-quote-trace.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trace original 0B tuple, quote API, tracked subscriptions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,zipfile,io,ast,re
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for name in ('d_live.py','d_venue.py'):
+              if name not in z.namelist():continue
+              lines=z.read(name).decode().splitlines()
+              tree=ast.parse('\n'.join(lines))
+              if name=='d_live.py':
+                print('=== API classes ===')
+                for obj in tree.body:
+                  if isinstance(obj,ast.ClassDef):
+                    print('CLASS',obj.name,[(n.lineno,n.name) for n in obj.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and re.search('quote|price|current|snap|ohlc|ranks|chart|stock',n.name,re.I)])
+                intervals=[(65,108),(1340,1517),(2355,2426)]
+              else:
+                intervals=[]
+              for a,b in intervals:
+                print('===',name,a,b,'===')
+                for i in range(a,min(b,len(lines))+1):
+                  print(i,lines[i-1][:230])
+          PY
