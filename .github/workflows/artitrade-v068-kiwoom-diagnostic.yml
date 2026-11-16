@@ -1,0 +1,63 @@
+name: ARTITRADE v068 Kiwoom read-only source diagnostic
+on:
+  push:
+    branches: [ fix-artitrade-v068-kiwoom-ws-20261116 ]
+    paths: [ '.github/workflows/artitrade-v068-kiwoom-diagnostic.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect verified original d_live source; never contact broker
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,hashlib,base64,io,zipfile,re
+          folder=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          raw=base64.b64decode("".join((folder/("part_%02d.txt"%i)).read_text() for i in range(22)))
+          assert hashlib.sha256(raw).hexdigest()=="10ff2cc9cda6ebba1dfa183f893bcea76f38445bb109dac66b99d578cc9c5447"
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              names=z.namelist()
+              text=z.read("d_live.py").decode("utf8")
+              print("SOURCE_FILE_COUNT",len(names))
+              print("RELATED_FILES",[x for x in names if any(k in x.lower() for k in ("preload","ws","kiwoom","at_close","quote"))][:100])
+              for x in names:
+                  if not x.endswith(".py"):continue
+                  if x=="d_live.py":continue
+                  if b"PRELOAD_BUDGET_EXPIRED" in z.read(x) or b"AT_WS_NOT_STARTED" in z.read(x):
+                      print("SENTINEL_IN",x)
+          lines=text.splitlines()
+          print("D_LIVE_SOURCE_LINES",len(lines))
+          tree=ast.parse(text)
+          for node in tree.body:
+              if isinstance(node,ast.ClassDef):
+                  if node.name in ("LivePaperRunner","PreloadGate"):
+                      print("CLASS",node.name,"LINES",node.lineno,node.end_lineno)
+                      for fn in node.body:
+                          if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                              print("METHOD",node.name+"."+fn.name,fn.lineno,fn.end_lineno)
+              elif isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and re.search("ws|subscribe|preload|stock",node.name,re.I):
+                  print("FUNCTION",node.name,node.lineno,node.end_lineno)
+          chosen={"run","_refresh_universe_if_due","_new_tick","_on_book_message","_record_group3_ack","_new_book","_send_registration","_register_codes","_register","_ws_receive"}
+          for node in tree.body:
+              if isinstance(node,ast.ClassDef) and node.name=="LivePaperRunner":
+                  for fn in node.body:
+                      if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)) and fn.name in chosen:
+                          print("=== SOURCE",node.name,fn.name,"===")
+                          for i in range(fn.lineno, min(fn.end_lineno,fn.lineno+340)+1):
+                              print("%5d %s"%(i,lines[i-1]))
+          search = ("websockets.connect","recv(","_watch_feed_last_epoch","preload_gate","AT_WS_NOT_STARTED","PRELOAD_BUDGET_EXPIRED","_confirmed_ws_session","self.subscriptions","_on_book_message","_refresh_universe_if_due")
+          print("=== KEYWORD CONTEXT ===")
+          shown=set()
+          for i,line in enumerate(lines):
+              if any(key in line for key in search):
+                  for j in range(max(0,i-3),min(len(lines),i+4)):
+                      if j in shown:continue
+                      shown.add(j)
+                      print("%5d %s"%(j+1,lines[j]))
+          PY
