@@ -27,3 +27,17 @@ with zipfile.ZipFile(io.BytesIO(archive)) as z:
     out.add(j)
   for i in sorted(out):
    print(f'SOURCE {name}:{i+1:04d}',lines[i][:240])
+
+print('=== TARGETED SOURCE RANGES ===')
+with zipfile.ZipFile(io.BytesIO(archive)) as z:
+ regions={
+  'coin_ma_engine.py':[(1,154)],
+  'd_upbit.py':[(2090,2205),(2750,2808),(3495,3608),(3608,3730),(3730,3867)],
+  'd_live.py':[(1560,1650),(1892,1982),(1982,2098),(2294,2349)],
+ }
+ for name,slices in regions.items():
+  source=z.read(name).decode('utf-8').splitlines()
+  for begin,end in slices:
+   print('TARGET_BEGIN',name,begin,end)
+   for idx in range(begin-1,min(end,len(source))):
+    print('TARGET',name,str(idx+1).zfill(4),source[idx][:280])
