@@ -1,0 +1,51 @@
+name: ARTITRADE v071 stock receive, strategies and export regression
+on:
+  push:
+    branches: [ fix-artitrade-v071-feed-order-error-export-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/test_v071_ws_ordering.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v063_gmo_exit_and_cold_boot.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
+      - '.github/workflows/artitrade-v071-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  all-strategies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract byte-verified bundled broker-independent original modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile,base64,io,hashlib,ast
+          root=Path('ARTITRADE_ANDROID')
+          parts=root/'app/src/main/assets/strategy_v070'
+          packed=base64.b64decode(''.join((parts/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          sha=hashlib.sha256(packed).hexdigest()
+          bridge=(root/'app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          assert ('CORE_SHA256="'+sha+'"') in bridge
+          with zipfile.ZipFile(io.BytesIO(packed)) as z:
+              z.extractall('/tmp/artitrade_v071_core')
+          print('V071_SIGNED_CORE_PROVENANCE',sha)
+          PY
+          python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
+          python3 -m compileall -q /tmp/artitrade_v071_core ARTITRADE_ANDROID/app/src/main/python
+      - name: Test actual WS recv order, protocol freshness, history, UI ZIP and legacy strategies
+        shell: bash
+        env:
+          PYTHONPATH: '/tmp/artitrade_v071_core:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          set -euo pipefail
+          for pat in 'test_v071_*.py' 'test_v069_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v051_*.py' 'test_v043_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+          git diff --check

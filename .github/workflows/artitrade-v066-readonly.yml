@@ -1,0 +1,16 @@
+name: ARTITRADE v066 read-only stock price provenance audit
+on:
+  push:
+    branches: [ feature-artitrade-v066-stock-fresh-quote-audit-20261116 ]
+    paths: [ '.github/workflows/artitrade-v066-readonly.yml', 'ARTITRADE_ANDROID/ui_tests/audit_v066_stock_quotes.py' ]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python3 ARTITRADE_ANDROID/ui_tests/audit_v066_stock_quotes.py

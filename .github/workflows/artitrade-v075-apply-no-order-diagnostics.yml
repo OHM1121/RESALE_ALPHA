@@ -1,0 +1,59 @@
+name: ARTITRADE v075 original GMO diagnostics only patch and full regression
+on:
+  push:
+    branches: [fix-artitrade-v075-gmo-cw-audit-20261116]
+    paths: ['.github/workflows/artitrade-v075-apply-no-order-diagnostics.yml']
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v075-gmo-original-logging
+  cancel-in-progress: false
+jobs:
+  verify-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: true}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Patch ONLY diagnostic append path, keep buy condition exact
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v075_gmo_missing_rejection_evidence.py
+      - name: Verify all other 81 embedded modules unchanged
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          x=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((x/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(data).hexdigest()+'"' in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            assert len(z.namelist())==82
+            code=z.read('d_gmo_runtime.py').decode()
+            assert 'def _audit_d1_nonorder(self, code, reason, detail, at):' in code
+            assert 'if q.last <= ceiling and entry_ask <= ceiling and paper:' in code
+            assert "self.engine.paper_match(q)" in code
+            z.extractall('/tmp/artitrade-v075-original')
+          print('PASS_GMO_V075_INSTRUMENT_ONLY_BASELINE_81_UNCHANGED')
+          PY
+      - name: Run full original, GMO, CW, MA, Trend and Android static tests
+        env:
+          PYTHONPATH: /tmp/artitrade-v075-original:ARTITRADE_ANDROID/app/src/main/python
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          for pat in 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v051_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+          git diff --check
+          echo 'PASS_V075_GMO_ONLY_NO_ORDER_DIAGNOSTIC_PATCH'
+      - name: Commit SHA-pinned diagnostic-only bundle
+        run: |
+          set -euo pipefail
+          git config user.name artitrade-ci
+          git config user.email artitrade-ci@users.noreply.github.com
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v075): audit formerly silent GMO price budget and PAPER-only no-order reasons'
+          git push origin HEAD:fix-artitrade-v075-gmo-cw-audit-20261116

@@ -43,6 +43,12 @@ def _candidate(root: Path, file: Path) -> bool:
     rel = file.relative_to(root)
     # Paper trading capital/slot settings are part of the reproducible research.
     # This exact local JSON contains limits, never broker API credentials.
+    if rel.as_posix() in ("market_research_v033.sqlite3",
+                          "market_trend_v043.sqlite3",
+                          "phone_buy_evidence_v035.sqlite3",
+                          "POST_EXIT_HIGH_V053.sqlite3",
+                          "execution_decisions_v074.sqlite3"):
+        return True
     if rel.as_posix()=="ANDROID_OPERATION_V074.json":
         return True
     parts = rel.parts
@@ -109,12 +115,17 @@ def _db_snapshot(source: Path, target: Path) -> dict:
 
 def _research_class(table):
     x=table.lower()
+    if ("feature_snapshot" in x or "candle_observation" in x or
+            "market_score_observation" in x or "analysis_run" in x or
+            "position_observation" in x):
+        return "ai_analysis_evidence"
     if ("shadow" in x or "forward" in x or "milestone" in x
             or "book_path" in x):
         return "virtual_research"
     if ("execution" in x or "fill" in x or x in
             ("positions","orders","wallets","accounts")):
-        return "actual_trade"
+        # Table-level source contains both paper and broker fills.
+        return "unverified_execution_ledger"
     if ("candidate" in x or "signal" in x or "research" in x
             or "scan" in x or "cohort" in x):
         return "signal_and_decision"
@@ -133,7 +144,9 @@ def _source_catalog(manifest):
                          "has_original_sqlite_in_zip":True})
     return {"version":1,"read_only":True,"original_records_not_truncated":True,
             "tables":rows,
-            "actual_trade_rows":sum(x["records"] for x in rows if x["kind"]=="actual_trade"),
+            "actual_trade_rows":None,
+            "actual_trade_missing_reason":"BROKER_PROVENANCE_NOT_PROVEN_BY_TABLE_NAME",
+            "unverified_execution_ledger_rows":sum(x["records"] for x in rows if x["kind"]=="unverified_execution_ledger"),
             "virtual_research_rows":sum(x["records"] for x in rows if x["kind"]=="virtual_research"),
             "signal_decision_rows":sum(x["records"] for x in rows if x["kind"]=="signal_and_decision"),
             "note":"Count is per original table, not deduplicated individual trades."}
@@ -161,8 +174,21 @@ def _reports_from_json(raw):
     return files
 
 
-def make_backup(root_path: str, output_path: str, reports_json=None) -> str:
-    """Produce a manifest-verified ZIP at a private app-cache path."""
+def make_backup(root_path: str, output_path: str, reports_json=None,
+                progress_path=None) -> str:
+    """Produce a private verified ZIP BEFORE selecting any Android SAF file."""
+    progress=Path(progress_path).resolve() if progress_path else None
+    def announce(percent,stage,done=0,total=0,detail=""):
+        if progress is None:return
+        try:
+            tmp=progress.with_suffix(progress.suffix+".tmp")
+            tmp.write_text(json.dumps({"percent":int(percent),"stage":str(stage),
+                "done":int(done),"total":int(total),"detail":str(detail)[:190],
+                "updated_ms":int(time.time()*1000)},ensure_ascii=False),
+                encoding="utf-8")
+            os.replace(tmp,progress)
+        except (OSError,TypeError,ValueError):pass
+    announce(4,"원본 원장 확인",detail="원장 파일 검색 중")
     reports=_reports_from_json(reports_json)
     root=Path(root_path).resolve()
     output=Path(output_path).resolve()
@@ -174,6 +200,8 @@ def make_backup(root_path: str, output_path: str, reports_json=None) -> str:
     if len(sources)>MAX_FILES:
         raise ValueError("Too many phone ledger files; export stopped without truncation")
     sources.sort(key=lambda x:x.relative_to(root).as_posix())
+    announce(8,"원본 원장 확인",0,len(sources),
+             f"추출 원본 {len(sources)}개 검증 중")
     original_size=sum(p.stat().st_size for p in sources)
     if original_size>MAX_EXPANDED:
         raise ValueError("Phone ledger exceeds the 16GiB verified-backup safety limit")
@@ -190,8 +218,10 @@ def make_backup(root_path: str, output_path: str, reports_json=None) -> str:
         with tempfile.TemporaryDirectory(prefix="artitrade_ledger_snapshot_",
                                          dir=str(output.parent)) as stage:
             stage_root=Path(stage)
-            for original in sources:
+            for idx,original in enumerate(sources):
                 rel=original.relative_to(root).as_posix()
+                announce(10+int(48*idx/max(1,len(sources))),"SQLite/WAL 스냅샷",
+                         idx,len(sources),rel)
                 saved=stage_root/rel
                 if original.suffix.lower() in (".sqlite3", ".sqlite", ".db"):
                     rows=_db_snapshot(original,saved)
@@ -204,6 +234,8 @@ def make_backup(root_path: str, output_path: str, reports_json=None) -> str:
                     "sha256":_sha256(saved),"size":saved.stat().st_size,
                     "kind":kind,"tables":rows
                 }
+            announce(60,"ZIP 원본 준비",len(sources),len(sources),
+                     "스냅샷 완료, 압축 파일 작성")
             if reports is not None:
                 # Research ZIP includes the full unchanged original PC+phone DBs,
                 # plus a readable table index and the current strategy preview.
@@ -230,14 +262,20 @@ def make_backup(root_path: str, output_path: str, reports_json=None) -> str:
                                  compresslevel=6,allowZip64=True) as z:
                 z.writestr("manifest.json",json.dumps(
                     manifest,ensure_ascii=False,separators=(",",":")))
-                for rel in manifest["strategy_files"]:
+                for idx,rel in enumerate(manifest["strategy_files"]):
+                    announce(61+int(27*idx/max(1,len(sources))),
+                             "ZIP 압축 기록",idx,len(sources),rel)
                     z.write(stage_root/rel,arcname=rel)
                 for rel,blob in (reports or {}).items():
                     z.writestr(rel,blob)
+                announce(88,"ZIP 압축 기록",len(sources),len(sources),
+                         "정상 ZIP 매니페스트 생성")
             with marker.open("rb+") as durable:
                 durable.flush()
                 os.fsync(durable.fileno())
             os.replace(marker,output)
+        announce(92,"원본 ZIP 검증",len(sources),len(sources),
+                 "파일 크기·SHA-256 확인")
         return json.dumps({"ok":True,"schema":SCHEMA,
                            "sha256":_sha256(output),
                            "bytes":output.stat().st_size,
@@ -268,8 +306,16 @@ def validate_backup(archive_path: str) -> dict:
             raise ValueError("Backup ZIP files do not match the signed manifest")
         for rel,info in {**files,**reports}.items():
             if rel in files:
+                # Root-level research/score journals are legitimate entries
+                # produced by _candidate(). Match the writer allowlist exactly.
+                root_journals=("market_research_v033.sqlite3",
+                               "market_trend_v043.sqlite3",
+                               "phone_buy_evidence_v035.sqlite3",
+                               "POST_EXIT_HIGH_V053.sqlite3",
+                               "execution_decisions_v074.sqlite3",
+                               "ANDROID_OPERATION_V074.json")
                 if (not rel.startswith(("stock/","coin/")) and
-                        rel!="ANDROID_OPERATION_V074.json") or ".." in Path(rel).parts:
+                        rel not in root_journals) or ".." in Path(rel).parts:
                     raise ValueError("Unexpected ledger backup path")
             elif not rel.startswith("analysis/") or ".." in Path(rel).parts:
                 raise ValueError("Unexpected analysis report path")
@@ -282,3 +328,9 @@ def validate_backup(archive_path: str) -> dict:
             if count!=info.get("size") or digest.hexdigest()!=info.get("sha256"):
                 raise ValueError("Backup member size/SHA mismatch: "+rel)
     return {"ok":True,"files":len(files),"reports":len(reports),"schema":SCHEMA}
+
+
+def validate_backup_json(archive_path: str) -> str:
+    """Stable JSON return contract for Chaquopy Java's JSONObject parser."""
+    return json.dumps(validate_backup(archive_path),ensure_ascii=False)
+

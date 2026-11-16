@@ -1,0 +1,28 @@
+name: ARTITRADE v078 source inspection
+on:
+  push:
+    paths:
+      - '.github/workflows/artitrade-v078-source-inspect.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect original Upbit websocket and minute history source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile,re
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert hashlib.sha256(z).hexdigest() in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(z)) as f:
+              for fname,spans in [('d_upbit.py',[(3550,3590),(3635,3735),(420,470),(552,575)]),('d_live.py',[(895,945),(1940,1980)]),('d_minute_repair_fast.py',[(1,110)])]:
+                  lines=f.read(fname).decode().splitlines()
+                  print('===========',fname,len(lines),'===========')
+                  for start,end in spans:
+                      for i in range(start-1,min(len(lines),end)):
+                          print(f'{i+1:05d} '+lines[i][:240])
+          PY

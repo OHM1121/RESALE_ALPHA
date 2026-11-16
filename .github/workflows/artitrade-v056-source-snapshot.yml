@@ -1,0 +1,22 @@
+name: ARTITRADE v056 isolated source snapshot
+on:
+  push:
+    branches:
+      - feature-artitrade-v056-ai-scope-isolation-20261116
+    paths:
+      - '.github/workflows/artitrade-v056-source-snapshot.yml'
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive exact source
+        run: tar -czf /tmp/artitrade-v056-before.tar.gz -C ARTITRADE_ANDROID .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V056_SOURCE_BEFORE
+          path: /tmp/artitrade-v056-before.tar.gz
+          if-no-files-found: error
+          retention-days: 1

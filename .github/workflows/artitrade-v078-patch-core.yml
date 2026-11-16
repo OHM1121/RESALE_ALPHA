@@ -1,0 +1,70 @@
+name: ARTITRADE v078 verified Upbit WS ticker coverage source patch
+on:
+  push:
+    paths:
+      - '.github/workflows/artitrade-v078-patch-core.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch-upbit-subscriptions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Extend existing Upbit public ticker subscription to watched orderbook markets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile,re
+          from pathlib import Path
+          folder=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          bridge=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java')
+          current=bridge.read_text()
+          source=base64.b64decode(''.join((folder/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          old_sha=hashlib.sha256(source).hexdigest()
+          assert ('CORE_SHA256="'+old_sha+'"') in current
+          out=io.BytesIO()
+          with zipfile.ZipFile(io.BytesIO(source)) as source_zip, zipfile.ZipFile(out,'w') as changed_zip:
+              assert 'd_upbit.py' in source_zip.namelist()
+              for info in source_zip.infolist():
+                  raw=source_zip.read(info)
+                  if info.filename=='d_upbit.py':
+                      src=raw.decode('utf-8')
+                      old='                bids=frozenset(self._both_watched_codes())'
+                      new='                bids=frozenset(self._both_watched_codes())\n                codes=frozenset(codes | bids)'
+                      old2='                        next_bids=frozenset(self._both_watched_codes())'
+                      new2='                        next_bids=frozenset(self._both_watched_codes())\n                        next_codes=frozenset(next_codes | next_bids)'
+                      assert src.count(old)==1 and src.count(old2)==1
+                      src=src.replace(old,new).replace(old2,new2)
+                      assert src.count('codes=frozenset(codes | bids)')==1
+                      assert src.count('next_codes=frozenset(next_codes | next_bids)')==1
+                      compile(src,'d_upbit.py','exec')
+                      raw=src.encode()
+                  changed_zip.writestr(info,raw)
+          result=out.getvalue()
+          new_sha=hashlib.sha256(result).hexdigest()
+          encoded=base64.b64encode(result).decode()
+          assert len(encoded)<=22*28000,(len(encoded),22*28000)
+          for i in range(22):
+              (folder/f'part_{i:02d}.txt').write_text(encoded[i*28000:(i+1)*28000])
+          bridge.write_text(current.replace('CORE_SHA256="'+old_sha+'"','CORE_SHA256="'+new_sha+'"'))
+          rebuilt=base64.b64decode(''.join((folder/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert rebuilt==result
+          with zipfile.ZipFile(io.BytesIO(rebuilt)) as test_zip:
+              assert test_zip.testzip() is None
+              assert b'next_codes=frozenset(next_codes | next_bids)' in test_zip.read('d_upbit.py')
+          print('UNCHANGED_82_MODULE_STRATEGY_EXCEPT_D_UPBIT_WS_SUBSCRIPTIONS',old_sha,new_sha)
+          PY
+      - name: Commit pinned verified source bytes to the v078 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git diff --cached --check
+          git commit -m "fix(v078): subscribe genuine Upbit ticker on every existing watched orderbook market"
+          git push origin HEAD:fix-artitrade-v078-trend-feed-history-20261116

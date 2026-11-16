@@ -1,0 +1,79 @@
+name: ARTITRADE v0.7.62 reference, MA, LIVE parity regressions
+on:
+  push:
+    branches:
+      - feature-artitrade-v062-ma-epoch-live-research-20261116
+    paths:
+      - '.github/workflows/artitrade-v062-regression.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/**'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
+      - 'ARTITRADE_ANDROID/app/build.gradle'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v062_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v048_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v047_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v061_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v060_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v059_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_ma_sqlite_ui_parity.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: artitrade-v062-tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regression-and-test-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Extract hashed read-only historical EXE runtime for parity tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          z=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          assert hashlib.sha256(z).hexdigest()=='e7518cb90a73cf62522aaa8962d872890e9e517ae988f52c22b3d94ed88531e0'
+          t=Path('/tmp/artitrade-core-verified');t.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(z)) as f:f.extractall(t)
+          print('EXE_SOURCE_SHA_VERIFIED')
+          PY
+      - name: Python compilation and synthetic 22:30/16:00 / market LIVE tests
+        shell: bash
+        env:
+          PYTHONPATH: '/tmp/artitrade-core-verified:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for p in 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py'                    'test_v054_*.py' 'test_v048_*.py' 'test_v047_*.py'                    'test_v042_*.py' 'test_ma_sqlite_ui_parity.py'                    'test_v037_ai_strategy_analysis.py' 'test_android_ledger_backup.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$p" -v
+          done
+      - name: Build test-only, non-installable QA APK
+        working-directory: ARTITRADE_ANDROID
+        env:
+          CI: 'false'
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Verify code increment and package identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='69' versionName='0.7.62-MA-EPOCH-RESEARCH'"
+          echo 'TEST_ONLY_CERTIFICATE; DO NOT INSTALL OVER ORIGINAL'

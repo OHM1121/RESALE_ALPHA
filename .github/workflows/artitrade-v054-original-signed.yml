@@ -4,7 +4,7 @@ name: ARTITRADE v0.7.54 Original Signed APK
 on:
   push:
     branches:
-      - artitrade-phone-main-v070-live-orders-20261112
+      - feature-artitrade-v054-standalone-trend-20261115
     paths:
       - '.github/workflows/artitrade-v054-original-signed.yml'
   workflow_dispatch:

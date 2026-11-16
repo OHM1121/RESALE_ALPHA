@@ -3,10 +3,10 @@ name: ARTITRADE v0.7.37 AI Analysis Signed Unified APK using Original Signing Ca
 on:
   push:
     branches:
-      - artitrade-phone-main-v070-live-orders-20261112
+      - feature-artitrade-ai-analysis-v037-20261114
     paths:
       - 'ARTITRADE_ANDROID/**'
-      - '.github/workflows/artitrade-build-v037-with-v028-signing.yml'
+      - '.github/workflows/artitrade-build-v036-with-v028-signing.yml'
   workflow_dispatch:
 
 permissions:
@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 8228912652862baba6e3034150eb4a81813afba0
+          ref: feature-artitrade-ai-analysis-v037-20261114
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

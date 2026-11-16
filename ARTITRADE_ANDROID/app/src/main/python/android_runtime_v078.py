@@ -8,11 +8,49 @@ from pathlib import Path
 import sqlite3
 import hashlib, hmac, json, uuid, time
 import threading
+import asyncio
 import math
+import re
 from collections import Counter
 from urllib.parse import urlencode
 import android_live_bridge as _core
+from android_sqlite_reader import db_rows
+from android_live_position_guard_v049 import (
+    refuse_paper_sell_if_live_open, verified_gmo_live_quantity, UnsafePaperExit)
+
+# Bundled original EXE bridge lacks this read-only history helper.
+# Add the accessor without modifying strategy or order state machines.
+if not hasattr(_core, '_db_rows'):
+    _core._db_rows = db_rows
 import d_live as _stock_feed_core
+
+# The original execution proxy allows PAPER fills whenever LIVE is disabled.
+# A restored broker position must not be paper-closed after an MSERVER lease
+# loss. Inspect only existing broker FILLED/uncertain evidence, never invent
+# broker holdings, and block before the original SQLite execution is inserted.
+_ORIGINAL_PROXY_BEFORE = _core.LiveConnectionProxy._before
+
+def _guard_live_position_from_paper_exit(self, sql, params=()):
+    text=" ".join(str(sql).split())
+    match=re.search(
+        r"INSERT(?:\s+OR\s+IGNORE|\s+OR\s+REPLACE)?\s+INTO\s+executions\s*\((.*?)\)",
+        text,re.IGNORECASE)
+    if match and isinstance(params,(list,tuple)):
+        columns=[x.strip().strip('"\u0060[]').lower() for x in match.group(1).split(",")]
+        if len(columns)<=len(params):
+            record=dict(zip(columns,params))
+            if str(record.get("side") or "").upper()=="SELL":
+                symbol=str(record.get("market") or record.get("code") or "")
+                market="coin" if symbol.startswith("KRW-") else "stock"
+                if not self._rt.live_enabled(market):
+                    try:
+                        refuse_paper_sell_if_live_open(self._rt.root,market,symbol)
+                    except UnsafePaperExit as unsafe:
+                        self._rt._err("paper_exit_of_live_holding_blocked",unsafe)
+                        raise
+    return _ORIGINAL_PROXY_BEFORE(self,sql,params)
+
+_core.LiveConnectionProxy._before = _guard_live_position_from_paper_exit
 
 # Preserve the original EXE state machines. Only observe the transport progress
 # which the Android bridge previously discarded, and surface fatal startup errors.
@@ -33,27 +71,36 @@ def _phone_stock_progress(self, item):
     return _ORIGINAL_STOCK_PROGRESS(self, item)
 
 async def _phone_guard_stock_run(self):
-    try:
-        self._progress('주식 원장 사전점검', 0, 1, 'PC 승계 원장 및 키움 시세 엔진 준비', state='running')
-        return await _ORIGINAL_STOCK_RUN(self)
-    except Exception as exc:
-        # The Windows runner's bare background thread previously died silently:
-        # UI remained WAIT while neither the exception nor connection stage was visible.
-        msg = type(exc).__name__ + ': ' + str(exc)[:200]
+    # A fatal worker exception must not leave a service that appears RUNNING
+    # while its single Kiwoom socket has stopped forever. Reconcile pending
+    # orders through the ORIGINAL startup on every retry; never fake a fill.
+    attempt=0
+    while not self.stop_event.is_set():
         try:
-            self._health('연결 끊김 - 재연결 대기', msg)
-            self._progress('키움 실시간 엔진 시작 오류', 0, 0, msg, state='failed')
-            from at_close_bridge import set_broker_transport
-            set_broker_transport('disconnected', msg[:120])
-        except Exception:
-            self.status = '키움 실시간 엔진 시작 오류'
-        try:
-            self.store.issue('ANDROID_KIWOOM_FEED_FATAL',
-                '키움 실시간 수신 엔진이 시작 중 예외로 종료됨',
-                details={'type': type(exc).__name__, 'message': str(exc)[:180]})
-        except Exception:
-            pass
-        return None
+            self._progress('주식 원장 사전점검',0,1,
+                'PC 승계 원장 및 키움 시세 엔진 준비',state='running')
+            return await _ORIGINAL_STOCK_RUN(self)
+        except Exception as exc:
+            attempt+=1
+            msg=type(exc).__name__+': '+str(exc)[:200]
+            try:
+                self._confirmed_ws_session=False
+                self._health('연결 끊김 - 재연결 대기',msg)
+                self._progress('키움 실시간 엔진 복구 대기',0,0,
+                    msg+' · 원본 원장 재검증 후 재시작',state='waiting')
+                from at_close_bridge import set_broker_transport
+                set_broker_transport('disconnected',msg[:120])
+            except Exception:
+                self.status='키움 실시간 엔진 복구 대기'
+            try:
+                self.store.issue('ANDROID_KIWOOM_FEED_FATAL',
+                    '키움 실시간 엔진 예외 종료 · 오류 누적 및 원장 재검증 재시작',
+                    key='android-kiwoom-fatal:'+str(int(time.time()))+':'+str(attempt),
+                    details={'type':type(exc).__name__,'message':str(exc)[:180],
+                             'attempt':attempt})
+            except Exception:pass
+            await asyncio.sleep(min(60,2**min(attempt,6)))
+    return None
 
 def _phone_runtime_snapshot(self):
     raw = _ORIGINAL_RUNTIME_SNAPSHOT(self)
@@ -89,6 +136,20 @@ def _phone_runtime_snapshot(self):
             'last_frame_ms': int(float(getattr(runner, '_watch_feed_last_epoch', 0) or 0) * 1000) if runner else 0,
             'transport': transport,
             'preload': preload,
+            # Distinguish authenticated socket, received trade, and ordered
+            # strategy processing. Snapshot is read-only and never orders.
+            'ws_session_confirmed': bool(getattr(runner,'_confirmed_ws_session',False)) if runner else False,
+            'receive_queue_depth': getattr(runner,'_feed_message_queue',None).qsize()
+                if runner is not None and getattr(runner,'_feed_message_queue',None) is not None else 0,
+            'receive_queue_high_water': int(getattr(runner,'_feed_high_water',0) or 0) if runner else 0,
+            'receive_packets_processed': int(getattr(runner,'_feed_processed',0) or 0) if runner else 0,
+            'receive_frames_discarded': int(getattr(runner,'_feed_discarded',0) or 0) if runner else 0,
+            'receive_queue_overflows': int(getattr(runner,'_feed_overflows',0) or 0) if runner else 0,
+            'receive_max_lag_ms': round(float(getattr(runner,'_feed_lag_max_ms',0) or 0),1)
+                if runner else 0.0,
+            'last_trade_age_sec': round(max(0.0,time.time()-float(getattr(runner,
+                '_watch_feed_last_epoch',0) or 0)),1) if runner and getattr(runner,
+                '_watch_feed_last_epoch',0) else None,
         }
         return json.dumps(snapshot, ensure_ascii=False, default=str)
     except Exception:
@@ -170,8 +231,14 @@ def _target_summary(rows, mode):
         elif status=='CLOSED' or (mode=='stock_at' and int(p.get('qty') or 0)<=0): miss+=1
         else: pending+=1
     evaluated=hit+miss
-    return {'evaluated':evaluated,'hit':hit,'miss':miss,'pending':pending,
-            'rate_pct':round(hit*100.0/evaluated,2) if evaluated else None}
+    eligible=hit+miss+pending
+    # Confirmed target-hit share of every entered position. Old percentage
+    # was hit/(hit+miss), which advertises 100% for 1 HIT and 9 PENDING.
+    # Keep conditional decided rate separately for forensic comparisons.
+    return {'evaluated':evaluated,'eligible':eligible,'hit':hit,'miss':miss,
+            'pending':pending,
+            'decided_rate_pct':round(hit*100.0/evaluated,2) if evaluated else None,
+            'rate_pct':round(hit*100.0/eligible,2) if eligible else None}
 
 
 def _research_scope(items):
@@ -182,9 +249,15 @@ def _research_scope(items):
     virtual_done=[x for x in virtual_entered if x.get('outcome') in ('HIT','MISS')]
     def summary(rows,all_rows):
         h=sum(1 for x in rows if x.get('outcome')=='HIT')
-        return {'evaluated':len(rows),'hit':h,'miss':len(rows)-h,
+        m=len(rows)-h
+        # Previous rate_pct was HIT/(HIT+MISS), so one HIT plus nine PENDING
+        # displayed an unjustified 100%. Show verified-hit share of all entries
+        # and separately expose conditional decided rate as an audit statistic.
+        return {'evaluated':len(rows),'hit':h,'miss':m,
                 'pending':max(0,len(all_rows)-len(rows)),
-                'rate_pct':round(h*100.0/len(rows),2) if rows else None}
+                'eligible':len(all_rows),
+                'decided_rate_pct':round(h*100.0/len(rows),2) if rows else None,
+                'rate_pct':round(h*100.0/len(all_rows),2) if all_rows else None}
     out={'signals':len(items),'bought':len(actual),'not_bought':len(virtual),
          'virtual_entry':len(virtual_entered)}
     out['actual_summary']=summary(actual_done,actual)
@@ -221,16 +294,106 @@ def _research_record(items, score_items=None):
             'actual_rate_pct':a['rate_pct'],'virtual_rate_pct':v['rate_pct']}
 
 
+def _research_first_target_fills(db):
+    """Recorded FIRST-target SELL executions only; never use candle highs.
+
+    The result is a per-position first observed actual account/PAPER fill.
+    Missing columns or missing DB tables cannot create a fictitious sale.
+    """
+    fills={}
+    try:
+        # The original UI window used the latest 30,000 *all* fills, which
+        # silently discarded older first-target SELL evidence and caused
+        # '목표달성, 매도가 미기록' despite verified EXE fills existing.
+        records=_core._db_rows(db, """SELECT * FROM executions
+            WHERE UPPER(COALESCE(side,'')) IN ('SELL','S','매도')
+              AND (UPPER(COALESCE(reason,'')) LIKE '%FIRST_TARGET%'
+                   OR UPPER(COALESCE(reason,'')) LIKE '%FIRST_TP%'
+                   OR UPPER(COALESCE(reason,'')) LIKE '%TP_FIRST%'
+                   OR UPPER(COALESCE(reason,'')) LIKE '%TP1%'
+                   OR reason LIKE '%1차 목표%' OR reason LIKE '%1차_목표%')
+            ORDER BY id DESC""")
+    except Exception:
+        raise
+    for row in reversed(records):
+        side=str(row.get('side') or '').upper()
+        if side not in ('SELL','S','매도'):
+            continue
+        reason=str(row.get('reason') or '').upper().replace('-','_')
+        if not any(mark in reason for mark in
+                   ('FIRST_TARGET','FIRST_TP','TP_FIRST','TP1','1차 목표','1차_목표')):
+            continue
+        try:
+            position_id=int(row.get('position_id') or 0)
+            price=float(row.get('price') or 0)
+        except (ValueError,TypeError):
+            continue
+        at=row.get('ts') or row.get('at')
+        if position_id>0 and price>0 and at:
+            fills[position_id]={'sell_price':row.get('price'),
+                'sell_at':at,'sell_evidence':'ORIGINAL_FIRST_TARGET_EXECUTION'}
+    return fills
+
+
+def _gmo_fill_evidence(candidate, research, buys, sells):
+    """Use only PAPER fills linked to the D+1 entry; avoid later rebuys."""
+    if not research.get('paper_bought'):
+        return {}
+    code=str(candidate.get('code') or '')
+    entry=str(research.get('entry_date') or candidate.get('entry_date') or '')
+    if len(entry)>=8 and entry[:8].isdigit():
+        entry=entry[:4]+'-'+entry[4:6]+'-'+entry[6:8]
+    entry=entry[:10]
+    all_buys=sorted((x for x in buys if isinstance(x,dict) and
+                     str(x.get('code') or '')==code and x.get('time') and x.get('qty')),
+                    key=lambda x:str(x.get('time')))
+    matched=[x for x in all_buys if str(x['time'])[:10]==entry]
+    if not matched:
+        return {}
+    start=max(str(x['time']) for x in matched)
+    next_buy=min((str(x['time']) for x in all_buys
+                  if str(x['time'])>start),default=None)
+    out={'buy_price':research.get('paper_buy_price'),'buy_at':start,
+         'buy_evidence':'GMO_PAPER_BUY_FILL'}
+    if not research.get('paper_first_target_filled'):
+        return out
+    attributed=[]
+    for x in sells:
+        if not isinstance(x,dict):
+            continue
+        when=str(x.get('time') or '')
+        if str(x.get('code') or '')!=code or not when or when<start or (
+                next_buy is not None and when>=next_buy):
+            continue
+        purpose=str(x.get('purpose') or '').upper()
+        if not (purpose.startswith('TP') and ('FIRST' in purpose or 'SMALL_FULL' in purpose)):
+            continue
+        try:
+            if float(x.get('price') or 0)<=0 or float(x.get('qty') or 0)<=0:
+                continue
+        except (ValueError,TypeError):
+            continue
+        attributed.append(x)
+    if attributed:
+        first=min(attributed,key=lambda x:str(x.get('time')))
+        out.update({'sell_price':first['price'],'sell_at':first['time'],
+                    'sell_evidence':'GMO_PAPER_FIRST_TARGET_FILL'})
+    return out
+
+
 def _stock_at_research(root):
     db=Path(root)/'stock'/'ARTITRADE_D.sqlite3'
     candidates=_core._db_rows(db, """SELECT signal_id,tf,code,name,signal_ts AS at,ref_ts,
         diverse_11_score AS score,limit_price,first_target FROM candidate_snapshots
         ORDER BY signal_id DESC LIMIT 3000""")
-    positions=_core._db_rows(db,"SELECT tf,code,ref_ts,status,peak,entry_ts,first_sold FROM positions")
+    positions=_core._db_rows(db,"SELECT * FROM positions")
+    first_target_sells=_research_first_target_fills(db)
+    from research_evidence_v036 import from_at_forward
     shadows={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
         "SELECT signal_id,state,entry_ts,entry_price,peak,realized_net_krw,sold_at FROM stock_shadow_trials")}
-    target_fills={int(x.get('signal_id') or 0) for x in _core._db_rows(db,
-        "SELECT DISTINCT signal_id FROM stock_shadow_fills WHERE reason='FIRST_TARGET_40PCT'")}
+    shadow_target_sales={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
+        "SELECT * FROM stock_shadow_fills WHERE reason='FIRST_TARGET_40PCT'")}
+    target_fills=set(shadow_target_sales)
     actual={(str(x.get('tf')),str(x.get('code')),str(x.get('ref_ts'))):x for x in positions}
     decisions={int(x.get('signal_id') or 0):x for x in _core._db_rows(db,
         "SELECT signal_id,decision_at_evaluation,reason_at_evaluation,origin_10_rank,"
@@ -267,24 +430,61 @@ def _stock_at_research(root):
              'observation_minutes':trail.get('minute_count',0),
              'missing_observation_minutes':trail.get('unobserved_session_minutes',0),
              'observed_last_price':trail.get('last_close'),
-             'observed_max_price':trail.get('max_price'),
-             'observed_min_price':trail.get('min_price'),
+             # max_price is an aggregate with NO timestamp for the peak.
+             # candidate_forward.last_ts is the LAST observed tick, not the
+             # peak's timestamp. Never claim a 5,450 KRW max occurred that day.
+             # Keep source values for audit only, not user-visible high prices.
+             'observed_max_unverified':trail.get('max_price'),
+             'observed_min_unverified':trail.get('min_price'),
+             'observed_max_price':None,
+             'observed_min_price':None,
+             'observed_max_evidence':'AGGREGATE_NO_PEAK_TIMESTAMP',
+             'forward_high_status':'UNVERIFIED_NO_SOURCE_BAR',
              'first_observed_limit_touch':trail.get('first_limit_touch_ts'),
              'first_observed_target_after_touch':trail.get('first_target_after_touch_ts'),
              'observation_provenance':trail.get('observation_basis'),
              'last_observed_at':trail.get('last_ts'),
+             'observed_max_at':None,
+             'observation_last_at_is_not_peak_at':True,
              'signal_id':x.get('signal_id'),
             'decision':decision.get('decision_at_evaluation'),
             'origin_rank':decision.get('origin_10_rank'),
             'diverse_rank':decision.get('diverse_11_rank'),
             'reason':decision.get('reason_at_evaluation') or '선정 근거 원본 별도 저장'})
+        item=items[-1]
+        item.update(from_at_forward(item))
+        if bought:
+            item.update({'buy_price':p.get('entry_price'),'buy_at':p.get('entry_ts'),
+                         'buy_evidence':'ORIGINAL_POSITION'})
+            if outcome=='HIT':
+                item.update(first_target_sells.get(int(p.get('id') or 0),{}))
+        elif sh and sh.get('entry_ts'):
+            item.update({'virtual_buy_price':sh.get('entry_price'),
+                         'virtual_buy_at':sh.get('entry_ts')})
+            if outcome=='HIT':
+                virtual=shadow_target_sales.get(int(x.get('signal_id') or 0),{})
+                if virtual:
+                    item.update({'virtual_sell_price':virtual.get('price'),
+                                 'virtual_sell_at':virtual.get('minute_ts'),
+                                 'virtual_sell_evidence':'STOCK_SHADOW_1M_FILL'})
+    # Exact source stock code + actual (or shadow-observed) entry timestamp.
+    # API queries are queued off the hub/trading thread and keep their own
+    # stock/forward_high_v041.sqlite3 research cache.
+    try:
+        from stock_forward_high_v041 import queue as queue_forward_high, enrich
+        queue_forward_high(root,items)
+        enrich(root,items)
+    except Exception:
+        pass
     return _research_record(items,candidates)
 
 
 def _stock_ma_research(root):
-    db=Path(root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
+    from ma_epoch_v062 import stock_active
+    db=stock_active(root)
     candidates=_core._db_rows(db,"SELECT id,tf,code,name,ref_ts,created_at AS at,score,status,target,features FROM candidates ORDER BY id DESC LIMIT 3000")
-    positions=_core._db_rows(db,"SELECT id,candidate_id,tf,code,name,status,first_sold,peak,target,entry_at FROM positions")
+    positions=_core._db_rows(db,"SELECT * FROM positions")
+    first_target_sells=_research_first_target_fills(db)
     pos={int(x.get('candidate_id') or 0):x for x in positions if x.get('candidate_id') is not None}
     items=[]
     for x in candidates:
@@ -302,24 +502,75 @@ def _stock_ma_research(root):
             'candidate_id':x.get('id'),'decision':x.get('status'),
              'features':x.get('features'),
             'reason':x.get('status') or '판단 근거 별도 저장'})
-    return _research_record(items,candidates)
+        if bought:
+            items[-1].update({'buy_price':p.get('entry'),
+                'buy_at':p.get('entry_at'),'buy_evidence':'ORIGINAL_MA_POSITION'})
+            if outcome=='HIT':
+                items[-1].update(first_target_sells.get(int(p.get('id') or 0),{}))
+    # The original EXE records *every* examined reference in 'research',
+    # including rejected signals which never enter the candidates table.
+    # Treat the independent research row as evidence, not as a paper fill.
+    recorded={(str(x.get('tf') or ''),str(x.get('code') or ''),
+               str(x.get('ref_ts') or '')) for x in candidates}
+    decisions=_core._db_rows(db, "SELECT id,ts AS at,tf,code,ref_ts,verdict,detail "
+        "FROM research ORDER BY id DESC LIMIT 3000")
+    for d in decisions:
+        key=(str(d.get('tf') or ''),str(d.get('code') or ''),
+             str(d.get('ref_ts') or ''))
+        if key in recorded:
+            continue
+        items.append({'at':d.get('at'),'tf':d.get('tf'),'strategy':'MA',
+            'code':d.get('code'),'ref_ts':d.get('ref_ts'),
+            'score':None,'bought':False,'entry_observed':False,'closed':False,
+            'outcome':'PENDING','target_hit':None,'entry_status':'RESEARCH_UNSELECTED',
+            'unselected':True,'unselected_reason':d.get('verdict'),
+            'decision':d.get('verdict'),'reason':d.get('detail') or d.get('verdict'),
+            'research_id':d.get('id'),'evidence_source':'EXE_MA_RESEARCH'})
+    items.sort(key=lambda x:str(x.get('at') or ''),reverse=True)
+    return _research_record(items[:3000],decisions)
 
 
 def _coin_research(root,which):
-    db=Path(root)/'coin'/which/'upbit_paper.sqlite3'
+    from ma_epoch_v062 import coin_active
+    db=coin_active(root) if which=='ma' else Path(root)/'coin'/which/'upbit_paper.sqlite3'
     candidates=_core._db_rows(db,"SELECT id,tf,market,name,ref_at AS ref_ts,created_at AS at,score,limit_price,target,reason FROM candidates ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions")
+    first_target_sells=_research_first_target_fills(db)
     actual={(str(x.get('tf')),str(x.get('market')),str(x.get('ref_at'))):x for x in positions if str(x.get('status') or '')!='RESET_B_V1'}
     shadows={int(x.get('candidate_id') or 0):x for x in _core._db_rows(db,
         "SELECT candidate_id,state,entry_at,entry_price,peak,realized_net,sell_at FROM coin_shadow_trials")}
     decisions={}
-    for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY id DESC"):
+    for decision in _core._db_rows(db,"SELECT candidate_id,decision,reason,competing_score,at FROM candidate_decisions ORDER BY rowid DESC"):
         decisions.setdefault(int(decision.get('candidate_id') or 0),decision)
+    # The EXE's recorded UPBIT_BOOK_BID 1-minute shadow path is the
+    # authoritative VIRTUAL high observation, not a virtual/real SELL.
+    # Read only recently displayed candidate IDs and apply their own target.
+    from research_evidence_v036 import attach_coin_virtual_goal
+    book_observed=_core._db_rows(db,"""SELECT c.id AS candidate_id,
+        MIN(b.last_at) AS observed_target_at,
+        CAST(c.target AS REAL) AS observed_target_price
+        FROM (SELECT id,target FROM candidates ORDER BY id DESC LIMIT 3000) AS c
+        JOIN coin_shadow_trials t ON t.candidate_id=c.id
+        JOIN coin_shadow_book_path b ON b.candidate_id=c.id
+        WHERE b.source='UPBIT_BOOK_BID' AND t.entry_at<>''
+        AND b.last_at>=t.entry_at
+        AND CAST(b.bid_high AS REAL)>=CAST(c.target AS REAL)
+        AND CAST(c.target AS REAL)>0
+        GROUP BY c.id""")
+    observed_by_id={
+        int(x['candidate_id']):{
+            'observed_target_price':x['observed_target_price'],
+            'observed_target_at':x['observed_target_at'],
+            'observed_target_evidence':'COIN_BOOK_BID_HIGH_NOT_FILL'}
+        for x in book_observed if x.get('candidate_id') is not None}
     target_fills=set()
-    for x in _core._db_rows(db,"SELECT candidate_id,side,reason FROM coin_shadow_fills WHERE side='SELL'"):
+    shadow_target_sales={}
+    for x in _core._db_rows(db,"SELECT * FROM coin_shadow_fills WHERE side='SELL'"):
         reason=str(x.get('reason') or '').upper()
         if 'FIRST_TARGET' in reason or '1차 목표' in reason or 'FIRST' in reason and 'TARGET' in reason:
-            target_fills.add(int(x.get('candidate_id') or 0))
+            cid=int(x.get('candidate_id') or 0)
+            target_fills.add(cid)
+            shadow_target_sales.setdefault(cid,x)
     items=[]
     for x in candidates:
         key=(str(x.get('tf')),str(x.get('market')),str(x.get('ref_ts')))
@@ -347,6 +598,22 @@ def _coin_research(root,which):
              'decision_at':selection.get('at'),
              'limit_price':x.get('limit_price'),'target':x.get('target'),
              'reason':selection.get('reason') or x.get('reason')})
+        item=items[-1]
+        if bought:
+            item.update({'buy_price':p.get('entry'),'buy_at':p.get('entry_at'),
+                         'buy_evidence':'ORIGINAL_COIN_POSITION'})
+            if outcome=='HIT':
+                item.update(first_target_sells.get(int(p.get('id') or 0),{}))
+        elif sh and sh.get('entry_at'):
+            item.update({'virtual_buy_price':sh.get('entry_price'),
+                         'virtual_buy_at':sh.get('entry_at')})
+            attach_coin_virtual_goal(item,observed_by_id.get(int(x.get('id') or 0)))
+            if outcome=='HIT':
+                sell=shadow_target_sales.get(int(x.get('id') or 0),{})
+                if sell:
+                    item.update({'virtual_sell_price':sell.get('price'),
+                                 'virtual_sell_at':sell.get('at'),
+                                 'virtual_sell_evidence':'COIN_SHADOW_BOOK_FILL'})
     return _research_record(items,candidates)
 
 
@@ -356,6 +623,13 @@ def _close_full(self):
     positions=_core._db_rows(db,"SELECT * FROM positions WHERE status='OPEN' ORDER BY id DESC LIMIT 300")
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     executions=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 3000")
+    # Original phone BUY fills contain the actual executed rule and time.
+    from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+    from phone_buy_evidence_v035 import read_open_signal_evidence
+    original_signals=read_open_signal_evidence(db,'stock','close')
+    buy_records=attach_buy_evidence(positions,executions,original_signals,
+                                   market='stock',strategy='close')
+    queue_phone_buy_evidence(self.root,buy_records)
     day=_core.datetime.now(_core.timezone(_core.timedelta(hours=9))).date().isoformat()
     pending=_core._db_rows(db, """SELECT s.id AS signal_id,s.ts AS ref_ts,s.ts AS at,s.strategy,s.code,s.name,
         s.decision,s.rank_no,s.trading_value_krw,s.price,s.feature_json AS reason
@@ -364,6 +638,7 @@ def _close_full(self):
         ORDER BY s.id DESC LIMIT 500""",(day,))
     pos_by_id={str(p.get('id')):p for p in all_positions}
     for e in executions:
+        _attach_policy_symbol(e,pos_by_id.get(str(e.get('position_id'))))
         e['at']=e.get('ts');e['net_profit']=e.get('net_realized');e['strategy']='CLOSE'
         _attach_fill_cost(e,pos_by_id.get(str(e.get('position_id'))))
     realized=sum(float(x.get('realized') or 0) for x in wallets)
@@ -386,7 +661,10 @@ def _close_research(root):
     signals=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,entry_result,feature_json,reason_json FROM signals ORDER BY id DESC LIMIT 3000")
     positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 5000")
     by_signal={int(x.get('signal_id') or 0):x for x in positions if x.get('signal_id') is not None}
-    followups=_core._db_rows(db,"SELECT source_signal_id,source_candidate_id,horizon,return_pct,mfe_pct,mae_pct,status,observed_price,observed_ts FROM research_followups ORDER BY id DESC LIMIT 16000")
+    first_target_sells=_research_first_target_fills(db)
+    # SELECT * keeps pre-upgrade EXE followup files readable: mfe_pct and
+    # mae_pct were added later, and their absence is not a missing ledger.
+    followups=_core._db_rows(db,"SELECT * FROM research_followups ORDER BY id DESC LIMIT 16000")
     by_signal_followup={};by_candidate_followup={}
     for f in followups:
         sid=f.get('source_signal_id');cid=f.get('source_candidate_id')
@@ -413,6 +691,11 @@ def _close_research(root):
              'observed_price':follow.get('observed_price'),
              'observed_at':follow.get('observed_ts'),
              'reason':x.get('reason_json') or x.get('entry_result') or x.get('decision')})
+        if bought:
+            items[-1].update({'buy_price':p.get('entry_price'),
+                'buy_at':p.get('entry_ts'),'buy_evidence':'ORIGINAL_CLOSE_POSITION'})
+            if outcome=='HIT':
+                items[-1].update(first_target_sells.get(int(p.get('id') or 0),{}))
     score_rows=_core._db_rows(db,"SELECT id,ts AS at,strategy,code,name,decision,near_signal,feature_json,reason_json FROM research_candidates ORDER BY id DESC LIMIT 3000")
     # The EXE separately saves rejected and near-qualifying CLOSE candidates.
     # Their forward prices are research evidence, never simulated fills.
@@ -470,6 +753,7 @@ def _stock_at_v19_full(self, base):
               EXISTS(SELECT 1 FROM v19_legacy_members l WHERE l.position_id=e.position_id)
               ORDER BY e.id DESC LIMIT 10000""").fetchall()]
         for e in executions:
+            _attach_policy_symbol(e,posmap.get(int(e.get('position_id') or 0),{}))
             e['at']=e.get('ts');e['strategy']=e.get('tf') or 'AT'
             net=_sell_net_stock(e,posmap.get(int(e.get('position_id') or 0),{}))
             if net is not None:e['net_profit']=net
@@ -572,7 +856,8 @@ def _stock_ma_full(self):
         return {}
     snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
     perf=snap.get('performance_by_frame') or {}
-    db=Path(self.root)/'stock'/'STOCK_MA_ENGINE_V1'/'ma_paper.sqlite3'
+    from ma_epoch_v062 import stock_active
+    db=stock_active(self.root)
     all_positions=_core._db_rows(db,"SELECT * FROM positions ORDER BY id DESC LIMIT 10000")
     full_exec=_core._db_rows(db,"SELECT * FROM executions ORDER BY id DESC LIMIT 10000")
     # The original MA snapshot omits positions.entry_at and candidate.created_at.
@@ -595,6 +880,7 @@ def _stock_ma_full(self):
         # No 'reason' column exists in the frozen MA candidates schema;
         # keep the original Korean quote/expiry diagnostic rather than invent one.
     for x in full_exec:
+        _attach_policy_symbol(x,full_by_id.get(str(x.get('position_id'))))
         x['at']=x.get('ts');x['strategy']='MA'
         _attach_fill_cost(x,full_by_id.get(str(x.get('position_id'))))
     realized=sum(float((perf.get(tf) or {}).get('realized_won') or 0) for tf in _FRAMES)
@@ -611,6 +897,15 @@ def _stock_ma_full(self):
                          'realized_pnl':(perf.get(tf) or {}).get('realized_won',0),
                          'unrealized_pnl':(perf.get(tf) or {}).get('holding_won',0),
                          'max_positions':w.get('max_positions',4)})
+    from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+    # MA fills carry position_id, while selected reference is linked by
+    # candidate_id. No symbol-only guessing across wallets.
+    from phone_buy_evidence_v035 import read_open_signal_evidence
+    ma_candidates=read_open_signal_evidence(db,'stock','ma')
+    ma_positions=snap.get('positions') or []
+    buy_records=attach_buy_evidence(ma_positions,full_exec,ma_candidates,
+                                    market='stock',strategy='ma')
+    queue_phone_buy_evidence(self.root,buy_records)
     out=dict(snap)
     out['executions']=full_exec
     out['performance_by_frame']=perf
@@ -621,6 +916,26 @@ def _stock_ma_full(self):
                 'pending_count':len(snap.get('pending') or [])})
     out['win_rate']=_closed_position_win_rate(all_positions,full_exec)
     return out
+
+def _attach_policy_symbol(execution,position=None):
+    """Display source-original symbol on fills which stored only position_id.
+
+    No matching entry? Leave it unlinked rather than inventing a symbol.
+    """
+    if not isinstance(position,dict):
+        return execution
+    for field,candidates in (('code',('code','market')),
+                             ('name',('name',)),
+                             ('tf',('tf',))):
+        if execution.get(field) not in (None,''):
+            continue
+        for key in candidates:
+            value=position.get(key)
+            if value not in (None,''):
+                execution[field]=value
+                break
+    return execution
+
 
 def _attach_fill_cost(execution,position=None):
     """Show recorded EXE position cost beside its paper/real SELL fill.
@@ -767,8 +1082,19 @@ def _coin_full(ledger):
         x['strategy']=x.get('tf')
     all_by_id={str(x.get('id')):x for x in all_positions}
     for e in executions:
+        _attach_policy_symbol(e,all_by_id.get(str(e.get('position_id'))))
         e['net_profit']=e.get('net_pnl');e['strategy']=e.get('tf')
         _attach_fill_cost(e,all_by_id.get(str(e.get('position_id'))))
+    from phone_buy_evidence_v035 import attach_buy_evidence,queue_phone_buy_evidence
+    account_variant=str(getattr(ledger,'account_variant','original') or 'original')
+    source_variant='ma' if account_variant=='ma' else 'base'
+    # candidates are immutable original strategy research rows, not imported
+    # hypothetical stock prices. Requiring both reference ID and position BUY.
+    from phone_buy_evidence_v035 import read_open_signal_evidence
+    coin_candidates=read_open_signal_evidence(ledger.path,'coin',source_variant)
+    buy_records=attach_buy_evidence(positions,executions,coin_candidates,
+                                   market='coin',strategy=source_variant)
+    queue_phone_buy_evidence(Path(ledger.path).parents[2],buy_records)
     realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
     holding=sum(float(x.get('unrealized_pnl') or 0) for x in accounts)
     win_rate=_closed_position_win_rate(all_positions,executions)
@@ -817,7 +1143,7 @@ def _research_history(self, out):
               ('candidate_events','candidate_forward','candidate_milestones',
                'candidate_cohort_decisions','candidate_research_health',
                'stock_shadow_trials','stock_shadow_fills','signals','positions','executions')),
-        'MA':('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
+        'MA':('stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3','candidates',
               ('positions','executions','research')),
         'CLOSE':('stock/close/AT_CLOSE_PAPER.sqlite3','signals',
                  ('research_candidates','research_followups','research_bars',
@@ -825,7 +1151,7 @@ def _research_history(self, out):
         'COIN_BASE':('coin/base/upbit_paper.sqlite3','candidates',
                      ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
                       'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
-        'COIN_MA':('coin/ma/upbit_paper.sqlite3','candidates',
+        'COIN_MA':('coin/ma_epoch_v062/upbit_paper.sqlite3','candidates',
                    ('candidate_decisions','coin_scan_decisions','coin_shadow_trials',
                     'coin_shadow_fills','coin_shadow_book_path','coin_trade_followup','coin_trade_price_path','positions','executions')),
     }
@@ -906,25 +1232,22 @@ def _gmo_original_record(root):
     if not isinstance(positions, dict) or not isinstance(orders, dict):
         raise ValueError("GMO account state positions/orders schema invalid")
     names = {str(k): str(v.get('name') or k) for k,v in signals.items() if isinstance(v,dict)}
-    # Opening price / last price are intentionally NOT manufactured.
-    bought_fill_by_code={}
-    for fill in buys:
-        if not isinstance(fill,dict):continue
-        code=str(fill.get('code') or '')
-        stamp=str(fill.get('time') or '')
-        if code and stamp and (code not in bought_fill_by_code or
-                stamp>str(bought_fill_by_code[code].get('time') or '')):
-            bought_fill_by_code[code]=fill
+    # Original buy_fills.time is authoritative: match current position's
+    # code+entry_date, not a later rebuy's same ticker and not event D-day.
+    from gmo_entry_time_v036 import entry_fill
     active = []
     for code,p in positions.items():
         if not isinstance(p,dict): continue
         qty = int(p.get('qty') or 0)
         if qty <= 0: continue
-        last_buy=bought_fill_by_code.get(str(code)) or {}
+        original_buy=entry_fill(dict(p,code=code),buys) or {}
         active.append({'tf':'gmo','strategy':'gmo','code':code,
             'name':p.get('name') or names.get(code,code),'qty':qty,
             'entry_price':p.get('entry_price'),'last_price':None,
-            'entry_at':last_buy.get('time'),'buy_reason':last_buy.get('purpose'),
+            'entry_at':original_buy.get('entry_at'),
+            'buy_at':original_buy.get('entry_at'),
+            'buy_reason':original_buy.get('buy_reason'),
+            'buy_reason_source':original_buy.get('buy_reason_source'),
             'gmo_score':p.get('gmo_score'),'status':'OPEN',
             'first_sold':bool(p.get('first_filled_qty')),
             'reason':p.get('stage'),'gmo_event_date':p.get('entry_date')})
@@ -1010,7 +1333,7 @@ def _gmo_original_record(root):
             'first_target_filled':r.get('paper_first_target_filled'),
             'paper_realized_net_won':r.get('paper_realized_net_won'),
             'sell_reason':r.get('paper_last_exit_purpose') or None,
-            'sell_at':r.get('paper_last_exit_at') or None,
+            'last_exit_at':r.get('paper_last_exit_at') or None,
             'paper_position_status':r.get('paper_position_status'),
             'official_d1_open':r.get('official_d1_open'),
             'score_base':r.get('score_base'),
@@ -1022,6 +1345,31 @@ def _gmo_original_record(root):
             'research_5pct_status':r.get('research_5pct_status'),
             'research_first_hit_day':r.get('first_5pct_research_hit_day')
         })
+        item=items[-1]
+        if bought:
+            # EXE PAPER first-target SELL must be attributed to this D+1 buy.
+            item.update(_gmo_fill_evidence(
+                dict(c,entry_date=canonical_date(c.get('entry_date'))),r,buys,sells))
+        elif opener>0:
+            item.update({'virtual_buy_price':r.get('official_d1_open'),
+                         'virtual_buy_at':canonical_date(c.get('entry_date')),
+                         'virtual_buy_evidence':'GMO_D1_OFFICIAL_OPEN_OBSERVATION'})
+        # Reconstruct first D+N 5% HIGH observation day from the source daily
+        # OHLC; this is a price observation, never a SELL execution.
+        try:
+            hit_day=int(r.get('first_5pct_research_hit_day') or 0)
+        except (ValueError,TypeError):
+            hit_day=0
+        if hit_day>0 and r.get('research_5pct_status')=='TOUCHED_HIGH_NOT_FILL':
+            for d in candles:
+                if (str(d.get('code') or '')==str(c.get('code') or '') and
+                    canonical_date(d.get('event_date'))==canonical_date(c.get('event_date')) and
+                    int(d.get('day_index') or 0)==hit_day and d.get('trade_date') and
+                    float(d.get('high') or 0)>0):
+                    item.update({'observed_target_price':d.get('high'),
+                                 'observed_target_at':d.get('trade_date'),
+                                 'observed_target_evidence':'GMO_D_PLUS_HIGH_NOT_FILL'})
+                    break
     if not state_present:
         # Without PAPER account JSON, entry, exit and profit cannot be proven.
         for item in items:
@@ -1161,6 +1509,14 @@ def _hub_records_v078(self):
         out=json.loads(raw) if isinstance(raw,str) else raw
     except Exception:
         return raw
+    # Read-only forensic summaries use a separate asynchronous reader;
+    # the original GMO/CW strategy, broker and wallet databases are NOT modified.
+    # Existing full error ZIP already contains the original source SQLite.
+    try:
+        from entry_failure_audit_v075 import snapshot_for_root
+        out['entry_failure_audit']=snapshot_for_root(self.root)
+    except Exception as audit_exc:
+        self._err('entry_failure_audit_v075',audit_exc)
     try:
         stock_at=out.setdefault('stock',{}).setdefault('at',{})
         base=stock_at.setdefault('ledger',{})
@@ -1195,6 +1551,26 @@ def _hub_records_v078(self):
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
+            try:
+                from gmo_entry_time_v036 import enrich_positions
+                phone_state={
+                    'positions':{
+                        str(code):{'entry_date':getattr(position,'entry_date','')}
+                        for code,position in gmo.engine.positions.items()},
+                    'buy_fills':list(gmo.engine.buy_fills)}
+                enrich_positions(snap.get('positions') or [],phone_state)
+            except Exception as stamp_error:
+                self._err('gmo_original_buy_fill_timestamp',stamp_error)
+            try:
+                from phone_buy_evidence_v035 import (
+                    attach_gmo_buy_evidence,queue_phone_buy_evidence)
+                entry_dates={str(code):str(getattr(p,'entry_date',''))
+                    for code,p in getattr(gmo.engine,'positions',{}).items()}
+                captured=attach_gmo_buy_evidence(snap.get('positions') or [],
+                    snap.get('executions') or [],entry_dates)
+                queue_phone_buy_evidence(self.root,captured)
+            except Exception as evidence_exc:
+                self._err('gmo_phone_buy_evidence',evidence_exc)
             wallet=snap.get('wallet') or {}
             sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']
             wins=sum(1 for x in sells if float(x.get('net_profit') or 0)>0)
@@ -1287,6 +1663,11 @@ def _hub_records_v078(self):
                 self._err('gmo_original_record',gmo_exc)
                 restored=None
             if restored is not None:
+                try:
+                    from market_research_v033 import offer_records
+                    out['market_research']=offer_records(self.root,out)
+                except Exception as score_error:
+                    self._err('market_research_v033',score_error)
                 return json.dumps(out,ensure_ascii=False,default=str)
             # Do not report an empty GMO screen as a successful PC ledger load.
             # Read-only source-file diagnostics distinguish absent data from
@@ -1323,6 +1704,24 @@ def _hub_records_v078(self):
                 stock.setdefault('research',{})['gmo']=original_research
         except Exception as recovery_error:
             self._err('hub_records_gmo_last_resort',recovery_error)
+        try:
+            # Passive, read-only worker. Network and SQLite work only on its
+            # daemon thread; this hub snapshot/order thread only enqueues.
+            from market_research_v033 import offer_records
+            out['market_research']=offer_records(self.root,out)
+        except Exception as score_error:
+            self._err('market_research_v033',score_error)
+    # Always publish the score worker snapshot on the NORMAL successful path.
+    # v037 accidentally only called this inside exception/recovery branches;
+    # Android read local_records.market_research and therefore saw no scores.
+    try:
+        from market_research_v033 import offer_records
+        out['market_research']=offer_records(self.root,out)
+    except Exception as score_error:
+        self._err('market_research_v038',score_error)
+        out['market_research']={
+            'stock':{'score':None,'status':'시장점수 처리 오류'},
+            'coin':{'score':None,'status':'시장점수 처리 오류'}}
     return json.dumps(out,ensure_ascii=False,default=str)
 
 def _stock_at_ledger_v19(self):
@@ -1365,6 +1764,28 @@ def _stock_at_ledger_v19(self):
         out['realized_pnl']=realized
         out['unrealized_pnl']=holding
         out['total_pnl']=realized+holding
+        from phone_buy_evidence_v035 import (
+            attach_buy_evidence,read_at_open_buy_fills,queue_phone_buy_evidence)
+        from at_hold_diagnostic_v035 import diagnose_at_position
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        stock_db=Path(self.root)/'stock'/'ARTITRADE_D.sqlite3'
+        from phone_buy_evidence_v035 import read_open_signal_evidence
+        source_signals=read_open_signal_evidence(stock_db,'stock','at')
+        membership=_core._db_rows(stock_db,"SELECT position_id,signal_id FROM v19_members")
+        link_map={str(m['position_id']):str(m['signal_id']) for m in membership}
+        # OPEN holdings' original buys must not fall out of a capped UI feed.
+        buy_records=attach_buy_evidence(positions,read_at_open_buy_fills(stock_db),
+                        source_signals,market='stock',strategy='at',linked_ids=link_map)
+        queue_phone_buy_evidence(self.root,buy_records)
+        now=datetime.now(ZoneInfo("Asia/Seoul"))
+        for position in positions:
+            # Saved hold_days is authoritative; these diagnostics are not
+            # scheduled sell actions and never imply a broker fill.
+            if not isinstance(position,dict):continue
+            detail=diagnose_at_position(position,now,root=store.root)
+            position['hold_diagnostic']=detail
+            position['hold_exit_diagnostic']=detail['exit_scenario']
     except Exception as exc:
         self._err('stock_at_v19_wallet_snapshot',exc)
     return out
@@ -1378,28 +1799,124 @@ def _patched_gmo(self):
         gmo = GMOService(gmo_root)
         self.stock_runner.gmo = gmo
 
-        original_tick = self.stock_runner._new_tick
-        def tick_with_gmo(tick):
-            try:
-                gmo.on_priority_tick(tick)
-                gmo.on_live_tick(tick)
-            except Exception as exc:
-                self._err('gmo_tick', exc)
-            return original_tick(tick)
-        self.stock_runner._new_tick = tick_with_gmo
-
-        original_book = self.stock_runner.engine.book.on_message
-        def book_with_gmo(message, *args, **kwargs):
-            try:
-                gmo.on_book_message(message, self.stock_runner.market_map)
-            except Exception as exc:
-                self._err('gmo_book', exc)
-            return original_book(message, *args, **kwargs)
-        self.stock_runner.engine.book.on_message = book_with_gmo
-
+        # v067 root cause: d_live.run already routes 0D to GMO and every
+        # 0B to its separate fast/priority worker. The older Android patch
+        # also ran GMO.on_live_tick AND on_book_message in the WebSocket
+        # receiver itself. The SAME feed packet was processed twice,
+        # including synchronous DB/strategy work while the socket needed
+        # to service PING/PONG, causing 1011 keepalive ping timeouts.
+        # Keep the single original socket and native workers authoritative.
+        # No second per-packet GMO calls on the WS event loop.
         gmo.start(lambda: self.stock_runner.api,
                   lambda: dict(self.stock_runner.market_map))
-    return _ORIG_PATCH_GMO(self)
+    # The v071 live bridge replaces GMO paper_match with a broker-only
+    # wrapper, which silently ignores all PAPER orders when live is OFF.
+    # Preserve the original simulated matcher and the explicitly labelled
+    # 0B PAPER proxy. Only dispatch to the broker wrapper while LIVE is ON.
+    engine=self.stock_runner.gmo.engine
+    if not hasattr(engine,"_android_original_paper_match_v050"):
+        engine._android_original_paper_match_v050=engine.paper_match
+        engine._android_original_print_proxy_v050=engine.paper_match_krx_print_proxy
+    _ORIG_PATCH_GMO(self)
+    original_paper=engine._android_original_paper_match_v050
+    original_print=engine._android_original_print_proxy_v050
+    # The legacy broker wrapper sent ALL NEW GMO orders on ANY KRX tick,
+    # including unrelated tickers without fresh 0D depth. Preserve strategy
+    # decisions, but require a matching fresh quote for each live order.
+    live_intents=set()
+    original_make_order=engine._order
+    def mode_scoped_order(*args,**kwargs):
+        result=original_make_order(*args,**kwargs)
+        if self.live_enabled("stock"):
+            live_intents.add(result.id)
+        return result
+    engine._order=mode_scoped_order
+
+    def mode_scoped_match(quote):
+        code=str(getattr(quote,"code","") or "")
+        if self.live_enabled("stock"):
+            try:
+                lag=float(getattr(quote,"receive_delay_seconds",float("nan")))
+                if (getattr(quote,"venue",None)!="KRX" or not code or
+                    not math.isfinite(lag) or lag<0 or lag>3.0):
+                    return
+                for order in list(engine.orders.values()):
+                    if (order.state!="NEW" or order.code!=code or
+                            order.id not in live_intents):
+                        continue
+                    qty=int(order.requested)-int(order.filled)
+                    if qty<=0:continue
+                    if order.side=="BUY":
+                        if (getattr(quote,"trading_day_index",None)!=1 or
+                            not engine._d1_buy_window_ok(order,quote.at) or
+                            quote.ask<=0 or quote.ask_size<qty or
+                            quote.ask>order.limit):
+                            continue
+                        if verified_gmo_live_quantity(self.root,code)>0:
+                            raise UnsafePaperExit("GMO_LIVE_DUPLICATE_BROKER_BUY_BLOCKED")
+                    elif order.side=="SELL":
+                        if quote.bid<=0 or quote.bid_size<qty or quote.bid<order.limit:
+                            continue
+                        if verified_gmo_live_quantity(self.root,code)<qty:
+                            raise UnsafePaperExit("GMO_PAPER_POSITION_LIVE_SELL_BLOCKED")
+                    else:
+                        continue
+                    key="GMO-"+_core._safe_key(
+                        order.id+":"+order.time+":"+order.side+":"+order.code)
+                    try:
+                        engine.mark_submitted(order.id,quote.at)
+                        fill=self.kiwoom.fok(key,order.side,order.code,qty,
+                                             order.limit,order.purpose,"KRX")
+                        engine.fill(order.id,int(fill["qty"]),
+                                    float(fill["price"]),quote.at)
+                        self.on_live_fill("stock",order.side,order.code,fill["qty"],
+                                          order.limit,fill,order.purpose)
+                    except _core.LiveOrderNoFill:
+                        try:
+                            engine._cancel(order,"BROKER_FOK_NO_FILL",quote.at)
+                            engine.acknowledge_cancel(order.id,quote.at)
+                        except Exception:
+                            pass
+                    except Exception as error:
+                        self._err("gmo_live_order",error)
+                        engine._log(order.code,"LIVE_ORDER_HALTED",
+                            type(error).__name__+":"+str(error)[:160],quote.at)
+                        self._live["stock"]=False
+                        raise
+            except UnsafePaperExit as unsafe:
+                self._err("gmo_broker_provenance_blocked",unsafe)
+            return
+        # GMO PAPER uses its independent simulated wallet. A broker fill
+        # made by stock AT/MA/CLOSE is not a GMO position and must not
+        # suppress GMO's virtual fills or its research evidence.
+        # Only a LIVE GMO fill (or an unresolved GMO broker order) may
+        # block this market's simulated matcher after a mode switch.
+        try:
+            if verified_gmo_live_quantity(self.root,code)>0:
+                raise UnsafePaperExit("GMO_LIVE_POSITION_PAPER_MATCH_BLOCKED")
+        except UnsafePaperExit as unsafe:
+            self._err("gmo_paper_broker_conflict",unsafe)
+            return
+        return original_paper(quote)
+
+    def mode_scoped_print(quote, volume, **kwargs):
+        if self.live_enabled("stock"):return 0
+        try:
+            if verified_gmo_live_quantity(self.root,quote.code)>0:
+                raise UnsafePaperExit("GMO_LIVE_POSITION_PAPER_PROXY_BLOCKED")
+        except UnsafePaperExit as unsafe:
+            self._err("gmo_paper_proxy_broker_conflict",unsafe)
+            return 0
+        return original_print(quote,volume,**kwargs)
+    engine.paper_match=mode_scoped_match
+    engine.paper_match_krx_print_proxy=mode_scoped_print
+    # Independent, read-only UI quote observation on the existing Kiwoom 0B
+    # callback. No orderbook, strategy, FOK or account path is changed.
+    try:
+        from stock_quote_truth_v066 import install_ui_quote_tap
+        install_ui_quote_tap(self.stock_runner)
+    except Exception as exc:
+        self._err('stock_quote_view_only_observer_v066',exc)
 
 
 def _patched_stop(self):
@@ -1417,6 +1934,83 @@ _core.Runtime._patch_gmo = _patched_gmo
 _core.Runtime._stock_at_ledger = _stock_at_ledger_v19
 _core.Runtime.hub_records = _hub_records_v078
 _core.Runtime.stop = _patched_stop
+
+# v0.7.59: integrity guard on *completed* reference candles. Reuses the
+# current original Upbit/KRX scanner and account-specific source ledgers.
+from reference_integrity_v059 import install as _install_reference_integrity_v059
+_install_reference_integrity_v059()
+
+# v0.7.61 MA is an independent strategy in its existing stock/coin wallets:
+# no ordinary record-volume entries; only 3+ downward SMA bearish candles
+# or a first completed MA120-down/short4-up turnpoint. Both get existing
+# broker FOK safety gates. Existing bought positions retain their policy.
+from ma_v061_coin_runtime import install as _install_ma_v061_coin
+from ma_v061_stock_runtime import install as _install_ma_v061_stock
+_install_ma_v061_coin()
+_install_ma_v061_stock()
+from ma_v061_fast_entry import install as _install_ma_v061_fast
+_install_ma_v061_fast()
+
+# v0.7.62: MA-only cold-epoch account. The old stock/coin MA SQLite is
+# preserved read-only, and both markets begin new virtual cash/PnL at zero.
+# No physical stock/crypto broker balance or external position is reset.
+from ma_epoch_v062 import install as _install_ma_epoch_v062
+_install_ma_epoch_v062()
+
+# Feed the first eligible KRX 0B tick of a previously UNWATCHED stock
+# through the SAME MA + verified 0D/FOK transaction path. Bulk scan alone
+# cannot meet the new 5-second turnpoint deadline.
+from ma_v062_stock_live_lane import install as _install_ma_v062_stock_lane
+_install_ma_v062_stock_lane()
+
+# Start MA AI evidence from the new epoch exclusively. Other market and
+# strategy research scopes continue writing to their original repositories.
+from ma_v062_ai_scope import install as _install_ma_v062_ai_scope
+_install_ma_v062_ai_scope()
+
+# v067 MA ONLY: both stock and coin receive brand new on-disk strategy
+# epochs and AI roots. Never delete previous databases or real broker state.
+from ma_epoch_v067 import install as _install_ma_epoch_v067
+_install_ma_epoch_v067()
+from ma_v067_stock_runtime import install as _install_ma_v067_stock
+_install_ma_v067_stock()
+
+# v0.7.43: market trend is an AT/MA entry mode, never an independent account.
+from market_trend_runtime_v043 import install as _install_market_trend_v043
+_install_market_trend_v043(_core)
+
+# The coin price observer is installed on the already existing MarketTrend
+# Upbit ticker memory. Both markets retain their original broker/FOK owner.
+from ma_v067_coin_runtime import install as _install_ma_v067_coin
+_install_ma_v067_coin()
+
+# Keep Kiwoom socket receive/PONG independent from periodic universe REST
+# and local DB refresh. Never add a second Kiwoom WebSocket login.
+from kiwoom_ws_v067 import install as _install_kiwoom_ws_v067
+_install_kiwoom_ws_v067()
+
+# v0.7.53: authoritative POST-SELL tracker. This is research-only, listens
+# to the existing verified stock/coin feeds and never changes order logic.
+from post_exit_runtime_v053 import install as _install_post_exit_v053
+_install_post_exit_v053(_core)
+
+# v0.7.59: read-only per-position chronology after all ledger wrappers.
+from phone_policy_reference_v059 import install as _install_policy_reference_v059
+_install_policy_reference_v059(_core)
+
+# v061 MA mode/turnpoint stages are read-only ledger annotations; never
+# substitute reference times for actual broker/PAPER BUY execution times.
+from ma_v061_packet import install as _install_ma_v061_packet
+_install_ma_v061_packet(_core)
+
+# v062 new MA strategy-only dashboard/research packet and read-only legacy.
+from ma_v062_packet import install as _install_ma_v062_packet
+_install_ma_v062_packet(_core)
+
+# v066 display-only quote provenance is installed after all strategy packets.
+# It cannot modify engine SQLite or the existing live/paper order pathways.
+from stock_quote_truth_v066 import install as _install_stock_quote_truth_v066
+_install_stock_quote_truth_v066(_core)
 
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
@@ -1487,3 +2081,5 @@ stop = _core.stop
 snapshot = _core.snapshot
 hub_records = _core.hub_records
 set_live = _core.set_live
+# v045 explicit score-independent market trend entry selection.
+from market_trend_runtime_v043 import set_manual_mode as set_trend_manual

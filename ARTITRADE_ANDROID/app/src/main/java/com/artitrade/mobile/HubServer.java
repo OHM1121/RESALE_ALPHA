@@ -259,6 +259,9 @@ final class HubServer {
         if("GET".equals(method)&&"/v1/status".equals(path)){
             return json("ok",true,"api",1,"owner","phone","stock",store.owner("stock"),"coin",store.owner("coin"),"vpn_endpoint",vpnBoundIp);
         }
+        if("GET".equals(method)&&"/v1/records/index".equals(path)){
+            return store.recordIndex();
+        }
         if("GET".equals(method)&&"/v1/record/meta".equals(path)){
             return store.getRecordMeta(val(q,"market"),val(q,"strategy"),val(q,"bucket"));
         }

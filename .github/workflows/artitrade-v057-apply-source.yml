@@ -1,0 +1,71 @@
+name: ARTITRADE v057 vetted source apply and validation
+on:
+  push:
+    branches:
+      - feature-artitrade-v057-background-ui-20261116
+    paths:
+      - 'ARTITRADE_ANDROID/v057_source_patch.xz.b64'
+permissions:
+  contents: write
+jobs:
+  verify-and-apply:
+    if: "github.event.head_commit.message == 'ci: apply v057 source patch'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify immutable compressed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d ARTITRADE_ANDROID/v057_source_patch.xz.b64 >/tmp/artitrade-v057.patch.xz
+          echo '72ec3eba9e4c880acf85d903fd45dd4596c7012987f779f34160a0f63e37002e  /tmp/artitrade-v057.patch.xz' | sha256sum -c -
+          xz -dc /tmp/artitrade-v057.patch.xz >/tmp/artitrade-v057.patch
+          git apply --check --directory=ARTITRADE_ANDROID /tmp/artitrade-v057.patch
+          git apply --directory=ARTITRADE_ANDROID /tmp/artitrade-v057.patch
+          git rm ARTITRADE_ANDROID/v057_source_patch.xz.b64
+          git add ARTITRADE_ANDROID
+          git diff --cached --check
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: New, trend and older UI regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for pat in 'test_v057_*.py' 'test_v054_*.py' 'test_v053_*.py' \
+               'test_v046_perf_evidence_ui.py' 'test_v052_*.py' 'test_v051_*.py' \
+               'test_v047_entry_context_cohort.py' 'test_v040_ai_evidence_visual.py' \
+               'test_v037_ai_strategy_analysis.py' 'test_android_ledger_backup.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+      - name: Create short-lived TEST ONLY signing key for debug packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -keysize 2048 -validity 2 -noprompt
+          echo 'TEST_KEY_NOT_FOR_USER_INSTALL'
+      - name: Android native compilation
+        shell: bash
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Commit only verified source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ARTITRADE v057 CI'
+          git config user.email 'artitrade-v057-ci@users.noreply.github.com'
+          git commit -m 'fix(v057): warm resume, compact header and per-trade AI evidence'
+          git push origin 'HEAD:refs/heads/feature-artitrade-v057-background-ui-20261116'

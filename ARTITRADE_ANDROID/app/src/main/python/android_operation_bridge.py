@@ -39,10 +39,12 @@ def _defaults():
         'ma':{'frames':_frame_defaults()},
         'close':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX},
         'gmo':{'seed':DEFAULT_SEED,'max_positions':DEFAULT_MAX},
+        'trend':{'frames':_frame_defaults()},
       },
       'coin':{
         'general':{'frames':_frame_defaults()},
         'ma':{'frames':_frame_defaults()},
+        'trend':{'frames':_frame_defaults()},
       },
     }
 
@@ -87,10 +89,12 @@ def _validate(data):
         'ma':{'frames':_frames(stock.get('ma',{}),'stock/ma')},
         'close':_read_pair(stock.get('close',{}),'stock/close'),
         'gmo':_read_pair(stock.get('gmo',{}),'stock/gmo'),
+        'trend':{'frames':_frames(stock.get('trend',{}),'stock/trend')},
       },
       'coin':{
         'general':{'frames':_frames(coin.get('general',{}),'coin/general')},
         'ma':{'frames':_frames(coin.get('ma',{}),'coin/ma')},
+        'trend':{'frames':_frames(coin.get('trend',{}),'coin/trend')},
       },
     }
 
@@ -98,8 +102,15 @@ def _validate(data):
 def _load(rt=None):
     p=_path(rt)
     if not p.exists():return _defaults()
-    try:return _validate(json.loads(p.read_text(encoding='utf-8')))
-    except Exception:return _defaults()
+    # Never silently replace user capital/position limits after a partial
+    # write, invalid JSON, permission failure, or unrecognized saved schema.
+    try:
+        raw=json.loads(p.read_text(encoding='utf-8'))
+        if not isinstance(raw,dict) or not isinstance(raw.get('stock'),dict) or not isinstance(raw.get('coin'),dict):
+            raise ValueError('operating settings must contain stock and coin')
+        return _validate(raw)
+    except (OSError,UnicodeError,ValueError,TypeError) as error:
+        raise ValueError('OPERATION_SETTINGS_INVALID_PRESERVED: '+type(error).__name__) from error
 
 
 def _save(rt,data):
@@ -199,6 +210,8 @@ def _apply_runtime(rt,data):
       ('stock.gmo',lambda:_apply_gmo(rt,data['stock']['gmo'])),
       ('coin.general',lambda:_apply_coin(rt.coin_ledger,data['coin']['general'])),
       ('coin.ma',lambda:_apply_coin(rt.coin_ma_ledger,data['coin']['ma'])),
+      ('stock.trend',lambda:rt.market_trend.standalone_wallet.apply_settings('stock',data['stock']['trend']['frames'])),
+      ('coin.trend',lambda:rt.market_trend.standalone_wallet.apply_settings('coin',data['coin']['trend']['frames'])),
     ]
     for name,fn in jobs:
         try:result['strategies'][name]=fn()
@@ -211,18 +224,35 @@ def _apply_runtime(rt,data):
 def apply_saved():
     rt=getattr(core,'_RUNTIME',None)
     if rt is None:return json.dumps({'ok':False,'error':'RUNTIME_NOT_STARTED'},ensure_ascii=False)
-    data=_load(rt)
-    # Persist migrated schema on first successful startup.
-    _save(rt,data)
-    out=_apply_runtime(rt,data);out['settings']=data
+    try:data=_load(rt)
+    except (ValueError,OSError) as error:
+        return json.dumps({'ok':False,'error':'OPERATION_SETTINGS_INVALID_PRESERVED',
+                           'message':str(error)},ensure_ascii=False)
+    out=_apply_runtime(rt,data)
+    if out['ok']:
+        # Normalize an older valid format only after all six wallets accept it.
+        _save(rt,data)
+    else:
+        out['error']='OPERATION_PARTIAL_APPLY_NOT_PERSISTED'
+    out['settings']=data
     return json.dumps(out,ensure_ascii=False,default=str)
 
 
 def apply(raw):
     rt=getattr(core,'_RUNTIME',None)
     if rt is None:return json.dumps({'ok':False,'error':'RUNTIME_NOT_STARTED'},ensure_ascii=False)
-    data=_save(rt,json.loads(str(raw) or '{}'))
-    out=_apply_runtime(rt,data);out['settings']=data
+    try:
+        data=_validate(json.loads(str(raw) or '{}'))
+    except (ValueError,TypeError) as error:
+        return json.dumps({'ok':False,'error':'OPERATION_INPUT_INVALID',
+                           'message':str(error)},ensure_ascii=False)
+    out=_apply_runtime(rt,data)
+    if out['ok']:
+        # A failed wallet update must not become a persistent request.
+        _save(rt,data)
+    else:
+        out['error']='OPERATION_PARTIAL_APPLY_NOT_PERSISTED'
+    out['settings']=data
     return json.dumps(out,ensure_ascii=False,default=str)
 
 

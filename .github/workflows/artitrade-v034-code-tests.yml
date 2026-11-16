@@ -1,0 +1,48 @@
+name: ARTITRADE v034 signed minus100 plus100 code-only tests
+on:
+  push:
+    branches: [artitrade-v034-signed-market-score-20261114]
+    paths:
+      - ARTITRADE_ANDROID/**
+      - .github/workflows/artitrade-v034-code-tests.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: artitrade-v034-code-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Red green score scale tests
+        run: |
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v034_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v033_*.py' -v
+          mkdir -p /tmp/v034
+          javac -d /tmp/v034 ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/SignedMarketScore.java ARTITRADE_ANDROID/ui_tests/SignedMarketScoreTest.java
+          java -cp /tmp/v034 com.artitrade.mobile.SignedMarketScoreTest
+      - name: Regression and syntax tests
+        run: |
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v031_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v030_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v029_research_loaders.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v028_trade_record_parity.py' -v
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Compile Android Java without making APK
+        run: |
+          cd ARTITRADE_ANDROID
+          gradle --no-daemon :app:compileUnifiedDebugJavaWithJavac
+          test ! -d app/build/outputs/apk

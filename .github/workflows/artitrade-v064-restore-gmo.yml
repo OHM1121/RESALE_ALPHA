@@ -1,0 +1,45 @@
+name: ARTITRADE v064 restore v062 GMO only
+on:
+  push:
+    branches: [ feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/restore_v062_gmo_policy_v064.py'
+      - '.github/workflows/artitrade-v064-restore-gmo.yml'
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v064-restore-gmo
+  cancel-in-progress: true
+jobs:
+  restore-gmo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch pinned v062 source without modifying any active branch
+        run: git fetch --no-tags --depth=1 origin 61cea5ad1b745da6a88c9a2c0a79d59013e5e991
+      - name: Restore exact GMO engine, preserve all other packaged modules
+        run: python3 ARTITRADE_ANDROID/ui_tests/restore_v062_gmo_policy_v064.py
+      - name: Verify only GMO core data and Java SHA changed
+        run: |
+          git diff --check
+          git diff --stat
+          while IFS= read -r changed; do
+            case "$changed" in
+              ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_??.txt|ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java) ;;
+              *) echo "Unexpected modified file: $changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only)
+      - name: Commit pinned restoration of original GMO behavior
+        run: |
+          git config user.name 'artitrade-ci'
+          git config user.email 'artitrade-ci@users.noreply.github.com'
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v064): restore exact v062 GMO policy while preserving all other packaged engines'
+          git push origin HEAD:feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116

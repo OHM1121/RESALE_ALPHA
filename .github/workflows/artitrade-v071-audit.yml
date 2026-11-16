@@ -1,0 +1,49 @@
+name: ARTITRADE v071 cross strategy and stock websocket root cause audit
+on:
+  push:
+    branches: [ fix-artitrade-v071-feed-order-error-export-20261116 ]
+    paths: [ '.github/workflows/artitrade-v071-audit.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-pinned-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect all strategy feed paths with no broker credentials or orders
+        run: |
+          python3 - <<'PY'
+          import zipfile,base64,io,hashlib,ast,re,pathlib
+          root=pathlib.Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          core=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(core)) as z:
+              print('AUDIT_CORE_SHA',hashlib.sha256(core).hexdigest(),'MODULES',len(z.namelist()))
+              for name in ('d_live.py','d_upbit.py','at_close_bridge.py','at_close_runner.py','d_gmo_runtime.py','stock_ma_engine.py','startup_preload_v1.py','d_storage.py','d_minute_repair_fast.py','at_close_store.py','at_close_engine.py'):
+                  if name not in z.namelist():continue
+                  data=z.read(name)
+                  lines=data.decode('utf8').splitlines()
+                  print('MODULE',name,'LINES',len(lines),'SHA256',hashlib.sha256(data).hexdigest())
+                  if name=='d_live.py':
+                      for a,b in [(836,890),(2220,2334),(1270,1310)]:
+                          print('=== RANGE',a,b)
+                          for n in range(a,b+1): print('TAIL_%d %s'%(n,lines[n-1]))
+                  tree=ast.parse(data,name)
+                  classes=[n for n in tree.body if isinstance(n,ast.ClassDef)]
+                  funcs={n.name:(n.lineno,n.end_lineno) for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+                  for cls in classes:
+                      for n in cls.body:
+                          if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)):funcs[cls.name+'.'+n.name]=(n.lineno,n.end_lineno)
+                  for name0,(a,b) in funcs.items():
+                      if re.search(r'LivePaperRunner\.(?:__init__|_startup_preload|_warmup|run|_new_tick|_start_market_workers|_switch_venue_subscriptions|_refresh_universe_if_due|_process_completed_records|_repair_gmo_depth_on_existing_ws|_tick_job_loop|_pinned_stocks)|UpbitPaperRunner\.(?:_ws|_run_public_cycle)|(?:bridge|runner|Engine|GMOService)\.(?:start|run|_run|_main|on_message|on_book_message)',name0):
+                          print('METHOD',name,name0,a,b)
+                          if name0.startswith('LivePaperRunner.'):
+                              for idx in range(a,min(b,a+(160 if name0.endswith(('run','_startup_preload','_warmup','_new_tick','__init__')) else 115)) +1):
+                                  print('D_%d %s'%(idx,lines[idx-1]))
+                  if name in ('d_live.py','d_gmo_runtime.py','stock_ma_engine.py','at_close_bridge.py'):
+                      keys=['preload_gate','_startup_preload','_new_tick','_tick_queue','_tick_job_loop','_warmup','_record_group3_ack','_confirmed_ws_session','_health(','_switch_venue','preload','subscription','_pinned_stocks','_delay','lock','_ma_scan','_gmo_tick']
+                      matches=[(i,l) for i,l in enumerate(lines,1) if any(k in l for k in keys) and ('def ' in l or 'await ' in l or 'thread' in l or 'queue.' in l)]
+                      for idx,val in matches[:125]:
+                          print('KEY',name,idx,val[:225])
+          PY

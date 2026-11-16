@@ -73,7 +73,7 @@ class PersistenceAndExportTests(unittest.TestCase):
         self.assertEqual(self.query_audit(
             "SELECT COUNT(*) FROM observations WHERE record_kind='VIRTUAL'"),6)
         self.assertEqual(self.query_audit(
-            "SELECT COUNT(*) FROM observations WHERE record_kind='ACTUAL'"),9)
+            "SELECT COUNT(*) FROM observations WHERE record_kind='UNVERIFIED_LEDGER'"),9)
         self.assertEqual(audit.capture(str(self.root))["added_observations"],0)
         db=self.dbs["coin/base/upbit_paper.sqlite3"]
         with sqlite3.connect(db) as c:
@@ -89,7 +89,7 @@ class PersistenceAndExportTests(unittest.TestCase):
         with sqlite3.connect(self.root/audit.AUDIT_REL) as c:
             rows=c.execute("SELECT DISTINCT record_kind FROM observations").fetchall()
             stamp=c.execute("SELECT observed_at_kst FROM observations LIMIT 1").fetchone()[0]
-        self.assertIn(("ACTUAL",),rows)
+        self.assertIn(("UNVERIFIED_LEDGER",),rows)
         self.assertIn(("VIRTUAL",),rows)
         self.assertIn(("SIGNAL_AND_RESEARCH",),rows)
         self.assertRegex(stamp,r"\+09:00$")
@@ -116,7 +116,10 @@ class PersistenceAndExportTests(unittest.TestCase):
             indexed=[r for r in catalog["tables"] if r["source"]=="stock/ARTITRADE_D.sqlite3"
                      and r["table"]=="candidates"]
             self.assertEqual(indexed[0]["records"],3205)
-            self.assertGreater(catalog["actual_trade_rows"],0)
+            self.assertIsNone(catalog["actual_trade_rows"])
+            self.assertGreater(catalog["unverified_execution_ledger_rows"],0)
+            self.assertEqual(catalog["actual_trade_missing_reason"],
+                             "BROKER_PROVENANCE_NOT_PROVEN_BY_TABLE_NAME")
             self.assertGreater(catalog["virtual_research_rows"],0)
             original=Path(self.temp.name)/"untruncated.sqlite3"
             original.write_bytes(z.read("stock/ARTITRADE_D.sqlite3"))

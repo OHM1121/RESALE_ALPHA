@@ -1,0 +1,788 @@
+"""ARTITRADE v040: manual, scope-bound, evidence-ranked AI strategy diagnosis.
+
+- One exact (market,strategy) per invocation, timeframe separated.
+- Recent OPEN positions and any available research signals are useful today.
+- More evidence tomorrow upgrades counts and validation, never fabricates a
+  completed trade, entry signal feature, exit or market score.
+- Exploratory past filters are NOT causal findings or executable trade orders.
+"""
+from __future__ import annotations
+
+import bisect
+import datetime as dt
+import json
+import math
+import random
+import sqlite3
+import statistics
+from collections import Counter,defaultdict
+from pathlib import Path
+
+import ai_research_v040 as journal
+import ai_strategy_analysis_v037 as old
+
+SCOPES=old.SOURCE
+FRAMES=("5m","30m","60m","day")
+FRAME_NAMES={"5m":"5분봉","30m":"30분봉","60m":"60분봉","day":"일봉","gmo":"수급매매"}
+TITLES={("stock","at"):"주식 · 기준봉",("stock","ma"):"주식 · MA",
+        ("stock","gmo"):"주식 · 수급매매",("stock","close"):"주식 · 종가베팅",
+        ("coin","general"):"코인 · 기준봉",("coin","ma"):"코인 · MA"}
+def _exclude_trend_cohort(root,market,strategy,raw,research,ledger,archive):
+    """Remove RSI20 parent-ledger rows by exact original position ID.
+
+    A trend position may later have status=CLOSED; status-only filtering would
+    incorrectly leak the completed trade into native AT/MA AI results.
+    """
+    if strategy not in ("at","general","ma"):
+        return raw,research,ledger,archive
+    ids=set()
+    keys=set()
+    path=Path(root)/"market_trend_v043.sqlite3"
+    if path.is_file():
+        try:
+            with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
+                                 uri=True,timeout=3) as conn:
+                for pid,frame,symbol in conn.execute(
+                    "SELECT position_id,frame,symbol FROM position_state "
+                    "WHERE market=? AND strategy=?",(market,strategy)):
+                    ids.add((str(pid),str(frame),str(symbol)))
+                    keys.add(str(pid)+"|"+str(frame)+"|"+str(symbol))
+        except (OSError,sqlite3.Error):
+            pass
+    def explicitly_trend(row):
+        if not isinstance(row,dict):return False
+        mode=str(row.get("entry_mode") or "").upper()
+        status=str(row.get("status") or "").upper()
+        reason=str(row.get("reason") or "").upper()
+        cohort=str(row.get("strategy") or "").lower()
+        references=("id","position_id","signal_id","candidate_id",
+                    "signal_key","position_key","event_key")
+        return ("MARKET_TREND" in mode or "마켓트렌드" in mode or
+                status.startswith("TREND_") or reason.startswith("MARKET_TREND_") or
+                cohort=="trend" or any(str(row.get(k) or "").startswith(("MT43:","MT54:"))
+                                      for k in references))
+    def trend_row(row):
+        if explicitly_trend(row):return True
+        if not isinstance(row,dict):return False
+        frame=journal._frame(row.get("tf") or row.get("frame"),strategy)
+        symbol=str(row.get("code") or row.get("market") or "")
+        pid=str(row.get("id") or row.get("position_id") or "")
+        return (pid,frame,symbol) in ids
+    def trend_fill(row):
+        if trend_row(row):return True
+        return (str(row.get("position_id") or ""),
+                journal._frame(row.get("tf") or row.get("frame"),strategy),
+                str(row.get("code") or row.get("market") or "")) in ids
+    raw=dict(raw)
+    raw["candidates"]=[r for r in raw.get("candidates",[]) if not explicitly_trend(r)]
+    raw["positions"]=[r for r in raw.get("positions",[]) if not trend_row(r)]
+    raw["executions"]=[r for r in raw.get("executions",[]) if not trend_fill(r)]
+    research=dict(research)
+    research["items"]=[r for r in research.get("items",[])
+        if isinstance(r,dict) and not explicitly_trend(r)]
+    ledger=dict(ledger)
+    ledger["positions"]=[r for r in ledger.get("positions",[]) if not trend_row(r)]
+    ledger["executions"]=[r for r in ledger.get("executions",[]) if not trend_fill(r)]
+    archive=dict(archive)
+    archive["positions"]=[r for r in archive.get("positions",[])
+        if r.get("position_key") not in keys and not explicitly_trend(r)]
+    archive["features"]=[r for r in archive.get("features",[])
+        if not explicitly_trend(r)]
+    return raw,research,ledger,archive
+
+
+# Order-entry features only. Holding-market averages are described separately.
+RULES=(
+    ("market_score","<=",-20,"시장점수 약세","약세장 매수 보류"),
+    ("atr_pct",">=",3.0,"ATR 확장","변동성 급등 진입 제한"),
+    ("volume_ratio",">=",2.5,"거래량 급증","과열 거래량 진입 필터"),
+    ("williams_r",">=",-20,"Williams 과매수","과매수 구간 신규진입 제한"),
+    ("williams_r","<=",-80,"Williams 과매도","과매도 반등 확인 후 진입"),
+    ("rsi",">=",75,"RSI 과열","RSI 과열구간 신규진입 보류"),
+    ("spread_pct",">=",.5,"호가 공백","호가 스프레드 확대 시 매수 보류"),
+    ("gap_pct",">=",4,"갭 급등","상승 갭 발생 종목 진입 필터"),
+    ("bid_imbalance","<=",.35,"매수호가 약세","매수호가 비중 회복 확인"),
+    ("score","<=",35,"진입점수 낮음","최소 진입점수 상향 시험"),
+    ("market_volatility",">=",4,"시장 변동성","시장 변동성 급증 시 진입 축소"),
+)
+MIN_ENTRY_SUPPORT=1
+MAX_OPEN_SAMPLES=8000
+
+
+def _row_time(row,fields):
+    for k in fields:
+        stamp=journal._timestamp(row.get(k))
+        if stamp is not None:return stamp
+    return None
+
+
+def _candidate_key(row,market,strategy):
+    # Prefer a native id. If no native id, require instrument+reference timestamp.
+    tf=journal._frame(row.get("tf") or row.get("frame"),strategy)
+    symbol=str(row.get("code") or row.get("market") or "")
+    explicit=(row.get("signal_id") or row.get("candidate_id") or row.get("id"))
+    if explicit is not None and str(explicit).strip():
+        return "id:"+str(explicit)+"|"+tf+"|"+symbol
+    reference=str(row.get("ref_ts") or row.get("ref_at") or
+                  row.get("event_date") or row.get("gmo_event_date") or "")
+    return "combo:"+tf+"|"+symbol+"|"+reference if symbol and reference else None
+
+
+def _position_key(row,market,strategy):
+    tf=journal._frame(row.get("tf") or row.get("frame"),strategy)
+    symbol=str(row.get("code") or row.get("market") or "")
+    ref=str(row.get("ref_ts") or row.get("ref_at") or
+            row.get("event_date") or row.get("gmo_event_date") or
+            row.get("entry_date") or "")
+    candidate=row.get("signal_id") if strategy in ("at","close") else row.get("candidate_id")
+    if candidate is not None:
+        return "id:"+str(candidate)+"|"+tf+"|"+symbol
+    # Native portfolio id is NOT the candidate id; use its exact matching
+    # reference triple before trying any other position.
+    return "combo:"+tf+"|"+symbol+"|"+ref if symbol and ref else None
+
+
+def _signal_index(candidate_rows):
+    """First-match indexes preserve original candidate/position identity rules.
+
+    A signal ID is only usable for the same timeframe and instrument.
+    Fallback is the exact (timeframe, symbol, reference date/time) triple,
+    never the last same-symbol row.
+    """
+    by_id={}
+    by_reference={}
+    for item in candidate_rows:
+        raw=item["raw"]
+        frame=item["frame"]
+        code=item["symbol"]
+        candidate=raw.get("signal_id") or raw.get("candidate_id") or raw.get("id")
+        if candidate is not None:
+            by_id.setdefault((frame,code,str(candidate)),item)
+        ref=str(raw.get("ref_ts") or raw.get("ref_at") or
+                raw.get("event_date") or raw.get("gmo_event_date") or "")
+        if code and ref:
+            by_reference.setdefault((frame,code,ref),item)
+    return by_id,by_reference
+
+
+def _link(candidate_rows,position,market,strategy,index=None):
+    """Indexed exact-match lookup; no cross-instrument or stale signal match."""
+    candidate_id=position.get("signal_id") if strategy in ("at","close") else position.get("candidate_id")
+    tf=journal._frame(position.get("tf") or position.get("frame"),strategy)
+    code=str(position.get("code") or position.get("market") or "")
+    ref=str(position.get("ref_ts") or position.get("ref_at") or
+            position.get("event_date") or position.get("gmo_event_date") or
+            position.get("entry_date") or "")
+    by_id,by_reference=index if index is not None else _signal_index(candidate_rows)
+    if candidate_id is not None:
+        found=by_id.get((tf,code,str(candidate_id)))
+        if found is not None:
+            return found
+    if code and ref:
+        return by_reference.get((tf,code,ref))
+    return None
+
+
+def _market_interval(stamps,scores,start,end):
+    if start is None or end is None or end<start:return None,0
+    a=bisect.bisect_left(stamps,int(start))
+    b=bisect.bisect_right(stamps,int(end))
+    vals=scores[a:b]
+    if not vals:return None,0
+    return round(sum(vals)/len(vals),2),len(vals)
+
+
+def _unrealized_pct(row):
+    status=str(row.get("status") or row.get("state") or "").upper()
+    if status in ("CLOSED","SOLD","DONE","RESET_B_V1","FILLED_EXIT"):
+        return None
+    entry=journal._number(row.get("entry_price") or row.get("entry") or
+                          row.get("buy_price") or row.get("avg_buy_price"))
+    mark=journal._number(row.get("last_price") or row.get("mark") or
+                         row.get("current_price") or row.get("market_price"))
+    if entry and entry>0 and mark and mark>0:
+        return round((mark/entry-1)*100,3)
+    return None
+
+
+def _is_closed(row):
+    status=str(row.get("status") or row.get("state") or "").upper()
+    if status in ("CLOSED","SOLD","DONE","FILLED_EXIT"):return True
+    return False
+
+
+def _exit_reason(position,fills):
+    # Exit reasons explain why the program sold; they are NOT repackaged as
+    # pre-entry causal features.
+    for row in ([position]+list(reversed(fills or []))):
+        if row is not position and "SELL" not in str(row.get("side") or "").upper():
+            continue
+        for key in ("exit_reason","sell_reason","close_reason",
+                    "reason","purpose","sell_purpose"):
+            value=str(row.get(key) or "").strip()
+            if value and value.lower() not in ("none","null","nan"):
+                return value[:90]
+    return None
+
+
+def _returns(row,fills):
+    if not _is_closed(row):return None,"OPEN"
+    # Original EXE net realized PnL/cost-basis only; no guessed sell price.
+    pnl,state=old._pnl_return(dict(row,status="CLOSED"),fills)
+    return pnl,state
+
+
+def _signal_rows(raw,research,market,strategy,archive):
+    rawitems=[r for r in raw.get("candidates",[]) if isinstance(r,dict)]
+    snapshots=[r for r in research.get("items",[]) if isinstance(r,dict)]
+    results=[]
+    known={}
+    for row in rawitems+snapshots:
+        frame=journal._frame(row.get("tf") or row.get("frame"),strategy)
+        if not frame and strategy not in ("gmo","close"):continue
+        key=_candidate_key(row,market,strategy)
+        if not key:continue
+        if key in known:
+            base=known[key]["raw"]
+            for k,v in row.items():
+                if k not in base or base[k] is None:base[k]=v
+            known[key]["features"].update({k:v for k,v in
+                 journal.extract_features(row,known[key]["signal_ts"]).items()
+                 if k not in known[key]["features"]})
+            continue
+        at=_row_time(row,("at","signal_ts","created_at","ts","ref_ts","ref_at",
+                          "event_date","gmo_event_date"))
+        features=journal.extract_features(row,at)
+        item={"key":key,"frame":frame,"symbol":str(row.get("code") or row.get("market") or ""),
+              "signal_ts":at,"features":features,"raw":dict(row),
+              "source":"ORIGINAL_SIGNAL"}
+        known[key]=item
+        results.append(item)
+    # Older archived feature snapshots may be observed much later; they are
+    # available as historical evidence, but never backdated as entry features.
+    for archived in archive.get("features",[]):
+        frame=archived.get("frame","")
+        if not frame:continue
+        key=archived.get("signal_key","")
+        try:features=json.loads(archived["features_json"])
+        except (ValueError,KeyError,TypeError):continue
+        event_ts=archived.get("event_ts")
+        first=archived.get("first_captured") or 0
+        safe_at_entry=(
+            archived.get("origin")=="RECONSTRUCTED_PRE_ENTRY_OHLCV"
+            or (event_ts is not None and first<=int(event_ts)+120))
+        # Native journal primary ID may differ from the identity of a raw row.
+        source_item=None
+        for item in results:
+            if item["frame"]!=frame:continue
+            if key and (key in (item["key"],journal._key(item["raw"],strategy,"signal"))):
+                source_item=item;break
+        if source_item is not None:
+            if safe_at_entry:
+                for k,v in features.items():source_item["features"].setdefault(k,v)
+            continue
+        # Current journal can expose a signal even when original EXE source DB
+        # has not been synced to this phone yet. Timestamp may be unknown.
+        results.append({"key":"archived:"+key,"frame":frame,
+                        "symbol":key.split("|")[-1] if "|" in key else "",
+                        "signal_ts":event_ts,"features":features if safe_at_entry else {},
+                        "raw":{},"source":"CAPTURED_AT_SIGNAL" if safe_at_entry else
+                        "CAPTURED_LATE"})
+    return results
+
+
+def _frame_summary(frame,signals,trades,archive,events,now,source):
+    label=FRAME_NAMES[frame]
+    candidates=[x for x in signals if x["frame"]==frame]
+    group=[x for x in trades if x["frame"]==frame]
+    completed=[x for x in group if x["closed_roi"] is not None]
+    open_items=[x for x in group if x["state"]=="OPEN"]
+    open_marked=[x for x in open_items if x["open_roi"] is not None]
+    unknown=[x for x in group if x["state"]!="OPEN" and x["closed_roi"] is None]
+    feature_set=("atr_pct","volume_ratio","williams_r","rsi",
+                 "market_score","score","spread_pct","gap_pct")
+    cover={}
+    # Report indicator availability from both entry-time snapshots and LIVE
+    # holding telemetry. Current features never become entry-time causes.
+    combined=candidates+group
+    for feature in feature_set:
+        n=sum(feature in (x.get("features") or x.get("current_features") or {})
+              for x in combined)
+        cover[feature]=round(100*n/len(combined),1) if combined else 0
+    signal_count=len(candidates)
+    average=_mean(x["closed_roi"] for x in completed) if completed else None
+    avg_open=_mean(x["open_roi"] for x in open_marked) if open_marked else None
+    hold_scores=[x["hold_market_avg"] for x in group if x.get("hold_market_avg") is not None]
+    avg_hold=_mean(hold_scores) if hold_scores else None
+    total_market_obs=sum(x.get("hold_market_n",0) for x in group)
+    sell_reasons=Counter(x["exit_reason"] for x in completed
+                         if x.get("closed_roi",0)<0 and x.get("exit_reason"))
+    most_exit=sell_reasons.most_common(1)[0][0] if sell_reasons else None
+    patterns=[]
+    for feature,title in (("atr_pct","ATR"),("volume_ratio","거래량"),
+                          ("williams_r","Williams %R"),("rsi","RSI"),
+                          ("market_score","진입 시장점수")):
+        vals=[(x.get("features") or x.get("current_features") or {})[feature]
+              for x in combined
+              if feature in (x.get("features") or x.get("current_features") or {})]
+        if vals:
+            patterns.append({"name":title,"median":round(statistics.median(vals),2),
+                             "n":len(vals),"coverage":round(100*len(vals)/max(1,len(combined)))})
+    rules=[]
+    # Learn from concluded trades only. Current OPEN position can show risk
+    # factor exposure, not an invented realized loss or "successful filter".
+    for feature,operator,threshold,name,advice in RULES:
+        eligible=[x for x in completed if feature in x["features"]]
+        if not eligible:continue
+        def risk(x):
+            v=x["features"][feature]
+            return v>=threshold if operator==">=" else v<=threshold
+        bad=[x for x in eligible if risk(x)]
+        safe=[x for x in eligible if not risk(x)]
+        if not bad:continue
+        bad_avg=_mean(x["closed_roi"] for x in bad)
+        safe_avg=_mean(x["closed_roi"] for x in safe) if safe else None
+        avg_gap=(safe_avg-bad_avg) if safe_avg is not None else None
+        # Zero-return for an avoided opportunity: a *retrospective scenario*.
+        # Do not call it expected profit from future trades.
+        improvement=-sum(x["closed_roi"] for x in bad)/len(completed)
+        if safe and avg_gap is not None and avg_gap>0:
+            rank=avg_gap*(len(eligible)/max(2,len(completed)))+max(0,improvement)
+        else:
+            rank=max(0,improvement)*.33
+        rules.append({"factor":feature,"name":name,"label":advice,
+                      "condition":f"{feature} {operator} {threshold:g}",
+                      "exposed":len(bad),"compared":len(safe),
+                      "bad_avg":round(bad_avg,3),
+                      "safe_avg":round(safe_avg,3) if safe_avg is not None else None,
+                      "delta_pp":round(improvement,3),
+                      "rank":rank})
+    rules.sort(key=lambda x:x["rank"],reverse=True)
+    best=next((r for r in rules if r["delta_pp"]>0),None)
+    # If no realized P&L, rank the risk exposure within currently held
+    # positions, but do NOT claim the exposure caused a loss.
+    open_risk=[]
+    for feature,operator,threshold,name,advice in RULES:
+        hits=sum(1 for x in open_items
+                 if feature in (x.get("features") or x.get("current_features") or {})
+                 and (((x.get("features") or x.get("current_features") or {})[feature]>=threshold)
+                      if operator==">=" else
+                      ((x.get("features") or x.get("current_features") or {})[feature]<=threshold)))
+        if hits:
+            open_risk.append({"name":name,"label":advice,
+                              "hits":hits,"factor":feature})
+    open_risk.sort(key=lambda x:x["hits"],reverse=True)
+    status="EMPTY"
+    improvement=None
+    if best:
+        status="EXPLORATORY"
+        improvement={"delta_pp":best["delta_pp"],"baseline_pct":round(average,3),
+                     "scenario_pct":round(average+best["delta_pp"],3),
+                     "excluded_n":best["exposed"],"sample_n":len(completed),
+                     "label":best["name"],"validated":False,"method":"SCENARIO"}
+    if completed and not best:status="OBSERVED"
+    if not completed and (signal_count or group):status="LIVE_OBSERVATION"
+    # For many trades, select rule on chronology train and report its
+    # incremental effect on unseen recent test, not the training itself.
+    if len(completed)>=20:
+        sorted_trades=sorted(completed,key=lambda x:(x["at"] or 0,x["key"]))
+        cut=max(10,int(len(sorted_trades)*.7))
+        train,test=sorted_trades[:cut],sorted_trades[cut:]
+        if len(test)>=6:
+            ranked=[]
+            for feature,op,threshold,name,advice in RULES:
+                eligible=[x for x in train if feature in x["features"]]
+                if len(eligible)<8:continue
+                def risk(x):
+                    v=x["features"].get(feature)
+                    if v is None:return False
+                    return v>=threshold if op==">=" else v<=threshold
+                bad=[x for x in eligible if risk(x)]
+                safe=[x for x in eligible if not risk(x)]
+                if len(bad)<3 or len(safe)<3:continue
+                if _mean(x["closed_roi"] for x in bad)>=_mean(x["closed_roi"] for x in safe):
+                    continue
+                ranked.append((-sum(x["closed_roi"] for x in bad)/len(train),
+                               feature,op,threshold,name,advice))
+            if ranked:
+                selected=max(ranked)
+                _,feature,op,threshold,name,advice=selected
+                risk=lambda x:(feature in x["features"] and
+                    (x["features"][feature]>=threshold if op==">=" else
+                     x["features"][feature]<=threshold))
+                bad=[x for x in test if risk(x)]
+                known=sum(feature in x["features"] for x in test)
+                if bad and known==len(test):
+                    baseline=_mean(x["closed_roi"] for x in test)
+                    delta=-sum(x["closed_roi"] for x in bad)/len(test)
+                    ci=_cluster_ci(test,risk)
+                    verified=bool(ci and ci[0]>0 and delta>0)
+                    improvement={"delta_pp":round(delta,3),
+                                 "baseline_pct":round(baseline,3),
+                                 "scenario_pct":round(baseline+delta,3),
+                                 "excluded_n":len(bad),"sample_n":len(test),
+                                 "label":name,"validated":verified,
+                                 "ci95_pp":ci,"method":"RECENT_HOLDOUT"}
+                    best={"name":name,"label":advice,"factor":feature,
+                          "delta_pp":round(delta,3)}
+                    status="VALIDATED" if verified else "HOLDOUT"
+    observed_n=signal_count+len(group)
+    evidence_samples=len(completed)+len(open_marked)
+    cover_pct=round(sum(cover.values())/len(cover),1)
+    # An evidence coverage index, not a probability of correctness.
+    maturity=round(min(100,35*math.log1p(evidence_samples)/math.log(41)
+                      +45*(cover_pct/100)+20*min(1,len(completed)/20)))
+    scenario=best["label"] if best else (
+        open_risk[0]["label"] if open_risk else
+        "기존 진입 유지 · 신규 증거 축적")
+    finding=best["name"] if best else (
+        open_risk[0]["name"]+" 노출" if open_risk else
+        "특정 손실 선행조건 미검증")
+    mode="과거 종료거래 비교" if best else (
+        "현재 보유 위험노출" if open_risk else "연구 신호 관측")
+    # Do not present price drops / volume increase as a proven root cause.
+    cause_kind="상관 가설" if best else "진입조건 관측"
+    return {
+        "frame":frame,"label":label,"status":status,"signals":signal_count,
+        "entries":len(group),"closed":len(completed)+len(unknown),
+        "evaluated":len(completed),"open":len(open_items),
+        "open_marked":len(open_marked),"closed_missing":len(unknown),
+        "avg_realized_pct":round(average,3) if average is not None else None,
+        "avg_open_pct":round(avg_open,3) if avg_open is not None else None,
+        "avg_hold_market_score":round(avg_hold,2) if avg_hold is not None else None,
+        "hold_market_samples":total_market_obs,
+        "coverage":cover,"coverage_index":cover_pct,"maturity":maturity,
+        "patterns":patterns[:6],
+        "finding":finding,"finding_basis":mode,"cause_kind":cause_kind,
+        "exit_trigger":most_exit,
+        "proposal":scenario,"risk_count":best["exposed"] if best and "exposed" in best else
+                      open_risk[0]["hits"] if open_risk else 0,
+        "risk_open":open_risk[:3],
+        "improvement":improvement,
+        "source":source,"updated_at_epoch":now,
+        "sample_type":"realized" if completed else "open" if open_items else "signals",
+    }
+
+
+def _mean(xs):
+    vals=[x for x in xs if x is not None]
+    return sum(vals)/len(vals) if vals else None
+
+
+def _cluster_ci(rows,rule,reps=300):
+    by_day=defaultdict(list)
+    for row in rows:
+        ts=row["at"]
+        day=dt.datetime.fromtimestamp(ts,dt.timezone(dt.timedelta(hours=9))).date().isoformat() if ts else "unknown"
+        by_day[day].append(row)
+    days=list(by_day)
+    if len(days)<5:return None
+    rng=random.Random(4040)
+    effects=[]
+    for i in range(reps):
+        sampled=[r for d in (rng.choice(days) for _ in days) for r in by_day[d]]
+        effects.append(-sum(r["closed_roi"] for r in sampled if rule(r))/len(sampled))
+    effects.sort()
+    return [round(effects[int(reps*.025)],3),round(effects[int(reps*.975)],3)]
+
+
+def _matches_symbol(p,a):
+    # Prevent a different same-ticker/same-day trade from being used.
+    return bool(a["symbol"] and a["symbol"]==str(p.get("code") or p.get("market") or ""))
+
+
+def _build_trades(raw,ledger,signals,archive,market,strategy,now,events):
+    original=raw.get("positions") or []
+    live=[r for r in ledger.get("positions",[]) if isinstance(r,dict)]
+    executions=[r for r in (raw.get("executions") or ledger.get("executions") or [])
+                if isinstance(r,dict)]
+    fills_by_position=defaultdict(list)
+    for fill in executions:
+        if fill.get("position_id") is not None:
+            fills_by_position[str(fill["position_id"])].append(fill)
+    rows=[]
+    seen=set()
+    # O(signals + positions) rather than repeatedly scanning every signal.
+    signal_index=_signal_index(signals)
+    # The most recent candle-derived metrics describe current exposure only.
+    # They cannot be promoted to original pre-buy indicator evidence.
+    current_indicators={}
+    for snap in archive.get("indicators",[]):
+        frame=snap.get("frame","")
+        code=snap.get("symbol","")
+        index=(frame,code)
+        if index not in current_indicators:
+            current_indicators[index]=journal._json_obj(snap.get("features_json"))
+    for row in original+live:
+        if not isinstance(row,dict):continue
+        frame=journal._frame(row.get("tf") or row.get("frame"),strategy)
+        if not frame and strategy not in ("gmo","close"):continue
+        key=(row.get("id"),frame,str(row.get("code") or row.get("market") or ""),
+             str(row.get("entry_ts") or row.get("entry_at") or row.get("entry_date") or ""))
+        if key in seen:continue
+        seen.add(key)
+        if str(row.get("status") or "").upper() in ("RESET_B_V1",):continue
+        match=_link(signals,row,market,strategy,index=signal_index)
+        feats=dict(match["features"]) if match is not None else {}
+        # A current holding's indicators describe CURRENT exposure, not a
+        # feature recorded at the historical moment of buying.
+        context=journal.extract_features(row,now)
+        for k,v in current_indicators.get((frame,str(row.get("code") or
+                    row.get("market") or "")),{}).items():
+            context.setdefault(k,v)
+        if match is None and not feats:
+            # Do not convert current indicators into entry-time causes.
+            pass
+        entry=_row_time(row,("entry_at","entry_ts","buy_at","time","entry_date"))
+        exit_ts=_row_time(row,("exit_at","closed_at","sold_at","sell_at"))
+        fills=fills_by_position.get(str(row.get("id")),[])
+        result,state=_returns(row,fills)
+        exit_reason=_exit_reason(row,fills) if _is_closed(row) else None
+        open_roi=_unrealized_pct(row)
+        if not _is_closed(row):state="OPEN"
+        hold_avg,hold_n=_market_interval(*events,entry,exit_ts or now)
+        rows.append({"key":str(key),"frame":frame,"raw":row,
+                     "features":feats,"current_features":context,
+                     "closed_roi":result,"open_roi":open_roi,
+                     "state":state,"at":entry or (match["signal_ts"] if match else None),
+                     "hold_market_avg":hold_avg,"hold_market_n":hold_n,
+                     "exit_reason":exit_reason,
+                     "signal_ts":match["signal_ts"] if match else None})
+    # If a source DB has not arrived on the phone but position snapshots were
+    # captured previously, still count open holdings without fabricating P&L.
+    # Never count the same original DB position twice when its snapshot is also
+    # present in the append-only research journal.
+    existing_position_ids={
+        journal._key(item["raw"],strategy,"position") for item in rows
+        if item.get("raw") and item["key"] and not str(item["key"]).startswith("archived:")}
+    latest_by_id={}
+    for observed in archive.get("positions",[]):
+        if observed.get("frame") not in (FRAMES+("gmo",)):continue
+        key=observed.get("position_key","")
+        if not key or key in existing_position_ids:continue
+        prior=latest_by_id.get(key)
+        if prior is None or (observed.get("observed_minute") or 0)>(
+                prior.get("observed_minute") or 0):
+            latest_by_id[key]=observed
+    for key,last in latest_by_id.items():
+        if str(last.get("status","")).upper() in ("CLOSED","DONE","SOLD"):
+            continue
+        entry=last.get("entry_price")
+        mark=last.get("mark")
+        open_roi=(100*(mark/entry-1)) if entry and mark and entry>0 and mark>0 else None
+        rows.append({"key":"archived:"+key,"archive_key":key,
+                     "frame":last.get("frame"),"features":{},
+                     "current_features":dict(
+                         journal._json_obj(last.get("extra_json")),
+                         **current_indicators.get(
+                             (last.get("frame"),key.split("|")[-1]),{})),
+                     "raw":last,"closed_roi":None,"open_roi":open_roi,
+                     "state":"OPEN","at":last.get("entry_ts"),
+                     "hold_market_avg":None,"hold_market_n":0})
+    return rows
+
+
+def band_scope_statistics(root,market,strategy,frame):
+    """Observed score band vs same strategy/timeframe holding return deltas.
+
+    Duration is distinct *market-time*, not position-minutes or poll counts.
+    The delta is the average segment endpoint change, not a proof that the
+    market score caused a profitable/losing trade.
+    """
+    db=Path(root)/"market_research_v033.sqlite3"
+    if not db.is_file():return []
+    label=f"{market}/{strategy}/{frame}/%"
+    try:
+        with sqlite3.connect(db.resolve().as_uri()+"?mode=ro",
+                             uri=True,timeout=4) as conn:
+            conn.row_factory=sqlite3.Row
+            data=conn.execute("""
+                SELECT s.band AS band,COUNT(*) AS sample_n,
+                       AVG(p.latest_return-p.start_return) AS avg_delta_pp
+                FROM cohort_segments s
+                JOIN cohort_positions p ON s.id=p.segment_id
+                WHERE s.market=? AND p.identity LIKE ?
+                GROUP BY s.band""",(market,label)).fetchall()
+            clock=conn.execute("""
+                SELECT band,SUM(seconds) AS observed_seconds
+                FROM band_time_slices WHERE market=? GROUP BY band
+            """,(market,)).fetchall()
+            hours={r["band"]:(r["observed_seconds"] or 0.)/3600.
+                   for r in clock}
+        return [{"band":r["band"],"avg_change_pp":round(r["avg_delta_pp"],3),
+                 "position_segments":r["sample_n"],
+                 "observed_hours":round(hours.get(r["band"],0.),3)}
+                for r in data if r["avg_delta_pp"] is not None]
+    except (OSError,sqlite3.Error):
+        return []
+
+
+def attach_market_band_research(frame_result,band_data):
+    """Use *observed* market regime to rank exploratory strategy hypotheses."""
+    frame_result["market_band_data"]=band_data
+    frame_result["market_band_hypothesis"]=None
+    if not band_data:return frame_result
+    positive=max(band_data,key=lambda x:x["avg_change_pp"])
+    worst=min(band_data,key=lambda x:x["avg_change_pp"])
+    frame_result["market_band_best"]=positive
+    frame_result["market_band_worst"]=worst
+    if worst["avg_change_pp"]<0 and worst["position_segments"]>0:
+        # A historical segment gain removed by a hypothetical zero-change
+        # exit; no fees, trade execution or predictive validation implied.
+        estimated=-worst["avg_change_pp"]
+        frame_result["market_band_hypothesis"]={
+            "band":worst["band"],"exposure_n":worst["position_segments"],
+            "observed_hours":worst["observed_hours"],
+            "observed_return_pp":worst["avg_change_pp"],
+            "hypothetical_avoidance_pp":round(estimated,3),
+            "validated":False}
+        if frame_result.get("improvement") is None:
+            frame_result["proposal"]=("시장점수 "+worst["band"]+
+                " 구간 신규진입 축소 가설")
+            frame_result["finding"]=("시장구간 "+worst["band"]+
+                " 평균 "+f"{worst['avg_change_pp']:+.2f}"+"%p")
+            frame_result["finding_basis"]="구간별 실제 보유가격 변화"
+            if frame_result.get("status")=="LIVE_OBSERVATION":
+                frame_result["status"]="LIVE_OBSERVATION"
+    return frame_result
+
+
+def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
+    if strategy=="trend":
+        if market not in ("stock","coin"):
+            return json.dumps({"ok":False,"message":"시장 구분 오류"},ensure_ascii=False)
+        from ai_trend_analysis_v047 import analyze as trend_analyze
+        trend=trend_analyze(root,market)
+        try:
+            from ai_comprehensive_v052 import analyze_trend as comprehensive_trend
+            trend["comprehensive_v052"]=comprehensive_trend(root,market)
+        except (OSError,sqlite3.Error,ValueError,TypeError,ImportError) as exc:
+            trend["comprehensive_v052"]={
+                "ok":False,"schema":"ARTITRADE_AI_COMPREHENSIVE_V052",
+                "error":"TREND_COMPREHENSIVE_ERROR:"+type(exc).__name__}
+        try:
+            from post_exit_high_v053 import report as exit_report
+            trend["post_sale_tracking_v053"]=exit_report(root,market,"trend")
+        except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
+            trend["post_sale_tracking_v053"]={"ok":False,
+                "reason":"RESEARCH_SOURCE_UNAVAILABLE:"+type(exc).__name__}
+        return json.dumps(trend,ensure_ascii=False,allow_nan=False)
+    if (market,strategy) not in SCOPES:
+        return json.dumps({"ok":False,"message":"선택 전략 확인 필요"},ensure_ascii=False)
+    from time import time
+    now=int(time())
+    research=journal._json_obj(research_json)
+    ledger=journal._json_obj(ledger_json)
+    raw=old._read_source(root,market,strategy)
+    # Filter native AT/MA research *before* snapshotting it. Some legacy
+    # original ledgers contain RSI20 entries, but the trend cohort now owns
+    # an independent AI scope. Never delete or rewrite historical source rows.
+    raw,research,ledger,_=_exclude_trend_cohort(
+        root,market,strategy,raw,research,ledger,{})
+    # Inspect both the currently visible phone snapshots and the underlying
+    # original EXE historical tables, rather than requiring an already-funded
+    # UI research popup. The original DBs remain read-only.
+    try:
+        live_candidates=[x for x in research.get("items",[]) if isinstance(x,dict)]
+        live_positions=[x for x in ledger.get("positions",[]) if isinstance(x,dict)]
+        archive_research={"items":(raw["candidates"][:8000]+live_candidates)}
+        archive_ledger={"positions":(raw["positions"][:8000]+live_positions)}
+        journal.capture_scope(root,market,strategy,archive_research,archive_ledger,now)
+        archive=journal.stored(root,market,strategy)
+    except (OSError,sqlite3.Error,ValueError):
+        archive={"features":[],"positions":[],"market_scores":[],"candles":[],"indicators":[]}
+    raw,research,ledger,archive=_exclude_trend_cohort(
+        root,market,strategy,raw,research,ledger,archive)
+    events=old._market_events(root,market)
+    # v040 market-score journal also survives scoped stock-only or coin-only
+    # research export/restore when the original shared score DB is absent.
+    if archive.get("market_scores"):
+        merged={int(t):float(score) for t,score in zip(*events)}
+        for row in archive["market_scores"]:
+            try:merged.setdefault(int(row["score_ts"]),float(row["score"]))
+            except (ValueError,TypeError,KeyError):pass
+        events=([t for t in sorted(merged)],
+                [merged[t] for t in sorted(merged)])
+    signals=_signal_rows(raw,research,market,strategy,archive)
+    # Chronological score at signal time is available for recent signals even
+    # when the original strategy did not persist a market_score column.
+    for signal in signals:
+        if "market_score" not in signal["features"]:
+            value=old._point_in_time_market(*events,signal["signal_ts"],market)
+            if value is not None:signal["features"]["market_score"]=value
+    trades=_build_trades(raw,ledger,signals,archive,market,strategy,now,events)
+    # Per-actual-position internal data: entry/exit/holding averages and risk
+    # trajectory. Persist to scope-specific AI SQLite, not the visible UI.
+    from ai_trade_lifecycle_v042 import (
+        rebuild as rebuild_lifecycle,
+        merge_original_signal_features)
+    from ai_pattern_diagnosis_v042 import diagnose
+    all_positions=raw.get("positions",[])+[
+        p for p in ledger.get("positions",[]) if isinstance(p,dict)]
+    lifecycle=rebuild_lifecycle(root,market,strategy,all_positions,now,
+                               raw.get("executions",[]))
+    lifecycle=merge_original_signal_features(root,market,strategy,lifecycle,trades)
+    available=["gmo"] if strategy=="gmo" else (["day"] if strategy=="close" else list(FRAMES))
+    frames=[diagnose(
+                attach_market_band_research(
+                    _frame_summary(f,signals,trades,archive,events,now,raw["source"]),
+                    band_scope_statistics(root,market,strategy,f)),
+                trades,lifecycle,market,strategy,f)
+            for f in available]
+    report={
+        "ok":True,"schema":"ARTITRADE_AI_V040",
+        "market":market,"strategy":strategy,"title":TITLES[market,strategy],
+        "generated_at_epoch":now,
+        "scope":market+"/"+strategy,
+        "source":raw["source"],"frames":frames,
+        "signals":sum(x["signals"] for x in frames),
+        "open":sum(x["open"] for x in frames),
+        "closed":sum(x["closed"] for x in frames),
+        "feature_snapshots":len(archive["features"]),
+        "position_snapshots":len(archive["positions"]),
+        "position_lifecycle_count":len(lifecycle),
+        "source_record_counts":{
+            "candidate_table_total":raw.get("total",0),
+            "candidate_rows_loaded":len(raw.get("candidates",[])),
+            "position_rows_loaded":len(raw.get("positions",[])),
+            "execution_rows_loaded":len(raw.get("executions",[])),
+            "source_rows_truncated":bool(raw.get("truncated",False)),
+            "archive_preload_max_per_category":8000,
+            "raw_candidate_analysis_limit":old.ROWS_LIMIT,
+            "raw_execution_analysis_limit":old.FILL_LIMIT,
+            "all_original_rows_in_verified_export":True},
+        "error":raw.get("errors",[]),
+    }
+    # RSI20 history is a separate 'trend' cohort. Never attach it to
+    # original AT/MA AI analysis or historical improvement claims.
+    report["entry_mode"]="ORIGINAL"
+    try:
+        from ai_approved_collect_v048 import summarize as approved_summary
+        report["approved_metrics_v048"]=approved_summary(
+            root,market,"ORIGINAL",strategy,preview_max=10)
+    except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
+        report["approved_metrics_v048"]={
+            "schema":"ARTITRADE_APPROVED_TRADE_EVIDENCE_V048",
+            "status":"READ_FAILED","error":type(exc).__name__}
+
+    # Broad, trade-linked research runs only on the manual AI button.
+    # Original trading, broker and account ledgers stay read-only.
+    try:
+        from ai_comprehensive_v052 import analyze as comprehensive_analyze
+        report["comprehensive_v052"]=comprehensive_analyze(
+            root,market,strategy,signals,trades,lifecycle,archive,now)
+    except (OSError,sqlite3.Error,ValueError,TypeError,ImportError) as exc:
+        report["comprehensive_v052"]={
+            "ok":False,"schema":"ARTITRADE_AI_COMPREHENSIVE_V052",
+            "error":"COMPREHENSIVE_ERROR:"+type(exc).__name__}
+    try:
+        from post_exit_high_v053 import report as exit_report
+        report["post_sale_tracking_v053"]=exit_report(root,market,strategy)
+    except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
+        report["post_sale_tracking_v053"]={"ok":False,
+            "reason":"RESEARCH_SOURCE_UNAVAILABLE:"+type(exc).__name__}
+    try:
+        journal.save_report(root,market,strategy,report,now)
+    except (OSError,sqlite3.Error,ValueError):
+        pass
+    return json.dumps(report,ensure_ascii=False,allow_nan=False)

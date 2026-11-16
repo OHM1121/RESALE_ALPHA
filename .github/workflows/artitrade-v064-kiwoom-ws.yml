@@ -1,0 +1,40 @@
+name: ARTITRADE v064 Kiwoom WebSocket isolated guard
+on:
+  push:
+    branches: [ feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/patch_v064_kiwoom_ws.py'
+      - '.github/workflows/artitrade-v064-kiwoom-ws.yml'
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v064-kiwoom-ws
+  cancel-in-progress: true
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch verified Kiwoom d_live only
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v064_kiwoom_ws.py
+      - name: Inspect only verified bundle and bridge changes
+        run: |
+          git diff --check
+          while IFS= read -r changed; do
+            case "$changed" in
+              ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_??.txt|ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java) ;;
+              *) echo "Unexpected modified file: $changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only)
+      - name: Commit exact source-guarded WebSocket changes
+        run: |
+          git config user.name 'artitrade-ci'
+          git config user.email 'artitrade-ci@users.noreply.github.com'
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(v064): prevent Kiwoom socket loop from blocking on rank SQLite and tolerate delayed pong'
+          git push origin HEAD:feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116

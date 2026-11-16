@@ -1,0 +1,39 @@
+name: ARTITRADE v075 GMO/CW historical no-order visibility regression
+on:
+  push:
+    branches: [fix-artitrade-v075-gmo-cw-audit-20261116]
+    paths: ['.github/workflows/artitrade-v075-tests.yml']
+permissions: {contents: read}
+jobs:
+  audit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify untouched bundled order core SHA and extract read-only original strategies
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          sha=hashlib.sha256(data).hexdigest()
+          assert 'CORE_SHA256="'+sha+'"' in Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            assert len(z.namelist())==82
+            z.extractall('/tmp/artitrade-v075-original')
+          print('VERIFIED_ORIGINAL_82_STRATEGY_MODULES_SHA256',sha)
+          PY
+      - name: Run updated GMO/CW, MA, Trend, broker-independent and UI regressions
+        env:
+          PYTHONPATH: /tmp/artitrade-v075-original:ARTITRADE_ANDROID/app/src/main/python
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for pattern in 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v051_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
+          done
+          echo 'PASS_V075_GMO_CW_ERRORS_ONLY_ORIGINAL_EXECUTION_UNCHANGED'

@@ -20,7 +20,7 @@ final class StrategyDashboardScope {
         if(ALL.equals(filter))return market+"/all/"+kind+"/all";
         if("gmo".equals(filter)||"close".equals(filter))
             return market+"/"+filter+"/"+kind+"/all";
-        if("at".equals(filter)||"ma".equals(filter)||"general".equals(filter))
+        if("at".equals(filter)||"ma".equals(filter)||"general".equals(filter)||"trend".equals(filter))
             return market+"/"+filter+"/"+kind+"/all";
         String timeframe=HistorySelection.frame(filter);
         return market+"/"+strategy+"/"+kind+"/"+(timeframe.isEmpty()?"all":timeframe);

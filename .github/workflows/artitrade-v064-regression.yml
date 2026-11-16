@@ -1,0 +1,53 @@
+name: ARTITRADE v064 isolated nontrading regression
+on:
+  push:
+    branches: [ feature-artitrade-v064-ws-ma-trend-gmo-rollback-20261116 ]
+    paths:
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v061_rules.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_v043.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v064_ma_trend_gate.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_ui.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v043.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py'
+      - 'ARTITRADE_ANDROID/app/build.gradle'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v061_coin_runtime.py'
+      - '.github/workflows/artitrade-v064-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing test-only dependencies
+        run: python3 -m pip install -q requests websockets holidays
+      - name: Python syntax and isolated MA / RSI time gate rules
+        run: |
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 ARTITRADE_ANDROID/ui_tests/test_v064_ma_trend_gate.py
+      - name: Extract pinned embedded historical core for legacy parity tests
+        run: |
+          python3 - <<'PY'
+          import io,zipfile,base64,hashlib
+          from pathlib import Path
+          source=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((source/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert hashlib.sha256(b).hexdigest()=='10ff2cc9cda6ebba1dfa183f893bcea76f38445bb109dac66b99d578cc9c5447'
+          target=Path('/tmp/artitrade-core-verified');target.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(b)) as z:z.extractall(target)
+          print('ORIGINAL_GMO_V062_SOURCE_SHA_VERIFIED')
+          PY
+      - name: Existing MA and Market Trend regression
+        env:
+          PYTHONPATH: '/tmp/artitrade-core-verified:ARTITRADE_ANDROID/app/src/main/python'
+        run: |
+          for p in 'test_v064_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$p" -v
+          done

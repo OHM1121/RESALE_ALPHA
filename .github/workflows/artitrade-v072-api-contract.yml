@@ -1,0 +1,32 @@
+name: ARTITRADE v072 official price API contract inspection
+on:
+  push:
+    branches: [ fix-artitrade-v072-preload-heartbeat-freshness-20261116 ]
+    paths: [ '.github/workflows/artitrade-v072-api-contract.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect existing authenticated REST request signature
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,zipfile,base64,io
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            code=z.read('d_live.py').decode('utf8')
+            lines=code.splitlines()
+            tree=ast.parse(code)
+            api=next(x for x in tree.body if isinstance(x,ast.ClassDef) and x.name=='ReadOnlyMarketAPI')
+            for f in api.body:
+              if not isinstance(f,(ast.FunctionDef,ast.AsyncFunctionDef)):continue
+              print('API_METHOD',f.name,f.lineno,f.end_lineno)
+              if f.name in ('_request','_post','_call','_call_api','candles'):
+                for i in range(f.lineno,min(f.end_lineno,f.lineno+42)+1):print('API_LINE',i,lines[i-1])
+            for i in range(128,193):print('OTHER',i,lines[i-1])
+          PY

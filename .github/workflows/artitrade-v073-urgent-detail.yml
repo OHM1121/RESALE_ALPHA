@@ -1,0 +1,32 @@
+name: ARTITRADE v073 priority & pending detailed trace
+on:
+  push:
+    branches: [ fix-artitrade-v073-execution-feed-gmo-ma-trend-20261116 ]
+    paths: [ '.github/workflows/artitrade-v073-urgent-detail.yml' ]
+permissions:
+  contents: read
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import io,base64,zipfile,ast
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for f,ranges in {
+              'd_live.py':[(676,714),(1940,1962),(2310,2365)],
+              'd_gmo_runtime.py':[(390,440),(478,495),(600,625),(692,728),(950,1020)],
+              'projectgmo/engine.py':[(175,190),(359,426),(522,531)],
+              'stock_ma_engine.py':[(145,215),(269,331)],
+              'android_live_bridge.py':[(1,60)],
+            }.items():
+              if f not in z.namelist():continue
+              a=z.read(f).decode('utf8').splitlines()
+              for lo,hi in ranges:
+                print('===',f,lo,hi,'===')
+                for n in range(lo,min(hi,len(a))+1):print('SRC',f,n,a[n-1][:260])
+          PY

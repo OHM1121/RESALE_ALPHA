@@ -1,0 +1,61 @@
+name: ARTITRADE v074 public historical candle forensic (READ ONLY)
+on:
+  push:
+    branches: [fix-artitrade-v074-ma-trend-forensic-20261116]
+    paths: ['.github/workflows/artitrade-v074-public-forensics.yml']
+permissions: {contents: read}
+jobs:
+  audit-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Query official Upbit public archived candles; never use or print account keys
+        run: |
+          python3 - <<'PY'
+          import urllib.parse,urllib.request,json,datetime as dt,sys
+          sys.path.insert(0,'ARTITRADE_ANDROID/app/src/main/python')
+          import market_trend_v043 as mt
+          import ma_v067_policy as policy
+          def grab(market,frame,to,count=200):
+              url='https://api.upbit.com/v1/candles/minutes/'+str(frame)+'?'+urllib.parse.urlencode({'market':market,'to':to,'count':count})
+              try:
+                  req=urllib.request.Request(url,headers={'User-Agent':'ARTITRADE-READ-ONLY-FORENSIC/1.0','Accept':'application/json'})
+                  with urllib.request.urlopen(req,timeout=18) as r:
+                      body=json.loads(r.read().decode());print('HTTP',r.status,'Remaining-Req',r.headers.get('Remaining-Req'),'count',len(body))
+                  return sorted(body,key=lambda x:x['candle_date_time_utc'])
+              except Exception as exc:
+                  print('SOURCE_UNAVAILABLE',market,frame,type(exc).__name__,str(exc)[:200])
+                  return []
+          def rsi_probe(rows,target):
+              past=[float(r['trade_price']) for r in rows if r['candle_date_time_kst']<target]
+              hit=next((r for r in rows if r['candle_date_time_kst']==target),None)
+              if not hit:
+                  print('TARGET_BAR_NOT_RETURNED',target);return
+              print('TARGET_CANDLE',target,'open',hit['opening_price'],'high',hit['high_price'],'low',hit['low_price'],'close',hit['trade_price'],'prior',len(past))
+              for key in ('low_price','trade_price','high_price'):
+                  val=float(hit[key]);print('WILDER_RSI20_WITH_FORMING_PRICE',key,round(mt.rsi20(past,val) or -1,4))
+              print('CAUTION: candle OHLC cannot establish exchange tick at -15s/-12s or orderbook or historic rank or RSI latch')
+          print('=== KRW-DRV 2026-11-16 10:45..10:49 KST ===')
+          rows=grab('KRW-DRV',5,'2026-11-16T01:50:00Z',200)
+          if rows:rsi_probe(rows,'2026-11-16T10:45:00')
+          print('=== KRW-SKR 2026-11-16 09:00..09:59 KST ===')
+          rows=grab('KRW-SKR',60,'2026-11-16T01:00:00Z',200)
+          if rows:
+              goal='2026-11-16T09:00:00'
+              past=[r for r in rows if r['candle_date_time_kst']<goal]
+              hit=next((r for r in rows if r['candle_date_time_kst']==goal),None)
+              print('TARGET_FOUND',bool(hit),'PRIOR_CANDLES',len(past))
+              if hit:
+                  print('OHLC',[(x,hit[x]) for x in ('opening_price','high_price','low_price','trade_price')])
+                  def convert(x):
+                      return {'open':x['opening_price'],'high':x['high_price'],'low':x['low_price'],'close':x['trade_price']}
+                  cand=[convert(x) for x in past]+[convert(hit)]
+                  print('MA_60M_BEAR_CLOSE',policy.bear_reversal_completed(cand,'60m'))
+                  for name in ('opening_price','high_price','low_price','trade_price'):
+                      print('MA_60M_UP_MINUS5_HYPOTHETICAL',name,policy.upward_transition_on_forming(
+                          [float(x['trade_price']) for x in past],float(hit[name]),4.5))
+                  print('CAUTION: true 09:59:55 trade and best ask/quantity cannot be reconstructed from 1h OHLC')
+          PY

@@ -339,6 +339,12 @@ jobs:
             ARTITRADE_ANDROID/ui_tests/ResearchScoreGridTest.java
           java -cp "$DIR" com.artitrade.mobile.StrategyDashboardScopeTest
           java -cp "$DIR" com.artitrade.mobile.ResearchScoreGridTest
+          javac -d "$DIR" \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategySwipeThreshold.java \
+            ARTITRADE_ANDROID/ui_tests/StrategySwipeThresholdTest.java
+          java -cp "$DIR" com.artitrade.mobile.StrategySwipeThresholdTest
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v029_research_reader.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v029_research_loaders.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_history_isolation.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_research_source_audit.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_actual_target_fill_only.py' -v

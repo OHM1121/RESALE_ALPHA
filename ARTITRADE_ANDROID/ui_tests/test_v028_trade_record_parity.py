@@ -13,11 +13,14 @@ import sqlite3
 import tempfile
 import unittest
 import zipfile
+import sys
 from pathlib import Path
 
 ROOT=Path(__file__).parents[1]
+# Isolated AST reader now imports the verified EXE 1m observation helper.
+sys.path.insert(0,str(ROOT/"app/src/main/python"))
 RUNTIME=ROOT/"app/src/main/python/android_runtime_v078.py"
-NAMES={"_attach_fill_cost","_first_existing","_stock_at_research","_close_research",
+NAMES={"_research_first_target_fills","_attach_fill_cost","_first_existing","_stock_at_research","_close_research",
        "_coin_research","_research_scope","_research_bands","_research_record"}
 tree=ast.parse(RUNTIME.read_text(encoding="utf-8"))
 selected=[x for x in tree.body if isinstance(x,ast.FunctionDef) and x.name in NAMES]
@@ -95,7 +98,9 @@ class OriginalExeRecordParity(unittest.TestCase):
             record=ctx["_stock_at_research"](tmp)["items"][0]
             self.assertFalse(record["bought"])
             self.assertEqual(record["origin_rank"],3)
-            self.assertEqual(record["observed_max_price"],1120)
+            self.assertIsNone(record["observed_max_price"])
+            self.assertEqual(record["observed_max_unverified"],1120)
+            self.assertEqual(record["forward_high_status"],"UNVERIFIED_NO_SOURCE_BAR")
             self.assertEqual(record["observation_minutes"],21)
             self.assertEqual(record["missing_observation_minutes"],2)
             self.assertEqual(record["entry_status"],"UNSELECTED")

@@ -14,7 +14,7 @@ from pathlib import Path
 SRC=Path(__file__).parents[1]/"app/src/main/python/android_runtime_v078.py"
 root=ast.parse(SRC.read_text(encoding="utf-8"))
 symbols={"_stock_ma_full","_closed_position_win_rate","_target_summary",
-         "_attach_fill_cost","_first_existing"}
+         "_attach_fill_cost","_attach_policy_symbol","_first_existing"}
 selected=[x for x in root.body if isinstance(x,ast.FunctionDef) and x.name in symbols]
 scope={"Path":Path,"_FRAMES":("5m","30m","60m","day"),"math":__import__("math")}
 scope["_ma_pending_diagnostics"]=lambda self,snap:snap
@@ -32,7 +32,7 @@ exec(compile(ast.Module(body=selected,type_ignores=[]),str(SRC),"exec"),scope)
 class MAOriginalSQLiteParity(unittest.TestCase):
     def test_display_all_rows_with_no_candidate_reason_column(self):
         with tempfile.TemporaryDirectory() as tmp:
-            directory=Path(tmp)/"stock/STOCK_MA_ENGINE_V1"
+            directory=Path(tmp)/"stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1"
             directory.mkdir(parents=True)
             db_path=directory/"ma_paper.sqlite3"
             with sqlite3.connect(db_path) as db:
