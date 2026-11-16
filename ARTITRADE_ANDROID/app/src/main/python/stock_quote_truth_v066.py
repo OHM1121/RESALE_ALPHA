@@ -184,12 +184,13 @@ def _rest_quote_loop(runner):
                 pinned=runner._pinned_stocks()
                 if isinstance(pinned,dict):
                     with lock:
-                        runner._v072_quote_requested.update(
-                            code for code in pinned if _stock_code(code))
+                        runner._v073_current_pins={
+                            code for code in pinned if _stock_code(code)}
             except (AttributeError,TypeError,RuntimeError,ValueError):
                 pass
         with lock:
-            codes=sorted(getattr(runner,'_v072_quote_requested',set()))
+            codes=sorted(set(getattr(runner,'_v072_quote_requested',set())) |
+                         set(getattr(runner,'_v073_current_pins',set())))
             attempted=runner._v072_quote_attempts
             now=time.monotonic()
             code=next((c for c in codes
@@ -202,8 +203,12 @@ def _rest_quote_loop(runner):
             owner_api=getattr(runner,'api',None)
             if owner_api is None:raise RuntimeError('KIWOOM_REST_API_NOT_READY')
             if display_api is None:
-                from d_live import ReadOnlyMarketAPI
-                display_api=ReadOnlyMarketAPI(owner_api.key,owner_api.secret)
+                factory=getattr(runner,'_v073_display_api_factory',None)
+                if factory is not None:
+                    display_api=factory(owner_api)  # synthetic integration tests
+                else:
+                    from d_live import ReadOnlyMarketAPI
+                    display_api=ReadOnlyMarketAPI(owner_api.key,owner_api.secret)
             reply=display_api.post('ka10001','/api/dostk/stkinfo',{'stk_cd':code})
             if not isinstance(reply,dict):raise ValueError('KIWOOM_REST_PAYLOAD_INVALID')
             returned=_stock_code(reply.get('stk_cd'))
@@ -231,6 +236,7 @@ def _ensure_rest_lookup_started(runner):
     with lock:
         if getattr(runner,'_v072_rest_lookup_started',False):return
         runner._v072_quote_requested=set()
+        runner._v073_current_pins=set()
         runner._v072_quote_attempts={}
         runner._v072_rest_quotes={}
         runner._v072_rest_errors={}
