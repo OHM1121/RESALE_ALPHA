@@ -61,6 +61,9 @@ class TrendAudit(unittest.TestCase):
                          observed_at=time.time())
         self.assertEqual(len(co.watch.snapshot('coin')), 1)
         co._preclose_candidates('coin', self.at + dt.timedelta(seconds=3))
+        # Within the -12..7 second retry window, preserve watch visibility.
+        self.assertEqual(len(co.watch.snapshot('coin')), 1)
+        co._preclose_candidates('coin', self.at + dt.timedelta(seconds=6))
         self.assertEqual(co.watch.snapshot('coin'), [])
         self.assertEqual(co._virtual, {})
 
