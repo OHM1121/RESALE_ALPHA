@@ -83,7 +83,9 @@ class TrendTimeGate(unittest.TestCase):
   import json,sqlite3
   from market_trend_wallet_v043 import TrendWallet
   class FakeRt:
-   def __init__(self,path,live):self.root=Path(path);self.live=live
+   def __init__(self,path,live):
+    self.root=Path(path);self.live=live
+    self.stock_runner=None;self.coin_runner=None;self._halted={}
    def live_enabled(self,market):return self.live
   with TemporaryDirectory() as path:
    root=Path(path)
