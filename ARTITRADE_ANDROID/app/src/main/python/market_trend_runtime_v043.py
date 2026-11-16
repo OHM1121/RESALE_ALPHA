@@ -1101,7 +1101,8 @@ class Coordinator:
                         quotes=dict(self._quotes.get(market,{}))
                         observed_ma={(key[2],key[3],key[4])
                                      for key in self._v074_audit_unique
-                                     if key[0]=='ma' and key[1]==market}
+                                     if key[0]=='ma' and key[1]==market
+                                     and not str(key[5]).startswith('MA_PREWATCH_')}
                     for frame,finish in due:
                         bar=finish.isoformat()
                         guard=(market,frame,bar)
@@ -1118,9 +1119,9 @@ class Coordinator:
                                 age=time.monotonic()-observed[1] if observed else None
                             except (TypeError,ValueError,IndexError):age=None
                             fresh=(age is not None and -0.5<=age<=3.0)
-                            reason=('MA_NO_FRESH_OBSERVED_0B_IN_FIVE_SECOND_WINDOW'
+                            reason=('MA_NO_FRESH_OBSERVED_TICK_IN_10_TO_2_SECOND_WINDOW'
                                     if not fresh else
-                                    'MA_FIVE_SECOND_DECISION_OUTCOME_NOT_RECORDED')
+                                    'MA_10_TO_2_SECOND_DECISION_OUTCOME_NOT_RECORDED')
                             self.record_ma_decision(market,code,frame,bar,reason,
                                {'audit_scope':'TOP_RANK_ONLY',
                                 'watchdog_after_window':True,
