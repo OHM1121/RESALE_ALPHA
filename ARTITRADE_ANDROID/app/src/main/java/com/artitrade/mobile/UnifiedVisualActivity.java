@@ -2058,61 +2058,85 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void renderMaEntryObservations(){
-        // Original MA wallet is the only authority for a real PENDING/FILLED
-        // order. The independent MA watch is evidence, not a second order.
+        // The original MA wallet is the ONLY source of actual orders and fills.
+        // Early 30-second observations are research, not a broker PENDING order.
         renderList("실제 매수대기 · 원본 주문원장",stats(market,"ma").pending,"pending");
-        TextView title=text("MA 조건감시 · 미진입 사유",18);
-        title.setTextColor(Color.rgb(155,205,250));
-        title.setPadding(dp(2),dp(14),0,dp(6));
-        content.addView(title);
-        TextView hint=text("MA120 기울기 +0.0050 이하는 신규 매수판정에서 하락으로 간주 · "+
-            "마감 4~5초 전 실제 체결가·호가 확인 필요 · 아래는 실제 매수주문이 아닌 관측이력",12);
-        hint.setTextColor(PremiumUi.MUTED);hint.setMaxLines(4);
-        content.addView(hint);
+
+        TextView guide=text("MA 사전관측: 마감 30초 전부터 · 실제 상승전환 매수판정: 마감 10~2초 전",13);
+        guide.setTextColor(Color.rgb(186,219,250));
+        guide.setPadding(dp(2),dp(12),0,dp(4));
+        content.addView(guide);
+        TextView caution=text("사전관측은 주문이 아님. 매수 직전 실제 체결가·호가(3초 이내)와 MA 조건을 다시 확인하며, 주문 후 체결 허용시간은 15초임.",12);
+        caution.setTextColor(PremiumUi.MUTED);
+        caution.setMaxLines(5);
+        content.addView(caution);
+
         JSONObject local=copyCache().optJSONObject("local_records");
         JSONObject maWatch=local==null?null:local.optJSONObject("ma_watch_v076");
         JSONArray rows=maWatch==null?null:maWatch.optJSONArray(market);
         if(rows==null||rows.length()==0){
-            empty("MA 관측이력 없음 · 종목별 확정봉과 마감 5초 전 "+
-                "시세 수신 여부를 기록하는 중. 관측이력 0건은 매수조건 만족을 뜻하지 않음");
+            empty("MA 사전관측 및 최종 판정 이력 없음 · 실제 체결가가 수신되어야 관측 가능함. 이력 0건은 매수조건 만족을 뜻하지 않음");
             return;
         }
-        int shown=0;
-        for(int i=0;i<rows.length()&&shown<75;i++){
-            JSONObject r=rows.optJSONObject(i);
-            if(r==null||!"MA_OBSERVATION_ONLY".equals(r.optString("status","")))continue;
-            LinearLayout tile=card();
-            String symbol=r.optString("code","코드 미확인");
-            String frame=r.optString("tf","");
-            String reason=r.optString("reason","판단 사유 미기록");
-            TextView name=text(symbol+" · "+tfLabel(frame)+" · 미주문 관측",15);
-            name.setTextColor(Color.rgb(186,219,250));
-            tile.addView(name);
-            TextView what=text("MA 진입 판단: "+reason,12);
-            what.setTextColor(Color.rgb(228,199,149));
-            what.setMaxLines(4);tile.addView(what);
-            JSONObject facts=r.optJSONObject("ma_details");
-            if(facts!=null&&facts.length()>0){
-                StringBuilder detail=new StringBuilder();
-                for(String k:new String[]{"ma_120_delta","ma120_delta","ma_60_delta",
-                                         "ma120_down_tolerance","book_age_sec","trade_price","ask"}){
-                    if(!facts.has(k))continue;
-                    if(detail.length()>0)detail.append(" · ");
-                    detail.append(k).append(" ").append(facts.optString(k,""));
+        for(int phase=0;phase<2;phase++){
+            final boolean prewatch=phase==0;
+            TextView title=text(prewatch?
+                "사전 관측 · 30~10초 전 · 미주문":
+                "최종 매수 판정 · 10~2초 전 · 등록/미진입 사유",17);
+            title.setTextColor(Color.rgb(155,205,250));
+            title.setPadding(dp(2),dp(16),0,dp(6));
+            content.addView(title);
+            int shown=0;
+            for(int i=0;i<rows.length()&&shown<55;i++){
+                JSONObject r=rows.optJSONObject(i);
+                if(r==null||!"MA_OBSERVATION_ONLY".equals(r.optString("status","")))continue;
+                String reason=r.optString("reason","판단 사유 미기록");
+                if(reason.startsWith("MA_PREWATCH_")!=prewatch)continue;
+                LinearLayout tile=card();
+                String symbol=r.optString("code","코드 미확인");
+                String frame=r.optString("tf","");
+                TextView name=text(symbol+" · "+tfLabel(frame)+
+                    (prewatch?" · 사전관측(미주문)":" · 매수 판정/진단"),15);
+                name.setTextColor(Color.rgb(186,219,250));
+                tile.addView(name);
+                TextView what=text((prewatch?"MA 관측: ":"MA 최종 판단: ")+reason,12);
+                what.setTextColor(Color.rgb(228,199,149));
+                what.setMaxLines(4);
+                tile.addView(what);
+                JSONObject facts=r.optJSONObject("ma_details");
+                if(facts!=null&&facts.length()>0){
+                    StringBuilder detail=new StringBuilder();
+                    for(String k:new String[]{"remaining_sec","seconds_to_close","ma_120_delta",
+                        "ma120_delta","ma_60_delta","ma120_down_tolerance","book_age_sec",
+                        "trade_price","last_trade_price","ask","live_source"}){
+                        if(!facts.has(k))continue;
+                        if(detail.length()>0)detail.append(" · ");
+                        detail.append(k).append(" ").append(facts.optString(k,""));
+                    }
+                    if(detail.length()>0){
+                        TextView values=text(detail.toString(),11);
+                        values.setTextColor(Color.rgb(143,180,206));
+                        values.setMaxLines(5);
+                        tile.addView(values);
+                    }
                 }
-                if(detail.length()>0){
-                    TextView values=text(detail.toString(),11);
-                    values.setTextColor(Color.rgb(143,180,206));
-                    values.setMaxLines(4);tile.addView(values);
-                }
+                TextView when=text("기준봉 마감 "+r.optString("bar_end","미확인")+
+                    " · 관측 시각 "+formatKst(r.opt("at")),11);
+                when.setTextColor(PremiumUi.MUTED);
+                when.setMaxLines(3);
+                tile.addView(when);
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+                lp.setMargins(0,dp(5),0,dp(5));
+                content.addView(tile,lp);
+                shown++;
             }
-            TextView when=text("기준봉 마감 "+r.optString("bar_end","미확인")+
-                " · 진단 기록 "+formatKst(r.opt("at")),11);
-            when.setTextColor(PremiumUi.MUTED);when.setMaxLines(3);
-            tile.addView(when);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
-            lp.setMargins(0,dp(5),0,dp(5));content.addView(tile,lp);
-            shown++;
+            if(shown==0){
+                TextView none=text(prewatch?
+                    "검증된 체결가 기반 사전관측 아직 없음":
+                    "해당 매수시간대의 신규 판정 이력 아직 없음",12);
+                none.setTextColor(PremiumUi.MUTED);
+                content.addView(none);
+            }
         }
     }
 
