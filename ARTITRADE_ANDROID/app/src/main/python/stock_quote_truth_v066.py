@@ -124,6 +124,9 @@ def install_ui_quote_tap(runner):
 
     runner._new_tick=quote_only_then_native
     runner._v066_quote_tap_enabled=True
+    # Start source-separated price retrieval at runner creation, not only when
+    # the UI eventually polls its large consolidated ledger snapshot.
+    _ensure_rest_lookup_started(runner)
     return True
 
 
@@ -165,11 +168,26 @@ def _rest_positive_price(value):
 
 
 def _rest_quote_loop(runner):
-    """Only held symbols. Official ka10001 is displayed as REST, never WS 0B.
-    No order, ledger write, added socket, or synthetic timestamp.
+    """Display-only prefetch: restore held symbols BEFORE first UI poll.
+
+    Uses an independent HTTP Session/lock (but the original shared REST rate
+    limiter and token), so historical OHLCV downloads cannot monopolize the
+    screen's official quote fetch. NEVER supplies the trading decision path.
     """
     lock=runner._v066_quote_lock
+    display_api=None
+    last_pin_scan=0.0
     while not runner.stop_event.is_set():
+        if time.monotonic()-last_pin_scan>2.0:
+            last_pin_scan=time.monotonic()
+            try:
+                pinned=runner._pinned_stocks()
+                if isinstance(pinned,dict):
+                    with lock:
+                        runner._v072_quote_requested.update(
+                            code for code in pinned if _stock_code(code))
+            except (AttributeError,TypeError,RuntimeError,ValueError):
+                pass
         with lock:
             codes=sorted(getattr(runner,'_v072_quote_requested',set()))
             attempted=runner._v072_quote_attempts
@@ -181,9 +199,12 @@ def _rest_quote_loop(runner):
             runner.stop_event.wait(.6)
             continue
         try:
-            api=getattr(runner,'api',None)
-            if api is None:raise RuntimeError('KIWOOM_REST_API_NOT_READY')
-            reply=api.post('ka10001','/api/dostk/stkinfo',{'stk_cd':code})
+            owner_api=getattr(runner,'api',None)
+            if owner_api is None:raise RuntimeError('KIWOOM_REST_API_NOT_READY')
+            if display_api is None:
+                from d_live import ReadOnlyMarketAPI
+                display_api=ReadOnlyMarketAPI(owner_api.key,owner_api.secret)
+            reply=display_api.post('ka10001','/api/dostk/stkinfo',{'stk_cd':code})
             if not isinstance(reply,dict):raise ValueError('KIWOOM_REST_PAYLOAD_INVALID')
             returned=_stock_code(reply.get('stk_cd'))
             if returned and returned!=code:raise ValueError('KIWOOM_REST_CODE_MISMATCH')
@@ -300,8 +321,22 @@ def _annotate_position(row,quotes,now,connected,rest_cache=None,needed_codes=Non
             row['stock_quote_received_at']=rest['received_at']
             row['stock_quote_rest_age_sec']=round(rest_age,1) if rest_age is not None else None
         else:
-            row['stock_quote_status']='NOT_RECEIVED'
-            row['stock_quote_source']='NO_VERIFIED_PRICE'
+            # Fast cold-start UI fallback only: preserve the original database
+            # mark as explicitly OLD/STORED, not as a live quote or a SELL bid.
+            # Broker fill decisions never read stock_quote_display_price.
+            saved=None
+            for key in ('ledger_last_price','ledger_current_price',
+                        'ledger_market_price','ledger_mark','ledger_mark_price'):
+                saved=_rest_positive_price(row.get(key))
+                if saved is not None:break
+            if saved is not None:
+                row['stock_quote_status']='LAST_LEDGER'
+                row['stock_quote_source']='STORED_LEDGER_MARK_NOT_LIVE'
+                row['stock_quote_display_source']='LAST_LEDGER'
+                row['stock_quote_display_price']=saved
+            else:
+                row['stock_quote_status']='NOT_RECEIVED'
+                row['stock_quote_source']='NO_VERIFIED_PRICE'
     return row
 
 
