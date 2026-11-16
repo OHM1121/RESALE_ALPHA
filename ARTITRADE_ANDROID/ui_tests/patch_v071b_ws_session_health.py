@@ -30,7 +30,7 @@ once(
     "                    # A prior socket's REG confirmation cannot validate this socket.\n")
 
 once(
-    "                            self._health('실시간 구독 승인','키움 WS 등록 승인 · 실제 시세는 개별 종목별 확인')\n",
+    "                            self._health('실시간 구독 승인','키움 REG 확인 · 실제 0B 시세 수신은 별도')\n",
     "                            # CW's shared transport recognizes exactly\n"
     "                            # '실시간 연결됨'; its broker-frame gate remains <=3s.\n"
     "                            self._health('실시간 연결됨','키움 REG 승인 · 0B 실체결은 종목별 독립 확인')\n")
