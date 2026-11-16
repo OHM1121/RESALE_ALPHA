@@ -623,7 +623,7 @@ class Coordinator:
             finally:
                 self._v074_audit_queue.task_done()
 
-    def _record_entry_block(self,market,code,frame,barid,reason,rsi=None,trade_age_sec=None,strategy='trend'):
+    def _record_entry_block(self,market,code,frame,barid,reason,rsi=None,trade_age_sec=None,strategy='trend',ma_details=None):
         """Do not call a rejected RSI observation a real BUY or virtual fill."""
         # Some broker-independent unit harnesses allocate Coordinator via
         # __new__; this must not turn diagnostics into a strategy exception.
@@ -638,7 +638,8 @@ class Coordinator:
                  'rsi20_live':value,'strategy':str(strategy),
                  'last_trade_age_sec':round(age,3) if age is not None else None,
                  'logged_at':dt.datetime.now(mt.KST).isoformat(),
-                 'audit_epoch':time.time()}
+                 'audit_epoch':time.time(),
+                 'ma_details':ma_details if strategy=='ma' and isinstance(ma_details,dict) else {}}
             key=(row['strategy'],row['market'],row['code'],row['frame'],
                  row['bar_end'],row['reason'])
             with self.lock:
@@ -656,9 +657,14 @@ class Coordinator:
         except (KeyError,ValueError,TypeError,AttributeError):
             self._v074_audit_dropped+=1
 
-    def record_ma_decision(self,market,code,frame,bar_end,reason):
-        """Coin MA decision diagnostics share the read-only forensic writer."""
-        self._record_entry_block(market,code,frame,bar_end,reason,strategy='ma')
+    def record_ma_decision(self,market,code,frame,bar_end,reason,details=None):
+        """Stock AND coin MA observation, including non-order reasons.
+
+        A pre-5-second MA watch is never a broker/PAPER candidate by itself.
+        No SQLite is opened on the actual live decision callback.
+        """
+        self._record_entry_block(market,code,frame,bar_end,reason,
+                                 strategy='ma',ma_details=details)
 
     def _preclose_candidates(self,market,now):
         self._prune_evaluation_cache(now)
@@ -1217,12 +1223,18 @@ class Coordinator:
         # Only RSI20 entry decisions belong in RSI20 research.
         # SELL and INTENT events cannot masquerade as a new BUY signal.
         try:
-            forensic=self._v074_evidence.recent(750) if self._v074_evidence else []
+            if self._v074_evidence and hasattr(self._v074_evidence,'recent_for_strategy'):
+                forensic=(self._v074_evidence.recent_for_strategy('ma',650)
+                          +self._v074_evidence.recent_for_strategy('trend',350))
+            else:
+                forensic=self._v074_evidence.recent(750) if self._v074_evidence else []
         except (sqlite3.Error,OSError) as exc:
             forensic=[]
             self._last_fetch_error['stock']='AUDIT_READ:'+type(exc).__name__
         # Different physical SQLite files: research audit cannot monopolize
         # broker, TrendJournal latch, or one-second executable order windows.
+        ma_watch={'stock':[],'coin':[]}
+        ma_watch_keys={'stock':set(),'coin':set()}
         for x in forensic+self.journal.events_recent(350):
             identity=str(x["event_key"])
             if identity.startswith(("MT74:AUDIT:","MA74:AUDIT:")):
@@ -1247,12 +1259,34 @@ class Coordinator:
                                    if x["mode"]=="CANDIDATE_ONLY"
                               else "NO_ORDER_RECORDED",
                     "reason":reason,"bar_end":detail.get("bar_end"),
-                    "last_trade_age_sec":detail.get("last_trade_age_sec")}
+                    "last_trade_age_sec":detail.get("last_trade_age_sec"),
+                    "ma_details":detail.get("ma_details") or {}}
                 if is_ma:
+                    # These observations are never pending orders.  Expose
+                    # a distinct MA watch pane so it is possible to inspect
+                    # failure reasons even when the original order queue is 0.
+                    identity=(x["symbol"],x["frame"])
+                    if (identity not in ma_watch_keys[m] and
+                            len(ma_watch[m])<90 and
+                            not str(x["symbol"]).startswith('__')):
+                        ma_watch_keys[m].add(identity)
+                        ma_watch[m].append({
+                            "code":x["symbol"],"tf":x["frame"],
+                            "bar_end":detail.get("bar_end"),"at":seen,
+                            "status":"MA_OBSERVATION_ONLY",
+                            "reason":reason,"ma_details":detail.get("ma_details") or {},
+                            "external_order_pending":False,"verified_order_placed":False,
+                            "ma120_down_tolerance":"0.0050"})
                     if m=="coin":
                         ma_node=out.get("coin",{}).get("ma",{})
                         if isinstance(ma_node,dict):
                             ma_research=ma_node.setdefault("research",{})
+                            if isinstance(ma_research,dict):
+                                ma_research.setdefault("items",[]).append(evidence)
+                    elif m=="stock":
+                        at=out.get("stock",{}).get("at",{})
+                        if isinstance(at,dict):
+                            ma_research=at.setdefault("research",{}).setdefault("ma",{})
                             if isinstance(ma_research,dict):
                                 ma_research.setdefault("items",[]).append(evidence)
                 else:
@@ -1262,17 +1296,23 @@ class Coordinator:
                         target=trend_node.setdefault("research",{})
                         if isinstance(target,dict):
                             target.setdefault("items",[]).append(evidence)
-                if (reason.startswith("OPERATIONAL_") or
+                if (is_ma or reason.startswith("OPERATIONAL_") or
                     reason in ("ONE_SECOND_DECISION_DEADLINE_MISSED",
                         "QUOTE_OR_BOOK_STALE_BEFORE_ORDER",
                         "FRESH_BOOK_MISSING_AT_SUBMIT",
                         "CLOSED_CANDLE_HISTORY_MISSING")):
                     audit_errors[m].append({
-                        "at":seen,"stage":("COIN_MA" if is_ma else "MARKET_TREND")+"_"+reason,
+                        "at":seen,"stage":("MA_"+m.upper() if is_ma else "MARKET_TREND")+"_"+reason,
                         "code":x["symbol"],"frame":x["frame"],
                         "message":reason+" | "+str(x["symbol"])+" / "+str(x["frame"])+
                                   " / "+str(detail.get("bar_end") or ""),
-                        "status":"NO_ORDER","source":"V074_PERSISTED_AUDIT"})
+                        "status":("RULE_NOT_MET" if is_ma and
+                            reason.startswith(("UP_RULE_","BEAR_RULE_"))
+                            else "OBSERVATION_ONLY" if is_ma and
+                            "CANDIDATE_REGISTERED" in reason
+                            else "NO_ORDER"),
+                        "ma_details":detail.get("ma_details") or {},
+                        "source":"V074_PERSISTED_AUDIT"})
                 continue
             if not (identity.startswith("MT43:SIG:") or
                     identity.startswith("MT54:SIG:")):continue
@@ -1318,6 +1358,7 @@ class Coordinator:
                     target.setdefault("research",{}).setdefault("items",[]).append(item)
         out["market_trend_research"]=trend_research
         out["market_trend_audit_errors"]=audit_errors
+        out["ma_watch_v076"]=ma_watch
         return json.dumps(out,ensure_ascii=False,default=str)
 
 def set_manual_mode(market,enabled):
