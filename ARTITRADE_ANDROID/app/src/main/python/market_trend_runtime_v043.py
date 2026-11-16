@@ -1023,6 +1023,63 @@ class Coordinator:
                     'OPERATIONAL_WATCH_'+type(exc).__name__)
             self.stop_event.wait(5)
 
+    def _ma_no_result_watchdog(self,market):
+        """Record when an MA gate passed without a captured quote or decision.
+
+        Only covers the existing verified Trend top-ranked watch scope.
+        Independent audit worker, never touches an executable order, REST
+        source, account position or broker connection.
+        """
+        sealed=set()
+        while not self.stop_event.is_set():
+            try:
+                now=dt.datetime.now(mt.KST)
+                if market=='stock':
+                    import ma_v067_stock_runtime as native
+                    due=[(frame,finish) for frame in mt.FRAMES
+                         for remain,finish in [native._close_seconds(now,frame)]
+                         if 1.0<=remain<=1.8]
+                else:
+                    import ma_v067_coin_runtime as native
+                    due=[(frame,finish) for frame in mt.FRAMES
+                         for remain,finish in [native._bar_close(now,frame)]
+                         if 1.0<=remain<=1.8]
+                if due:
+                    with self.lock:
+                        scope=tuple(self._candidates.get(market,{}))[:50]
+                        quotes=dict(self._quotes.get(market,{}))
+                        observed_ma={(key[2],key[3],key[4])
+                                     for key in self._v074_audit_unique
+                                     if key[0]=='ma' and key[1]==market}
+                    for frame,finish in due:
+                        bar=finish.isoformat()
+                        guard=(market,frame,bar)
+                        if guard in sealed:continue
+                        sealed.add(guard)
+                        if not scope:
+                            self.record_ma_decision(market,'__ENGINE__',frame,bar,
+                               'OPERATIONAL_MA_VERIFIED_RANK_CANDIDATES_EMPTY',
+                               {'audit_scope':'TOP_RANK','not_an_order':True})
+                        for code in scope:
+                            if (code,frame,bar) in observed_ma:continue
+                            observed=quotes.get(code)
+                            try:
+                                age=time.monotonic()-observed[1] if observed else None
+                            except (TypeError,ValueError,IndexError):age=None
+                            fresh=(age is not None and -0.5<=age<=3.0)
+                            reason=('MA_NO_FRESH_OBSERVED_0B_IN_FIVE_SECOND_WINDOW'
+                                    if not fresh else
+                                    'MA_FIVE_SECOND_DECISION_OUTCOME_NOT_RECORDED')
+                            self.record_ma_decision(market,code,frame,bar,reason,
+                               {'audit_scope':'TOP_RANK_ONLY',
+                                'watchdog_after_window':True,
+                                'last_quote_age_sec':round(age,3) if age is not None else None,
+                                'no_broker_order_or_fill_inferred':True})
+                    if len(sealed)>2400:sealed=set(list(sealed)[-600:])
+            except Exception as exc:
+                self._last_fetch_error[market]='MA_WATCHDOG:'+type(exc).__name__
+            self.stop_event.wait(.2)
+
     def _book_evidence_loop(self,market):
         """Read-only, separately scheduled broker-book research collection.
 
@@ -1073,6 +1130,7 @@ class Coordinator:
                            lambda m=market:self._prefetch(m),
                            lambda m=market:self._book_evidence_loop(m),
                            lambda m=market:self._preclose_loop(m),
+                           lambda m=market:self._ma_no_result_watchdog(m),
                            lambda m=market:self._watch_loop(m),
                            lambda m=market:self._loop(m)):
                 thread=threading.Thread(target=target,daemon=True,
