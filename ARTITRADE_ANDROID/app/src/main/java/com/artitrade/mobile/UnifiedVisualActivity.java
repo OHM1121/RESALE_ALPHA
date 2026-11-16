@@ -128,7 +128,8 @@ public final class UnifiedVisualActivity extends Activity {
     private TextView drawerBackgroundHealth;
     private TextView clockText;
     private static final long BACKGROUND_HEARTBEAT_FRESH_MS=14_000L;
-    private static final long PRELOAD_WATCHDOG_MS=5_000L;
+    private static final long PRELOAD_WATCHDOG_MS=40_000L;
+    private static final long PRELOAD_BOTH_FEEDS_WARM_MIN_MS=22_000L;
     private volatile boolean refreshRunning=false;
     private volatile boolean uiDestroyed=false;
     private volatile boolean runtimeStartIssued=false;
@@ -137,6 +138,8 @@ public final class UnifiedVisualActivity extends Activity {
     private volatile boolean preloadScreenReady=false;
     private boolean priorUiSessionKnown=false;
     private long preloadStartedAt=0L;
+    private long preloadStartedWallMs=0L;
+    private String preloadExitNote="";
     private ProgressBar startupProgress;
     private TextView startupStage;
     private String market="stock";
@@ -249,6 +252,7 @@ public final class UnifiedVisualActivity extends Activity {
             root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
             preloadStartedAt=android.os.SystemClock.elapsedRealtime();
+            preloadStartedWallMs=System.currentTimeMillis();
             recordUiEntry(state);
             if(shouldRestoreShellImmediately(state)){
                 // Re-creating the Activity is NOT evidence that the trading engine
@@ -261,12 +265,13 @@ public final class UnifiedVisualActivity extends Activity {
                 // the full-screen boot view waiting for an I/O worker.
                 main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS);
             }
-            // Service and UI model parsing happen asynchronously. No trade
-            // session is restarted just because the Activity was recreated.
+            // Begin both original broker feeds before slow UI/hub aggregation.
+            // START is idempotent and never re-arms live broker orders.
+            startRuntimeLater();
+            if(!preloadScreenReady)main.postDelayed(this::startupReadinessTick,500);
             main.postDelayed(()->{
                 try{
-                    updateStartupProgress(12,"백그라운드 전략엔진 시작");
-                    startRuntimeLater();
+                    updateStartupProgress(12,"주식·코인 백그라운드 연결 및 원장 준비");
                     refresh(true);
                 }catch(Throwable e){
                     new RuntimeCrashStore(this).add("native_preload",e);
@@ -313,9 +318,90 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void preloadWatchdog(){
         if(!preloadScreenReady&&!isFinishing()&&root!=null){
-            // UI-only escape hatch. Never mark a stale quote/ledger as fresh.
+            // Bounded escape hatch: broker outages and holidays must never
+            // trap the user behind a loading cover. No quote is marked fresh.
+            preloadExitNote="일부 준비 미완료 · 시세·확정봉은 백그라운드 복구 중";
             finishPreload(false);
         }
+    }
+
+    private void startupReadinessTick(){
+        if(preloadScreenReady||uiDestroyed||isFinishing())return;
+        try{
+            final long elapsed=android.os.SystemClock.elapsedRealtime()-preloadStartedAt;
+            String raw=getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE)
+                .getString("snapshot","{}");
+            JSONObject all=new JSONObject(raw);
+            JSONObject ready=all.optJSONObject("startup_preload_v081");
+            long recorded=ready==null?0:ready.optLong("updated_at_ms",0L);
+            boolean newObservation=recorded>=preloadStartedWallMs-1200L
+                &&recorded<=System.currentTimeMillis()+1500L
+                &&System.currentTimeMillis()-recorded<8500L;
+            JSONObject stock=ready==null?null:ready.optJSONObject("stock");
+            JSONObject coin=ready==null?null:ready.optJSONObject("coin");
+            boolean engine=ready!=null&&newObservation
+                &&ready.optBoolean("engine_initialized",false);
+            boolean stockRequired=stock!=null&&stock.optBoolean("keys_present",false)
+                &&stock.optBoolean("session_required",false);
+            boolean stockReady=!stockRequired||(engine&&stock.optBoolean("ws_ready",false)
+                &&stock.optInt("subscriptions",0)>0);
+            boolean coinReady=engine&&coin!=null
+                &&coin.optBoolean("ws_ready",false)
+                &&coin.optBoolean("ws_supervisor_running",false)
+                &&coin.optInt("subscriptions_requested",0)>0;
+            JSONObject coinGate=coin==null?null:coin.optJSONObject("preload");
+            JSONObject stockGate=stock==null?null:stock.optJSONObject("preload");
+            boolean coinWarm=coinGate!=null&&coinGate.optBoolean("ready",false);
+            boolean stockWarm=!stockRequired||(stockGate!=null
+                &&stockGate.optBoolean("ready",false));
+            JSONObject history=ready==null?null:ready.optJSONObject("rsi_history");
+            JSONObject coinHistory=history==null?null:history.optJSONObject("coin");
+            JSONObject stockHistory=history==null?null:history.optJSONObject("stock");
+            int coinLoaded=coinHistory==null?0:coinHistory.optInt("rsi20_ready",0);
+            int coinTotal=coinHistory==null?0:coinHistory.optInt("candidate_frames",0);
+            int stockLoaded=stockHistory==null?0:stockHistory.optInt("rsi20_ready",0);
+            int stockTotal=stockHistory==null?0:stockHistory.optInt("candidate_frames",0);
+            boolean uiReady=uiSnapshot.totals.size()>=6
+                &&uiSnapshot.packet.optLong("local_records_at",0L)>0;
+            int progress=engine?38:16;
+            String stage="기존 주문원장·주식/코인 엔진 시작 중";
+            if(engine){
+                progress=uiReady?60:45;
+                stage=uiReady?"원장/화면 준비 완료 · 실시간 시세 연결 확인 중":
+                    "거래원장 무결성 및 전략별 화면 데이터 준비 중";
+                if(!stockReady){
+                    progress=60;
+                    stage="키움 KRX/NXT 실시간 구독 승인 대기";
+                }else if(!coinReady){
+                    progress=stockRequired?65:59;
+                    stage="업비트 단일 WebSocket 체결가 수신 대기 · 과거봉 병행";
+                }else{
+                    progress=coinWarm&&stockWarm?94:82;
+                    stage="주식·코인 실시간 시세 연결 확인 · RSI20 확정봉 "+
+                        stockLoaded+"/"+stockTotal+"(주식), "+
+                        coinLoaded+"/"+coinTotal+"(코인)";
+                }
+            }
+            updateStartupProgress(progress,stage);
+            if(engine&&uiReady&&stockReady&&coinReady){
+                if(coinWarm&&stockWarm){
+                    preloadExitNote="";
+                    finishPreload(true);
+                    return;
+                }
+                if(elapsed>=PRELOAD_BOTH_FEEDS_WARM_MIN_MS){
+                    preloadExitNote="주식·코인 시세 연결됨 · MA/RSI 과거봉은 백그라운드 보강 중";
+                    finishPreload(false);
+                    return;
+                }
+            }
+        }catch(Exception e){
+            // No network call, strategy order, or database write on the UI thread.
+            if(preloadStartedAt>0&&android.os.SystemClock.elapsedRealtime()-
+                preloadStartedAt>PRELOAD_WATCHDOG_MS-1500L)
+                preloadExitNote="연결상태 확인 불가 · 백그라운드 재연결 유지";
+        }
+        main.postDelayed(this::startupReadinessTick,900);
     }
 
     private String readableBackgroundHealth(){
@@ -551,7 +637,8 @@ public final class UnifiedVisualActivity extends Activity {
         showShell(); // showShell already renders the prepared snapshot once.
         updateHeader();
         if(!engineReady && statusText!=null)
-            statusText.setText("원장 초기화 대기 · 백그라운드 연결 확인");
+            statusText.setText(preloadExitNote.isEmpty()?"원장 초기화/시세 준비 중 · 백그라운드 연결 확인":preloadExitNote);
+        main.postDelayed(()->refresh(false),450);
         main.postDelayed(this::autoProbeBroker,900);
     }
 
@@ -1260,20 +1347,14 @@ public final class UnifiedVisualActivity extends Activity {
             main.post(()->{
                 if(uiDestroyed)return;
                 if(!preloadScreenReady){
-                    JSONObject engine=packet.optJSONObject("strategy_runtime");
-                    boolean engineReady=packet.optLong("local_records_at",0L)>0 &&
-                        uiSnapshot.totals.size()>=6 && engine!=null &&
-                        (engine.optJSONObject("stock")!=null ||
-                         engine.optJSONObject("coin")!=null);
-                    boolean timedOut=android.os.SystemClock.elapsedRealtime()-
-                        preloadStartedAt>=16000L;
-                    if(engineReady||timedOut){
-                        // A disconnected broker must not make the phone unusable.
-                        // Timeouts are explicitly displayed as engine-waiting, not success.
-                        finishPreload(engineReady);
-                    }else{
-                        updateStartupProgress(88,"원장 생성 및 엔진 상태 확인 중");
-                        main.postDelayed(()->refresh(true),850);
+                    // The UI ledger worker must NOT mistake a populated book
+                    // snapshot for two working live exchange subscriptions.
+                    // startupReadinessTick owns the actual both-feed gate.
+                    boolean summaryPrepared=packet.optLong("local_records_at",0L)>0 &&
+                        uiSnapshot.totals.size()>=6;
+                    if(!summaryPrepared){
+                        updateStartupProgress(68,"기존 주문원장 · 전략별 화면 자료 준비 중");
+                        main.postDelayed(()->refresh(true),1100);
                     }
                     return;
                 }
