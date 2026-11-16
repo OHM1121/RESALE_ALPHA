@@ -2697,6 +2697,13 @@ public final class UnifiedVisualActivity extends Activity {
             (transport==null?"":" · "+transport.optString("reason",""))+
             "\n구독 요청: "+(feed==null?0:feed.optInt("subscribed",0))+"종목"+
             "\n마지막 확인 체결: "+feedAge+
+            "\nWS 세션: "+(feed!=null&&feed.optBoolean("ws_session_confirmed",false)?"구독 확인":"미확인")+
+            "\n0B 처리 대기: "+(feed==null?0:feed.optInt("receive_queue_depth",0))+
+            "개 / 최대 "+(feed==null?0:feed.optInt("receive_queue_high_water",0))+"개"+
+            "\n수신 처리: "+(feed==null?0:feed.optInt("receive_packets_processed",0))+
+            "건 · 만료/폐기 "+(feed==null?0:feed.optInt("receive_frames_discarded",0))+"건"+
+            "\n큐 초과: "+(feed==null?0:feed.optInt("receive_queue_overflows",0))+
+            "회 · 최대 처리 지연 "+(feed==null?0:feed.optInt("receive_max_lag_ms",0))+"ms"+
             "\n실주문 모드(주식): "+orderMode+
             "\nMSERVER: "+mserverState;
         if(stages!=null)msg+="\n사전 로딩: "+stages.optString("stage","")+
