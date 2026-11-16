@@ -5,6 +5,7 @@ on:
       - feature-artitrade-v063-kiwoom-gmo-lifecycle-audit-20261116
     paths:
       - "ARTITRADE_ANDROID/ui_tests/diagnose_bundle_v063.py"
+      - "ARTITRADE_ANDROID/ui_tests/test_v063_gmo_exit_and_cold_boot.py"
       - ".github/workflows/artitrade-v063-core-readonly-diagnostic.yml"
   workflow_dispatch:
 permissions:
@@ -20,3 +21,5 @@ jobs:
           python-version: "3.11"
       - name: Inspect packaged source; no network broker calls and no order paths
         run: python3 ARTITRADE_ANDROID/ui_tests/diagnose_bundle_v063.py
+      - name: Regression for policy + cold boot (expect RED until fix)
+        run: python3 ARTITRADE_ANDROID/ui_tests/test_v063_gmo_exit_and_cold_boot.py
