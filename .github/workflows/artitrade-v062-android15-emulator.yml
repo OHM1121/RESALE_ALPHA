@@ -1,9 +1,10 @@
 name: ARTITRADE v0.7.62 Android 15 real boot + eight-screen smoke
 on:
   push:
-    branches: [ feature-artitrade-v062-ma-epoch-live-research-20261116 ]
+    branches: [ feature-artitrade-v062-ma-epoch-live-research-20261116, feature-artitrade-v062-trend-research-ui-followup-20261116 ]
     paths:
       - 'ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v054.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
       - 'ARTITRADE_ANDROID/app/src/main/python/reference_integrity_v059.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/ma_v061_rules.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/ma_v061_stock_runtime.py'
