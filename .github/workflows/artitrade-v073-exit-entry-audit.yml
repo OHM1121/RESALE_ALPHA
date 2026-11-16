@@ -1,0 +1,42 @@
+name: ARTITRADE v073 execution-failure root cause audit
+on:
+  push:
+    branches: [ fix-artitrade-v072-preload-heartbeat-freshness-20261116 ]
+    paths: [ '.github/workflows/artitrade-v073-exit-entry-audit.yml' ]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect bounded original GMO exit, native runner and broker bridge
+        run: |
+          python3 - <<'PY'
+          import zipfile,base64,io,ast,re
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          blob=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            for name in ('projectgmo/engine.py','d_gmo_runtime.py','stock_ma_engine.py','d_upbit.py','d_live.py','android_live_bridge.py'):
+              if name not in z.namelist():continue
+              lines=z.read(name).decode('utf-8').splitlines()
+              tree=ast.parse('\n'.join(lines))
+              print('=== MODULE',name,'LINES',len(lines),'===')
+              found=[]
+              for node in ast.walk(tree):
+                if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                  if name.startswith('projectgmo') or re.search(r'on_quote|process_quote|process_trade|on_tick|on_book|sell|exit|_new_tick|_gmo_tick|_tick_job|_start_market_workers|_ws|start|_refresh_watched|_restore|_process|_subscribe|_register|run',node.name,re.I):
+                    print('METHOD',node.name,node.lineno,node.end_lineno)
+                    if name.startswith('projectgmo'):
+                      if re.search('on_quote|_exit|confirm|fill|on_order|on_execution',node.name,re.I):found.append((node.lineno,min(node.end_lineno,node.lineno+155)))
+                    elif name=='d_gmo_runtime.py':
+                      if re.search('quote|tick|order|on_0|trade|run|_sync',node.name,re.I):found.append((node.lineno,min(node.end_lineno,node.lineno+75)))
+                    elif name=='d_live.py':
+                      if re.search('tick_job_loop|_start_market_workers|_gmo_priority_worker|_gmo_tick|_new_tick',node.name):found.append((node.lineno,min(node.end_lineno,node.lineno+65)))
+              printed=set()
+              for lo,hi in found[:13]:
+                print('=== RANGE',lo,hi,'===')
+                for i in range(lo,hi+1):
+                  if i not in printed:print('LINE',i,lines[i-1][:220]);printed.add(i)
+          PY
