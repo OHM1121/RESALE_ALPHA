@@ -151,6 +151,28 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertFalse(result.accepted)
         self.assertEqual(result.reason,'previous price growth veto')
 
+    def test_gmo_unlogged_no_order_reasons_are_now_throttled_without_broker_call(self):
+        from d_gmo_runtime import GMOService
+        from types import SimpleNamespace
+        logs=[]
+        obj=GMOService.__new__(GMOService)
+        obj._gmo_last_block_log={}
+        obj.engine=SimpleNamespace(_log=lambda *x:logs.append(x))
+        obj._audit_d1_nonorder('180640','PRICE_ABOVE_ALLOWED_CEILING',
+            'last=215500 ask=216000 ceiling=200500',
+            '2026-11-16T09:00:02+09:00')
+        obj._audit_d1_nonorder('180640','PRICE_ABOVE_ALLOWED_CEILING',
+            'repeat not another buy',
+            '2026-11-16T09:00:03+09:00')
+        obj._audit_d1_nonorder('180640','ENGINE_ENTRY_REJECTED',
+            '4 positions including pending buys limit reached',
+            '2026-11-16T09:00:03+09:00')
+        self.assertEqual(len(logs),2)
+        self.assertEqual(logs[0][1],
+                         'GMO_D1_NO_ORDER_PRICE_ABOVE_ALLOWED_CEILING')
+        self.assertIn('4 positions',logs[1][2])
+        self.assertTrue(all('BUY' not in str(x[:2]) for x in logs))
+
     def test_cw_scan_time_budget_is_shorter_than_its_whole_universe(self):
         import inspect
         import at_close_runner
