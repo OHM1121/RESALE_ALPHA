@@ -177,7 +177,7 @@ def fixture():
         return {"code":label+"_대기","frame":frame,"status":"WATCH_PENDING",
                 "market":code,"rsi20_live":34.5,"armed":True,
                 "price":12500,"touched_30":False,"bar_end":"2026-11-13T10:05:00+09:00"}
-    return {
+    payload = {
         "market_trend_watch":{
             "stock":[watch_for("TRENDSTOCK_삼성전자","005930","5m")],
             "coin":[watch_for("TRENDCOIN_비트코인","KRW-BTC","30m")]},
@@ -199,6 +199,26 @@ def fixture():
             "trend":{"ledger":cointrend,"research":{}}
         }
     }
+    # A current independent signal is also emitted by the shared MT journal.
+    # Deduplicate the repeated MT54 signal but preserve legacy MT43 signals
+    # attributed to AT/MA. They must appear ONLY in standalone Trend research.
+    for market,legacy_strategy,code in (
+            ("stock","at","005930"),("coin","ma","KRW-BTC")):
+        recent=payload["market_trend_research"][market][0]
+        recent["strategy"]="trend"
+        payload[market]["trend"]["research"]={"items":[dict(recent)]}
+        payload["market_trend_research"][market].append({
+            "id":f"MT43:SIG:{market}:{code}:30m:LEGACY",
+            "strategy":legacy_strategy,"tf":"30m","code":code,
+            "entry_mode":"MARKET_TREND","bought":False,
+            "entry_observed":True,"execution_mode":"SHADOW_UNFILLED",
+            "at":"2026-11-12T23:30:00+09:00","reason":"RSI30_VIRTUAL"})
+        payload["market_trend_research"][market].append({
+            "id":f"AT:SIG:{market}:{code}:5m:UNRELATED",
+            "strategy":"at","tf":"5m","code":code,
+            "entry_mode":"AT","bought":True,"reason":"AT_ONLY"})
+    return payload
+
 
 def put_pref(name,entries):
     contents=['<?xml version="1.0" encoding="utf-8" standalone="yes" ?>','<map>']
@@ -320,7 +340,7 @@ def fixtures():
         check_screen(label+"_executions",[label+"_매도","손절 기준 도달","09:30:00 KST"])
         tree=choose("연구자료")
         if strategy=="마켓트렌드":
-            check_screen(label+"_research",["마켓트렌드 RSI(20)"],scroll=0)
+            check_screen(label+"_research",["리서치 · 2"],scroll=0)
         else:
             check_screen(label+"_research",["리서치 · 1"],scroll=0)
         tree=choose("대시보드")
