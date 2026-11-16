@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 74
-            versionName '0.7.68-KIWOOM-WS-RESPONSIVENESS'
+            versionCode 75
+            versionName '0.7.69-COIN-TREND-RSI-FRESHNESS'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
