@@ -1889,6 +1889,13 @@ def _patched_gmo(self):
         return original_print(quote,volume,**kwargs)
     engine.paper_match=mode_scoped_match
     engine.paper_match_krx_print_proxy=mode_scoped_print
+    # Independent, read-only UI quote observation on the existing Kiwoom 0B
+    # callback. No orderbook, strategy, FOK or account path is changed.
+    try:
+        from stock_quote_truth_v066 import install_ui_quote_tap
+        install_ui_quote_tap(self.stock_runner)
+    except Exception as exc:
+        self._err('stock_quote_view_only_observer_v066',exc)
 
 
 def _patched_stop(self):
@@ -1961,6 +1968,11 @@ _install_ma_v061_packet(_core)
 # v062 new MA strategy-only dashboard/research packet and read-only legacy.
 from ma_v062_packet import install as _install_ma_v062_packet
 _install_ma_v062_packet(_core)
+
+# v066 display-only quote provenance is installed after all strategy packets.
+# It cannot modify engine SQLite or the existing live/paper order pathways.
+from stock_quote_truth_v066 import install as _install_stock_quote_truth_v066
+_install_stock_quote_truth_v066(_core)
 
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
