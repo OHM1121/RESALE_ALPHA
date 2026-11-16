@@ -63,7 +63,21 @@ def _put_plan_item(pieces,capacity,used,record,size):
     return pieces,used
 
 
-def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES):
+def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
+                progress_path=None):
+    progress=Path(progress_path).resolve() if progress_path else None
+    def announce(pct,stage,done=0,total=0,detail=''):
+        if progress is None:return
+        try:
+            tmp=progress.with_suffix(progress.suffix+'.tmp')
+            tmp.write_text(json.dumps({'percent':int(pct),'stage':stage,
+                'done':int(done),'total':int(total),
+                'detail':str(detail)[:170],
+                'updated_ms':int(time.time()*1000)},ensure_ascii=False),
+                encoding='utf8')
+            os.replace(tmp,progress)
+        except (OSError,TypeError,ValueError):pass
+    announce(4,'연구원장 검사',detail='스냅샷 대상 조사')
     if scope not in ("stock","coin","all"):
         raise ValueError("Research scope must be stock, coin or all")
     max_part_bytes=int(max_part_bytes)
@@ -88,6 +102,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
         or (p.is_file() and p.parent==root and p.name in shared_scores)),
         key=lambda p:p.relative_to(root).as_posix())
     if not originals:raise ValueError("No original research ledger files for "+scope)
+    announce(8,'연구원장 검사',0,len(originals),'원본 '+str(len(originals))+'개')
     if len(originals)>MAX_FILES:raise ValueError("Too many original research files")
     total=sum(p.stat().st_size for p in originals)
     if total>MAX_EXPANDED:raise ValueError("Research source exceeds 16GiB safety cap")
@@ -109,6 +124,8 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
         staged.mkdir()
         for serial,original in enumerate(originals):
             rel=original.relative_to(root).as_posix()
+            announce(10+int(45*serial/max(1,len(originals))),
+                     '원본 SQLite/WAL 스냅샷',serial,len(originals),rel)
             target=staged/rel
             if original.suffix.lower() in (".sqlite3",".sqlite",".db"):
                 tables=_db_snapshot(original,target)
@@ -144,6 +161,8 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
                     "size":len(blob),"kind":"report","tables":None,"fragments":[]}
             report_records[name]=record
             all_records[name]=record
+        announce(56,'분할 ZIP 구성',len(originals),len(originals),
+                 '원본 SHA 및 분할계획 계산')
         for record in all_records.values():
             _put_plan_item(pieces,capacity,used,record,record["size"])
         for record in all_records.values():
@@ -159,6 +178,9 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
         results=[]
         try:
             for i,entries in enumerate(pieces,1):
+                announce(60+int(25*(i-1)/max(1,len(pieces))),
+                         '분할 ZIP 기록',i-1,len(pieces),
+                         '파트 '+str(i)+'/'+str(len(pieces)))
                 name=f"{prefix}_PART_{i:03d}_OF_{len(pieces):03d}.zip"
                 intermediate=stage/name
                 with zipfile.ZipFile(intermediate,"w",compression=zipfile.ZIP_STORED,
@@ -175,6 +197,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
                         raise ValueError("Research ZIP member CRC failed")
                 results.append({"name":name,"path":str(folder/name),
                                 "bytes":size,"sha256":_sha256(intermediate)})
+            announce(88,'분할 ZIP 완료',len(results),len(results),'전체 파트 검증 후 저장')
             for item in results:
                 os.replace(stage/item["name"],folder/item["name"])
                 created.append(folder/item["name"])
@@ -183,6 +206,8 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES)
                 try:path.unlink()
                 except OSError:pass
             raise
+    announce(92,'분할 ZIP 검증 완료',len(results),len(results),
+             'Android 저장소 전송 준비')
     return json.dumps({"ok":True,"schema":SCHEMA,"scope":scope,
         "parts":len(results),"files":results,
         "source_files":len(source_records),"source_bytes":total,
