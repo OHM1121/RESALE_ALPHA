@@ -15,13 +15,13 @@ jobs:
     timeout-minutes: 75
     env:
       CI: 'true'
-      SOURCE: 'dbd293d55748391f6b760d7cb1c323589ddeeb31'
+      SOURCE: '46d935bb963d1eb86294662ed0fae8ecf1409a71'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.89_20261117'
       TAG: 'ARTITRADE-v0.7.89-20261117'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 'dbd293d55748391f6b760d7cb1c323589ddeeb31'
+          ref: '46d935bb963d1eb86294662ed0fae8ecf1409a71'
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -166,6 +166,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/ui_tests ARTITRADE_ANDROID/app/src/main/python
           python3 -m pip install -q requests websockets holidays
           export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v089-core"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v085_*.py' -q
