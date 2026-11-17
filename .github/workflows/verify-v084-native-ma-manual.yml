@@ -1,0 +1,37 @@
+name: ARTITRADE v084 native MA manual execution RED/GREEN
+on:
+  push:
+    branches: [ fix-artitrade-v084-native-ma-manual-20261118 ]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/test_v084_native_coin_manual.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_manual_paper_sell_v085.py'
+      - '.github/workflows/verify-v084-native-ma-manual.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Restore EXACT unchanged signed 82-module strategy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+              assert len(z.namelist())==82 and z.testzip() is None
+              z.extractall('/tmp/artitrade-v084-native')
+          PY
+      - name: Check native manual PAPER SELL, durable fills and UUID recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v084-native" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v084_native_coin_manual.py' -v
