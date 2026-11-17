@@ -322,6 +322,22 @@ def _topup_partial_stock(self,tick,shared_book):
                 desired=int(math.floor(budget/(ask*(1+FEE))))
                 if desired<1:continue
                 ceiling=two_ticks_max('stock',first)
+                # Scenario 2: only AFTER a genuine first BUY remains open,
+                # re-evaluate actual residual seed on a NEW fresh KRX 0D.
+                # Scenario 3: a missing/stale book returns above, leaving the
+                # original position and order untouched for the next 0B/0D.
+                # Use no virtual fill, no independent account and no chase.
+                from buy_execution_recovery_v082 import Intent
+                guard=Intent('ma','stock',code,str(p['id'])+':TOPUP',
+                             str(first),str(budget),str(FEE))
+                guard.attempts=1  # Original BUY evidence exists in fills.
+                decision=guard.quote({
+                    'symbol':code,'exchange_ms':int(observed_at.timestamp()*1000),
+                    'ask':int(ask),'bid':int(bid),'ask_size':int(asksize)
+                },int(now.timestamp()*1000))
+                if decision.get('action')!='PLACE':continue
+                desired=min(desired,int(Decimal(decision['qty'])))
+                if desired<1:continue
                 proof,_=shared_book.available(code,'KRX',now,int(ceiling),desired)
                 if proof is None or int(proof[0])!=int(ask):continue
                 qty=min(desired,int(proof[1]))
