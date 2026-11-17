@@ -93,7 +93,7 @@ jobs:
           assert "MA_PREWATCH_BEFORE_CLOSE_SECONDS=30" in policy
           assert "MA120_DOWN_TOLERANCE=Decimal('0.0099')" in policy
           import io,zipfile,base64
-          packed=base64.b64decode(''.join((p/'assets/strategy_v070'/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          packed=base64.b64decode(''.join((r/'assets/strategy_v070'/('part_%02d.txt'%i)).read_text() for i in range(22)))
           with zipfile.ZipFile(io.BytesIO(packed)) as z:
               original_gmo=z.read('d_gmo_runtime.py').decode()
               assert len(z.namelist())==82
