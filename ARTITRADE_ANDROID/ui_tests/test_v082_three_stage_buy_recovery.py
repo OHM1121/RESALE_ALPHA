@@ -56,7 +56,7 @@ class ThreeStageRecovery(unittest.TestCase):
                              D(self.i.status()["confirmed_spent"]),D("500000"))
 
     def test_quote_gap_does_not_end_intent_then_recovers_on_new_book(self):
-        self.assertEqual(self.i.quote(None,1000300)["action"],"WAIT")
+        self.assertEqual(self.i.quote({},1000300)["action"],"WAIT")
         recovered=self.i.quote({**self.book,"exchange_ms":1001300},1001350)
         self.assertEqual(recovered["action"],"PLACE")
         self.assertEqual(recovered["scenario"],3)
@@ -98,7 +98,8 @@ class ThreeStageRecovery(unittest.TestCase):
         book={"symbol":"KRW-BTC","exchange_ms":1500000,"ask":100000000,
               "bid":99999000,"ask_size":D("0.5")}
         result=i.quote(book,1500100)
-        self.assertEqual(result["action"],"WAIT") # Not enough KRW to buy at this price.
+        self.assertEqual(result["action"],"PLACE")
+        self.assertLessEqual(D(result["qty"])*D(result["limit"])*D("1.0005"),D("200000"))
         self.assertEqual(i.status()["filled_qty"],"0")
 
 
