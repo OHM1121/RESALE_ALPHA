@@ -1,0 +1,32 @@
+name: Audit GMO D-day candidate acceptance and pending UI with source slices
+on:
+  push:
+    branches: [ audit-artitrade-gmo-d-day-pending-20261117 ]
+    paths: [ '.github/workflows/audit-v083-gmo-d-day-details.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect exact original candidate scan and dates only
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          a=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((a/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              for name,spans in {
+                  'd_gmo_runtime.py':[(180,255),(306,355),(355,420),(760,800),(840,923),(1100,1130),(1150,1185)],
+                  'projectgmo/engine.py':[(70,155)]}.items():
+                  ls=z.read(name).decode().splitlines()
+                  for lo,hi in spans:
+                      print('SOURCE_WINDOW',name,lo,hi)
+                      for i in range(lo-1,min(hi,len(ls))):
+                          print(f'L{i+1:04d}',ls[i])
+                      print('END_SOURCE_WINDOW')
+          PY
