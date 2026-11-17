@@ -270,7 +270,7 @@ class TrendAudit(unittest.TestCase):
 
     def test_audit_release_increments_versioncode_for_in_place_upgrade(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf8')
-        self.assertRegex(gradle,r'versionCode (?:6[2-9]|[7-9][0-9])')
+        self.assertRegex(gradle,r'versionCode (?:6[2-9]|[7-9][0-9]|[1-9][0-9]{2,})')
         self.assertIn("versionName '0.7.95-POSTSALE-HIGH-CAUSAL-AI'", gradle)
 
     def test_trend_ui_is_not_mislabeled_as_actual_broker_account(self):
