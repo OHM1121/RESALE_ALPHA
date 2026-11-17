@@ -13,6 +13,16 @@ import android_emulator_smoke_v089 as base
 
 def main():
     base.main()
+    # Android 15's emulator launcher (Quickstep) occasionally cold-boots
+    # into its OWN ANR. Restart the app foreground without touching ledgers.
+    smoke.adb("shell","input","keyevent","KEYCODE_BACK",timeout=12,check=False)
+    smoke.adb("shell","am","start","-W","-n",
+        smoke.PACKAGE+"/"+smoke.ACTIVITY,timeout=60,check=False)
+    for _ in range(12):
+        if smoke.adb("shell","pidof",smoke.PACKAGE,
+                     timeout=10,check=False).strip():break
+        time.sleep(1)
+    time.sleep(3)
     request_id=str(uuid4())
     payload=json.dumps({
         "market":"coin","strategy":"ma","code":"KRW-ERA",
@@ -23,6 +33,7 @@ def main():
         "-a","com.artitrade.mobile.MANUAL_PAPER_SELL",
         "--es","request","'"+payload+"'",timeout=35,check=False)
     (smoke.BASE/"v084_manual_negative_dispatch.txt").write_text(result,encoding="utf-8")
+    print("V084_MANUAL_DISPATCH",result.strip(),flush=True)
     # Wait for the service's durable UUID result, not a synthetic completion.
     data=""
     for _ in range(15):
@@ -39,6 +50,18 @@ def main():
         time.sleep(1.0)
     (smoke.BASE/"v084_manual_negative_result.xml").write_text(data,encoding="utf-8")
     if "result_"+request_id not in data:
+        faults=smoke.adb("shell","run-as",smoke.PACKAGE,"cat",
+            "shared_prefs/artitrade_runtime_faults.xml",check=False,timeout=12)
+        services=smoke.adb("shell","dumpsys","activity","services",smoke.PACKAGE,
+            check=False,timeout=20)
+        logs=smoke.adb("logcat","-d","-v","brief",timeout=30,check=False)
+        (smoke.BASE/"v084_failed_manual_faults.xml").write_text(faults,encoding="utf8")
+        (smoke.BASE/"v084_failed_manual_services.txt").write_text(services,encoding="utf8")
+        (smoke.BASE/"v084_failed_manual_logcat.txt").write_text(logs[-25000:],encoding="utf8")
+        print("V084_MANUAL_RESULT_MISSING pid=",
+              smoke.adb("shell","pidof",smoke.PACKAGE,check=False).strip(),
+              "faults=",faults[-2500:],"services=",services[-1200:],
+              "logs=",logs[-2000:],flush=True)
         raise AssertionError("Manual negative request was not persisted by service")
     smoke.verify_no_fatal("v084_after_rejected_manual_exit")
     smoke.adb("shell","am","force-stop",smoke.PACKAGE)
