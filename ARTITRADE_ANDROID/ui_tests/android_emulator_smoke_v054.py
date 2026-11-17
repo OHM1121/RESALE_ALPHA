@@ -113,14 +113,30 @@ def choose(label,old=None,checks=4):
         tree=dump("scroll_to_"+label+"_"+str(i))
     raise AssertionError("Could not navigate to "+label+"; visible="+str(describe(tree)[-45:]))
 
-def check_screen(label,expected,scroll=2):
+def check_screen(label,expected,scroll=2,drawer=False):
     tree=dump(label)
     seen=list(expected)
     for i in range(scroll+1):
         seen=[word for word in seen if not contains(tree,word)]
         if not seen:return tree
         if i<scroll:
-            adb("shell","input","swipe","1050","900","1050","380","330")
+            if drawer:
+                # The settings panel is right-aligned and only dp(380) wide.
+                # The old fixed x=1050 swipe was OUTSIDE the drawer on
+                # 2340px-wide Android 15 and never scrolled the export bars.
+                # Target the actual right-hand ScrollView, not its dim scrim.
+                size=adb("shell","wm","size",check=False)
+                import re
+                found=re.search(r"(?:Override|Physical) size:\\s*(\\d+)x(\\d+)",size)
+                width=int(found.group(1)) if found else 1920
+                height=int(found.group(2)) if found else 1080
+                x=width-max(80,min(140,width//12))
+                y1=max(180,min(height-90,int(height*.82)))
+                y2=max(50,min(int(height*.26),y1-160))
+                adb("shell","input","swipe",str(x),str(y1),str(x),
+                    str(y2),"460")
+            else:
+                adb("shell","input","swipe","1050","900","1050","380","330")
             time.sleep(.4)
             tree=dump(label+"_scroll_"+str(i))
     raise AssertionError(label+" missing "+str(seen)+"; visible="+str(describe(tree)[-50:]))
@@ -321,7 +337,7 @@ def real_boot():
     if not opened:
         raise AssertionError("REAL_SETTINGS_DRAWER_NOT_OPENING_AFTER_RETRIES")
     check_screen("v076_export_progress_drawer",
-                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4)
+                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4,drawer=True)
     print("V076_RIGHT_DRAWER_EXPORT_PROGRESS_BARS_VISIBLE",flush=True)
     # Touch the dark scrim to the left of the right-aligned drawer.
     # Its close icon may be offscreen after scrolling the long drawer.
