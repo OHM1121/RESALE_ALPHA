@@ -1,0 +1,47 @@
+name: ARTITRADE v085 read-only original core and wiring audit
+on:
+  push:
+    branches: [ fix-artitrade-v085-manual-exit-research-gmo-display-20261117 ]
+    paths: [ '.github/workflows/artitrade-v085-audit.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect original source only, never write to user ledger
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,re,ast
+          from pathlib import Path
+          main=Path('ARTITRADE_ANDROID/app/src/main')
+          data=base64.b64decode(''.join((main/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(data))
+          print('MODULES:',','.join(z.namelist()))
+          rx=re.compile(r'(gmo|manual|force|stop|exit|sell|order|d\+1|after|15:30|15:40|08:00|calendar|scan|research|evidence|execute)',re.I)
+          for name in z.namelist():
+              if not name.endswith('.py'):continue
+              if not any(x in name.lower() for x in ['gmo','v19','upbit','live','bridge','core','ma']):
+                  continue
+              s=z.read(name).decode('utf-8')
+              print('===== FILE',name,len(s),'bytes',len(s.splitlines()),'lines =====')
+              try:
+                  code=ast.parse(s)
+                  for n in ast.walk(code):
+                      if isinstance(n,(ast.FunctionDef,ast.ClassDef,ast.AsyncFunctionDef)) and rx.search(n.name):
+                          print('FN',n.name,n.lineno,n.end_lineno)
+              except Exception as exc:print('AST ERROR',exc)
+              lines=s.splitlines()
+              hits=[i for i,ln in enumerate(lines) if re.search(
+                  r'force_sell|manual_sell|sell_manual|liquidat|def .*sell|def .*scan|def .*refresh|def .*run|def .*snapshot|def .*research|gmo.*signal|gmo.*fetch|after_market|aftermarket|NXT|15:30|08:00|time\(8|time\(15|d_day|event_date|entry_date|D_PLUS',ln,re.I)]
+              if 'gmo' in name.lower():
+                  for i in hits[:100]:
+                      print(f'HIT:{name}:{i+1}:{lines[i][:220]}')
+              else:
+                  for i in hits[:55]:
+                      print(f'HIT:{name}:{i+1}:{lines[i][:220]}')
+          PY
