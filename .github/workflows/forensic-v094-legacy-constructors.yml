@@ -1,0 +1,32 @@
+name: ARTITRADE v094 read-only coin MA heritage classes and stock pinned
+on:
+  push:
+    branches: [fix-artitrade-v094-forced-exits-ma-legacy-partial-chase-20261117]
+    paths: ['.github/workflows/forensic-v094-legacy-constructors.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            files=('coin_ma_engine.py','d_upbit.py','stock_ma_engine.py')
+            for name in files:
+              s=z.read(name).decode();l=s.splitlines()
+              print('FILE',name,'len',len(l))
+              for n in ast.walk(ast.parse(s)):
+                if isinstance(n,(ast.ClassDef,ast.FunctionDef,ast.AsyncFunctionDef)) and (isinstance(n,ast.ClassDef) or n.name in ('__init__','pinned_stocks','watched_codes','_connect','connect','process_book','_sell','_write_fill')):
+                  if isinstance(n,ast.ClassDef):print('CLASS',n.name,n.lineno,n.end_lineno)
+                  else:
+                    if n.end_lineno-n.lineno>170:continue
+                    print('METHOD',n.name,n.lineno,n.end_lineno)
+                    if n.name in ('__init__','pinned_stocks','watched_codes','connect','_connect'):
+                      for i in range(n.lineno-1,n.end_lineno):
+                        print('CODE',name,i+1,l[i][:270])
+          PY
