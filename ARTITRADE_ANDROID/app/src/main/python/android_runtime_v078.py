@@ -2097,12 +2097,18 @@ def _patched_gmo(self):
                                     float(fill["price"]),quote.at)
                         self.on_live_fill("stock",order.side,order.code,fill["qty"],
                                           order.limit,fill,order.purpose)
-                    except _core.LiveOrderNoFill:
-                        try:
-                            engine._cancel(order,"BROKER_FOK_NO_FILL",quote.at)
-                            engine.acknowledge_cancel(order.id,quote.at)
-                        except Exception:
-                            pass
+                    except _core.LiveOrderNoFill as nofill:
+                        # The original core treated EVERY FOK_NOT_FULL as an
+                        # authoritative zero-fill cancellation. Kiwoom may
+                        # have real PARTIAL fills on the matching order ID.
+                        # Preserve SUBMITTED and the broker journal, never
+                        # fake a cancel acknowledgement or retry into a
+                        # potentially existing physical broker position.
+                        engine._log(order.code,"BROKER_RECONCILIATION_REQUIRED",
+                            "order="+str(order.id)+" broker="+str(key)+
+                            " reason="+type(nofill).__name__+
+                            " state=SUBMITTED; no new BUY until order-ID reconciliation",
+                            quote.at)
                     except Exception as error:
                         self._err("gmo_live_order",error)
                         engine._log(order.code,"LIVE_ORDER_HALTED",
@@ -2160,6 +2166,11 @@ _core.Runtime._patch_gmo = _patched_gmo
 _core.Runtime._stock_at_ledger = _stock_at_ledger_v19
 _core.Runtime.hub_records = _hub_records_v078
 _core.Runtime.stop = _patched_stop
+
+# Verified kt00009 status watcher preserves real PARTIAL quantities and
+# distinguishes missing inquiry evidence from an actual FOK no-fill.
+from kiwoom_fill_reconcile_v082 import install as _install_kiwoom_fills_v082
+_install_kiwoom_fills_v082()
 
 # v0.7.59: integrity guard on *completed* reference candles. Reuses the
 # current original Upbit/KRX scanner and account-specific source ledgers.
