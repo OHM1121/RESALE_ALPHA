@@ -31,3 +31,23 @@ jobs:
         shell: bash
         run: |
           PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/v089-core" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_rsi_ma120_correct_frame.py' -v
+
+      - name: Check actual original stock execution-table schema for MA stage reconciliation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,re
+          from pathlib import Path
+          path=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          blob=base64.b64decode(''.join((path/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              for name in z.namelist():
+                  if not name.endswith('.py'):continue
+                  source=z.read(name).decode()
+                  if 'CREATE TABLE IF NOT EXISTS executions' in source or 'CREATE TABLE executions' in source:
+                      at=source.find('CREATE TABLE IF NOT EXISTS executions')
+                      if at<0:at=source.find('CREATE TABLE executions')
+                      print('EXECUTION_SCHEMA',name,source[at:at+550].replace('\\n',' '))
+                  if 'class StockMAService' in source:
+                      print('STOCK_MA_CORE',name,'has reason column ref',"'reason'" in source or 'reason TEXT' in source)
+          PY
