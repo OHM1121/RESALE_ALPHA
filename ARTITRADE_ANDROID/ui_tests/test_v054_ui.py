@@ -34,7 +34,7 @@ class V054Ui(TestCase):
         self.assertIn('renderTrendWatchPending()',UI)
         self.assertIn('market_trend_watch',UI)
         self.assertIn('RSI(20) ≤ 35',UI)
-        self.assertIn('RSI20 관측대기는 미주문',UI)
+        self.assertNotIn('RSI20 관측대기는 미주문',UI)
         self.assertIn('WATCH_PENDING',UI)
 
     def test_segregated_ledger_read_and_ai_path(self):
