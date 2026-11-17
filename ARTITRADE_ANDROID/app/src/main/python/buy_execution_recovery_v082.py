@@ -98,7 +98,9 @@ class Intent:
             now_ms=int(now_ms)
         except (TypeError,ValueError,KeyError):
             timestamp=0;now_ms=0
-        if not timestamp or not 0<=now_ms-timestamp<=3000:
+        # Exchange and local receive clocks may differ by <0.5s.
+        # Reject any larger future drift and all stale books.
+        if not timestamp or not -500<=now_ms-timestamp<=3000:
             self.saw_gap=True;self.state="WAIT_BOOK"
             return {"action":"WAIT","reason":"STALE_OR_FUTURE_EXCHANGE_BOOK"}
         ask,bid=map(_dec,(book.get("ask"),book.get("bid")))
