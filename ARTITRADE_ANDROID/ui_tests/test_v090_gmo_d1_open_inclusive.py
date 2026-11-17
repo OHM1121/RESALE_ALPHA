@@ -29,7 +29,7 @@ class GmoNov17OpenIncludesPrice(unittest.TestCase):
         from projectgmo.engine import Engine,Quote,d1_allowed_ceiling
         from projectgmo.selector import DSignal
         cls.Engine,cls.Quote=Engine,Quote
-        cls.ceiling=d1_allowed_ceiling
+        cls.ceiling=staticmethod(d1_allowed_ceiling)
         cls.DSignal=DSignal
 
     @classmethod
