@@ -1,0 +1,27 @@
+name: ARTITRADE XPL public 5m 30m 60m day Wilder RSI20 audit
+on:
+  push:
+    branches: [forensic-xpl-20261117-rsi20-four-frames]
+    paths: ['.github/workflows/forensic-xpl-20261117.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Calculate each independent XPL public frame without synthetic fills
+        env:
+          PYTHONPATH: ARTITRADE_ANDROID/app/src/main/python
+        run: python3 ARTITRADE_ANDROID/ui_tests/forensic_xpl_public_rsi_20261117.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ARTITRADE-XPL-20261117-RSI-FORENSICS
+          path: forensic-results/xpl_rsi20_20261117_085949.json
+          if-no-files-found: warn
+          retention-days: 30
