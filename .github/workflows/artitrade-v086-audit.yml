@@ -25,7 +25,7 @@ jobs:
               for name,targets in {
                  'd_upbit.py':['UpbitPaperRunner._ws','UpbitPaperRunner._v084_accept_tick','UpbitPaperRunner._v083_consume_ticks','UpbitPaperRunner._v083_refresh_subscriptions','UpbitPaperRunner._v084_ws_health'],
                  'd_live.py':['LivePaperRunner._reader','LivePaperRunner._connection','LivePaperRunner._realtime','LivePaperRunner._loop','LivePaperRunner._new_tick','LivePaperRunner._renew','LivePaperRunner._ws'],
-                 'd_gmo_runtime.py':['GMOService.snapshot','GMOService._snapshot','GMORuntime.snapshot','GMOPaperService.snapshot'],
+                 'd_gmo_runtime.py':['GMOService.snapshot','GMOService._snapshot','GMORuntime.snapshot','GMOPaperService.snapshot','GMOService.priority_watchlist','GMOService._record_priority_observation'],
               }.items():
                   src=z.read(name).decode();lines=src.splitlines()
                   tree=ast.parse(src)
