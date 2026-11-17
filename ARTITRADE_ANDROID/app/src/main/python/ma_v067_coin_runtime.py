@@ -564,7 +564,9 @@ def install():
         # silently rejected ALL legitimate +2% first-profit sells.
         # Retain the legacy-policy isolation: only reasons from the
         # exact v065 policy or the v067 second-bar guard may pass.
-        if row and not str(reason).startswith(('MA_V065_','MA_V067_')):
+        manual=(str(event_key or '').startswith('USER:') and
+                str(reason).startswith('사용자 가상 강제매도 '))
+        if row and not (str(reason).startswith(('MA_V065_','MA_V067_')) or manual):
             return False
         return previous_sell(self,c,p,desired,price,at,reason,event_key=event_key)
     ma.MACoinLedger._sell=scoped_sell
