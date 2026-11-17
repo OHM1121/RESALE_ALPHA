@@ -67,7 +67,7 @@ def two_ticks_max(market,first_fill_price,symbol=None,instrument_tick=None):
     price=first
     for _ in range(2):
         step=tick_size(market,price,symbol,instrument_tick)
-        if step is None:return None
+        if step is None or price%step!=0:return None
         price+=step
     return price
 
@@ -88,4 +88,6 @@ def qualified_topup(market,first_fill_price,ask,spent,
     if already_sold or not has_verified_buy or paid>=limit:return False
     ceiling=two_ticks_max(market,first,symbol,instrument_tick)
     if ceiling is None:return False
+    offered_tick=tick_size(market,offer,symbol,instrument_tick)
+    if offered_tick is None or offer%offered_tick!=0:return False
     return offer<=ceiling
