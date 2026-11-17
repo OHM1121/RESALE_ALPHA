@@ -119,6 +119,7 @@ public final class UnifiedVisualActivity extends Activity {
     private final java.util.Set<String> pendingTradeEvidence=java.util.Collections.newSetFromMap(
         new ConcurrentHashMap<String,Boolean>());
     private String cachedLocalRaw;
+    private String cachedLocalFileVersion="";
     private JSONObject cachedLocalParsed=new JSONObject();
     private boolean cachedLocalMeaningful;
     // One strategy having live rows must not suppress fallback for other
@@ -220,6 +221,7 @@ public final class UnifiedVisualActivity extends Activity {
         @Override public void run(){
             refresh(false);
             updateClock();
+            markUiVisible(true);
             main.postDelayed(this,REFRESH_MS);
         }
     };
@@ -249,6 +251,7 @@ public final class UnifiedVisualActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
+        ProcessHealthV087.install(this);
         restoreNavigation(state);
         try{
             getWindow().setStatusBarColor(PremiumUi.BG);
@@ -1242,18 +1245,37 @@ public final class UnifiedVisualActivity extends Activity {
                 JSONObject localRecords=new JSONObject();
                 try{
                     android.content.SharedPreferences lp=getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE);
-                    String raw=lp.getString("records","{}");
-                    reusedLocalRecords=cachedLocalRaw!=null
-                        &&(cachedLocalRaw==raw||cachedLocalRaw.equals(raw));
-                    if(reusedLocalRecords){
-                        localRecords=cachedLocalParsed;
-                        meaningfulLocalRecords=cachedLocalMeaningful;
+                    String fileVersion=LargeRecordStoreV087.version(this);
+                    if(!fileVersion.isEmpty()){
+                        reusedLocalRecords=fileVersion.equals(cachedLocalFileVersion);
+                        if(reusedLocalRecords){
+                            localRecords=cachedLocalParsed;
+                            meaningfulLocalRecords=cachedLocalMeaningful;
+                        }else{
+                            // Read a single private atomic file only on VERSION CHANGE.
+                            // No repeated XML SharedPreferences multi-MB string copies.
+                            localRecords=new JSONObject(LargeRecordStoreV087.read(this));
+                            meaningfulLocalRecords=meaningfulTree(localRecords);
+                            cachedLocalFileVersion=fileVersion;
+                            cachedLocalRaw=null;
+                            cachedLocalParsed=localRecords;
+                            cachedLocalMeaningful=meaningfulLocalRecords;
+                        }
                     }else{
-                        localRecords=new JSONObject(raw);
-                        meaningfulLocalRecords=meaningfulTree(localRecords);
-                        cachedLocalRaw=raw;
-                        cachedLocalParsed=localRecords;
-                        cachedLocalMeaningful=meaningfulLocalRecords;
+                        String raw=lp.getString("records","{}"); // legacy first boot
+                        reusedLocalRecords=cachedLocalRaw!=null
+                            &&(cachedLocalRaw==raw||cachedLocalRaw.equals(raw));
+                        if(reusedLocalRecords){
+                            localRecords=cachedLocalParsed;
+                            meaningfulLocalRecords=cachedLocalMeaningful;
+                        }else{
+                            localRecords=new JSONObject(raw);
+                            meaningfulLocalRecords=meaningfulTree(localRecords);
+                            cachedLocalRaw=raw;
+                            cachedLocalFileVersion="";
+                            cachedLocalParsed=localRecords;
+                            cachedLocalMeaningful=meaningfulLocalRecords;
+                        }
                     }
                     packet.put("local_records",localRecords);
                     packet.put("local_records_at",lp.getLong("updated_at",0L));
@@ -6881,12 +6903,66 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text("ARTITRADE 네이티브 안전모드",22);h.setTypeface(null,Typeface.BOLD);p.addView(h);TextView d=text(e==null?"알 수 없는 오류":e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),11);d.setTextColor(Color.rgb(255,145,155));d.setPadding(0,dp(10),0,dp(10));p.addView(d);p.addView(button("화면 다시 구성",true,()->{try{showShell();refresh(false);}catch(Throwable x){}}),new LinearLayout.LayoutParams(dp(240),dp(44)));root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
-    @Override protected void onResume(){super.onResume();ensureBackgroundServiceOnResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
-    @Override protected void onPause(){persistNavigation();main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
+    private void markUiVisible(boolean foreground){
+        getSharedPreferences("artitrade_ui_visibility_v087",MODE_PRIVATE)
+            .edit().putBoolean("foreground",foreground)
+            .putLong("at_ms",System.currentTimeMillis()).apply();
+    }
+    private void releaseHiddenUiSnapshots(){
+        // A hidden Activity has NO reason to pin every imported PC research
+        // row and its precomputed histories while the Python engine executes.
+        cachedLocalRaw=null;
+        cachedLocalFileVersion="";
+        cachedLocalParsed=new JSONObject();
+        cachedLocalMeaningful=false;
+        cachedHubGapRecords=new JSONObject();
+        tradeEvidenceCache.clear();
+        expandedTradeEvidenceKeys.clear();
+        pendingTradeEvidence.clear();
+        pendingResearchExport=null;
+        uiSnapshot=new UiSnapshot(new JSONObject(),new HashMap<>(),
+            new HashMap<>(),new HashMap<>(),new HashMap<>(),new HashMap<>(),
+            0L,0,false);
+    }
+    @Override public void onTrimMemory(int level){
+        super.onTrimMemory(level);
+        ProcessHealthV087.trim(this,"ui",level);
+        if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+            &&!isFinishing()){
+            releaseHiddenUiSnapshots();
+        }else if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW){
+            tradeEvidenceCache.clear();
+            expandedTradeEvidenceKeys.clear();
+            pendingTradeEvidence.clear();
+        }
+    }
+    @Override protected void onResume(){
+        super.onResume();
+        markUiVisible(true);
+        ensureBackgroundServiceOnResume();
+        main.removeCallbacks(periodic);
+        main.postDelayed(periodic,REFRESH_MS);
+        if(drawerOverlay!=null){
+            main.removeCallbacks(drawerProgressTicker);
+            main.post(drawerProgressTicker);
+        }
+    }
+    @Override protected void onPause(){
+        markUiVisible(false);
+        persistNavigation();
+        main.removeCallbacks(periodic);
+        main.removeCallbacks(drawerProgressTicker);
+        super.onPause();
+    }
     @Override protected void onDestroy(){
+        markUiVisible(false);
         uiDestroyed=true;
         main.removeCallbacksAndMessages(null);
         io.shutdownNow();
+        cachedLocalRaw=null;
+        cachedLocalFileVersion="";
+        cachedLocalParsed=new JSONObject();
+        tradeEvidenceCache.clear();
         super.onDestroy();
     }
 }
