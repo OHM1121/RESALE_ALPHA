@@ -36,7 +36,7 @@ def _verified(tick,clock):
     from d_minute_repair_fast import exchange_stamp_is_fresh
     if not exchange_stamp_is_fresh(tick[8],tick[6]):
         return None
-    if str(tick[0]).strip()=="" or float(tick[4])<=0:
+    if str(tick[0]).strip()=="" or float(tick[4])<=0 or float(tick[5])<=0:
         return None
     return t
 
@@ -131,19 +131,27 @@ class Preplanner:
                      and o.code==code and o.state in ACTIVE),None)
 
     def _clear_nxt(self,at):
+        if at.strftime("%H%M%S")<"085000":
+            return
         service=self.service;eng=service.engine
+        changed=False
         with self.lock,service._lock,eng._lock:
+            # Recover even after an app restart that lost transient preplan
+            # memory: the ORIGINAL order journal is the cancellation authority.
+            for o in tuple(eng.orders.values()):
+                if (o.side=="BUY" and o.purpose.startswith("D+1_V097_NXT_")
+                    and str(o.time)[:10]<=at.date().isoformat() and o.state in ACTIVE):
+                    eng._cancel(o,"NXT 08:50 session ended; KRX preplan separate",at.isoformat())
+                    if o.state=="CANCEL_REQUESTED":
+                        eng.acknowledge_cancel(o.id,at.isoformat())
+                    changed=True
             for (day,code,venue),plan in list(self.plans.items()):
-                if venue!="NXT" or day!=at.date().isoformat() or at.strftime("%H%M%S")<"085000":
+                if venue!="NXT" or day!=at.date().isoformat():
                     continue
-                for o in tuple(eng.orders.values()):
-                    if o.side=="BUY" and o.code==code and o.purpose.startswith("D+1_V097_NXT_") and o.state in ACTIVE:
-                        eng._cancel(o,"NXT 08:50 session ended; KRX preplan separate",at.isoformat())
-                        if o.state=="CANCEL_REQUESTED":
-                            eng.acknowledge_cancel(o.id,at.isoformat())
                 if plan["status"] not in ("COMPLETED","SOLD"):
                     plan["status"]="EXPIRED"
                 plan["closed_at"]=at.isoformat()
+            if changed:service._persist(True)
 
     def background(self):
         svc=self.service
@@ -180,23 +188,22 @@ class Preplanner:
             runner=self.runner
             subscribed=any(code+"_NX" in group for group in getattr(runner,"_subscribed_groups",{}).values())
             if not subscribed:return
+            # Pin the opening reference from the FIRST verified 0B even
+            # if 0D delivery follows it. Never replace it with a later print.
+            opener=plan.get("opening_price")
+            if opener is None:
+                if at.strftime("%H%M%S")>"080003":
+                    plan["status"]="OPEN_NOT_VERIFIED"
+                    return
+                opener=int(tick[4])
+                plan["opening_price"]=opener
+                plan["opening_source"]="FIRST_RECEIVED_NXT_0B_PREARMED"
             with service._lock:
                 book=service.priority_books.get((code,"NXT"))
             if not book or book[4].tzinfo is None or not -.5<=(at-book[4]).total_seconds()<=3:
                 return
             ask,bid,ask_qty,bid_qty=map(int,book[:4])
             if ask<=0 or bid<=0 or ask<bid or ask_qty<=0:return
-            # First verified received NXT print, NOT official KRX opening price.
-            opener=plan.get("opening_price")
-            if opener is None:
-                if at.strftime("%H%M%S")>"080003":
-                    # Without premarket's first genuine 0B, later prices
-                    # cannot be claimed as the 08:00 opening reference.
-                    plan["status"]="OPEN_NOT_VERIFIED"
-                    return
-                opener=int(tick[4])
-                plan["opening_price"]=opener
-                plan["opening_source"]="FIRST_RECEIVED_NXT_0B_PREARMED"
             last=int(tick[4]);qty_depth=max(1,ask_qty//2)
             self._step(plan,at,last,ask,qty_depth,venue)
         else:
@@ -255,10 +262,11 @@ class Preplanner:
                     plan["status"]="COMPLETED" if pos else "INSUFFICIENT_BUDGET"
                     return
                 if code+"|"+signal.entry_date in engine.used and pos is None:
-                    nxt_prior=self.plans.get(self._key(code,"NXT",at))
                     prior_own=any(o.code==code and o.side=="BUY" and
-                        o.purpose.startswith("D+1_V097_NXT_") for o in engine.orders.values())
-                    if not (venue=="KRX" and nxt_prior and prior_own):
+                        o.purpose.startswith("D+1_V097_NXT_") and
+                        o.state=="CANCELED" and str(o.time)[:10]==signal.entry_date
+                        for o in engine.orders.values())
+                    if not (venue=="KRX" and prior_own):
                         plan["status"]="BLOCKED";return
                 engine._v097_managed_codes.add(code)
                 active=engine._order(code,"BUY",f"D+1_V097_{venue}_S{scenario}",
@@ -333,7 +341,10 @@ def install(core):
             old_open=eng.open_entry
             old_resume=eng.resume_legacy_partial_buy
             old_window=eng._d1_buy_window_ok
-            eng._v097_managed_codes=set()
+            eng._v097_managed_codes={
+                o.code for o in eng.orders.values()
+                if o.side=="BUY" and o.purpose.startswith("D+1_V097_")
+            }
             def deny_native_open(code,entry_date,*a,**k):
                 signal=eng.signals.get(code)
                 if signal and signal.entry_date==entry_date:
