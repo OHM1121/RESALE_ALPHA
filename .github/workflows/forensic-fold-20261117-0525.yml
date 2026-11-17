@@ -1,4 +1,5 @@
 name: ARTITRADE read-only 2026-11-17 FOLD 05:25 vs 08:55 MA replay
+# Replay earlier original-signal opportunities and exact price-constraint intersection.
 on:
   push:
     branches: [ forensic-fold-20261117-0525-replay ]
