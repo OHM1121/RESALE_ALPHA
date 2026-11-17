@@ -83,7 +83,7 @@ class VerifiedRationale(unittest.TestCase):
             """)
             payload={'rsi20_live':29.78,'bar_key':'2026-11-17T10:00:00+09:00',
                      'execution_mode':'PAPER','target1':11000,'target2':11500}
-            c.execute("INSERT INTO positions VALUES(9,'5m','KRW-BTC',?,?,?,?,?)",
+            c.execute("INSERT INTO positions VALUES(9,'5m','KRW-BTC',?,?,?,?)",
                 (self.at.isoformat(),10000,json.dumps(payload),'TREND_OPEN'))
             c.execute("INSERT INTO executions VALUES(51,9,'BUY',10000,0.2,'MARKET_TREND_RSI20_BUY',?)",
                 (self.at.isoformat(),))
