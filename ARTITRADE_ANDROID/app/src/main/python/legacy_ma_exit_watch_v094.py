@@ -135,7 +135,32 @@ def install(core):
     if _INSTALLED:return
     import stock_ma_engine
     original_pinned=stock_ma_engine.StockMAService.pinned_stocks
+    original_watched=stock_ma_engine.StockMAService.watched_codes
     original_tick=stock_ma_engine.StockMAService.on_tick
+
+    def watched(self):
+        """Include preserved V061/V062 open holdings in the real tick dispatcher.
+
+        d_live gates StockMAService.on_tick behind watched_codes(), not
+        pinned_stocks(). Previously old MA holdings were subscribed but never
+        reached legacy_stock_exit, even with valid KRX 0B/0D and a reached TP1.
+        Cache historical SQLite lookups to avoid per-tick DB IO on the 200-slot
+        shared Kiwoom feed. Never create or migrate a historical position.
+        """
+        current=set(original_watched(self))
+        stamp=time.monotonic()
+        if (not hasattr(self,'_v094_legacy_watch_codes') or
+                stamp-getattr(self,'_v094_legacy_watch_at',0.0)>=2.0):
+            try:
+                previous=frozenset(legacy_stock_codes(self.market_store.root))
+                self._v094_legacy_watch_codes=previous
+                self._v094_legacy_watch_at=stamp
+            except (OSError,AttributeError,sqlite3.Error) as exc:
+                # Keep last verified open-owner list on a transient file error.
+                # No new BUY is possible in the historical SELL-only watcher.
+                self._v094_legacy_watch_error=type(exc).__name__+':'+str(exc)[:130]
+        return current|set(getattr(self,'_v094_legacy_watch_codes',()))
+
 
     def pinned(self):
         entries=dict(original_pinned(self))
@@ -165,5 +190,6 @@ def install(core):
         return result
 
     stock_ma_engine.StockMAService.pinned_stocks=pinned
+    stock_ma_engine.StockMAService.watched_codes=watched
     stock_ma_engine.StockMAService.on_tick=tick
     _INSTALLED=True
