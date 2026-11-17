@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 90
-            versionName '0.7.84-WS-TOP40-TICK-COALESCE'
+            versionCode 91
+            versionName '0.7.85-RESEARCH-GMO-PAPER'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
