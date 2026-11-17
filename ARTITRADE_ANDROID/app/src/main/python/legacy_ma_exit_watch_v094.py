@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+from contextlib import closing
 import threading
 import time
 from pathlib import Path
@@ -42,7 +43,9 @@ def _read_old_stock(root):
         if not path.is_file():
             continue
         try:
-            with _connect('file:'+path.resolve().as_posix()+'?mode=ro') as c:
+            with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',
+                                         uri=True,timeout=2)) as c:
+                c.row_factory=sqlite3.Row
                 for row in c.execute("""SELECT p.code,p.name,COALESCE(x.market,'') market
                     FROM positions p LEFT JOIN candidates x ON x.id=p.candidate_id
                     WHERE p.status='OPEN' AND p.qty>0"""):
