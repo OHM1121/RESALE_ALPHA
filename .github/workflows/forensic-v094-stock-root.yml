@@ -1,0 +1,24 @@
+name: ARTITRADE v094 root path and old MA sell lookups
+on:
+  push:
+    branches: [fix-artitrade-v094-forced-exits-ma-legacy-partial-chase-20261117]
+    paths: ['.github/workflows/forensic-v094-stock-root.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,zipfile,io
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for name in ('d_live.py','stock_ma_engine.py','d_upbit.py','android_live_bridge.py'):
+              l=z.read(name).decode().splitlines()
+              for i,s in enumerate(l):
+                if any(q in s for q in ('market_store =','market_store=','MarketStore(','StockMAService(','UpbitPaperRunner(','MACoinLedger(','CoinLedger(','def _pinned_stocks')):
+                  print(name,i+1,' '.join(x.strip() for x in l[max(0,i-3):min(len(l),i+4)])[:620])
+          PY
