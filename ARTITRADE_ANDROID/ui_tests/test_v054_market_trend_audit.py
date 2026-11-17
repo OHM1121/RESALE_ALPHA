@@ -276,7 +276,7 @@ class TrendAudit(unittest.TestCase):
     def test_trend_ui_is_not_mislabeled_as_actual_broker_account(self):
         ui=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text('utf8')
         self.assertNotIn('"trend".equals(strategy)?"● 독립 마켓트렌드":"● 전략별 계좌"',ui)
-        self.assertIn('"trend".equals(strategy)?"업비트 · KRW TOP40"',ui)
+        self.assertIn('"trend".equals(strategy)?"업비트 · KRW TOP50"',ui)
 
     def test_broker_overfill_cannot_exceed_requested_slot_budget(self):
         def impossible_fill(market,symbol,side,qty,price,event_key,reason):
