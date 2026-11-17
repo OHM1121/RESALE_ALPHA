@@ -19,6 +19,7 @@ import threading
 import time
 
 from partial_entry_v094 import tick_size, two_ticks_max
+from buy_execution_recovery_v082 import Intent
 from market_trend_wallet_v043 import STOCK_FEE, COIN_FEE, MIN_COIN_KRW, _coin_qty
 import market_trend_v043 as mt
 
@@ -109,7 +110,7 @@ class PreparedCoinTrend:
                 ask=_dec(ask);bid=_dec(bid);size=_dec(ask_size)
                 if ask is None or bid is None or size is None or ask<bid:
                     return None
-                return {"ask":ask,"ask_size":size,
+                return {"ask":ask,"bid":bid,"ask_size":size,
                         "book_timestamp_ms":int(observed_at.timestamp()*1000),
                         "instrument_tick":None}
             except (AttributeError,ValueError,TypeError,ArithmeticError,OverflowError):
@@ -126,7 +127,7 @@ class PreparedCoinTrend:
             if (not -.5<=age<=MAX_BOOK_AGE_SEC or ask is None or
                     bid is None or ask<bid or size is None):
                 return None
-            return {"ask":ask,"ask_size":size,"book_timestamp_ms":int(stamp*1000),
+            return {"ask":ask,"bid":bid,"ask_size":size,"book_timestamp_ms":int(stamp*1000),
                     "instrument_tick":book.get("sr_tick_size")}
         except (ValueError,TypeError,ArithmeticError):
             return None
@@ -296,6 +297,30 @@ class PreparedCoinTrend:
         ask=_dec(q.get("ask"))
         if ask is None or ask!=book["ask"]:
             return
+        # The verified crossing's fresh book, not the earlier RSI35 prewatch,
+        # anchors the one immutable +2 exchange-tick execution ceiling.
+        with self._lock:
+            recovery=plan.get("_v082_intent")
+            if recovery is None:
+                try:
+                    recovery=Intent("trend",self.market,code,barid,
+                        str(book["ask"]),str(plan.get("budget_won") or 0),
+                        str(STOCK_FEE if self.market=="stock" else COIN_FEE))
+                    plan["_v082_intent"]=recovery
+                except (ValueError,TypeError,ArithmeticError):
+                    plan["status"]="INVALID_RECOVERY_BUDGET"
+                    return
+        proof=recovery.quote({
+            "symbol":code,"exchange_ms":book["book_timestamp_ms"],
+            "ask":str(book["ask"]),"bid":str(book["bid"]),
+            "ask_size":str(book["ask_size"])},int(now.timestamp()*1000))
+        plan["recovery_state"]=recovery.status()
+        if proof["action"]!="PLACE":
+            if proof["action"]=="WAIT":
+                plan["status"]="WAIT_"+str(proof.get("reason") or "BOOK")
+            else:
+                plan["status"]="BUY_ORDER_PENDING_OR_UNCERTAIN"
+            return
         with self._lock:
             levels=tuple(_dec(x) for x in plan.get("scenarios",()))
             if len(levels)!=3 or any(v is None for v in levels):
@@ -347,8 +372,14 @@ class PreparedCoinTrend:
                 return
             # The existing wallet recalculates its own quantities, SQLite
             # cash, maximum holdings, same market book and filled provenance.
+            # Keep original wallet responsible for actual PAPER fills, fee
+            # reservation and depth; cap its FIRST order size by the worst
+            # verified permissible price. No synthetic liquidity is added.
+            planned_qty=float(proof["qty"])
+            safe_depth=min(float(q["ask_size"]),
+                           (2*planned_qty if self.market=="coin" else planned_qty))
             position,reason=co.standalone_wallet.buy(
-                self.market,frame,code,name,float(q["ask"]),float(q["ask_size"]),
+                self.market,frame,code,name,float(q["ask"]),safe_depth,
                 at,barid,live)
             if position is None:
                 plan["last_error"]=str(reason)
@@ -360,6 +391,21 @@ class PreparedCoinTrend:
             # Commit signal-latch / decision evidence ONLY after original
             # wallet reports an authoritative PAPER fill.
             co.journal.save_latch(self.market,code,frame,latch)
+            # This is an OBSERVATION of the already committed original
+            # execution, never a second order or duplicate position.
+            try:
+                original_order="MT54:"+self.market+":"+str(position.position_id)
+                recovery.submit(original_order,str(position.qty),
+                                book["book_timestamp_ms"])
+                recovery.acknowledge(original_order)
+                recovery.confirm_fill(original_order,
+                    "ORIGINAL_MT54_BUY:"+str(position.position_id),
+                    str(position.qty),str(position.entry))
+                recovery.terminal(original_order,"FILLED",broker_confirmed=True)
+                plan["recovery_state"]=recovery.status()
+            except (RuntimeError,ValueError,ArithmeticError) as evidence_error:
+                plan["recovery_audit_error"]=type(evidence_error).__name__+":"+
+                    str(evidence_error)[:100]
             co._positions[(self.market,"trend",frame,code)]=position
             co._ordered.add(key)
             co.watch.discard(self.market,code,frame)
