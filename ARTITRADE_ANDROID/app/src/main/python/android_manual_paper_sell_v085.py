@@ -193,15 +193,22 @@ def _trend(rt,req):
 def _gmo(rt,req):
     service=rt.stock_runner.gmo
     if service is None:raise ValueError('GMO_SERVICE_NOT_READY')
-    _stock_tick(rt,req['code'],'KRX') # no historical REST or NXT as exit proof
+    # A verified user-initiated PAPER SELL may place its original GMO
+    # pending intent on genuine 0D bid depth alone. A new 0B trade is
+    # required later by the ORIGINAL paper matcher to mark it FILLED;
+    # never create a synthetic print simply to bypass a quiet book.
     at=dt.datetime.now(KST)
+    if not (dt.time(9,0)<=at.time()<dt.time(15,30) or
+            dt.time(16,0)<=at.time()<dt.time(20,0)):
+        raise ValueError('GMO_MANUAL_KRX_SESSION_CLOSED')
     with service._lock,service.engine._lock:
         p=service.engine.positions.get(req['code'])
         if p is None or p.qty<=0:raise ValueError('GMO_POSITION_NOT_OPEN')
         if int(p.qty)!=int(req['expected_qty']):raise ValueError('GMO_QTY_CHANGED_RECONFIRM')
         book=service.last_book.get(req['code'])
         if (not book or len(book)<5
-            or (at-book[4]).total_seconds()>3
+            or book[4].tzinfo is None
+            or not -.5<=(at-book[4]).total_seconds()<=3
             or int(book[1])<=0 or int(book[3])<=0):
             raise ValueError('GMO_FRESH_KRX_BID_MISSING')
         reason='USER_SIM_MANUAL:'+req['request_id']
