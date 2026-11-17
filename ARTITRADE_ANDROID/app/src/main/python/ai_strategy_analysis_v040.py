@@ -666,6 +666,14 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
         except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
             trend["post_sale_tracking_v053"]={"ok":False,
                 "reason":"RESEARCH_SOURCE_UNAVAILABLE:"+type(exc).__name__}
+        # BUY/SELL grounds: exact original MT54 position and fill, never
+        # substitute Upbit best-ask provenance or current RSI for entry RSI.
+        try:
+            from trade_decision_basis_v095 import summary_for_ai
+            trend["verified_trade_basis_v095"]=summary_for_ai(root,market,"trend")
+        except (ImportError,OSError,sqlite3.Error,TypeError,ValueError) as exc:
+            trend["verified_trade_basis_v095"]={"verified_fills":0,
+                "read_only":True,"error":type(exc).__name__}
         return json.dumps(trend,ensure_ascii=False,allow_nan=False)
     if (market,strategy) not in SCOPES:
         return json.dumps({"ok":False,"message":"선택 전략 확인 필요"},ensure_ascii=False)
@@ -781,6 +789,15 @@ def analyze(root,market,strategy,research_json="{}",ledger_json="{}"):
     except (ImportError,OSError,sqlite3.Error,ValueError,TypeError) as exc:
         report["post_sale_tracking_v053"]={"ok":False,
             "reason":"RESEARCH_SOURCE_UNAVAILABLE:"+type(exc).__name__}
+    if strategy=="ma":
+        # Quantified original entry condition and executed exit-phase reason
+        # enter the MANUAL AI report, not a trading thread or broker account.
+        try:
+            from trade_decision_basis_v095 import summary_for_ai
+            report["verified_trade_basis_v095"]=summary_for_ai(root,market,"ma")
+        except (ImportError,OSError,sqlite3.Error,TypeError,ValueError) as exc:
+            report["verified_trade_basis_v095"]={"verified_fills":0,
+                "read_only":True,"error":type(exc).__name__}
     try:
         journal.save_report(root,market,strategy,report,now)
     except (OSError,sqlite3.Error,ValueError):
