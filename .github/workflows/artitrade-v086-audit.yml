@@ -1,0 +1,53 @@
+name: ARTITRADE v086 read-only socket, RSI and GMO source audit
+on:
+  push:
+    branches: [ fix-artitrade-v086-rsi-first-cross-feed-gmo-ledger-20261117 ]
+    paths: [ '.github/workflows/artitrade-v086-audit.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Original socket reader, Upbit subscription and GMO ledger (read only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import zipfile,base64,io,ast,re
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          archive=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(archive)) as z:
+              print('MODULES',len(z.namelist()))
+              for name,targets in {
+                 'd_upbit.py':['UpbitPaperRunner._ws','UpbitPaperRunner._v084_accept_tick','UpbitPaperRunner._v083_consume_ticks','UpbitPaperRunner._v083_refresh_subscriptions','UpbitPaperRunner._v084_ws_health'],
+                 'd_live.py':['LivePaperRunner._reader','LivePaperRunner._connection','LivePaperRunner._realtime','LivePaperRunner._loop','LivePaperRunner._new_tick','LivePaperRunner._renew','LivePaperRunner._ws'],
+                 'd_gmo_runtime.py':['GMOService.snapshot','GMOService._snapshot','GMORuntime.snapshot','GMOPaperService.snapshot'],
+              }.items():
+                  src=z.read(name).decode();lines=src.splitlines()
+                  tree=ast.parse(src)
+                  funcs=[]
+                  for n in ast.walk(tree):
+                      if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in {x.split('.')[-1] for x in targets}:
+                          funcs.append(n)
+                  print('FILE',name,'CLASSES',[(n.name,n.lineno) for n in tree.body if isinstance(n,ast.ClassDef)])
+                  for n in sorted(funcs,key=lambda f:f.lineno):
+                      context=next((node.name for node in tree.body if isinstance(node,ast.ClassDef) and n in node.body),'module')
+                      if not any(t in (context+'.'+n.name) for t in targets):continue
+                      print('METHOD',name,context+'.'+n.name,n.lineno,n.end_lineno)
+                      limit=170 if n.name in ('_ws','snapshot') else 115
+                      for i in range(n.lineno-1,min(n.end_lineno,n.lineno-1+limit)):
+                          print(f'SRC:{name}:{i+1}: {lines[i][:270]}')
+                  if name=='d_live.py':
+                      hints=re.compile('read|recv|ping|pong|refresh|REG|REAL|queue|source',re.I)
+                      for n in ast.walk(tree):
+                          if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and hints.search(n.name):
+                              print('PROBE_FN',n.name,n.lineno,n.end_lineno)
+                  if name=='d_gmo_runtime.py':
+                      for i,ln in enumerate(lines):
+                          if re.search(r'def snapshot|unrealized|holding|buy_amount|executions|source.*0B',ln,re.I):
+                              print('GMO_HIT',i+1,ln[:200])
+          PY
