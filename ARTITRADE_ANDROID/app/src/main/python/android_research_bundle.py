@@ -63,6 +63,54 @@ def _put_plan_item(pieces,capacity,used,record,size):
     return pieces,used
 
 
+
+def _deflated_bytes(source: Path, offset: int, size: int) -> int:
+    """Measure actual raw DEFLATE bytes without holding sensitive DB in RAM."""
+    import zlib
+    obj=zlib.compressobj(level=6,method=zlib.DEFLATED,wbits=-15)
+    total=0
+    with source.open("rb") as stream:
+        stream.seek(offset)
+        remaining=size
+        while remaining:
+            data=stream.read(min(1024*1024,remaining))
+            if not data:raise IOError("Snapshot changed during compression planning")
+            remaining-=len(data)
+            total+=len(obj.compress(data))
+    return total+len(obj.flush())
+
+
+def _put_compressed_error_item(pieces,used,capacity,record,source,limit):
+    """Pack independently decodable ZIP pieces by measured compressed bytes.
+
+    This avoids splitting a 2GB highly-compressible database into unnecessary
+    500MB RAW parts: only the actual resulting compressed part size matters.
+    Each source fragment has the same lossless index schema as RESEARCH bundles.
+    """
+    size=record["size"]
+    raw_chunk=min(100_000_000,max(16_384,capacity//2))
+    offset=0
+    index=0
+    while offset<size or (size==0 and index==0):
+        amount=min(raw_chunk,size-offset) if size else 0
+        predicted=_deflated_bytes(source,offset,amount)
+        # Header+descriptor+entry central-dir overhead is covered by reserve.
+        if predicted>capacity:
+            raise ValueError("Compressed fragment exceeds part capacity")
+        if used[-1]+predicted>capacity:
+            pieces.append([]);used.append(0)
+        entry=(record["path"] if size<=raw_chunk else
+               f'fragments/{record["serial"]:05d}/{index:05d}.bin')
+        fragment={"part":len(pieces),"entry":entry,"offset":offset,
+                  "size":amount}
+        record["fragments"].append(fragment)
+        pieces[-1].append((record["path"],fragment))
+        used[-1]+=predicted
+        offset+=amount
+        index+=1
+    return pieces,used
+
+
 def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 progress_path=None, bundle_kind="research", native_errors_json=None):
     progress=Path(progress_path).resolve() if progress_path else None
@@ -189,7 +237,11 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
         announce(56,'분할 ZIP 구성',len(originals),len(originals),
                  '원본 SHA 및 분할계획 계산')
         for record in all_records.values():
-            _put_plan_item(pieces,capacity,used,record,record["size"])
+            if bundle_kind=="errors":
+                _put_compressed_error_item(pieces,used,capacity,record,
+                                           staged/record["path"],max_part_bytes)
+            else:
+                _put_plan_item(pieces,capacity,used,record,record["size"])
         for record in all_records.values():
             record.pop("serial",None)
         index={"schema":SCHEMA,"scope":scope,"bundle_kind":bundle_kind,
@@ -209,7 +261,10 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                          '파트 '+str(i)+'/'+str(len(pieces)))
                 name=f"{prefix}_PART_{i:03d}_OF_{len(pieces):03d}.zip"
                 intermediate=stage/name
-                with zipfile.ZipFile(intermediate,"w",compression=zipfile.ZIP_STORED,
+                compression=(zipfile.ZIP_DEFLATED if bundle_kind=="errors"
+                             else zipfile.ZIP_STORED)
+                with zipfile.ZipFile(intermediate,"w",compression=compression,
+                                     compresslevel=6 if bundle_kind=="errors" else None,
                                      allowZip64=True) as z:
                     z.writestr("analysis/bundle_index.json",encoded)
                     for rel,fragment in entries:
