@@ -1,0 +1,38 @@
+name: ARTITRADE v0.8.1 stock MarketTrend three KRX price plans and legacy coin regression
+on:
+  push:
+    branches: [fix-artitrade-v081-stock-trend-three-plans-20261117]
+    paths:
+      - '.github/workflows/verify-v081-stock-trend.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v081_stock_trend_three_plans.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  original-paper-wallet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify 81 archived original modules and MT54 wallet
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,io,zipfile,hashlib
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            assert z.testzip() is None and len(z.namelist())==82
+            z.extractall('/tmp/v081-original')
+          print('ORIGINAL_GMO_STRATEGY_SHA256',hashlib.sha256(data).hexdigest())
+          PY
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/v081-original"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v081_stock_trend_three_plans.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v099_coin_trend_preplan.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v080_gmo_early_preflight.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_trend_topup.py' -v
