@@ -19,7 +19,7 @@ import threading
 import time
 
 from partial_entry_v094 import tick_size, two_ticks_max
-from market_trend_wallet_v043 import COIN_FEE, MIN_COIN_KRW, _coin_qty
+from market_trend_wallet_v043 import STOCK_FEE, COIN_FEE, MIN_COIN_KRW, _coin_qty
 import market_trend_v043 as mt
 
 _INSTALLED=False
@@ -34,32 +34,41 @@ def _dec(v):
     except (ValueError,TypeError,InvalidOperation):
         return None
 
-def _limits(first,symbol,instrument_tick=None):
+def _limits(first,symbol,instrument_tick=None,market="coin"):
     p=_dec(first)
-    if p is None or symbol in ("KRW-USDT","KRW-USDC"):
+    if market not in ("coin","stock"):return ()
+    if p is None or (market=="coin" and symbol in ("KRW-USDT","KRW-USDC")):
         return ()
-    tick=tick_size("coin",p,symbol,instrument_tick)
+    tick=tick_size(market,p,symbol,instrument_tick)
     if tick is None or p%tick:return ()
     second=p+tick
-    third=two_ticks_max("coin",p,symbol,instrument_tick)
+    third=two_ticks_max(market,p,symbol,instrument_tick)
     if third is None:return ()
     return (p,second,third)
 
-def _qty_by_level(budget,ask_size,limits):
+def _qty_by_level(budget,ask_size,limits,market="coin"):
     money=_dec(budget);depth=_dec(ask_size)
-    if money is None:return (D(0),D(0),D(0))
-    if depth is None:return (D(0),D(0),D(0))
+    if money is None or depth is None or len(limits)!=3:
+        return (D(0),D(0),D(0))
+    if market not in ("stock","coin"):
+        return (D(0),D(0),D(0))
     result=[]
+    fee=STOCK_FEE if market=="stock" else COIN_FEE
     for price in limits:
-        max_cost=money/(price*(D(1)+D(str(COIN_FEE))))
-        quantity=_coin_qty(min(depth*D(".5"),max_cost))
-        if quantity<0:quantity=D(0)
-        if quantity*price<D(str(MIN_COIN_KRW)):quantity=D(0)
+        max_cost=money/(price*(D(1)+D(str(fee))))
+        if market=="stock":
+            quantity=D(max(0,min(int(depth),int(max_cost))))
+        else:
+            quantity=_coin_qty(min(depth*D(".5"),max_cost))
+            if quantity<0:quantity=D(0)
+            if quantity*price<D(str(MIN_COIN_KRW)):quantity=D(0)
         result.append(quantity)
     return tuple(result)
 
 class PreparedCoinTrend:
-    def __init__(self,coordinator):
+    def __init__(self,coordinator,market="coin"):
+        if market not in ("stock","coin"):raise ValueError("unknown market")
+        self.market=market
         self.co=coordinator
         self._lock=threading.RLock()
         self._plans={}
@@ -75,11 +84,36 @@ class PreparedCoinTrend:
         if v is not None and now-v[0]<1.0:
             return v[1]
         wallet=self.co.standalone_wallet
-        account=wallet.allocation("coin",frame)
+        account=wallet.allocation(self.market,frame)
         self._cache_accounts[frame]=(now,account)
         return account
 
     def _quote_mark(self,symbol):
+        if self.market=="stock":
+            runner=self.co.rt.stock_runner
+            if runner is None:return None
+            identity=(getattr(runner,"market_map",{}) or {}).get(symbol)
+            if not identity or identity[0] not in ("KOSPI","KOSDAQ"):
+                return None
+            depth=getattr(getattr(runner,"engine",None),"book",None)
+            if depth is None:return None
+            try:
+                with depth._lock:
+                    raw=depth._items.get((symbol,"KRX"))
+                if raw is None or len(raw)<4:return None
+                ask,bid,ask_size,observed_at=raw[:4]
+                now=dt.datetime.now(mt.KST)
+                if (observed_at.tzinfo is None or
+                    not -.5<=(now-observed_at).total_seconds()<=MAX_BOOK_AGE_SEC):
+                    return None
+                ask=_dec(ask);bid=_dec(bid);size=_dec(ask_size)
+                if ask is None or bid is None or size is None or ask<bid:
+                    return None
+                return {"ask":ask,"ask_size":size,
+                        "book_timestamp_ms":int(observed_at.timestamp()*1000),
+                        "instrument_tick":None}
+            except (AttributeError,ValueError,TypeError,ArithmeticError,OverflowError):
+                return None
         coin=self.co.rt.coin_runner
         if coin is None:return None
         with coin._lock:
@@ -107,7 +141,7 @@ class PreparedCoinTrend:
             if not math.isfinite(val) or val<0 or val>35:return None
         except (ValueError,TypeError):return None
         with self.co.lock:
-            if symbol not in self.co._candidates["coin"]:return None
+            if symbol not in self.co._candidates[self.market]:return None
         try:finish=dt.datetime.fromisoformat(barid)
         except ValueError:return None
         if finish.tzinfo is None or now>=finish or (finish-now).total_seconds()>mt.FRAME_SECS[frame]:
@@ -140,16 +174,16 @@ class PreparedCoinTrend:
         with self._lock:
             plan["budget_won"]=max(0,budget)
             if q is None:
-                plan["status"]="WAIT_FRESH_UPBIT_BOOK"
+                plan["status"]="WAIT_FRESH_BOOK"
                 return plan
-            levels=_limits(q["ask"],symbol,q.get("instrument_tick"))
+            levels=_limits(q["ask"],symbol,q.get("instrument_tick"),self.market)
             if len(levels)!=3:
                 plan["status"]="PRICE_TICK_UNVERIFIED"
                 return plan
             plan["anchor_price"]=str(levels[0])
             plan["scenarios"]=tuple(str(x) for x in levels)
             plan["precomputed_qty"]=tuple(str(x) for x in
-                                            _qty_by_level(budget,q["ask_size"],levels))
+                                            _qty_by_level(budget,q["ask_size"],levels,self.market))
             plan["book_timestamp_ms"]=q["book_timestamp_ms"]
             plan["book_ask_size"]=str(q["ask_size"])
             plan["updated_at"]=now.isoformat()
@@ -161,8 +195,11 @@ class PreparedCoinTrend:
         if now.tzinfo is None:raise ValueError("timezone required")
         co=self.co
         if co.stop_event.is_set():return []
-        if co.standalone_wallet._is_live("coin"):return []
-        raw=co.watch.snapshot("coin")
+        if co.standalone_wallet._is_live(self.market):return []
+        if self.market=="stock":
+            from krx_session_v041 import is_regular_open
+            if not is_regular_open(now):return []
+        raw=co.watch.snapshot(self.market)
         prepared=[]
         for r in raw:
             try:rsi=float(r.get("rsi20_live"))
@@ -170,7 +207,7 @@ class PreparedCoinTrend:
             if not math.isfinite(rsi) or rsi>35:continue
             try:p=self._setup_plan(r,now)
             except Exception as exc:
-                co._last_fetch_error["coin"]="MT99_PREPLAN:"+type(exc).__name__
+                co._last_fetch_error[self.market]="MT99_PREPLAN:"+type(exc).__name__
                 continue
             if p is not None:prepared.append(p)
         if time.monotonic()-self._last_cleanup>5:
@@ -192,7 +229,7 @@ class PreparedCoinTrend:
             if len(self._last_skip)>1500:
                 self._last_skip={key:value for key,value in self._last_skip.items()
                                  if mono-value<90}
-        self.co._record_entry_block("coin",code,frame,barid,
+        self.co._record_entry_block(self.market,code,frame,barid,
                                    "MT99_"+reason,rsi)
 
     def _candidate_decision(self,plan,now):
@@ -202,20 +239,25 @@ class PreparedCoinTrend:
         if now>=finish or (finish-now).total_seconds()>mt.FRAME_SECS[frame]:
             plan["status"]="EXPIRED"
             return
-        key=("coin",code,frame,barid)
+        # Stock keeps the original KRX 12-to-7-seconds-before-close entry
+        # decision gate; preflight itself never creates a BUY.
+        if self.market=="stock" and not mt.preclose_due(now,finish,frame,"stock"):
+            return
+        key=(self.market,code,frame,barid)
         if key in co._ordered:return
         # An earlier rejected/filled/sold status is not a fresh BUY signal.
         if plan["status"] in ("FILLED","STOP_LOCK","ALREADY_OWNED",
                                "FRAME_FULL","BUDGET_UNAVAILABLE","BROKER_UNCERTAIN"):
             return
         with co.lock:
-            if code not in co._candidates["coin"]:return
-            quote_record=co._quotes["coin"].get(code)
+            if code not in co._candidates[self.market]:return
+            quote_record=co._quotes[self.market].get(code)
         if quote_record is None:
             return
         trade,received=quote_record
         age=time.monotonic()-received
-        if not -.5<=age<=MAX_TRADE_AGE_SEC:
+        max_age=3.0 if self.market=="stock" else MAX_TRADE_AGE_SEC
+        if not -.5<=age<=max_age:
             plan["status"]="STALE_TRADE"
             return
         # A quote+book pair is evaluated once. 40 candidates every 160ms
@@ -226,7 +268,7 @@ class PreparedCoinTrend:
         if plan.get("_last_seen_market_sample")==observed_key:
             return
         plan["_last_seen_market_sample"]=observed_key
-        rows=co._closed_series("coin",code,frame,finish)
+        rows=co._closed_series(self.market,code,frame,finish)
         if not rows:
             self._emit_skip(code,frame,barid,"COMPLETED_BARS_MISSING")
             return
@@ -240,15 +282,15 @@ class PreparedCoinTrend:
             return
         live=mt.rsi20(closes,trade)
         if live is None or live>30:return
-        if co.journal.stop_reentry_blocked("coin",code,now) or co.standalone_wallet.stop_reentry_blocked("coin",code,now):
+        if co.journal.stop_reentry_blocked(self.market,code,now) or co.standalone_wallet.stop_reentry_blocked(self.market,code,now):
             plan["status"]="STOP_LOCK"
             self._emit_skip(code,frame,barid,"STOP_REENTRY_LOCK",live)
             return
         # A live RSI reading below 30 is NOT proof of executable liquidity.
-        q=co._quote("coin",code)
+        q=co._quote(self.market,code)
         book=self._quote_mark(code)
         if q is None or book is None:
-            plan["status"]="WAIT_FRESH_UPBIT_BOOK"
+            plan["status"]="WAIT_FRESH_BOOK"
             self._emit_skip(code,frame,barid,"VERIFIED_BOOK_MISSING",live)
             return
         ask=_dec(q.get("ask"))
@@ -259,12 +301,12 @@ class PreparedCoinTrend:
             if len(levels)!=3 or any(v is None for v in levels):
                 # Preflight did not yet see a real book. Build it now before
                 # submitting; the original wallet still rechecks everything.
-                levels=_limits(ask,code,book.get("instrument_tick"))
+                levels=_limits(ask,code,book.get("instrument_tick"),self.market)
                 if len(levels)!=3:return
                 plan["anchor_price"]=str(levels[0])
                 plan["scenarios"]=tuple(str(x) for x in levels)
                 plan["precomputed_qty"]=tuple(str(x) for x in _qty_by_level(
-                    plan.get("budget_won",0),book["ask_size"],levels))
+                    plan.get("budget_won",0),book["ask_size"],levels,self.market))
                 plan["book_timestamp_ms"]=book["book_timestamp_ms"]
             plan["locked"]=True
         scenario=next((i+1 for i,limit in enumerate(levels) if ask<=limit),0)
@@ -283,27 +325,30 @@ class PreparedCoinTrend:
         try:
             # A signal is strictly the ORIGINAL first 30 cross. A prepared
             # RSI35 watch never authorizes an order by itself.
-            latch=co.journal.latch("coin",code,frame)
+            latch=co.journal.latch(self.market,code,frame)
             if not latch.offer(barid,live):
                 plan["status"]="SIGNAL_NOT_ARMED"
                 return
-            if co.standalone_wallet.owned("coin",code):
+            if co.standalone_wallet.owned(self.market,code):
                 plan["status"]="ALREADY_OWNED"
                 return
-            if co.standalone_wallet._is_live("coin"):
+            if co.standalone_wallet._is_live(self.market):
                 plan["status"]="BROKER_UNCERTAIN"
                 return
-            name=str(co._candidates["coin"][code][1])
+            name=str(co._candidates[self.market][code][1])
             # Re-read the current decision clock at commit time. A test
             # fixture may inject the same KST clock; production uses the
             # actual wall clock, never an expired stored watch timestamp.
             at=(co._decision_clock() if hasattr(co,"_decision_clock")
                 else dt.datetime.now(mt.KST))
             if at>=finish or co.stop_event.is_set():return
+            if self.market=="stock" and not mt.preclose_due(at,finish,frame,"stock"):
+                plan["status"]="ENTRY_WINDOW_EXPIRED"
+                return
             # The existing wallet recalculates its own quantities, SQLite
             # cash, maximum holdings, same market book and filled provenance.
             position,reason=co.standalone_wallet.buy(
-                "coin",frame,code,name,float(q["ask"]),float(q["ask_size"]),
+                self.market,frame,code,name,float(q["ask"]),float(q["ask_size"]),
                 at,barid,live)
             if position is None:
                 plan["last_error"]=str(reason)
@@ -314,18 +359,19 @@ class PreparedCoinTrend:
                 return
             # Commit signal-latch / decision evidence ONLY after original
             # wallet reports an authoritative PAPER fill.
-            co.journal.save_latch("coin",code,frame,latch)
-            co._positions[("coin","trend",frame,code)]=position
+            co.journal.save_latch(self.market,code,frame,latch)
+            co._positions[(self.market,"trend",frame,code)]=position
             co._ordered.add(key)
-            co.watch.discard("coin",code,frame)
+            co.watch.discard(self.market,code,frame)
             plan["status"]="FILLED";plan["filled"]=True
             plan["filled_at"]=at.isoformat()
             plan["fill_price"]=float(position.entry)
             plan["filled_qty"]=float(position.qty)
-            co.journal.event("MT54:SIG:coin:"+code+":"+frame+":"+barid,
-                "coin","trend",frame,code,
+            co.journal.event("MT54:SIG:"+self.market+":"+code+":"+frame+":"+barid,
+                self.market,"trend",frame,code,
                 "ACTUAL" if position.execution_mode=="LIVE" else "PAPER",
-                "MT99_PREPARED_S"+str(scenario)+"_BOUGHT",
+                ("MT081_STOCK_PREPARED_S" if self.market=="stock" else
+                 "MT99_PREPARED_S")+str(scenario)+"_BOUGHT",
                 price=float(position.entry),rsi20_live=live,
                 payload={"scenario":scenario,"preplan_anchor":plan.get("anchor_price"),
                          "max_price":str(levels[-1]),"verified_book_ms":book["book_timestamp_ms"],
@@ -342,7 +388,10 @@ class PreparedCoinTrend:
         now=now or dt.datetime.now(mt.KST)
         if now.tzinfo is None:raise ValueError("timezone required")
         if self.co.stop_event.is_set():return
-        if self.co.standalone_wallet._is_live("coin"):return
+        if self.co.standalone_wallet._is_live(self.market):return
+        if self.market=="stock":
+            from krx_session_v041 import is_regular_open
+            if not is_regular_open(now):return
         with self._lock:
             selected=[p for p in self._plans.values()
                       if p["status"] not in ("FILLED","EXPIRED","STOP_LOCK",
@@ -354,7 +403,7 @@ class PreparedCoinTrend:
             if self.co.stop_event.is_set():break
             try:self._candidate_decision(p,now)
             except Exception as e:
-                self.co._last_fetch_error["coin"]="MT99_FAST:"+type(e).__name__
+                self.co._last_fetch_error[self.market]="MT_FAST:"+type(e).__name__
 
     def _loop(self):
         c=self.co
@@ -368,7 +417,7 @@ class PreparedCoinTrend:
                     self.prepare(now)
                 self.evaluate(now)
             except Exception as e:
-                c._last_fetch_error["coin"]="MT99_WORKER:"+type(e).__name__
+                c._last_fetch_error[self.market]="MT_WORKER:"+type(e).__name__
             c.stop_event.wait(FAST_POLL_SEC)
 
     def snapshot(self):
