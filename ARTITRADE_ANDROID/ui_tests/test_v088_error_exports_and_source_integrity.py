@@ -98,6 +98,41 @@ class ScopedErrorExportTests(unittest.TestCase):
         for item in resp['files']:
             self.assertLessEqual(item['bytes'],max_part_bytes)
 
+    def test_ma_snt_first_profit_and_missing_high_fail_closed_without_relaxing_policy(self):
+        from datetime import datetime,timezone,timedelta
+        from decimal import Decimal
+        import ast
+        import ma_v067_policy as policy
+        now=datetime(2026,11,17,9,6,tzinfo=timezone(timedelta(hours=9)))
+        self.assertEqual(policy.up_targets(Decimal('8.18'),'5m')[0],Decimal('8.3436'))
+        state=policy.initial_up_exit_state('5m')
+        _,wanted,reason=policy.up_exit(state,Decimal('8.40'),Decimal('8.18'),
+                                       Decimal('200'),Decimal('200'),now)
+        self.assertEqual(wanted,Decimal('20.00'))
+        self.assertEqual(reason,'MA_V065_UP_FIRST_10PCT')
+        source=(SRC/'app/src/main/python/ma_v067_coin_runtime.py').read_text()
+        self.assertIn("str(reason).startswith(('MA_V065_','MA_V067_'))",source)
+        self.assertIn("MA_BOOK_KEYERROR_SOURCE_V088",source)
+        self.assertIn("if elapsed-last.get(sig,0)>180",source)
+        tree=ast.parse(source)
+        install=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='install')
+        guard=next(n for n in install.body if isinstance(n,ast.FunctionDef) and
+                   n.name=='verified_or_fail_closed_range')
+        def native_verified(f):
+            if f.get('ma_v061_kind'):return True
+            return Decimal(str(f['high']))>=Decimal(str(f['low']))
+        context={'previous_range':native_verified}
+        exec(compile(ast.Module(body=[guard],type_ignores=[]),'MA_SAFE_RANGE','exec'),
+             context)
+        checked=context['verified_or_fail_closed_range']
+        self.assertFalse(checked({}))
+        self.assertFalse(checked({'low':'8.1'}))
+        self.assertFalse(checked({'high':'8.4'}))
+        self.assertTrue(checked({'high':'8.4','low':'8.1'}))
+        self.assertTrue(checked({'ma_v061_kind':'TURNPOINT'}))
+        # No buy/sell policy threshold changed; invalid previous source does not
+        # throw KeyError and block the entire native MA orderbook dispatch.
+
     def test_ui_hides_error_table_but_retains_extract_buttons(self):
         ui=(SRC/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
         self.assertNotIn('TextView erRow=text("오류 이력',ui)
