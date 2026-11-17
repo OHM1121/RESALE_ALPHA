@@ -1,0 +1,41 @@
+name: ARTITRADE v099 coin MarketTrend TOP50 preplan and original wallet checks
+on:
+  push:
+    branches: [fix-artitrade-v099-coin-trend-top50-preplanned-20261117]
+    paths:
+      - '.github/workflows/verify-v099-coin-trend.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v099_*.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  regressive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify v099 on original 82-file strategy archives
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,io,zipfile,hashlib
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            assert z.testzip() is None and len(z.namelist())==82
+            z.extractall('/tmp/v099-native-strategy')
+          print('FROZEN_ORIGINAL_SHA',hashlib.sha256(data).hexdigest())
+          PY
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/v099-native-strategy"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v099_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v069_coin_trend_tick_freshness.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v080_ma_trend_data.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_rsi_gmo_feed_reconcile.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_trend_topup.py' -v
