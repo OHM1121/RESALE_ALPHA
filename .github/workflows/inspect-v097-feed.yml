@@ -1,0 +1,15 @@
+name: ARTITRADE v097 inspect original feed and NXT path
+on:
+  push:
+    branches: [fix-artitrade-v097-gmo-dplus1-preplan-20261117]
+    paths: ['.github/workflows/inspect-v097-feed.yml','ARTITRADE_ANDROID/ui_tests/inspect_v097_feed_src.py']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python3 ARTITRADE_ANDROID/ui_tests/inspect_v097_feed_src.py
