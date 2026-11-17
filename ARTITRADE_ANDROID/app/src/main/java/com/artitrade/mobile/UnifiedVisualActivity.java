@@ -1973,6 +1973,26 @@ public final class UnifiedVisualActivity extends Activity {
         if(finite(st.realized)&&finite(st.unrealized))st.total=st.realized+st.unrealized;
         else st.total=num(l,"total_pnl","net_pnl","profit","total_profit");
 
+        if("stock".equals(m)&&"gmo".equals(s)){
+            // EXACT same per-position valuation as the holdings cards.
+            // Engine wallet.holding is based on a DIFFERENT saved mark and
+            // must never be mixed with the verified UI mark in dashboards.
+            // If any held price is unknown, do not advertise a partial sum
+            // as a complete profit on the strategy or integrated dashboard.
+            double reconciled=0;
+            boolean complete=true;
+            for(int i=0;i<st.positions.length();i++){
+                JSONObject held=st.positions.optJSONObject(i);
+                if(held==null){complete=false;break;}
+                double value=tradePnL(held,"positions");
+                if(!finite(value)){complete=false;break;}
+                reconciled+=value;
+            }
+            st.unrealized=complete?reconciled:Double.NaN;
+            st.total=finite(st.realized)&&complete
+                ?st.realized+reconciled:Double.NaN;
+        }
+
         int sell=0,buy=0,known=0,wins=0;
         for(int i=0;i<st.executions.length();i++){JSONObject r=st.executions.optJSONObject(i);if(r==null)continue;
             String side=r.optString("side",r.optString("type","")).toUpperCase(Locale.ROOT);
@@ -3161,7 +3181,16 @@ public final class UnifiedVisualActivity extends Activity {
         if("positions".equals(kind)){
             if(isStockPosition(r)){
                 double mark=positionMark(r);
-                if(!finite(mark))return Double.NaN;
+                if(!finite(mark)||mark<=0)return Double.NaN;
+                if(r.optBoolean("gmo",false)||"gmo".equalsIgnoreCase(r.optString("strategy",""))){
+                    double qty=usefulNumber(r,"qty","quantity","holding_qty");
+                    double acquisition=usefulNumber(r,"gmo_cost_basis");
+                    double fee=usefulNumber(r,"gmo_sell_fee_rate");
+                    double tax=usefulNumber(r,"gmo_sell_tax_rate");
+                    if(finite(qty)&&qty>0&&finite(acquisition)&&acquisition>0
+                       &&finite(fee)&&finite(tax)&&fee>=0&&tax>=0&&fee+tax<1)
+                        return mark*qty*(1-fee-tax)-acquisition;
+                }
                 double liveEstimate=usefulNumber(r,"stock_quote_unrealized_estimate");
                 if(finite(liveEstimate)&&stockQuoteCurrent(r))return liveEstimate;
                 double entry=positionBuyPrice(r),qty=usefulNumber(r,"qty","quantity","holding_qty");
@@ -3183,6 +3212,10 @@ public final class UnifiedVisualActivity extends Activity {
         if("positions".equals(kind)){
             double entry=positionBuyPrice(r),mark=positionMark(r);
             double qty=usefulNumber(r,"qty","quantity","holding_qty");
+            if(finite(profit)&&r.optBoolean("gmo",false)){
+                double paid=usefulNumber(r,"gmo_cost_basis");
+                if(finite(paid)&&paid>0)return profit/paid*100d;
+            }
             if(finite(profit)&&finite(entry)&&entry>0&&finite(qty)&&qty>0)
                 return profit/(entry*qty)*100d;
             return finite(entry)&&entry>0&&finite(mark)&&mark>0
@@ -3544,7 +3577,7 @@ public final class UnifiedVisualActivity extends Activity {
                 tradeMetricTile(figures,"매수가",finite(buyPerShare)?money(buyPerShare):"미기록",true);
                 tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
                 tradeMetricTile(figures,"매도가",formatMaybeMoney(r,"price","fill_price"),false);
-                tradeMetricTile(figures,"매도수량",formatMaybeNumber(r,"qty","fill_qty"),false);
+                tradeMetricTile(figures,"매도량",formatMaybeNumber(r,"sell_qty","qty","fill_qty"),false);
             }else{
                 tradeMetricTile(figures,"매수가",formatMaybeMoney(r,"price","fill_price"),true);
                 tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
