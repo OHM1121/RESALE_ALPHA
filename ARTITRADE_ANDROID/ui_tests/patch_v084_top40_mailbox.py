@@ -241,5 +241,11 @@ assert t.count("self.assertIn('self._v083_tick_queue.put_nowait((code,price,stam
 t=t.replace("self.assertIn('self._v083_tick_queue.put_nowait((code,price,stamp))',src)",
             "self.assertIn('self._v084_accept_tick(code,price,stamp,timestamp)',src)")
 test.write_text(t)
+for test_name in ('test_v054_market_trend_audit.py','test_v054_ui.py'):
+    file=root/'ui_tests'/test_name
+    data=file.read_text()
+    legacy="versionName '0.7.83-WS-RECEIVE-ISOLATION'"
+    assert data.count(legacy)==1,(test_name,data.count(legacy))
+    file.write_text(data.replace(legacy,"versionName '0.7.84-WS-TOP40-TICK-COALESCE'"))
 print('V084_SOURCE_PATCH_PASS',old_sha,new_sha,'modules=',len(files),
       'ticker cutoff remains 0.75 sec; RSI and book policies unchanged')
