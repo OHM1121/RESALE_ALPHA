@@ -18,7 +18,7 @@ _INSTALLED=False
 
 
 def topup_verified_coin_book(self,book,now):
-    from d_upbit import qty_floor,dec,money,krw_fee,fmt_qty,MIN_VIRTUAL_ORDER_KRW
+    from d_upbit import qty_floor,dec,money,krw_fee,fmt_qty,MIN_VIRTUAL_ORDER_KRW,FEE_RATE
     if not isinstance(book,dict) or now.tzinfo is None:return 0
     symbol=str(book.get('market') or '')
     if not symbol.startswith('KRW-'):return 0
@@ -74,7 +74,23 @@ def topup_verified_coin_book(self,book,now):
                 if wallet is None:continue
                 available=min(D(int(wallet['cash'])),cap-spent)
                 if available<D(MIN_VIRTUAL_ORDER_KRW):continue
+                # MA scenarios 2/3: keep the original first BUY/SELL ledger
+                # and require a fresh exact Upbit exchange book before adding
+                # only affordable residual quantity within first-fill +2 ticks.
+                guard_qty=None
+                if self.account_variant=='ma':
+                    from buy_execution_recovery_v082 import Intent
+                    guard=Intent('ma','coin',symbol,str(p['id'])+':TOPUP',
+                                 str(first),str(available),str(FEE_RATE))
+                    guard.attempts=1  # Original confirmed BUY is in fills.
+                    proof=guard.quote({
+                        'symbol':symbol,'exchange_ms':stamp_ms,
+                        'ask':str(ask),'bid':str(bid),'ask_size':str(size)
+                    },int(now.timestamp()*1000))
+                    if proof.get('action')!='PLACE':continue
+                    guard_qty=qty_floor(D(proof['qty']))
                 qty=min(qty_floor(size*D('.5')),qty_floor(available/ask))
+                if guard_qty is not None:qty=min(qty,guard_qty)
                 while qty>0 and (money(qty*ask)+krw_fee(qty*ask)>available):
                     qty=qty_floor(qty-D('0.00000001'))
                 if qty<=0 or qty*ask<D(MIN_VIRTUAL_ORDER_KRW):continue
