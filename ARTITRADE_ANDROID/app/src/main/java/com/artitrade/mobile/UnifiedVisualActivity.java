@@ -4539,7 +4539,7 @@ public final class UnifiedVisualActivity extends Activity {
         errorExportCancelRequested.set(true);
         try{
             File marker=scopedErrorCancelMarker();
-            try(FileOutputStream out=new FileOutputStream(marker)){
+            try(java.io.FileOutputStream out=new java.io.FileOutputStream(marker)){
                 out.write(1);
                 out.flush();
             }
