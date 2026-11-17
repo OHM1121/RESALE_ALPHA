@@ -353,56 +353,79 @@ def _trend(root,problems,now):
 
 
 def _trend_v054(root,problems,now):
-    """Confirmed final sells from standalone MT54 wallets; WATCH is never a trade."""
+    """Every ACTUAL MT54 SELL fill starts its own follow-up observation.
+
+    An OPEN/TREND_OPEN position can have confirmed TP1/TP2 partial sells.
+    The prior code queried only status=CLOSED, silently losing all their
+    separate post-sale price episodes. Never infer a SELL from a target touch.
+    """
     out=[]
     for market in ("stock","coin"):
         rel=market+"/trend/market_trend_wallet_v054.sqlite3"
-        positions,error=_rows(root,rel,"positions","status='CLOSED'",order="id")
+        positions,error=_rows(root,rel,"positions",
+            "status IN ('TREND_OPEN','CLOSED')",order="id")
         if error:problems.append(error)
         executions,error=_rows(root,rel,"executions",order="id")
         if error:problems.append(error)
         sells=defaultdict(list)
         for row in executions:
-            if str(row.get('side') or '').upper()=='SELL' and \
-               str(row.get('event_key') or '').startswith('MT54:SELL:'):
-                sells[str(row.get('position_id'))].append(row)
-        for row in positions:
-            identity=str(row.get('id') or '')
-            choices=sells.get(identity,())
-            if not choices:continue
-            stamps=[(parsed_at(x.get('at')),x) for x in choices]
-            stamped=[(at,x) for at,x in stamps if at is not None]
-            if not stamped:continue
-            final,sale=max(stamped,key=lambda t:t[0])
-            entry=parsed_at(row.get('entry_at'))
-            price=finite_positive(row.get('entry'))
-            symbol=str(row.get('symbol') or '')
-            if (entry is None or price is None or not symbol or final<entry
-                    or final.timestamp()>now):continue
-            out.append(dict(market=market,strategy='trend',frame=str(row.get('tf')),
-                symbol=symbol,cohort='ACTUAL_FILLED',
-                execution_mode=str(row.get('execution_mode') or 'UNVERIFIED_FILLED_LEDGER'),
-                entry_price=price,exit_at=final.isoformat(),
-                source_ref=rel+':position:'+identity+':'+entry.isoformat(),
-                exit_evidence='CONFIRMED',
-                notes='MT54 standalone acknowledged final SELL'))
+            if (str(row.get("side") or "").upper()=="SELL"
+                and finite_positive(row.get("qty")) is not None
+                and str(row.get("event_key") or "").startswith("MT54:SELL:")):
+                stamp=parsed_at(row.get("at"))
+                if stamp is not None and stamp.timestamp()<=now:
+                    sells[str(row.get("position_id"))].append((stamp,row))
+        for pos in positions:
+            identity=str(pos.get("id") or "")
+            events=sorted(sells.get(identity,()),
+                          key=lambda pair:(pair[0],str(pair[1].get("id") or "")))
+            if not events:continue
+            entry=parsed_at(pos.get("entry_at"))
+            price=finite_positive(pos.get("entry"))
+            symbol=str(pos.get("symbol") or "")
+            if not entry or price is None or not symbol:continue
+            final_id=(str(events[-1][1].get("id") or "")
+                      if str(pos.get("status"))=="CLOSED" else None)
+            for at,sale in events:
+                fid=str(sale.get("id") or "")
+                if not fid or at<entry:continue
+                final=bool(final_id and fid==final_id)
+                source=(rel+":position:"+identity+":"+entry.isoformat()
+                        if final else rel+":partialfill:"+identity+":"+fid)
+                out.append(dict(market=market,strategy="trend",
+                    frame=str(pos.get("tf") or ""),symbol=symbol,
+                    cohort="ACTUAL_FILLED",
+                    execution_mode=str(sale.get("execution_mode") or
+                                       pos.get("execution_mode") or
+                                       "UNVERIFIED_FILLED_LEDGER"),
+                    entry_price=price,exit_at=at.isoformat(),source_ref=source,
+                    exit_evidence="CONFIRMED",
+                    notes=("MT54 confirmed final SELL" if final else
+                           "MT54 confirmed partial SELL; position may remain open")))
     return out
+
 
 def scan(root,now_epoch):
     """Return authenticated per-trade study windows; never mutate input files."""
-    # Use the CURRENT MA epoch, but preserve source-read compatibility with
-    # genuinely old EXE databases. Never double-count an old and new copy.
-    stock_ma_new="stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"
-    coin_ma_new="coin/ma_epoch_v062/upbit_paper.sqlite3"
-    stock_ma=stock_ma_new if (Path(root)/stock_ma_new).is_file() else "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"
-    coin_ma=coin_ma_new if (Path(root)/coin_ma_new).is_file() else "coin/ma/upbit_paper.sqlite3"
-    sources=[
-      ("stock","at","stock/ARTITRADE_D.sqlite3"),
-      ("stock","ma",stock_ma),
-      ("stock","close","stock/close/AT_CLOSE_PAPER.sqlite3"),
-      ("coin","general","coin/base/upbit_paper.sqlite3"),
-      ("coin","ma",coin_ma),
-    ]
+    # MA V067 is the active portfolio; V062 remains an original historical
+    # wallet, and its SELL-only v094 legacy monitor can write new SELL rows.
+    # Read both immutable source DBs, not only the V062 archive. The exit
+    # timestamp/position/fill key prevents same-symbol double counting.
+    sources=[("stock","at","stock/ARTITRADE_D.sqlite3"),
+             ("stock","close","stock/close/AT_CLOSE_PAPER.sqlite3"),
+             ("coin","general","coin/base/upbit_paper.sqlite3")]
+    for market,new,old,ancient in (
+        ("stock","stock/MA_EPOCH_V067/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+          "stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+          "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"),
+        ("coin","coin/ma_epoch_v067/upbit_paper.sqlite3",
+          "coin/ma_epoch_v062/upbit_paper.sqlite3",
+          "coin/ma/upbit_paper.sqlite3")):
+        for relative in (new,old):
+            if (Path(root)/relative).is_file():
+                sources.append((market,"ma",relative))
+        if not (Path(root)/new).is_file() and not (Path(root)/old).is_file():
+            sources.append((market,"ma",ancient))
     out=[];problems=[]
     for market,strategy,path in sources:
         out.extend(_actual(root,market,strategy,path,problems))
