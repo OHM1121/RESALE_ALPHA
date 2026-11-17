@@ -1,0 +1,30 @@
+name: ARTITRADE read-only 2026-11-17 FOLD 05:25 vs 08:55 MA replay
+on:
+  push:
+    branches: [ forensic-fold-20261117-0525-replay ]
+    paths: [ '.github/workflows/forensic-fold-20261117-0525.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replay-fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reconstruct FIVE historical moving averages and Upbit 1-second trades
+        env:
+          PYTHONPATH: ARTITRADE_ANDROID/app/src/main/python
+        run: |
+          python3 ARTITRADE_ANDROID/ui_tests/forensic_fold_public_replay_20261117.py
+      - name: Retain independently auditable original observations and MA decisions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fold-20261117-0525-0855-public-replay
+          path: out/fold_replay_20261117.json
+          if-no-files-found: warn
+          retention-days: 30
