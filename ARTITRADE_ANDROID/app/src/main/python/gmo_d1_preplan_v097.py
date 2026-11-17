@@ -82,7 +82,12 @@ class Preplanner:
         with self.lock,service._lock,service.engine._lock:
             for code,signal in list(service.engine.signals.items()):
                 if not _d1_verified(service,signal,at):continue
-                if code in service.engine.positions:continue
+                existing=service.engine.positions.get(code)
+                if existing is not None and (venue=="NXT" or
+                    existing.entry_date!=signal.entry_date or existing.stage!="NORMAL" or
+                    existing.pending_sell_id or existing.first_profit_triggered or
+                    existing.first_filled_qty or existing.second_filled_qty):
+                    continue
                 if any(f.get("code")==code and str(f.get("time",""))[:10]==signal.entry_date
                        for f in service.engine.fills):continue
                 if venue=="NXT" and not self._nxt_allowed(code,at):
@@ -149,7 +154,7 @@ class Preplanner:
                     self.prepare("NXT",at)
                 if _valid_phase("KRX",at,True):
                     self.prepare("KRX",at)
-                if "0850"<=at.strftime("%H%M")<"0858":
+                if "0850"<=at.strftime("%H%M")<"0900":
                     self._clear_nxt(at)
             except Exception as e:
                 svc.last_error="GMO_PREPLAN_"+type(e).__name__+": "+str(e)[:120]
@@ -158,13 +163,15 @@ class Preplanner:
 
     def on_tick(self,tick,venue):
         at=self.clock()
+        if venue=="KRX" and "0900"<=at.strftime("%H%M")<"0910":
+            self._clear_nxt(at)
         if not self._paper_only() or not _valid_phase(venue,at):return
         t=_verified(tick,at)
         if t is None or tick[7]!=venue:return
         code=str(tick[0]);service=self.service
         key=self._key(code,venue,at)
         plan=self.plans.get(key)
-        if plan is None or plan["status"] in ("EXPIRED","BLOCKED","SOLD"):
+        if plan is None or plan["status"] in ("EXPIRED","BLOCKED","SOLD","COMPLETED"):
             return
         if plan["prepared_at"]>=at.replace(hour=8 if venue=="NXT" else 9,minute=0,second=0,microsecond=0).isoformat():
             return
@@ -182,6 +189,11 @@ class Preplanner:
             # First verified received NXT print, NOT official KRX opening price.
             opener=plan.get("opening_price")
             if opener is None:
+                if at.strftime("%H%M%S")>"080003":
+                    # Without premarket's first genuine 0B, later prices
+                    # cannot be claimed as the 08:00 opening reference.
+                    plan["status"]="OPEN_NOT_VERIFIED"
+                    return
                 opener=int(tick[4])
                 plan["opening_price"]=opener
                 plan["opening_source"]="FIRST_RECEIVED_NXT_0B_PREARMED"
@@ -242,7 +254,12 @@ class Preplanner:
                     plan["status"]="COMPLETED" if pos else "INSUFFICIENT_BUDGET"
                     return
                 if code+"|"+signal.entry_date in engine.used and pos is None:
-                    plan["status"]="BLOCKED";return
+                    nxt_prior=self.plans.get(self._key(code,"NXT",at))
+                    prior_own=any(o.code==code and o.side=="BUY" and
+                        o.purpose.startswith("D+1_V097_NXT_") for o in engine.orders.values())
+                    if not (venue=="KRX" and nxt_prior and prior_own):
+                        plan["status"]="BLOCKED";return
+                engine._v097_managed_codes.add(code)
                 active=engine._order(code,"BUY",f"D+1_V097_{venue}_S{scenario}",
                                       int(opener),int(cap),int(qty),at.isoformat())
                 engine.used.add(code+"|"+signal.entry_date)
