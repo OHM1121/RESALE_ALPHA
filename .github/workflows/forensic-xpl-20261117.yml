@@ -1,4 +1,5 @@
 name: ARTITRADE XPL public 5m 30m 60m day Wilder RSI20 audit
+# Include Wilder lookback seed sensitivity to test the XPL first-cross interpretation.
 on:
   push:
     branches: [forensic-xpl-20261117-rsi20-four-frames]
