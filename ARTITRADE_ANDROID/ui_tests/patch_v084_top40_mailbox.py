@@ -235,5 +235,11 @@ o=o.replace(anchor,'''        trend=getattr(self,'market_trend',None)
         warm={}''',1)
 ast.parse(o)
 overlay.write_text(o)
+test=root/'ui_tests/test_v080_ma_trend_data.py'
+t=test.read_text()
+assert t.count("self.assertIn('self._v083_tick_queue.put_nowait((code,price,stamp))',src)")==1
+t=t.replace("self.assertIn('self._v083_tick_queue.put_nowait((code,price,stamp))',src)",
+            "self.assertIn('self._v084_accept_tick(code,price,stamp,timestamp)',src)")
+test.write_text(t)
 print('V084_SOURCE_PATCH_PASS',old_sha,new_sha,'modules=',len(files),
       'ticker cutoff remains 0.75 sec; RSI and book policies unchanged')
