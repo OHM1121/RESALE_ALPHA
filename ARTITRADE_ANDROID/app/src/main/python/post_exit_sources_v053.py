@@ -390,12 +390,18 @@ def _trend_v054(root,problems,now):
 
 def scan(root,now_epoch):
     """Return authenticated per-trade study windows; never mutate input files."""
+    # Use the CURRENT MA epoch, but preserve source-read compatibility with
+    # genuinely old EXE databases. Never double-count an old and new copy.
+    stock_ma_new="stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"
+    coin_ma_new="coin/ma_epoch_v062/upbit_paper.sqlite3"
+    stock_ma=stock_ma_new if (Path(root)/stock_ma_new).is_file() else "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"
+    coin_ma=coin_ma_new if (Path(root)/coin_ma_new).is_file() else "coin/ma/upbit_paper.sqlite3"
     sources=[
       ("stock","at","stock/ARTITRADE_D.sqlite3"),
-      ("stock","ma","stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"),
+      ("stock","ma",stock_ma),
       ("stock","close","stock/close/AT_CLOSE_PAPER.sqlite3"),
       ("coin","general","coin/base/upbit_paper.sqlite3"),
-      ("coin","ma","coin/ma_epoch_v062/upbit_paper.sqlite3"),
+      ("coin","ma",coin_ma),
     ]
     out=[];problems=[]
     for market,strategy,path in sources:
