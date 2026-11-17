@@ -80,6 +80,20 @@ for frame,width in FRAMES.items():
               and simulated_forming is not None and previous>30 and simulated_forming<=30),
           "discarded_in_progress_candles":discarded,
           "missing_source_candles_not_filled":True}
+    # A short MA-history seed can yield a different Wilder initialization
+    # than the full chart; reveal this without inventing live prices.
+    seed_windows={}
+    for count in (21,25,30,50,80,125,199):
+        if len(closes)<count:continue
+        cropped=closes[-count:]
+        prev_short=trend.rsi20(cropped)
+        live_short=(trend.rsi20(cropped,latest["price"]) if latest else None)
+        seed_windows[str(count)]={
+            "previous":round(prev_short,5) if prev_short is not None else None,
+            "forming":round(live_short,5) if live_short is not None else None,
+            "first_cross":bool(prev_short is not None and live_short is not None
+                               and prev_short>30 and live_short<=30)}
+    info["wilder_seed_lookback_sensitivity"]=seed_windows
     result["rsi"][frame]=info
     print("XPL_RSI_FRAME",json.dumps(info,ensure_ascii=False))
     time.sleep(.12)
