@@ -1,0 +1,38 @@
+name: ARTITRADE v091 MA 1st 2nd 3rd native PAPER sell regressions
+on:
+  push:
+    branches: [fix-artitrade-v091-ma-three-stage-sell-20261117]
+    paths: ['.github/workflows/verify-v091-ma-three-stage.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Restore original 82-module native PAPER engine without altering package or ledger
+        run: |
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            assert z.testzip() is None and len(z.namelist())==82
+            z.extractall('/tmp/artitrade-v091-core')
+          PY
+      - name: Native-paper real SQLite 1st 2nd 3rd SELL red-green regression
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v091-core" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v091_ma_three_stage_real_ledger.py' -v
+      - name: Previously passing exit contracts remain unchanged
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v091-core"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_verified_exits_ma.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v087_stability_ma_decimal_rsi.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v067_ma_system.py' -v
