@@ -511,6 +511,14 @@ public final class UnifiedTradingService extends Service {
                     .putBoolean("cpu_lock",wakeLock!=null&&wakeLock.isHeld())
                     .putBoolean("wifi_lock",wifiLock!=null&&wifiLock.isHeld())
                     .putBoolean("service_running",running.get()).apply();
+                // Avoid competing for the synchronized Python bridge while
+                // a user-confirmed PAPER SELL is waiting to execute.
+                if(manualSellOutstanding.get()>0){
+                    ProcessHealthV087.sample(this,"manual_sell_priority",0L,0L,false);
+                    try{Thread.sleep(250L);}
+                    catch(InterruptedException e){Thread.currentThread().interrupt();break;}
+                    continue;
+                }
                 JSONObject p=strategy.snapshot();
                 try{p.put("operation",strategy.operationSnapshot());}catch(Throwable ignored){}
                 getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).edit()
