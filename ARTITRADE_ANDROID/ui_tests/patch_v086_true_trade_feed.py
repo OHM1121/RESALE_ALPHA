@@ -125,5 +125,27 @@ for name in ('test_v054_ui.py','test_v054_market_trend_audit.py'):
     assert content.count("versionName '0.7.85-RESEARCH-GMO-PAPER'")==1,name
     test.write_text(content.replace("versionName '0.7.85-RESEARCH-GMO-PAPER'",
        "versionName '0.7.86-RSI-FIRST-CROSS-GMO-FEED'"))
+# Static legacy-regression source checks must follow the now-verified
+# exchange timestamp, not the old packet timestamp.
+native_test=root/'ui_tests/test_v080_ma_trend_data.py'
+content=native_test.read_text()
+changes=(
+ ("ping_interval=20,ping_timeout=30,max_size=2**20,max_queue=64",
+  "ping_interval=20,ping_timeout=30,max_size=2**20,max_queue=128"),
+ ("self._v084_accept_tick(code,price,stamp,timestamp)",
+  "self._v084_accept_tick(code,price,stamp,trade_stamp)"),
+)
+for old,new in changes:
+    assert content.count(old)==1,(old,content.count(old))
+    content=content.replace(old,new)
+native_test.write_text(content)
+
+ui_test=root/'ui_tests/test_v054_ui.py'
+content=ui_test.read_text()
+old="self.assertIn('기준봉·MA·마켓트렌드 각각 독립 원장',panel)"
+new="self.assertNotIn('기준봉·MA·마켓트렌드 각각 독립 원장',panel)"
+assert content.count(old)==1,content.count(old)
+ui_test.write_text(content.replace(old,new))
+
 print('V086_UPBIT_OFFICIAL_TRUE_TRADE_TS_10S_BOOK_3S_PASS',
       original_sha,new_sha,'unchanged_modules=81')
