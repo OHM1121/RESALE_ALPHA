@@ -12,6 +12,8 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/legacy_ma_exit_watch_v094.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/coin_partial_entry_v094.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/trend_partial_entry_v094.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/gmo_partial_entry_v094.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py'
   workflow_dispatch:
 permissions: {contents: read}
