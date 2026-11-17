@@ -1,0 +1,40 @@
+name: ARTITRADE v093 read-only priority scope audit
+on:
+  push:
+    branches: [fix-artitrade-v093-strategy-quote-priority-20261117]
+    paths: ['.github/workflows/forensic-v093-priority-scope.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dump strategy subscriptions and source attribution of original native engine
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+              allfiles={n:z.read(n).decode(errors='replace') for n in z.namelist() if n.endswith('.py')}
+          print('MODULE_NAMES',sorted(allfiles))
+          keys=('pinned','watch','subscription','tracked','current_symbols','top','ma','trend','flow','at_close','gmo','depth','held','register','round_robin','rotation')
+          for name in ('d_live.py','at_close_bridge.py','at_close_runner.py','d_upbit.py'):
+              if name not in allfiles:continue
+              source=allfiles[name];lines=source.splitlines();tree=ast.parse(source)
+              print('==== FILE',name,'lines',len(lines))
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                      if any(x in node.name.lower() for x in ('pinned','desired_subscription','switch_venue','refresh_tracked','register_subscription','strategy','watch','ma','trend','scan')):
+                          if node.end_lineno-node.lineno>115:continue
+                          print('METHOD',name,node.name,node.lineno,node.end_lineno)
+                          for i in range(node.lineno-1,node.end_lineno):print('CODE',name,i+1,lines[i][:270])
+              for i,line in enumerate(lines):
+                  if any(x in line for x in ('self.ma.', 'self.ma_ledger.', 'self.e_live.', 'self.gmo.', 'self.engine.', 'self.market_trend.',
+                                           'self.trend.', 'self.flow.', 'self.at_close.', 'at_pulse(',
+                                           'priority_watchlist(', 'self._pinned_stocks(', 'self._subscribed_groups',
+                                           'self._desired_subscriptions(')):
+                      print('REF',name,i+1,line[:245])
+          PY
