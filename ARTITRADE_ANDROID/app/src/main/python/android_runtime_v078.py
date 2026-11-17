@@ -2237,6 +2237,18 @@ start = _core.start
 stop = _core.stop
 snapshot = _core.snapshot
 hub_records = _core.hub_records
-set_live = _core.set_live
+# This APK has ONLY real-quote simulated fills and shadow/PAPER research.
+# Its original LIVE switch is a broker-order adapter, never the user-facing
+# "실거래" simulated-wallet label. A future real-account APK is separate.
+def set_live(market,enabled):
+    if enabled:
+        return json.dumps({'ok':False,'error':'SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS',
+            'live_enabled':{'stock':False,'coin':False}},ensure_ascii=False)
+    return _core.set_live(market,False)
+
+def manual_paper_sell(request):
+    from android_manual_paper_sell_v085 import perform
+    return perform(request)
+
 # v045 explicit score-independent market trend entry selection.
 from market_trend_runtime_v043 import set_manual_mode as set_trend_manual
