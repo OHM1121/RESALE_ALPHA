@@ -1,0 +1,125 @@
+name: ARTITRADE v084 patch, original strategy invariants, regression
+on:
+  push:
+    branches: [ fix-artitrade-v084-upbit-top40-tick-delivery-20261117 ]
+    paths: [ '.github/workflows/artitrade-v084-prepare.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch pinned archive while preserving all 81 other modules and immutable SQLite
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v084_top40_mailbox.py
+      - name: Assert original RSI and orderbook policy, feed delivery invariants and archive integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast,base64,hashlib,io,zipfile,time,threading,queue,types
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          blob=base64.b64decode(''.join((root/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(blob).hexdigest()+'"' in (root/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              for n in z.namelist():
+                  if n.endswith('.py'):compile(z.read(n).decode(),n,'exec')
+              src=z.read('d_upbit.py').decode()
+          tree=ast.parse(src)
+          cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='UpbitPaperRunner')
+          funcs={n.name:n for n in cls.body if isinstance(n,ast.FunctionDef)}
+          ws=ast.get_source_segment(src,funcs['_ws'])
+          assert 'self._both_watched_codes()' not in ws
+          assert 'self.tracked' not in ws
+          assert 'self._v084_accept_tick(code,price,stamp,timestamp)' in ws
+          assert 'ping_interval=20,ping_timeout=30' in ws
+          assert 'self._v084_sub_sends+=1' in ws
+          assert 'time.monotonic()-received' in ast.get_source_segment(src,funcs['_v083_consume_ticks'])
+          assert 'age>0.75' in ast.get_source_segment(src,funcs['_v083_consume_ticks'])
+          assert 'self.latest_prices[code]=str(price)' in ast.get_source_segment(src,funcs['_v083_consume_ticks'])
+          trend=(root/'python/market_trend_runtime_v043.py').read_text()
+          assert 'COIN_VERIFIED_TRADE_MAX_AGE_SEC=10.0' in trend
+          assert 'abs(time.time()-float(book.get("timestamp",0))/1000)>3' in trend
+          assert 'if submit and entry not in self._ordered:' in trend
+          assert "if rsi<=30:" in trend
+          assert "'RSI30_PRECHECK_PASSED_NOT_AN_ORDER'" in trend
+          assert 'self._v084_ws_health(trend_codes)' not in trend
+          assert 'versionCode 90' in (Path('ARTITRADE_ANDROID/app/build.gradle')).read_text()
+          ns={'threading':threading,'queue':queue,'time':time}
+          stubs=['_v084_accept_tick','_v083_consume_ticks','_v084_ws_health']
+          for name in stubs:
+              node=funcs[name]
+              code=ast.Module(body=[ast.FunctionDef(name=node.name,args=node.args,body=node.body,
+                  decorator_list=[],returns=None,type_comment=None)],type_ignores=[])
+              ast.fix_missing_locations(code)
+              exec(compile(code,'d_upbit.py','exec'),ns)
+          class Mem(dict):
+              def __setitem__(self,k,v):
+                  super().__setitem__(k,v)
+                  self.observations.append((k,v,time.monotonic()))
+          class Fake:pass
+          f=Fake();f._v084_tick_lock=threading.Lock()
+          f._v083_tick_seen={};f._v084_tick_counts={};f._v084_tick_received=0
+          f._v084_tick_pending={};f._v084_tick_coalesced=0
+          f._v083_tick_queue=queue.Queue(maxsize=2048);f._v083_tick_drops=0
+          f._v083_tick_late=0;f._v083_tick_max_lag_ms=0
+          f._v083_tick_processed=0;f._v084_tick_delivered={}
+          f._ws_last_reason='';f.stop_event=threading.Event()
+          f.latest_prices=Mem();f.latest_prices.observations=[]
+          f._v084_accept_tick=types.MethodType(ns['_v084_accept_tick'],f)
+          f._v084_accept_tick('KRW-SANC',101,time.monotonic(),int(time.time()*1000))
+          f._v084_accept_tick('KRW-SANC',102,time.monotonic(),int(time.time()*1000))
+          assert f._v083_tick_queue.qsize()==1 and f._v084_tick_coalesced==1
+          worker=threading.Thread(target=ns['_v083_consume_ticks'],args=(f,),daemon=True)
+          worker.start()
+          for _ in range(50):
+              if f._v083_tick_processed:break
+              time.sleep(.01)
+          assert f.latest_prices['KRW-SANC']=='102',f.latest_prices
+          assert len(f.latest_prices.observations)==1
+          f._v084_accept_tick('KRW-SANC',999,time.monotonic()-2,int(time.time()*1000))
+          for _ in range(50):
+              if f._v083_tick_late:break
+              time.sleep(.01)
+          assert f._v083_tick_late>0
+          assert f.latest_prices['KRW-SANC']=='102'
+          f.stop_event.set();worker.join(timeout=2)
+          assert not worker.is_alive()
+          print('V084_REAL_WS_MAILBOX_ONE_TOKEN_PER_SYMBOL_AND_STALE_REJECT_PASS')
+          PY
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+      - name: Run original 30 regression groups, plus native ticker and ledger tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          blob=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:z.extractall('/tmp/artitrade-v084-core')
+          PY
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v084-core"
+          for pat in 'test_v082_*.py' 'test_v081_*.py' 'test_v080_*.py' 'test_v079_*.py' 'test_v077_*.py' 'test_v076_*.py' 'test_android_ledger_backup.py' 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v053_*.py' 'test_v051_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -q
+          done
+      - name: Commit only verified source; never touch existing user DBs or main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py ARTITRADE_ANDROID/ui_tests/test_v080_ma_trend_data.py
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(v084): coalesce authenticated per-symbol ticks and expose TOP40 live feed coverage"
+          git push origin HEAD:fix-artitrade-v084-upbit-top40-tick-delivery-20261117
