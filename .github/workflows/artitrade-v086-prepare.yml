@@ -1,4 +1,4 @@
-name: ARTITRADE v086 first RSI-cross and GMO valuation complete regression
+name: ARTITRADE v086 full original regression with genuine first-cross tests
 on:
   push:
     branches: [ fix-artitrade-v086-rsi-first-cross-feed-gmo-ledger-20261117 ]
