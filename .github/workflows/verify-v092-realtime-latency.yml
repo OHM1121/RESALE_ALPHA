@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
+      - name: Apply exact v092 82-module surgical quote transport patch
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
       - name: Native original websocket protocol and bounded latency regressions
         run: |
           set -euo pipefail
