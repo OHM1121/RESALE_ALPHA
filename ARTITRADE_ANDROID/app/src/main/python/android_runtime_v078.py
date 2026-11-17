@@ -2205,6 +2205,11 @@ _install_ma_v067_stock()
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
 
+# v093: one Kiwoom socket for all stock strategies. Keep existing order
+# execution and market-trend holdings intact; only rank quote REG cohorts.
+from stock_priority_runtime_v093 import install as _install_stock_priority_v093
+_install_stock_priority_v093(_core)
+
 # The coin price observer is installed on the already existing MarketTrend
 # Upbit ticker memory. Both markets retain their original broker/FOK owner.
 from ma_v067_coin_runtime import install as _install_ma_v067_coin
