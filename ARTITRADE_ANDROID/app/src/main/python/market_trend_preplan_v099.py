@@ -428,6 +428,12 @@ class PreparedCoinTrend:
                     for p in self._plans.values() if p.get("status")!="EXPIRED"][-80:]
 
 
+class PreparedStockTrend(PreparedCoinTrend):
+    """Stock KRX RSI35 preflight backed by original MT54 FOK/PAPER wallet."""
+    def __init__(self,coordinator):
+        super().__init__(coordinator,market="stock")
+
+
 def install():
     global _INSTALLED
     if _INSTALLED:return
@@ -438,35 +444,47 @@ def install():
     def start(self):
         if not hasattr(self,"_mt99_preplans"):
             self._mt99_preplans=PreparedCoinTrend(self)
+        if not hasattr(self,"_mt081_stock_preplans"):
+            self._mt081_stock_preplans=PreparedStockTrend(self)
         result=native_start(self)
-        # Original close/holds/RSSI45 worker and native Upbit single socket
-        # keep their normal schedule. The coin entry fast lane is independent.
-        worker=threading.Thread(target=self._mt99_preplans._loop,
-            daemon=True,name="ARTITRADE_MT99_COIN_35_PREPLAN_FAST")
-        worker.start()
-        self.threads.append(worker)
+        # Read-only watch plans are independent; neither pre-reserves cash
+        # nor places a real broker order. Native MT54 remains fill owner.
+        for worker_name,planner in (
+            ("ARTITRADE_MT99_COIN_35_PREPLAN_FAST",self._mt99_preplans),
+            ("ARTITRADE_MT081_STOCK_35_PREPLAN_FAST",self._mt081_stock_preplans)):
+            old=getattr(planner,"_worker",None)
+            if old is not None and old.is_alive():continue
+            worker=threading.Thread(target=planner._loop,
+                                     daemon=True,name=worker_name)
+            planner._worker=worker
+            worker.start()
+            self.threads.append(worker)
         return result
 
     def attach_history(self,raw):
         out=native_attach(self,raw)
-        planner=getattr(self,"_mt99_preplans",None)
-        if planner is None:return out
+        coin_planner=getattr(self,"_mt99_preplans",None)
+        stock_planner=getattr(self,"_mt081_stock_preplans",None)
+        if coin_planner is None and stock_planner is None:return out
         try:
             import json
             snap=json.loads(out) if isinstance(out,str) else out
             if not isinstance(snap,dict):return out
-            plans=planner.snapshot()
-            snap["market_trend_preplans_v099"]={"coin":plans}
+            both={
+                "coin":coin_planner.snapshot() if coin_planner is not None else [],
+                "stock":stock_planner.snapshot() if stock_planner is not None else []}
+            snap["market_trend_preplans_v099"]=both
             status=snap.setdefault("market_trend_status",{})
-            if isinstance(status,dict):
-                coin=status.setdefault("coin",{})
-                if isinstance(coin,dict):
-                    coin["coin_market_trend_rank_target"]=50
-                    coin["prepared_entries"]=len(plans)
             watches=snap.get("market_trend_watch")
-            if isinstance(watches,dict):
+            for market,plans in both.items():
+                state=status.setdefault(market,{}) if isinstance(status,dict) else {}
+                if isinstance(state,dict):
+                    state["prepared_entries"]=len(plans)
+                    state["market_trend_rank_target"]=50
+                    if market=="coin":state["coin_market_trend_rank_target"]=50
+                if not isinstance(watches,dict):continue
                 by_key={(p["code"],p["frame"],p["bar_end"]):p for p in plans}
-                for row in watches.get("coin",[]):
+                for row in watches.get(market,[]):
                     if not isinstance(row,dict):continue
                     plan=by_key.get((row.get("code"),row.get("frame"),row.get("bar_end")))
                     if plan:
