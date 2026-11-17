@@ -83,6 +83,32 @@ class HistoricalPosition(unittest.TestCase):
         # The first stage is tracked in the ORIGINAL historical sidecar.
         row=json.loads(self.query("SELECT state_json FROM ma_v061_positions WHERE position_id=11")[0][0])
         self.assertEqual(row['first_sold'],'20')
+    def test_actual_runner_gate_dispatches_old_ma_first_sell(self):
+        """Reproduce d_live._tick_job_loop's watched_codes() gate.
+
+        Prior implementation only added V062 positions to pinned_stocks(),
+        so this conditional never called on_tick and no legacy exit occurred.
+        """
+        import legacy_ma_exit_watch_v094 as legacy
+        legacy.install(None)
+        service=StockMAService(self.root/'stock/MA_EPOCH_V067',self.store)
+        self.assertIn('005930',service.pinned_stocks())
+        self.assertIn('005930',service.watched_codes())
+        book=StockBook(self.now)
+        tick=('005930','KOSPI','Test','202611171000',10200,10,
+              self.now.isoformat(),'KRX',self.now.timestamp())
+        with patch('stock_ma_engine.live_session',return_value=True), \\
+             patch('stock_ma_engine.after_market_entitlement',return_value=(True,'')), \\
+             patch('ma_v061_stock_runtime._slope_closes',return_value=[]):
+            # Identical MA gate and on_tick path as production d_live worker.
+            if tick[0] in service.watched_codes():
+                service.on_tick(tick,book)
+        self.assertEqual(self.query("SELECT qty FROM positions WHERE id=11"),[(80,)])
+        self.assertEqual(self.query("SELECT reason FROM executions WHERE side='SELL'"),
+                         [('MA_V061_FIRST_20PCT',)])
+        with sqlite3.connect(service.db) as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM positions").fetchone()[0],0)
+
     def test_replayed_same_exchange_event_must_not_make_a_second_sale(self):
         book=StockBook(self.now)
         tick=('005930','KOSPI','Test','202611171000',10200,10,self.now.isoformat(),'KRX',self.now.timestamp())
