@@ -2248,6 +2248,13 @@ _install_stock_quote_truth_v066(_core)
 from legacy_ma_exit_watch_v094 import install as _install_legacy_ma_exit_v094
 _install_legacy_ma_exit_v094(_core)
 
+# v094: finish incomplete initial slot funding ONLY from verified first
+# execution +2 true exchange ticks, using same original public-quote owner.
+from coin_partial_entry_v094 import install as _install_coin_partial_v094
+_install_coin_partial_v094()
+from trend_partial_entry_v094 import install as _install_trend_partial_v094
+_install_trend_partial_v094()
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 
