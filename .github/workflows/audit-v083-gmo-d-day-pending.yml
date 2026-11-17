@@ -1,0 +1,44 @@
+name: Audit GMO D-day signal creation and post D+1 pending lifecycle
+on:
+  push:
+    branches: [ audit-artitrade-gmo-d-day-pending-20261117 ]
+    paths: [ '.github/workflows/audit-v083-gmo-d-day-pending.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read original GMO strategy and exact current snapshot flow
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+              for f in ('d_gmo_runtime.py','projectgmo/engine.py'):
+                  s=z.read(f).decode();lines=s.splitlines();t=ast.parse(s)
+                  print('SOURCE',f,'lines',len(lines))
+                  for node in ast.walk(t):
+                      if not isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):continue
+                      if f=='d_gmo_runtime.py':
+                          interested=any(x in node.name.lower() for x in ('scan','snapshot','signal','pending','maint','next_day','day','priority','candidate','event','poll','run','start','persist'))
+                      else:
+                          interested=any(x in node.name.lower() for x in ('signal','pending','prune','expire','open_entry','cancel','snapshot','_order','date'))
+                      if not interested:continue
+                      print('METHOD',f,node.name,node.lineno,node.end_lineno)
+                      if node.name in ('snapshot','_maintenance_loop','_next_day','priority_watchlist','_run_scan','_scan','_scan_loop','_scan_daily','_scan_closed','_scan_once','scan','record_signal','_record_signal','_prune','_prune_signals','_mark_event','_process_day','_day_scan','_after_close_scan','_maybe_scan','_load','_persist','pending_signals','register_signal','prune_signals','expire_signals'):
+                          print('BODY_BEGIN',f,node.name)
+                          for i in range(node.lineno-1,min(node.end_lineno,node.lineno+165)):
+                              print('SRC_L%04d' % (i+1),lines[i][:260])
+                          print('BODY_END',f,node.name)
+                  if f=='d_gmo_runtime.py':
+                      keys=('engine.signals','signals.items','entry_date','event_date','"pending"','\'pending\'','LAST_SCAN','last_scan','on_signal','_next_day','_candidate')
+                      hits=[i for i,x in enumerate(lines) if any(k in x for k in keys)]
+                      for i in hits[:125]:
+                          print('HIT_LINE',f,i+1,lines[i][:250])
+          PY
