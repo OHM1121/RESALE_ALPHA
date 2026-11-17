@@ -56,3 +56,24 @@ jobs:
                                   print('%04d'%(j+1),lines[j][:200])
                               print('GMO_METHOD_BODY_END')
           PY
+      - name: Print exact D+1 entry signal and market-data intervals only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          spans={
+            'd_gmo_runtime.py': [(1,90),(265,355),(480,520),(580,725),(948,1005),(1024,1080)],
+            'd_live.py': [(600,725),(905,990),(1870,1905),(2020,2088)],
+            'projectgmo/engine.py':[(1,37),(145,217),(590,700)]
+          }
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+              for f,ranges in spans.items():
+                  lines=z.read(f).decode().splitlines()
+                  for lo,hi in ranges:
+                      print('FORENSIC_RANGE',f,lo,hi)
+                      for idx in range(lo-1,min(hi,len(lines))):
+                          print('CODE_L%04d'% (idx+1),lines[idx][:220])
+                      print('END_FORENSIC_RANGE')
+          PY
