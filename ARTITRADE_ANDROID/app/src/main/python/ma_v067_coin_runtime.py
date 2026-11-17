@@ -414,7 +414,8 @@ def _process_v067_exits(self,book,now):
     if not isinstance(book,dict):return
     symbol=str(book.get('market') or '')
     trade=_recent_trade(self,symbol,now)
-    if trade is None:return
+    # A genuine <=3-second bid and depth can satisfy profit-taking even when
+    # the independent trade ticker is late. Forced MA exits still need a print.
     try:
         bid=dec(book['bid']);bid_qty=dec(book['bid_size'])
         if bid<=0 or bid_qty<=0:return
@@ -434,8 +435,9 @@ def _process_v067_exits(self,book,now):
             try:state=json.loads(p['state_json'] or '{}')
             except (TypeError,ValueError):continue
             closes=_prior_verified_closes(p['tf'],symbol,now)
-            forced=policy.forced_ma_exit(closes,trade)
-            if not forced and _second_followup(p['tf'],symbol,state,p['entry'],trade,now):
+            forced=(policy.forced_ma_exit(closes,trade)
+                    if trade is not None else '')
+            if trade is not None and not forced and _second_followup(p['tf'],symbol,state,p['entry'],trade,now):
                 forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
             if p['kind']=='REVERSAL_UP':
                 updated,want,reason=policy.up_exit(
