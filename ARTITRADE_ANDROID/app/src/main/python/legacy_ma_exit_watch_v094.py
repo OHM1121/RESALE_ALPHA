@@ -25,6 +25,7 @@ KST=dt.timezone(dt.timedelta(hours=9))
 
 def _old_stock_paths(root):
     root=Path(root)
+    if root.name=='stock':root=root.parent
     return (root/'stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3',
             root/'stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3')
 
