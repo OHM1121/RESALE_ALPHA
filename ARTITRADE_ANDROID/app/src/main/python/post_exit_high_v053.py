@@ -327,6 +327,8 @@ class Tracker:
                "stock/close/AT_CLOSE_PAPER.sqlite3",
                "coin/base/upbit_paper.sqlite3",
                "coin/ma_epoch_v062/upbit_paper.sqlite3",
+               "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+               "coin/ma/upbit_paper.sqlite3",
                "stock/PROJECTGMO_V1.0_account_state.json",
                "stock/PROJECTGMO_V1.0_research.sqlite3",
                "market_trend_v043.sqlite3")
