@@ -218,6 +218,14 @@ class PreparedCoinTrend:
         if not -.5<=age<=MAX_TRADE_AGE_SEC:
             plan["status"]="STALE_TRADE"
             return
+        # A quote+book pair is evaluated once. 40 candidates every 160ms
+        # would otherwise repeat cached RSI and SQLite reads while nothing
+        # has changed, recreating the original missed-deadline bottleneck.
+        fresh_book=self._quote_mark(code)
+        observed_key=(received, fresh_book["book_timestamp_ms"] if fresh_book else None)
+        if plan.get("_last_seen_market_sample")==observed_key:
+            return
+        plan["_last_seen_market_sample"]=observed_key
         rows=co._closed_series("coin",code,frame,finish)
         if not rows:
             self._emit_skip(code,frame,barid,"COMPLETED_BARS_MISSING")
@@ -365,8 +373,9 @@ class PreparedCoinTrend:
 
     def snapshot(self):
         with self._lock:
-            return [dict(p,scenarios=list(p.get("scenarios",())),
-                         precomputed_qty=list(p.get("precomputed_qty",())))
+            return [dict((k,v) for k,v in dict(p,scenarios=list(p.get("scenarios",())),
+                         precomputed_qty=list(p.get("precomputed_qty",()))).items()
+                         if not k.startswith("_"))
                     for p in self._plans.values() if p.get("status")!="EXPIRED"][-80:]
 
 
