@@ -150,8 +150,27 @@ def _stock_ma(rt,req):
 def _coin(rt,req,which):
     ledger=(rt.coin_runner.ma_ledger if which=='ma' else rt.coin_runner.ledger)
     if ledger is None:raise ValueError('COIN_LEDGER_NOT_READY')
+    key='USER:'+req['request_id']
+
+    def existing_fill(c):
+        # A retried UUID belongs to the ORIGINAL position, even after its
+        # balance became zero or its quote turned stale. Consult durable
+        # executions first: never re-sell or report an old fill as a failure.
+        row=c.execute("""SELECT qty,price,position_id,market FROM executions
+            WHERE event_key=? AND side='SELL'""",(key,)).fetchone()
+        if row is None:return None
+        if (int(row['position_id'])!=int(req['position_id']) or
+                str(row['market'])!=req['code']):
+            raise ValueError('COIN_MANUAL_UUID_POSITION_MISMATCH')
+        return {'qty':row['qty'],'price':row['price'],'already_executed':True}
+
+    with ledger.lock,ledger.connect() as c:
+        prior=existing_fill(c)
+        if prior:return prior
     book=_coin_book(rt,req['code'])
     with ledger.lock,ledger.connect() as c:
+        prior=existing_fill(c)
+        if prior:return prior
         row=c.execute("SELECT market,qty FROM positions WHERE id=? AND status='OPEN'",
                       (req['position_id'],)).fetchone()
         if row is None or str(row['market'])!=req['code']:
@@ -160,10 +179,11 @@ def _coin(rt,req,which):
             raise ValueError('COIN_QTY_CHANGED_RECONFIRM')
     did=ledger.manual_sell(req['position_id'],req['percent'],book,request_id=req['request_id'])
     with ledger.lock,ledger.connect() as c:
-        old=c.execute('SELECT qty,price FROM executions WHERE event_key=? AND side=?',
-                      ('USER:'+req['request_id'],'SELL')).fetchone()
-    if old:return {'qty':old['qty'],'price':old['price'],
-                   'already_executed':not bool(did)}
+        filled=existing_fill(c)
+    if filled:
+        filled['already_executed']=not bool(did)
+        return filled
+    # No execution evidence: NEVER claim a PAPER fill or repeat the order.
     raise ValueError('COIN_MANUAL_FILL_NOT_RECORDED')
 
 def _trend(rt,req):
