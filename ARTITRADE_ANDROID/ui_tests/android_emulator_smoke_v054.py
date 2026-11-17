@@ -326,7 +326,7 @@ def real_boot():
     opened=False
     for attempt in range(5):
         tree=dump("v080_settings_drawer_probe_"+str(attempt))
-        if contains(tree,"내보내기 진행 상황") or contains(tree,"오류 이력   ·"):
+        if contains(tree,"주식 설정") and contains(tree,"운용 설정   ·"):
             opened=True
             break
         print("V080_DRAWER_GEAR_TAP_RETRY",attempt+1,
@@ -338,7 +338,12 @@ def real_boot():
         raise AssertionError("REAL_SETTINGS_DRAWER_NOT_OPENING_AFTER_RETRIES")
     check_screen("v076_export_progress_drawer",
                  ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4,drawer=True)
-    print("V076_RIGHT_DRAWER_EXPORT_PROGRESS_BARS_VISIBLE",flush=True)
+    check_screen("v088_scoped_error_buttons",
+                 ["코인 오류 추출","주식 오류 추출","통합 오류 추출"],
+                 scroll=4,drawer=True)
+    if contains(dump("v088_error_screen_absent"),"오류 이력   ·"):
+        raise AssertionError("V088_PRIVATE_ERRORS_MUST_NOT_HAVE_VISIBLE_ERROR_HISTORY_TAB")
+    print("V088_THREE_SCOPED_ERROR_EXPORT_BUTTONS_AND_NO_ERROR_HISTORY_TAB_PASS",flush=True)
     # Touch the dark scrim to the left of the right-aligned drawer.
     # Its close icon may be offscreen after scrolling the long drawer.
     adb("shell","input","tap","14","430")
