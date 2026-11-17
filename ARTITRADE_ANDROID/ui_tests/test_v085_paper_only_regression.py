@@ -32,8 +32,10 @@ class V085Safety(unittest.TestCase):
             data=source(name)
             self.assertIn('stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3',data)
             self.assertIn('coin/ma_epoch_v062/upbit_paper.sqlite3',data)
-            self.assertNotIn('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3',data)
-            self.assertNotIn('"coin/ma/upbit_paper.sqlite3"',data)
+            # Immutable EXE backups also include legacy MA paths.
+            # New epoch wins when present, legacy-only installs still scan.
+            self.assertIn('stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3',data)
+            self.assertIn('coin/ma/upbit_paper.sqlite3',data)
 
     def test_preserved_ma_research_not_lost_after_hub_rebuild(self):
         tree=ast.parse(source('android_runtime_v078.py'))
