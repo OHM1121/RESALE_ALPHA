@@ -185,8 +185,8 @@ jobs:
           from pathlib import Path
           p=Path('ARTITRADE_ANDROID/app/build.gradle')
           s=p.read_text()
-          old="versionCode 99\\n            versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'"
-          new="versionCode 101\\n            versionName '0.7.95-POSTSALE-HIGH-CAUSAL-AI'"
+          old="versionCode 99\n            versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'"
+          new="versionCode 101\n            versionName '0.7.95-POSTSALE-HIGH-CAUSAL-AI'"
           assert s.count(old)==1, 'expected prepared source with v093 then monotonic v095'
           p.write_text(s.replace(old,new))
           print('V095_UNIFIED_CODE_101_AND_ORIGINAL_SIGNING_PACKAGE')
