@@ -12,6 +12,7 @@ import json
 import math
 from decimal import Decimal as D
 from partial_entry_v094 import qualified_topup
+from buy_execution_recovery_v082 import Intent
 from market_trend_wallet_v043 import STOCK_FEE,COIN_FEE,MIN_COIN_KRW,_money,_coin_qty
 
 
@@ -74,14 +75,30 @@ def topup_trend(wallet,pos,quote,now):
                 return 0
             budget=min(D(int(account['cash'])),D(per_symbol)-spent)
             if budget<=0:return 0
+            # Scenario 2 only follows an ORIGINAL, proved first execution.
+            # Scenario 3 waits for a renewed verified quote rather than
+            # terminating the incomplete seed at a temporary book gap.
+            verified_ms=(int(current[3].timestamp()*1000) if market=='stock'
+                         else int(book['timestamp']))
+            bid=(int(current[1]) if market=='stock' else D(str(book['bid'])))
+            recovery=Intent('trend',market,symbol,
+                str(pos.position_id)+':TOPUP',str(first),
+                str(budget),str(STOCK_FEE if market=='stock' else COIN_FEE))
+            recovery.attempts=1
+            command=recovery.quote({
+                'symbol':symbol,'exchange_ms':verified_ms,
+                'ask':str(ask),'bid':str(bid),'ask_size':str(ask_size)
+            },int(now.timestamp()*1000))
+            if command.get('action')!='PLACE':return 0
+            max_recovery_qty=D(command['qty'])
             if market=='stock':
                 desired=int(budget/(ask*(D(1)+D(str(STOCK_FEE)))))
                 proof,_=book.available(symbol,'KRX',now,int(ask),desired)
                 if proof is None:return 0
-                qty=min(desired,int(proof[1]))
+                qty=min(desired,int(proof[1]),int(max_recovery_qty))
                 fee_rate=STOCK_FEE
             else:
-                qty=_coin_qty(min(ask_size*D('.5'),
+                qty=_coin_qty(min(ask_size*D('.5'),max_recovery_qty,
                     budget/(ask*(D(1)+D(str(COIN_FEE))))))
                 fee_rate=COIN_FEE
             if qty<=0:return 0
