@@ -1,0 +1,30 @@
+name: ARTITRADE v095 post-sale highs and detailed original trade evidence RED GREEN
+on:
+  push:
+    branches: [fix-artitrade-v095-followup-high-reasons-ai-20261117]
+    paths: ['.github/workflows/verify-v095-evidence.yml',
+            'ARTITRADE_ANDROID/ui_tests/test_v095_*.py',
+            'ARTITRADE_ANDROID/app/src/main/python/post_exit_*.py',
+            'ARTITRADE_ANDROID/app/src/main/python/ai_*v095.py',
+            'ARTITRADE_ANDROID/app/src/main/python/trade_history_evidence_v057.py',
+            'ARTITRADE_ANDROID/app/src/main/python/ai_strategy_analysis_v040.py']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Actual v067 MA and v054 trend post sale source and tick high tests
+        run: |
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v095_*.py' -v
+      - name: All original post-exit plus AI source and trade-history regressions
+        run: |
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python"
+          for pat in test_v053_post_sale_high.py test_v057_trade_evidence.py test_v054_research.py test_v054_market_trend_audit.py test_v095_*.py; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
