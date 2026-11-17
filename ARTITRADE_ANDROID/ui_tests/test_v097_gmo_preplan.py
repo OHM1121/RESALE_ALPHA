@@ -145,5 +145,28 @@ class PreplanTests(unittest.TestCase):
         self.assertGreater(self.svc.engine.positions["005930"].qty,5)
         self.assertLessEqual(sum(f["paid"] for f in self.svc.engine.buy_fills),500000.01)
 
+    def test_krx_recovers_canceled_nxt_intent_after_restart(self):
+        from projectgmo.engine import Quote
+        eng=self.svc.engine
+        nxt=dt.datetime(2026,11,17,8,0,tzinfo=KST)
+        o=eng._order("005930","BUY","D+1_V097_NXT_S1",10000,10000,45,nxt.isoformat())
+        eng.used.add("005930|2026-11-17")
+        # The service restarted; there are NO transient NXT preplan objects.
+        self.p._clear_nxt(dt.datetime(2026,11,17,8,50,tzinfo=KST))
+        self.assertEqual(o.state,"CANCELED")
+        self.assertEqual(self.p.prepare("KRX",self.ready),("005930",))
+        plan=self.p.plans[("2026-11-17","005930","KRX")]
+        plan["opening_price"]=10000
+        q=Quote("005930",self.now.isoformat(),1,10000,10000,9990,15,20,"KRX",0)
+        self.p._step(plan,self.now,10000,10000,15,"KRX",q=q)
+        self.assertGreater(self.svc.engine.positions["005930"].qty,0)
+        self.assertLessEqual(sum(f["paid"] for f in eng.buy_fills),500000.01)
+
+    def test_unverified_zero_trade_volume_cannot_anchor_open(self):
+        from gmo_d1_preplan_v097 import _verified
+        tick=("005930","KOSPI","TEST","202611170800",10000,0,
+              self.now.isoformat(),"NXT",self.now.isoformat(),10000,9990)
+        self.assertIsNone(_verified(tick,self.now))
+
 if __name__=="__main__":
     unittest.main()
