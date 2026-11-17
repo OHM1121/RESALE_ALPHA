@@ -68,6 +68,8 @@ def snap(prior,px):
     curr=policy.slopes(prior+[px])
     if prev is None or curr is None:return {"status":"INVALID_MA_HISTORY"}
     short=policy.SHORT
+    original_price_floor=max(prior[-n] for n in short)
+    original_price_ceiling=prior[-120]+Decimal(120)*policy.MA120_DOWN_TOLERANCE
     below=all(curr[n]["value"]<curr[120]["value"] for n in short)
     positive=all(curr[n]["delta"]>0 for n in short)
     root=policy.ma120_down_for_entry(curr)
@@ -84,7 +86,11 @@ def snap(prior,px):
                     "slope":str(curr[n]["delta"].quantize(Decimal("0.000001")))}
             for n in (*short,120)}
     return {"status":"OK","short4_below120":below,"short4_all_positive":positive,
-            "ma120_down_policy":root,"old_first_signal":first_original,
+            "ma120_down_policy":root,
+            "short4_positive_min_price_exclusive":str(original_price_floor),
+            "ma120_tolerance_max_price_inclusive":str(original_price_ceiling),
+            "old_gate_price_overlap_possible":original_price_floor<original_price_ceiling,
+            "old_first_signal":first_original,
             "user_first_signal":first_user,"patched_first_signal":first_patched,
             "prior_short4_already_positive_and_below":user(prev),
             "ma":values}
@@ -172,14 +178,16 @@ def main():
         trace.append({"bar":start.isoformat(),"close":str(bar["close"]),
                      "high":str(bar["high"]),"low":str(bar["low"]),**result})
     marked={moment(x) for x in ("05:15:00","05:20:00","05:25:00","05:30:00",
-                                  "05:35:00","08:45:00","08:50:00","08:55:00")}
+                                  "05:35:00","05:50:00","06:05:00","07:00:00",
+                                  "08:45:00","08:50:00","08:55:00")}
     chosen=[x for x in trace if
            from_kst(x["bar"][:19]).date()==moment("05:25:00").date() and
            (from_kst(x["bar"][:19]) in marked or x.get("old_first_signal")
             or x.get("user_first_signal") or x.get("patched_first_signal"))]
     for r in chosen:
         print("FOLD_FIVE_MIN_MA",json.dumps(r,ensure_ascii=False))
-    focus=[moment(x) for x in ("05:20:00","05:25:00","05:30:00","08:50:00","08:55:00")]
+    focus=[moment(x) for x in ("05:20:00","05:25:00","05:30:00",
+        "05:50:00","06:05:00","07:00:00","08:50:00","08:55:00")]
     seconds=[]
     trades=[]
     for st in focus:
