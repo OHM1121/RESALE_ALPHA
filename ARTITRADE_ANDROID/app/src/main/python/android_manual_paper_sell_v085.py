@@ -59,32 +59,93 @@ def _stock_at(rt,req):
         req['position_id'],req['percent'],req['request_id'],tick,
         expected_qty=int(req['expected_qty']))
 
+class _VerifiedManualStockBid:
+    """Paper manual exits: borrow only displayed fresh KRX best-bid depth.
+
+    Automatic strategies retain the original conservative 50%-participation
+    rule. A user's explicitly confirmed manual PAPER sell may take up to the
+    current displayed bid quantity; original reservations remain shared.
+    This is not broker execution and it never fabricates a market print.
+    """
+    def __init__(self,raw):
+        self.raw=raw
+
+    def available_sell(self,code,venue,now,bid,desired):
+        with self.raw._lock:
+            key=(str(code),str(venue))
+            row=self.raw._bid_depth.get(key)
+            if not row:return 0
+            px,amount,when=row
+            age=(now-when).total_seconds()
+            if (px!=int(bid) or not -.5<=age<=3 or int(amount)<=0):
+                return 0
+            reserved=int(self.raw._bid_reserved.get(key,0))
+            return max(0,min(int(desired),int(amount)-reserved))
+
+    def reserve_sell(self,code,venue,now,bid,quantity):
+        with self.raw._lock:
+            if int(quantity)<=0 or self.available_sell(
+                    code,venue,now,bid,quantity)<int(quantity):
+                return False
+            key=(str(code),str(venue))
+            self.raw._bid_reserved[key]=int(self.raw._bid_reserved.get(key,0))+int(quantity)
+            return True
+
+
+def _stock_verified_bid_book(rt,code):
+    runner=rt.stock_runner
+    if runner is None or getattr(runner,'engine',None) is None:
+        raise ValueError('STOCK_BOOK_NOT_READY')
+    book=getattr(runner.engine,'book',None)
+    if book is None:raise ValueError('STOCK_BOOK_NOT_READY')
+    now=dt.datetime.now(KST)
+    with book._lock:
+        quote=book._items.get((code,'KRX'))
+        depth=book._bid_depth.get((code,'KRX'))
+    if quote is None or depth is None:
+        raise ValueError('FRESH_KRX_0D_BID_MISSING')
+    ask,bid,ask_qty,quoted_at=quote
+    actual_bid,bid_qty,depth_at=depth
+    if (bid<=0 or ask<bid or actual_bid!=bid or
+        bid_qty<=0 or quoted_at.tzinfo is None or depth_at.tzinfo is None or
+        not -.5<=(now-quoted_at).total_seconds()<=3 or
+        not -.5<=(now-depth_at).total_seconds()<=3):
+        raise ValueError('FRESH_KRX_0D_BID_INVALID_OR_STALE')
+    return int(bid),now,_VerifiedManualStockBid(book)
+
+
 def _stock_ma(rt,req):
     from stock_ma_engine import _connect
     service=rt.stock_runner.ma
     if service is None:raise ValueError('STOCK_MA_NOT_READY')
-    tick=_stock_tick(rt,req['code'],'KRX')
-    current=dt.datetime.fromisoformat(str(tick[6]))
-    if current.tzinfo is None:raise ValueError('STOCK_MA_QUOTE_NO_TZ')
+    reason='USER_SIM_MANUAL:'+req['request_id']
     with service.lock,_connect(service.db) as c:
+        # UUID repeat must remain idempotent even after the first request
+        # has fully CLOSED the position and no current quote is available.
+        old=c.execute("""SELECT e.qty,e.price FROM executions e
+            JOIN positions p ON p.id=e.position_id
+            WHERE p.id=? AND p.code=? AND e.reason=? AND e.side='SELL'""",
+            (req['position_id'],req['code'],reason)).fetchone()
+        if old:return {'already_executed':True,'qty':old['qty'],'price':old['price']}
         row=c.execute("SELECT * FROM positions WHERE id=? AND code=? AND status='OPEN' AND qty>0",
                       (req['position_id'],req['code'])).fetchone()
         if row is None:raise ValueError('MA_POSITION_NOT_OPEN_OR_MISMATCH')
         if int(row['qty'])!=int(req['expected_qty']):
             raise ValueError('MA_QTY_CHANGED_RECONFIRM')
-        reason='USER_SIM_MANUAL:'+req['request_id']
-        old=c.execute('SELECT qty,price FROM executions WHERE position_id=? AND reason=?',
-                      (req['position_id'],reason)).fetchone()
-        if old:return {'already_executed':True,'qty':old['qty'],'price':old['price']}
+        # A real exchange 0D update remains valid for a manual PAPER exit
+        # even without a coincident 0B trade. Use the ACTUAL best bid,
+        # never the unrelated last-trade tick price.
+        bid,now,verified_book=_stock_verified_bid_book(rt,req['code'])
         qty=max(1,min(int(row['qty']),int(Decimal(str(row['qty']))*
                       Decimal(str(req['percent']))/Decimal('100'))))
-        book=rt.stock_runner.engine.book
-        sold=service._sell(c,row,qty,int(tick[4]),current,reason,book)
+        sold=service._sell(c,row,qty,bid,now,reason,verified_book)
         if not sold:raise ValueError('FRESH_MA_BID_DEPTH_MISSING')
         execution=c.execute('SELECT qty,price FROM executions WHERE position_id=? AND reason=?',
                             (req['position_id'],reason)).fetchone()
         if not execution:raise ValueError('MA_SELL_FILL_UNVERIFIED')
-        return {'qty':int(execution['qty']),'price':int(execution['price'])}
+        return {'qty':int(execution['qty']),'price':int(execution['price']),
+                'requested_qty':int(qty),'remaining_qty':max(0,int(row['qty'])-int(execution['qty'])),
+                'quote_source':'LIVE_KRX_0D_BID_PAPER_ONLY'}
 
 def _coin(rt,req,which):
     ledger=(rt.coin_runner.ma_ledger if which=='ma' else rt.coin_runner.ledger)
