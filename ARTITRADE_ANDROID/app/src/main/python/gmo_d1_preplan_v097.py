@@ -1,4 +1,4 @@
-"""GMO v097: next-session D+1 preplans and THREE staged PAPER entry intents.
+"""GMO v0.8.0: D+1 07:50 NXT / 08:50 KRX preparation and three staged PAPER entry intents.
 
 Original completed-D signal, PAPER wallet, fees, fills, risk exits and BUY UUID
 authority remain in the frozen projectgmo Engine. There is NO broker-order API.
@@ -14,7 +14,7 @@ from projectgmo.prices import plus_ticks, up_tick
 
 KST=dt.timezone(dt.timedelta(hours=9))
 _INSTALLED=False
-PHASE={"NXT":("075800","080000","085000"),"KRX":("085800","090000","153000")}
+PHASE={"NXT":("075000","080000","085000"),"KRX":("085000","090000","153000")}
 ACTIVE=("NEW","OPEN")
 
 def _now():
@@ -90,24 +90,64 @@ class Preplanner:
                     continue
                 if any(f.get("code")==code and str(f.get("time",""))[:10]==signal.entry_date
                        for f in service.engine.fills):continue
-                if venue=="NXT" and not self._nxt_allowed(code,at):
-                    continue
+                # NXT membership is an independently cached venue-eligibility
+                # fact, NOT a live trade or orderbook. Prepare the entire
+                # D-confirmed scenario even if the membership snapshot has
+                # not arrived yet; such a plan cannot issue a BUY until
+                # self._nxt_allowed() is independently verified at execution.
+                nxt_verified=(venue!="NXT" or self._nxt_allowed(code,at))
                 key=self._key(code,venue,at)
-                if key in self.plans:continue
+                prior=self.plans.get(key)
+                if prior is not None:
+                    if (venue=="NXT" and nxt_verified and
+                        prior["status"]=="WAIT_NXT_ELIGIBILITY"):
+                        prior["status"]="PREPARED"
+                        prior["nxt_eligibility_verified"]=True
+                        prior["eligibility_verified_at"]=at.isoformat()
+                        made.append(code)
+                    continue
                 per_stock=float(service.engine.cfg.seed)/max(1,int(service.engine.cfg.max_positions))
                 used=sum(float(f.get("paid") or 0) for f in service.engine.buy_fills
                          if f.get("code")==code and str(f.get("time",""))[:10]==signal.entry_date)
+                # All three scenario/quantity formulas are ready ten minutes
+                # before opening; NO price or exact shares may be invented.
+                # Cash, existing positions and reservations are revalidated
+                # by the original order engine at the actual market opening.
+                cash_snapshot=max(0.0,float(service.engine.cash)-
+                                  float(service.engine._reserved_cash()))
+                indicative_budget=max(0.0,min(per_stock-used,cash_snapshot))
+                scenario_templates=[
+                    {"scenario":1,"price_rule":"VERIFIED_OPEN_OR_BELOW",
+                     "limit_price":None,"quantity":None},
+                    {"scenario":2,"price_rule":"VERIFIED_OPEN_PLUS_1_EXCHANGE_TICK",
+                     "limit_price":None,"quantity":None},
+                    {"scenario":3,"price_rule":"VERIFIED_OPEN_PLUS_2_EXCHANGE_TICKS",
+                     "limit_price":None,"quantity":None}]
+                opening_at=at.replace(hour=8 if venue=="NXT" else 9,
+                                      minute=0,second=0,microsecond=0)
                 plan={"code":code,"venue":venue,"event_date":signal.event_date,
                       "entry_date":signal.entry_date,
                       "prepared_at":at.isoformat(timespec="seconds"),
+                      "opening_at":opening_at.isoformat(),
                       "max_budget_won":per_stock,"spent_won":used,
-                      "status":"PREPARED","scenario":0,"opening_price":None,
+                      "indicative_remaining_budget_won":indicative_budget,
+                      "buy_fee_rate":float(service.engine.cfg.buy_fee),
+                      "scenario_templates":scenario_templates,
+                      "quantity_formula":"floor(remaining_authorized_budget / "
+                          "(verified_open_plus_2ticks * (1+buy_fee)))",
+                      "requires_live_price_at_prepare":False,
+                      "opening_quote_required_for_final_price_and_qty":True,
+                      "nxt_eligibility_verified":bool(nxt_verified),
+                      "status":"PREPARED" if nxt_verified
+                                 else "WAIT_NXT_ELIGIBILITY",
+                      "scenario":0,"opening_price":None,
                       "opening_source":None,"order_id":None}
                 self.plans[key]=plan
-                made.append(code)
+                if nxt_verified:made.append(code)
                 service.engine._log(code,"GMO_D1_PREPLAN_READY",
                     f"venue={venue} D={signal.event_date} D1={signal.entry_date} "
-                    f"budget={per_stock:.0f} at={plan['prepared_at']}",at.isoformat())
+                    f"budget={per_stock:.0f} eligible={nxt_verified} "
+                    f"at={plan['prepared_at']}",at.isoformat())
         return tuple(made)
 
     def active_codes(self,at=None):
@@ -158,16 +198,22 @@ class Preplanner:
         while not svc._stop.is_set():
             at=self.clock()
             try:
+                # At 08:50 NXT is closed: finalize any outstanding NXT intent
+                # BEFORE preparing the KRX 09:00 budget and scenarios.
+                if "0850"<=at.strftime("%H%M")<"0900":
+                    self._clear_nxt(at)
                 if _valid_phase("NXT",at,True):
                     self.prepare("NXT",at)
                 if _valid_phase("KRX",at,True):
                     self.prepare("KRX",at)
-                if "0850"<=at.strftime("%H%M")<"0900":
-                    self._clear_nxt(at)
             except Exception as e:
                 svc.last_error="GMO_PREPLAN_"+type(e).__name__+": "+str(e)[:120]
-            svc._stop.wait(.5 if ("0757"<=at.strftime("%H%M")<"0801" or
-                                   "0849"<=at.strftime("%H%M")<"0902") else 4.0)
+            hhmm=at.strftime("%H%M")
+            # Prompt preflight at 07:50:00 and 08:50:00; the remaining
+            # ten-minute period uses a light, local-only refresh cadence.
+            near_start=("0749"<=hhmm<"0751" or "0849"<=hhmm<"0851")
+            near_open=("0757"<=hhmm<"0801" or "0857"<=hhmm<"0902")
+            svc._stop.wait(.5 if near_start or near_open else 4.0)
 
     def on_tick(self,tick,venue):
         at=self.clock()
@@ -185,6 +231,10 @@ class Preplanner:
             return
         if venue=="NXT":
             if not self._nxt_allowed(code,at):return
+            if plan["status"]=="WAIT_NXT_ELIGIBILITY":
+                plan["status"]="PREPARED"
+                plan["nxt_eligibility_verified"]=True
+                plan["eligibility_verified_at"]=at.isoformat()
             runner=self.runner
             subscribed=any(code+"_NX" in group for group in getattr(runner,"_subscribed_groups",{}).values())
             if not subscribed:return
@@ -227,6 +277,10 @@ class Preplanner:
         opener=plan.get("opening_price")
         if not opener:return
         caps=(int(opener),plus_ticks(int(opener),1),plus_ticks(int(opener),2))
+        # Resolve pre-created rule templates only from the original verified
+        # opening reference; preflight NEVER substitutes a prior close.
+        for template,price in zip(plan.get("scenario_templates",()),caps):
+            template["limit_price"]=int(price)
         touch=max(int(last),int(ask))
         scenario=next((i+1 for i,cap in enumerate(caps) if touch<=cap),0)
         if not scenario:return
@@ -258,6 +312,10 @@ class Preplanner:
                 # Reserve against the WORST permitted +2 tick price from onset.
                 worst=caps[2]
                 qty=math.floor(budget/(worst*(1+engine.cfg.buy_fee)))
+                plan["finalized_max_quantity_at_plus2_ticks"]=int(qty)
+                plan["finalized_budget_at_open_won"]=float(budget)
+                for item in plan.get("scenario_templates",()):
+                    item["quantity"]=int(qty)
                 if qty<1:
                     plan["status"]="COMPLETED" if pos else "INSUFFICIENT_BUDGET"
                     return
