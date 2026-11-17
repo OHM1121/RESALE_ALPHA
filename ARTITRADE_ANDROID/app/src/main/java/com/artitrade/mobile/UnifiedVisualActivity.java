@@ -112,6 +112,8 @@ public final class UnifiedVisualActivity extends Activity {
     // Worker-only parsed record reuse. The service publishes a fresh JSON string
     // frequently, even when all historical records are unchanged.
     private final Map<String,JSONObject> tradeEvidenceCache=new ConcurrentHashMap<>();
+    private final Map<String,Long> tradeEvidenceFetchedAt=new ConcurrentHashMap<>();
+    private static final long POST_SALE_REFRESH_MS=20_000L;
     // Read-only execution enrichment remains dormant until the person expands
     // that exact fill. No row-page auto fetches from research SQLite.
     private final java.util.Set<String> expandedTradeEvidenceKeys=
@@ -3305,7 +3307,15 @@ public final class UnifiedVisualActivity extends Activity {
             String symbol=row.optString("code",row.optString("market",""));
             if(pid.isEmpty()||symbol.isEmpty())continue;
             String key=tradeEvidenceKey(item);
-            if(tradeEvidenceCache.containsKey(key)||!pendingTradeEvidence.add(key))continue;
+            // A SELL with no post-sale quotes is not a permanently empty
+            // record: genuine public ticks can arrive after this UI opens.
+            // Requery that read-only study every 20 s without touching orders.
+            boolean isSell="매도".equals(tradeSideOf(row));
+            long lastFetched=tradeEvidenceFetchedAt.getOrDefault(key,0L);
+            if(tradeEvidenceCache.containsKey(key)&&
+                (!isSell || SystemClock.uptimeMillis()-lastFetched<POST_SALE_REFRESH_MS))
+                continue;
+            if(!pendingTradeEvidence.add(key))continue;
             try{
                 JSONObject request=new JSONObject();
                 request.put("key",key).put("market",market)
@@ -3330,13 +3340,20 @@ public final class UnifiedVisualActivity extends Activity {
                 for(String key:requestedKeys){
                     JSONObject found=result.optJSONObject(key);
                     tradeEvidenceCache.put(key,found==null?new JSONObject():found);
+                    tradeEvidenceFetchedAt.put(key,SystemClock.uptimeMillis());
                 }
                 // Bound view cache independently of SQLite and order state.
-                if(tradeEvidenceCache.size()>1500)tradeEvidenceCache.clear();
+                if(tradeEvidenceCache.size()>1500){
+                    tradeEvidenceCache.clear();
+                    tradeEvidenceFetchedAt.clear();
+                }
             }catch(Exception err){
                 // A transient/missing research DB is not an order error.
                 // Cache unknown rather than an exception->render->retry loop.
-                for(String key:requestedKeys)tradeEvidenceCache.put(key,new JSONObject());
+                for(String key:requestedKeys){
+                    tradeEvidenceCache.put(key,new JSONObject());
+                    tradeEvidenceFetchedAt.put(key,SystemClock.uptimeMillis());
+                }
                 new RuntimeCrashStore(this).add("trade_history_read_only_evidence",err);
             }finally{
                 for(String key:requestedKeys)pendingTradeEvidence.remove(key);
@@ -3391,7 +3408,10 @@ public final class UnifiedVisualActivity extends Activity {
         historyEvidenceCell(fields,"체결가",formatMaybePrice(r,"price","fill_price"),116);
         historyEvidenceCell(fields,"체결수량",formatMaybeNumber(r,"qty","fill_qty"),106);
         historyEvidenceCell(fields,"판단점수",formatMaybeNumber(r,"score","signal_score"),92);
-        historyEvidenceCell(fields,"매수·매도 근거",tradeReasonOf(r,tradeSideOf(r)),250);
+        String verifiedBasis=e.optString("verified_trade_basis","");
+        historyEvidenceCell(fields,"매수·매도 근거",
+            verifiedBasis.isEmpty()?tradeReasonOf(r,tradeSideOf(r)):verifiedBasis,
+            verifiedBasis.isEmpty()?250:475);
         if(!sell && e.has("entry_signal_reason"))
             historyEvidenceCell(fields,"MA 실제 진입신호",
                 e.optString("entry_signal_reason",""),310);
@@ -3424,6 +3444,15 @@ public final class UnifiedVisualActivity extends Activity {
             r.optString("position_id",r.optString("source_position_id","미기록")),210);
         details.addView(fields,new HorizontalScrollView.LayoutParams(-2,-2));
         panel.addView(details,new LinearLayout.LayoutParams(-1,dp(56)));
+        // An actual signal such as "MA5/10/20/60 slope turns positive below
+        // MA120" cannot be read in a one-line 250dp ellipsized cell. Show
+        // the full evidence text separately from exchange quote provenance.
+        if(!verifiedBasis.isEmpty()){
+            TextView basis=text("매매조건·체결 근거  "+verifiedBasis,12);
+            basis.setTextColor(Color.rgb(181,202,221));
+            basis.setMaxLines(7);
+            panel.addView(basis,new LinearLayout.LayoutParams(-1,-2));
+        }
         if(!sell && e.has("candidate_reason")){
             TextView sourceReason=text("원본 매수후보 판단 · "+
                 e.optString("candidate_reason",""),12);
@@ -3607,6 +3636,11 @@ public final class UnifiedVisualActivity extends Activity {
             String action="executions".equals(kind)?tradeSideOf(r):
                 "positions".equals(kind)||"pending".equals(kind)?"매수":"판단";
             String actualReason=tradeReasonOf(r,action);
+            if("executions".equals(kind)){
+                String verified=readTradeEvidence(item)
+                    .optString("verified_trade_basis","");
+                if(!verified.isEmpty())actualReason=verified;
+            }
             if("positions".equals(kind)){
                 String recorded=r.optString("buy_reason_source","");
                 if(recorded.isEmpty() && 
