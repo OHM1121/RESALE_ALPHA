@@ -2266,6 +2266,12 @@ _install_gmo_partial_v094()
 from gmo_d1_preplan_v097 import install as _install_gmo_d1_preplan_v097
 _install_gmo_d1_preplan_v097(_core)
 
+# v099: coin MarketTrend RSI35 watch prepares three 0/1/2-tick entry
+# scenarios. Original MT54 wallet and verified Upbit book still own fills.
+# This is a separate coin-only worker, never a real broker authorization.
+from market_trend_preplan_v099 import install as _install_trend_preplan_v099
+_install_trend_preplan_v099()
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 
