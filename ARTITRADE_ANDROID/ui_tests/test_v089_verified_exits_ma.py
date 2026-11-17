@@ -37,7 +37,7 @@ class MaEntryAlignment(unittest.TestCase):
         # this pure predicate does NOT place or pretend to fill an order.
 
     def test_existing_positive_alignment_is_not_new_turnpoint(self):
-        prior=[Decimal('20')]*61+[Decimal('8')]*58+[Decimal('8.5')]*2
+        prior=[Decimal('20')]*60+[Decimal('8')]*59+[Decimal('8.5')]*2
         verdict=policy.upward_transition_on_forming(prior,Decimal('9'),5)
         self.assertNotEqual(verdict.get('kind'),'REVERSAL_UP')
 
