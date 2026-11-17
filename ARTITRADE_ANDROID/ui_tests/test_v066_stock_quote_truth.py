@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'app/src/main/python'))
 import stock_quote_truth_v066 as q
 
-T=dt.datetime.now(q.KST).replace(microsecond=0)
+T=(dt.datetime.now(q.KST)-dt.timedelta(seconds=2)).replace(microsecond=0)
 
 
 def tick(symbol='005930',venue='KRX',price=73400,when=T,
