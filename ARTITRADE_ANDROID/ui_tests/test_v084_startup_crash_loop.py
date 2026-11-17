@@ -20,7 +20,7 @@ class CrashLoopRecovery(unittest.TestCase):
         self.assertIn("startup_navigation_recovered",block)
         self.assertIn("restoreNavigation(state);",block)
         self.assertLess(block.index("try{"),block.index("restoreNavigation(state);"))
-        self.assertGreater(block.index("catch(Throwable",block.index("restoreNavigation(state);"))
+        self.assertGreater(block.index("catch(Throwable"),block.index("restoreNavigation(state);"))
         self.assertNotIn("deleteDatabase",block)
         self.assertNotIn("clearApplicationUserData",block)
         self.assertNotIn("clearCache",block)
