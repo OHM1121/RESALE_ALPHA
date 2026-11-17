@@ -1,0 +1,102 @@
+name: ARTITRADE v088 publish 500MB error-export signed Android 15 APK
+on:
+  push:
+    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
+    paths: [ '.github/workflows/artitrade-v088-publish-verified.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SOURCE: 'be4062d8757768c7e988e9f986f28c1445f4a10c'
+      VERIFIED_RUN: '44006412409'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.88_20261117'
+      TAG: 'ARTITRADE-v0.7.88-20261117'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: be4062d8757768c7e988e9f986f28c1445f4a10c
+      - name: Verify pinned v087 source and original 82-module checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib
+          p=Path('ARTITRADE_ANDROID/app/src/main')
+          g=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
+          assert "versionCode 94" in g and "versionName '0.7.88-ERROR-EXPORT-MA-HIGH-GUARD'" in g
+          assert "applicationId 'com.artitrade.unified.s21dex'" in g
+          b=base64.b64decode(''.join((p/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(b).hexdigest()+'"' in (p/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          print('V088_SOURCE_SHA_VERIFIED')
+          PY
+      - name: Require passing Android15 service and original-signer build from pinned source
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN/jobs?per_page=100" > /tmp/artitrade-v088-jobs.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/artitrade-v088-jobs.json') as f:d=json.load(f)
+          success={s['name'] for j in d.get('jobs',[]) for s in j.get('steps',[]) if s.get('conclusion')=='success'}
+          required=[
+            'Verify exactly the installed app signer',
+            'Run all prior stock, coin, research and order regression groups',
+            'Android 15 boot, service, warm return and no fatal exceptions',
+            'Rebuild Samsung ARM64 with original signer',
+            'Verify manifest, version monotonic, signer and SHA-256',
+            'Upload verified Samsung ARM64 APK and evidence',
+          ]
+          missing=[x for x in required if x not in success]
+          assert not missing, 'UNVERIFIED_ANDROID_SOURCE_STEPS: '+str(missing)
+          print('V088_ANDROID15_AND_SIGNED_ORIGINAL_BUILD_SIX_CHECKS_PASS')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.88_20261117
+          run-id: 44006412409
+          repository: OHM1121/RESALE_ALPHA
+          github-token: ${{ github.token }}
+          path: verified-v088
+      - name: Check downloaded APK checksum, identical package and original signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verified-v088
+          test -s "$ARTIFACT.apk"
+          test -s "$ARTIFACT.sha256"
+          test -s "$ARTIFACT.compatibility.txt"
+          sha256sum -c "$ARTIFACT.sha256"
+          APK="$ARTIFACT.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='94' versionName='0.7.88-ERROR-EXPORT-MA-HIGH-GUARD'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" > /tmp/v088-cert.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v088-cert.txt
+          echo 'V088_DOWNLOADED_APK_SHA_MANIFEST_CERT_VERIFIED'
+      - name: Publish verified signed APK with safe release-notes file
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/artitrade-v088-notes.txt <<'RELEASE_END'
+          ARTITRADE v0.7.88 cumulative v0.7.87 emergency test build.
+          v088 from original 2026-11-17 coin error-history archive: 1,096 Upbit WS reconnect diagnostic events, 113+ coin MA KeyError high events and heavy historical research observation logs were inspected. These are diagnostic event counts, NOT actual missed transactions.
+          The v086 source had a verified MA_V065 vs MA_V067 SELL-reason veto; v087 preserved that +2% first-take-profit fix. v088 also rejects only malformed/incomplete historical MA candidate range features with missing high or low instead of letting KeyError abort handling of unrelated legitimate orders. All real quote freshness, 3-second bid-depth, original PAPER fill and historical stop/profit policy are unchanged. No SNT historical fabricated SELL.
+          Removes visible error-history list screen. Adds three export buttons: Coin errors, Stock errors, Unified both. Scoped read-only WAL/SQLite snapshot+JSON error reports and Java Android process-exit/heap evidence; independently verifiable lossless ZIP parts each <=500,000,000 bytes. Every output part is independently opened and SHA256 verified after saving. Original broker cash/positions/executions/research unchanged. Existing research export remains.
+          v087 prior fixes remain: 8.2 KRW coin price displayed as 8.20; no change to KRW cash and PnL formatting; first genuine Wilder RSI20 red main-line entry (not blue signal MA); previously defined third RSI<=30 protective exit; UI heavyweight ledger snapshots isolated from actual market-data and order jobs; Java/native/PSS previous Android process-death diagnostics added.
+          All 82 original bundled modules unchanged and pinned SHA verified, regression suites from v042 to v088 passed, Android 15 real-service boot, screen return and all three export buttons verified, source signer unchanged. Package com.artitrade.unified.s21dex versionCode94.
+          The real Samsung crash root cause (RAM, ANR, Java or native) is not confirmed by the old v086 ZIP, which lacks Android ApplicationExitInfo. Live SNT 2% exit success and long-duration Upbit/Kiwoom reconnect behavior on the actual handset have not been proven yet. There are no new real-account order functions.
+          Install OVER existing app. Never delete existing app or original orders/balances/research.
+          RELEASE_END
+          gh release create "$TAG" \
+            "verified-v088/$ARTIFACT.apk" \
+            "verified-v088/$ARTIFACT.sha256" \
+            "verified-v088/$ARTIFACT.compatibility.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE" \
+            --title "ARTITRADE v0.7.87 (verified emergency test build)" \
+            --notes-file /tmp/artitrade-v088-notes.txt --prerelease
