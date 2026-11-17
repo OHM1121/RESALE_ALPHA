@@ -123,26 +123,30 @@ def topup_verified_coin_book(self,book,now):
     return 0
 
 
+
 def install():
     global _INSTALLED
     if _INSTALLED:return
     import d_upbit
-    # Called only after ma_v067_coin_runtime.install, so its existing
-    # original late entry/SELL wrappers remain active and untouched.
-    previous=d_upbit.CoinLedger.process_book
-
-    def book(self,raw,at=None):
-        completed=previous(self,raw,at)
-        try:
-            now=at if isinstance(at,dt.datetime) else d_upbit.kst_now()
-            topup_verified_coin_book(self,raw,now)
-        except Exception as exc:
-            # Native price/exit processing must never be interrupted by a
-            # new optional partial top-up policy.
+    import coin_ma_engine
+    # v067 provides its OWN MACoinLedger.process_book override, so changing
+    # the base CoinLedger.process_book alone never reaches its original
+    # older_book closure. Wrap BOTH concrete native owner classes once.
+    for cls in (d_upbit.CoinLedger,coin_ma_engine.MACoinLedger):
+        original=cls.process_book
+        if getattr(original,'_v094_partial',False):
+            continue
+        def book(self,raw,at=None,_native=original):
+            completed=_native(self,raw,at)
             try:
-                self._v094_topup_error=type(exc).__name__+':'+str(exc)[:100]
-            except Exception:pass
-        return completed
-
-    d_upbit.CoinLedger.process_book=book
+                now=at if isinstance(at,dt.datetime) else d_upbit.kst_now()
+                topup_verified_coin_book(self,raw,now)
+            except Exception as exc:
+                try:
+                    self._v094_topup_error=type(exc).__name__+':'+str(exc)[:100]
+                except Exception:pass
+            return completed
+        book._v094=True
+        book._v094_partial=True
+        cls.process_book=book
     _INSTALLED=True
