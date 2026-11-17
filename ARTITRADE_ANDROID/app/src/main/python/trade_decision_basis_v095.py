@@ -252,17 +252,24 @@ def summary_for_ai(root,market,strategy,limit=MAX_SUMMARY):
             with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',
                         uri=True,timeout=3)) as c:
                 c.row_factory=sqlite3.Row
-                records=c.execute("""SELECT e.id,e.position_id,e.side,e.at,
-                    e.ts,e.reason,e.price,p.tf,
-                    p.code,p.market,p.symbol
+                # MA stock has e.ts + p.code; MA coin has e.at + p.market;
+                # MT54 has e.at + p.symbol. Never assume the other tables'
+                # columns exist: SQLite would otherwise return zero evidence.
+                ecols={z[1] for z in c.execute('PRAGMA table_info(executions)')}
+                pcols={z[1] for z in c.execute('PRAGMA table_info(positions)')}
+                tsfield='e.ts' if 'ts' in ecols else 'e.at'
+                codefield=('p.code' if strategy=='ma' and market=='stock'
+                           else 'p.market' if strategy=='ma' else 'p.symbol')
+                records=c.execute("""SELECT e.id,e.position_id,e.side,
+                    """+tsfield+""" AS fill_at,e.reason,e.price,p.tf,
+                    """+codefield+""" AS symbol
                     FROM executions e JOIN positions p ON p.id=e.position_id
                     WHERE e.side IN ('BUY','SELL')
                     ORDER BY e.id DESC LIMIT ?""",(min(600,int(limit)),)).fetchall()
                 for row in records:
                     total+=1
-                    symbol=row['code'] if strategy=='ma' and market=='stock' else (
-                           row['market'] if strategy=='ma' else row['symbol'])
-                    at_raw=row['ts'] if row['ts'] is not None else row['at']
+                    symbol=row['symbol']
+                    at_raw=row['fill_at']
                     try:ts=dt.datetime.fromisoformat(str(at_raw)).timestamp()
                     except (ValueError,TypeError):ts=None
                     found=from_original(root,market,strategy,str(row['tf']),
