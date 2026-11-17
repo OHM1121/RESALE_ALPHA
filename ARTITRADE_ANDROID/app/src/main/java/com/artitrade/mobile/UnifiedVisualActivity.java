@@ -207,6 +207,7 @@ public final class UnifiedVisualActivity extends Activity {
     private static final int REQUEST_EXPORT_COMBINED_RESEARCH=7713;
     private static final int REQUEST_EXPORT_AI_EVIDENCE=7714;
     private static final int REQUEST_EXPORT_ERRORS=7715;
+    private static final int REQUEST_EXPORT_SCOPED_ERRORS=7716;
     private String pendingAiExportScope;
     private String pendingAiExportReport;
     private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
@@ -215,6 +216,7 @@ public final class UnifiedVisualActivity extends Activity {
     private String pendingResearchReports;
     private String pendingErrorsReports;
     private String pendingCombinedResearchScope;
+    private String pendingScopedErrorScope;
     private static final long REFRESH_MS=3500L;
 
     private final Runnable periodic=new Runnable(){
@@ -253,6 +255,8 @@ public final class UnifiedVisualActivity extends Activity {
         super.onCreate(state);
         ProcessHealthV087.install(this);
         restoreNavigation(state);
+        // v088 error logs remain private and exportable; no error-table screen.
+        if("errors".equals(page))page="home";
         try{
             getWindow().setStatusBarColor(PremiumUi.BG);
             getWindow().setNavigationBarColor(PremiumUi.BG);
@@ -1003,8 +1007,6 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout manage=card();
         TextView opRow=text("운용 설정   ·   전 전략 시드 / 최대보유",12);opRow.setTypeface(null,Typeface.BOLD);opRow.setPadding(dp(4),dp(7),dp(4),dp(7));opRow.setOnClickListener(v->{page="operation";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(opRow,new LinearLayout.LayoutParams(-1,dp(44)));
         manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
-        TextView erRow=text("오류 이력   ·   "+("stock".equals(market)?"주식 전체":"코인 전체"),12);erRow.setTypeface(null,Typeface.BOLD);erRow.setPadding(dp(4),dp(7),dp(4),dp(7));erRow.setOnClickListener(v->{page="errors";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(erRow,new LinearLayout.LayoutParams(-1,dp(44)));
-        manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         TextView scoreRow=text("엔진 점수 비교   ·   미선정 후보 포함",12);scoreRow.setTypeface(null,Typeface.BOLD);scoreRow.setPadding(dp(4),dp(7),dp(4),dp(7));scoreRow.setOnClickListener(v->{page="scores";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(scoreRow,new LinearLayout.LayoutParams(-1,dp(44)));
         TextView policyRow=text("정책이력   ·   실제 체결과 매도 판단 근거",12);
         policyRow.setPadding(dp(4),dp(7),dp(4),dp(7));
@@ -1046,6 +1048,19 @@ public final class UnifiedVisualActivity extends Activity {
         drawerResearchExportProgress=addProgressBlock(exports,"연구이력 ZIP 추출",
             drawerExportProgress("research"),Color.rgb(92,194,244));
         panel.addView(exports);
+        LinearLayout errorActions=new LinearLayout(this);
+        errorActions.setOrientation(LinearLayout.HORIZONTAL);
+        errorActions.setPadding(0,dp(5),0,dp(9));
+        for(String[] spec:new String[][]{
+            {"coin","코인 오류 추출"},{"stock","주식 오류 추출"},{"all","통합 오류 추출"}}){
+            final String selected=spec[0];
+            Button export=button(spec[1],false,()->requestScopedErrorExport(selected));
+            export.setTextSize(10);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(42),1);
+            lp.setMargins(dp(2),0,dp(2),0);
+            errorActions.addView(export,lp);
+        }
+        panel.addView(errorActions);
 
         updateHeader();
 
@@ -1433,7 +1448,7 @@ public final class UnifiedVisualActivity extends Activity {
                 }
                 updateHeader();
                 if(!"operation".equals(page)
-                    &&(ledgerChanged||"home".equals(page)||"errors".equals(page)||
+                    &&(ledgerChanged||"home".equals(page)||
                         "market".equals(page)))render();
             });
         });
@@ -2227,7 +2242,7 @@ public final class UnifiedVisualActivity extends Activity {
         else if("research".equals(page))renderResearch();
         else if("analysis".equals(page))renderAiAnalysis();
         else if("scores".equals(page))renderScores();
-        else if("errors".equals(page))renderErrors();
+        else if("errors".equals(page))renderHome(); // no error history table
         else if("policyHistory".equals(page))renderPolicyHistory();
         else renderMore();
     }
@@ -4437,6 +4452,25 @@ public final class UnifiedVisualActivity extends Activity {
         }
     }
 
+    private void requestScopedErrorExport(String scope){
+        if(!("stock".equals(scope)||"coin".equals(scope)||"all".equals(scope)))
+            return;
+        if(fullExportRunning.get()){
+            new AlertDialog.Builder(this).setTitle("오류 ZIP 추출 진행 중")
+                .setMessage("기존 추출이 끝난 후 다시 실행하십시오.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        pendingScopedErrorScope=scope;
+        exportStage("errors","SELECT_DIR","오류 ZIP 저장 폴더 선택",0,
+            "원본 주식·코인 오류자료를 파일당 500MB 이하로 분할",true,false);
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(picker,REQUEST_EXPORT_SCOPED_ERRORS);
+    }
+
     private void requestCombinedResearch(String scope){
         if(!("stock".equals(scope)||"coin".equals(scope)||"all".equals(scope)))
             return;
@@ -4565,8 +4599,138 @@ public final class UnifiedVisualActivity extends Activity {
         },"artitrade-scoped-multipart-research").start();
     }
 
+    private void exportScopedErrorToFolder(Uri tree,String scope){
+        if(!fullExportRunning.compareAndSet(false,true))return;
+        exportStage("errors","PREPARE","원본 오류자료 준비",2,
+            "SQLite/WAL 스냅샷·ZIP 생성",true,false);
+        File progressFile=new File(getCacheDir(),PY_EXPORT_PROGRESS);
+        if(progressFile.exists())progressFile.delete();
+        new Thread(()->{
+            File folder=new File(getCacheDir(),"artitrade_error_bundle_"+System.nanoTime());
+            java.util.List<Uri> newDocuments=new java.util.ArrayList<>();
+            try{
+                if(!folder.mkdirs()&&!folder.isDirectory())
+                    throw new IOException("사전 검증 임시폴더 생성 실패");
+                if(!Python.isStarted())
+                    throw new IllegalStateException("전략엔진 초기화 후 오류자료 추출 가능");
+                if(tree==null||!"content".equals(tree.getScheme()))
+                    throw new SecurityException("지원되지 않는 저장 폴더");
+                try{
+                    getContentResolver().takePersistableUriPermission(tree,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION|
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                }catch(SecurityException ignored){}
+                File runtime=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                JSONObject nativeReport=new JSONObject()
+                    .put("schema","ARTITRADE_ERROR_HISTORY_V088")
+                    .put("scope",scope)
+                    .put("exported_at_ms",System.currentTimeMillis())
+                    .put("runtime_faults",new RuntimeCrashStore(this).read());
+                android.content.SharedPreferences health=getSharedPreferences(
+                    "artitrade_process_health_v087",MODE_PRIVATE);
+                nativeReport.put("last_memory_sample",
+                    health.getString("last_memory_sample",""));
+                nativeReport.put("last_checked_exit_ms",
+                    health.getLong("last_checked_exit_ms",0L));
+                String raw=Python.getInstance().getModule("android_research_bundle")
+                    .callAttr("make_bundle",runtime.getAbsolutePath(),
+                        folder.getAbsolutePath(),scope,500_000_000,
+                        progressFile.getAbsolutePath(),"errors",
+                        nativeReport.toString()).toString();
+                JSONObject info=new JSONObject(raw);
+                if(!info.optBoolean("ok")||info.optInt("parts")<=0)
+                    throw new IOException("분할 리서치 생성 검증 실패");
+                Uri parent=DocumentsContract.buildDocumentUriUsingTree(
+                    tree,DocumentsContract.getTreeDocumentId(tree));
+                JSONArray parts=info.getJSONArray("files");
+                if(parts.length()!=info.optInt("parts"))
+                    throw new IOException("분할 파일 목록과 실제 개수 불일치");
+                exportStage("errors","COPY","ZIP 파트 저장",94,
+                    "기존 원장 "+info.optInt("source_files",0)+"개 검증 완료",true,false);
+                long verified=0;
+                for(int i=0;i<parts.length();i++){
+                    JSONObject item=parts.getJSONObject(i);
+                    String filename=item.getString("name");
+                    if(!filename.matches("ARTITRADE_[A-Z]+_ERROR_HISTORY_[A-Za-z0-9_]+_PART_[0-9]{3}_OF_[0-9]{3}\\.zip"))
+                        throw new SecurityException("안전하지 않은 출력 파일명");
+                    File source=new File(folder,filename);
+                    if(!source.isFile()||source.length()!=item.getLong("bytes")||
+                       source.length()>500_000_000L)
+                        throw new IOException("500MB 한도 또는 원본 파일 크기 검사 실패");
+                    Uri saved=DocumentsContract.createDocument(getContentResolver(),
+                        parent,"application/zip",filename);
+                    if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
+                    newDocuments.add(saved);
+                    MessageDigest streamed=MessageDigest.getInstance("SHA-256");
+                    try(InputStream input=new FileInputStream(source);
+                        OutputStream output=getContentResolver().openOutputStream(saved,"w")){
+                        if(output==null)throw new IOException("ZIP 저장 스트림 없음");
+                        byte[] buf=new byte[1024*1024];int n;
+                        while((n=input.read(buf))!=-1){output.write(buf,0,n);streamed.update(buf,0,n);}
+                        output.flush();
+                    }
+                    String expected=item.getString("sha256");
+                    if(!expected.equalsIgnoreCase(hex(streamed.digest())))
+                        throw new IOException("ZIP 출력 중 SHA-256 불일치");
+                    MessageDigest disk=MessageDigest.getInstance("SHA-256");
+                    long bytes=0;
+                    try(InputStream input=getContentResolver().openInputStream(saved)){
+                        if(input==null)throw new IOException("저장된 ZIP 재열기 실패");
+                        byte[] buf=new byte[1024*1024];int n;
+                        while((n=input.read(buf))!=-1){disk.update(buf,0,n);bytes+=n;}
+                    }
+                    if(bytes!=source.length()||
+                        !expected.equalsIgnoreCase(hex(disk.digest())))
+                        throw new IOException("저장된 ZIP 검증 불일치");
+                    verified+=bytes;
+                    exportStage("errors","COPY","ZIP 파트 저장",
+                        94+Math.min(5,(i+1)*5/Math.max(1,parts.length())),
+                        String.format(Locale.KOREA,"%d/%d파트 · %,d바이트 검증",
+                            i+1,parts.length(),verified),true,false);
+                }
+                exportStage("errors","DONE","오류 ZIP 저장 완료",100,
+                    String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
+                    false,false);
+                fullLedgerExportResult(true,
+                    ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
+                    " 오류이력 "+parts.length()+"개 ZIP 저장 완료\n"+
+                    "각 파일 500MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
+                    "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",false,"오류이력 분할 ZIP 추출");
+            }catch(Throwable e){
+                // A failed multi-file transfer must not masquerade as a complete export.
+                for(Uri created:newDocuments){
+                    try{DocumentsContract.deleteDocument(getContentResolver(),created);}
+                    catch(Exception ignored){}
+                }
+                new RuntimeCrashStore(this).add("combined_error_export",e);
+                exportStage("errors","FAILED","오류 ZIP 저장 실패",0,
+                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
+                    false,true);
+                fullLedgerExportResult(false,
+                    "통합 오류이력 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\\n"+
+                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),false,"오류이력 분할 ZIP 추출");
+            }finally{
+                File[] files=folder.listFiles();
+                if(files!=null)for(File file:files)if(file.isFile())file.delete();
+                folder.delete();
+                if(progressFile.exists())progressFile.delete();
+                fullExportRunning.set(false);
+            }
+        },"artitrade-scoped-multipart-errors").start();
+    }
+
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==REQUEST_EXPORT_SCOPED_ERRORS){
+            String scope=pendingScopedErrorScope;
+            pendingScopedErrorScope=null;
+            if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
+                exportScopedErrorToFolder(data.getData(),scope);
+            else exportStage("errors","CANCELLED","오류 ZIP 추출 취소",0,
+                "저장 폴더 선택이 취소됨",false,false);
+            return;
+        }
         if(requestCode==REQUEST_EXPORT_COMBINED_RESEARCH){
             String scope=pendingCombinedResearchScope;
             pendingCombinedResearchScope=null;
