@@ -104,7 +104,6 @@ def topup_trend(wallet,pos,quote,now):
                 return 0
             import copy
             new=copy.copy(pos)
-            new.total_qty=getattr(new,'total_qty',None) or 0 # optional metadata
             initial=D(str(pos.original_qty))
             expanded=initial+D(str(qty))
             new.entry=float((D(str(pos.entry))*initial+ask*D(str(qty)))/expanded)
@@ -124,7 +123,7 @@ def topup_trend(wallet,pos,quote,now):
                 side,qty,price,fees,tax,net_pnl,cash_after,execution_mode,
                 broker_order_id,reason)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (event,pos.position_id,pos.frame,symbol,stamp,'BUY',qty,
+                (event,pos.position_id,pos.frame,symbol,stamp,'BUY',float(qty),
                  float(ask),fee,0,0,int(account['cash'])-(gross+fee),
                  'PAPER','',
                  'MARKET_TREND_V094_PARTIAL_TWO_TICKS'))
