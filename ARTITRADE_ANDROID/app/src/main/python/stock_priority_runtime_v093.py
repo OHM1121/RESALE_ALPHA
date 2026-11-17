@@ -85,6 +85,24 @@ def allocate_priority(bands, protected=(), capacity=KIWOOM_MAX_SUBSCRIPTIONS, ph
     return chosen
 
 
+def critical_priority_codes(supply_active=(), close_active=(),
+                            ma_active=(), trend_active=(), gmo_held=()):
+    """Protect actual held/pending subscriptions, not ordinary GMO candidates.
+
+    Within the critical lane use the user-specified SR > CW > MA > MT > GMO
+    ordering. One symbol shared by several strategies uses only one slot.
+    """
+    result = []
+    seen = set()
+    for band in (supply_active, close_active, ma_active, trend_active, gmo_held):
+        for symbol in band:
+            code = str(symbol)
+            if code and code not in seen:
+                result.append(code)
+                seen.add(code)
+    return result
+
+
 def install(core):
     """Install a subscription-only wrapper; never change the native broker."""
     global _INSTALLED
@@ -136,32 +154,59 @@ def install(core):
                 close = []
 
         ma_codes = []
+        ma_active = []
         try:
-            ma_codes = list(self.ma.pinned_stocks()) + list(self.ma.watched_codes())
+            ma_active = list(self.ma.pinned_stocks())
+            ma_codes = ma_active + list(self.ma.watched_codes())
         except Exception:
             # Existing pinned holdings are retained even if a stale research
             # scope briefly fails; do not reconnect the WS on that failure.
             pass
 
         trend_codes = []
+        trend_active = []
         try:
             runtime = getattr(core, "_RUNTIME", None)
             trend = getattr(runtime, "market_trend", None) if runtime else None
             if trend is not None:
                 with trend.lock:
                     trend_codes = list(trend._candidates.get("stock", {}))
-                    trend_codes.extend(
+                    trend_active = [
                         str(position.symbol)
                         for position in tuple(trend._positions.values())
                         if position.market == "stock" and position.qty > 0
-                    )
+                    ]
+                    trend_codes.extend(trend_active)
         except Exception:
             pass
 
+        gmo_held = []
         try:
-            gmo_codes = gmo_priority + list(self.gmo.watchlist()) + list(self.gmo.holding_codes())
+            gmo_held = list(self.gmo.holding_codes())
+            gmo_codes = gmo_priority + list(self.gmo.watchlist()) + gmo_held
         except Exception:
             gmo_codes = gmo_priority
+
+        # _pinned_stocks() includes ordinary GMO D+1 BUY candidates. Those
+        # must remain eligible as FIFTH priority, not silently leapfrog SR
+        # and CW as first-priority "held" symbols. Read actual SR open/pending
+        # orders from their existing SQLite evidence; never fabricate one.
+        supply_active = []
+        try:
+            with self.store.connect() as db:
+                supply_active = [row["code"] for row in db.execute(
+                    "SELECT DISTINCT code FROM positions WHERE status='OPEN' AND qty>0")]
+                supply_active.extend(row["code"] for row in db.execute(
+                    "SELECT DISTINCT code FROM v19_orders WHERE status='PENDING' "
+                    "AND venue IN ('KRX','NXT')"))
+        except Exception:
+            supply_active = list(getattr(self, "_paper_interest_held", ()) or ())
+
+        critical = critical_priority_codes(
+            supply_active, close, ma_active, trend_active, gmo_held)
+        known_non_gmo = set(supply_active) | set(close) | set(ma_codes) | set(trend_codes)
+        gmo_codes.extend(code for code in pinned
+                         if code not in known_non_gmo)
 
         raw_bands = [
             list(base),                       # 1. 수급매매
@@ -185,14 +230,14 @@ def install(core):
                 valid_cache[code] = ok
             return valid_cache[code]
 
-        eligible_pinned = [str(code) for code in pinned if valid(code)]
+        eligible_critical = [str(code) for code in critical if valid(code)]
         eligible = [[str(code) for code in band if valid(code)]
                     for band in raw_bands]
         phase = int(time.monotonic() // OVERFLOW_ROTATION_SECONDS)
-        selected = allocate_priority(eligible, protected=eligible_pinned,
+        selected = allocate_priority(eligible, protected=eligible_critical,
                                      capacity=KIWOOM_MAX_SUBSCRIPTIONS,
                                      phase=phase)
-        all_interest = set(eligible_pinned)
+        all_interest = set(eligible_critical)
         for band in eligible:
             all_interest.update(band)
         self._v093_priority_snapshot = {
@@ -201,7 +246,8 @@ def install(core):
             "requested_unique": len(all_interest),
             "subscribed": len(selected),
             "unsubscribed_now": max(0, len(all_interest) - len(selected)),
-            "pinned_total": len(eligible_pinned),
+            "pinned_total": len(eligible_critical),
+            "legacy_mixed_pinned_count": len(pinned),
             "phase": phase,
             "venue": venue,
             "groups_requested": [len(set(b)) for b in eligible],
