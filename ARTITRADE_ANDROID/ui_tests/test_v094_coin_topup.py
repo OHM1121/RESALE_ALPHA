@@ -46,6 +46,13 @@ class NativeCoinTopup(unittest.TestCase):
             return dict(c.execute('SELECT * FROM positions WHERE id=?',(self.pid,)).fetchone()),[
                 dict(x) for x in c.execute('SELECT * FROM executions WHERE position_id=? ORDER BY id',
                                           (self.pid,)).fetchall()]
+    def test_v067_coin_ma_book_has_explicit_partial_topup_hook(self):
+        from coin_ma_engine import MACoinLedger
+        from coin_partial_entry_v094 import install
+        install()
+        self.assertTrue(getattr(d_upbit.CoinLedger.process_book,'_v094',False))
+        self.assertTrue(getattr(MACoinLedger.process_book,'_v094',False))
+
     def test_existing_partial_position_can_buy_within_plus_two_real_upbit_ticks(self):
         amount=topup_verified_coin_book(self.ledger,self.book,self.now)
         self.assertGreater(amount,0)
