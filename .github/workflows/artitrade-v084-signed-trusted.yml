@@ -67,18 +67,18 @@ jobs:
               up=z.read('d_upbit.py').decode()
               live=z.read('d_live.py').decode()
               assert up.count('with connect(WS_URL,')==1
-              assert 'self._v084_tick_queue.put_nowait((code,price,stamp))' in up
-              assert 'def _v084_refresh_subscriptions(self)' in up
-              assert 'def _v084_consume_ticks(self)' in up
+              assert 'self._v084_accept_tick(code,price,stamp,timestamp)' in up
+              assert 'def _v083_refresh_subscriptions(self)' in up
+              assert 'def _v083_consume_ticks(self)' in up
               cls=next(x for x in ast.parse(up).body if isinstance(x,ast.ClassDef) and x.name=='UpbitPaperRunner')
               ws=next(x for x in cls.body if isinstance(x,ast.FunctionDef) and x.name=='_ws')
               body=ast.get_source_segment(up,ws)
               assert 'self._both_watched_codes()' not in body
               assert 'self.tracked' not in body
               assert 'self.latest_prices[code]=' not in body
-              assert 'self._v084_bids' in body
-              assert 'self._v084_tick_seen' in body
-              assert 'self._v084_book_seen' in body
+              assert 'self._v083_bids' in body
+              assert 'self._v083_tick_seen' in body
+              assert 'self._v083_book_seen' in body
               assert 'ping_interval=20,ping_timeout=30' in body
               assert 'V071_KRX_0B_SILENT_45S_RECONNECT' not in live
           g=(Path('ARTITRADE_ANDROID/app/build.gradle')).read_text()
