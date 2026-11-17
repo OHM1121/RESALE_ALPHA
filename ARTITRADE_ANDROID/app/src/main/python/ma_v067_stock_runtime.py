@@ -223,9 +223,13 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     # interception and exact actual/PAPER execution recording.
     actually=self._sell(c,p,size,int(bid),now,reason,book)
     if not actually:return
+    # A returned native sell amount is not enough to advance MA stages:
+    # the corresponding exact SELL execution must exist in the same ledger.
     filled=c.execute("""SELECT price,ts FROM executions WHERE position_id=?
-        AND side='SELL' ORDER BY id DESC LIMIT 1""",(p['id'],)).fetchone()
-    px=filled['price'] if filled else bid
+        AND side='SELL' AND reason=? ORDER BY id DESC LIMIT 1""",
+        (p['id'],reason)).fetchone()
+    if filled is None:return
+    px=filled['price']
     if kind=='REVERSAL_BEAR':
         state=policy.apply_bear_fill(changed,reason,actually,now)
         state=policy.mark_stage_completion(state,p['qty0'],now,px)
