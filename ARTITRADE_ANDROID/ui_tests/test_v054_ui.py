@@ -9,7 +9,7 @@ class V054Ui(TestCase):
     def test_unified_release_is_v054_or_newer_with_incremented_versioncode(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf-8')
         self.assertRegex(gradle,r"versionCode (?:6[1-9]|[7-9][0-9]|[1-9][0-9]{2,})")
-        self.assertIn("versionName '0.7.99-COIN-MT50-THREE-PREPLANS'", gradle)
+        self.assertIn("versionName '0.8.0-GMO-D1-PREFLIGHT-0750-0850'", gradle)
         self.assertIn("applicationId 'com.artitrade.unified.s21dex'",gradle)
 
     def test_trend_is_primary_strategy_in_both_markets(self):
