@@ -1,4 +1,5 @@
 name: ARTITRADE apply GMO-only D+1 open priority fix to verified v089 source
+# Recheck maintenance scan started pre-08:50 while KRX open recovery remains live at 09:00.
 on:
   push:
     branches: [fix-artitrade-v090-gmo-d1-open-20261117]
