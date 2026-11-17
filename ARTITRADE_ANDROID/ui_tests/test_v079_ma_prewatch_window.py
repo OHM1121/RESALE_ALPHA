@@ -48,7 +48,8 @@ class V079MAWatchAndEntry(unittest.TestCase):
             for sec in (10,8,5,2):
                 result=policy.upward_transition_on_forming(prior,Decimal('101'),sec)
                 self.assertEqual(result['kind'],'REVERSAL_UP',sec)
-            current[120]['delta']=Decimal('0.0051')
+            # v089: +0.0099 is now inclusive, test strictly over the NEW cap.
+            current[120]['delta']=Decimal('0.0100')
             result=policy.upward_transition_on_forming(prior,Decimal('101'),5)
             self.assertIsNone(result['kind'])
             self.assertEqual(result['reason'],'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN')
