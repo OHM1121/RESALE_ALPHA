@@ -111,7 +111,7 @@ class NativeFillThreeStage(unittest.TestCase):
         state=(policy.initial_up_exit_state('5m') if kind=='REVERSAL_UP'
                else policy.initial_bear_exit_state('5m',120))
         with sqlite3.connect(self.coin_db) as c:
-            c.execute('INSERT INTO positions VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+            c.execute('INSERT INTO positions VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                  (11,'5m','KRW-TEST','100','0',qty,qty,'30' if kind=='REVERSAL_BEAR' else '10','0','100','OPEN'))
             c.execute('INSERT INTO ma_v067_positions VALUES(?,?,?,?,?,?,?)',
                  (11,kind,'5m','KRW-TEST',json.dumps(state),START.isoformat(),START.isoformat()))
