@@ -1,0 +1,60 @@
+name: ARTITRADE v088 new 500MB error archive and complete original MA regression
+on:
+  push:
+    branches: [ fix-artitrade-v088-log-forensics-export-ma-20261117 ]
+    paths: [ '.github/workflows/artitrade-v088-verify.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile source and verify 82 original modules are cryptographically intact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          data=base64.b64decode(''.join((root/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(data).hexdigest()+'"' in (root/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              assert len(z.namelist())==82 and z.testzip() is None
+              for n in z.namelist():
+                  if n.endswith('.py'):ast.parse(z.read(n).decode())
+              z.extractall('/tmp/artitrade-v088-core')
+          g=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
+          assert "versionCode 94" in g
+          assert "versionName '0.7.88-ERROR-EXPORT-MA-HIGH-GUARD'" in g
+          assert "applicationId 'com.artitrade.unified.s21dex'" in g
+          print('V088_ORIGINAL_82_MODULES_SHA_AND_VERSION_CODE94_PASS')
+          PY
+      - name: Run all v088 original SQLite integrity, fragmented ZIP, MA SNT 8.18 and retained RSI controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v088-core"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v088_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v087_*.py' -q
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_*.py' -q
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v085_*.py' -q
+      - name: Run all 30 historical stock, coin, CW, GMO, Trend, MA and SQLite regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v088-core"
+          failed=0
+          for pat in 'test_v082_*.py' 'test_v081_*.py' 'test_v080_*.py' 'test_v079_*.py' 'test_v077_*.py' 'test_v076_*.py' 'test_android_ledger_backup.py' 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v053_*.py' 'test_v051_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            echo "HISTORICAL_$pat"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -q || failed=1
+          done
+          exit "$failed"
