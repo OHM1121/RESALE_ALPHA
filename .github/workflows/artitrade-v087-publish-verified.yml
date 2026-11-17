@@ -1,0 +1,102 @@
+name: ARTITRADE v087 publish verified signed Android 15 APK only
+on:
+  push:
+    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
+    paths: [ '.github/workflows/artitrade-v087-publish-verified.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SOURCE: 'a1f4f3221d4bb568d66ac3b7754a6f0e9bf76922'
+      VERIFIED_RUN: '44003478942'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.87_20261117'
+      TAG: 'ARTITRADE-v0.7.87-20261117'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a1f4f3221d4bb568d66ac3b7754a6f0e9bf76922
+      - name: Verify pinned v087 source and original 82-module checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib
+          p=Path('ARTITRADE_ANDROID/app/src/main')
+          g=Path('ARTITRADE_ANDROID/app/build.gradle').read_text()
+          assert "versionCode 93" in g and "versionName '0.7.87-STABILITY-MA-SELL-PRICE'" in g
+          assert "applicationId 'com.artitrade.unified.s21dex'" in g
+          b=base64.b64decode(''.join((p/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(b).hexdigest()+'"' in (p/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          print('V087_SOURCE_SHA_VERIFIED')
+          PY
+      - name: Require passing Android15 service and original-signer build from pinned source
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN/jobs?per_page=100" > /tmp/artitrade-v087-jobs.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/artitrade-v087-jobs.json') as f:d=json.load(f)
+          success={s['name'] for j in d.get('jobs',[]) for s in j.get('steps',[]) if s.get('conclusion')=='success'}
+          required=[
+            'Verify exactly the installed app signer',
+            'Run all prior stock, coin, research and order regression groups',
+            'Android 15 boot, service, warm return and no fatal exceptions',
+            'Rebuild Samsung ARM64 with original signer',
+            'Verify manifest, version monotonic, signer and SHA-256',
+            'Upload verified Samsung ARM64 APK and evidence',
+          ]
+          missing=[x for x in required if x not in success]
+          assert not missing, 'UNVERIFIED_ANDROID_SOURCE_STEPS: '+str(missing)
+          print('V087_ANDROID15_AND_SIGNED_ORIGINAL_BUILD_SIX_CHECKS_PASS')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.87_20261117
+          run-id: 44003478942
+          repository: OHM1121/RESALE_ALPHA
+          github-token: ${{ github.token }}
+          path: verified-v087
+      - name: Check downloaded APK checksum, identical package and original signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verified-v087
+          test -s "$ARTIFACT.apk"
+          test -s "$ARTIFACT.sha256"
+          test -s "$ARTIFACT.compatibility.txt"
+          sha256sum -c "$ARTIFACT.sha256"
+          APK="$ARTIFACT.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='93' versionName='0.7.87-STABILITY-MA-SELL-PRICE'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" > /tmp/v087-cert.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v087-cert.txt
+          echo 'V087_DOWNLOADED_APK_SHA_MANIFEST_CERT_VERIFIED'
+      - name: Publish verified signed APK with safe release-notes file
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/artitrade-v087-notes.txt <<'RELEASE_END'
+          ARTITRADE v0.7.87 cumulative v0.7.86 emergency test build.
+          Fixed demonstrated coin MA 5-minute 2% first-take-profit SELL veto by authorizing original MA_V065 policy reasons in native V067 dispatcher; strict fresh bid, 3-second depth and confirmed original PAPER fills retained.
+          Coin/share prices show two decimals (8.2 becomes 8.20 KRW). Whole-KRW cash and profit remain unchanged.
+          Main red Wilder RSI20, not blue signal MA9, drives entries. Existing first-cross and third-bar-below-30 protective exit retained.
+          Reduced confirmed redundant heavy Python/SQLite UI snapshots and SharedPreferences string churn: coalesced display-only worker + atomic private file; broker/market tick and original wallet/order SQLite unchanged.
+          Official Android OS prior-process exit reason (low-memory/Java/native crash/ANR/signaled) and process PSS/Java/native memory telemetry saved for device crash diagnosis. Actual prior Samsung force-close cause requires device evidence and is not yet proven.
+          All 30 original historical regression groups, v085-v087 tests, Android 15 genuine foreground-service/return and private record/memory fixture, original 82 modules, versionCode93 and same original signing certificate verified.
+          Install OVER existing app. Do not delete original app or data.
+          RELEASE_END
+          gh release create "$TAG" \
+            "verified-v087/$ARTIFACT.apk" \
+            "verified-v087/$ARTIFACT.sha256" \
+            "verified-v087/$ARTIFACT.compatibility.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE" \
+            --title "ARTITRADE v0.7.87 (verified emergency test build)" \
+            --notes-file /tmp/artitrade-v087-notes.txt --prerelease
