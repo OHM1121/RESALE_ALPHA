@@ -94,9 +94,7 @@ new_loop='''    def _loop(self):
                     self._stop.wait(1.0)
                     continue
 '''
-new_loop+=scan_body+"            self._stop.wait(40)
-
-"
+new_loop+=scan_body+"            self._stop.wait(40)\n\n"
 assert source.count(old_loop)==1
 source=source.replace(old_loop,new_loop,1)
 assert source.count("        self._thread = None")==1
