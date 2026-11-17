@@ -259,14 +259,14 @@ jobs:
           set -euo pipefail
           apk='ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk'
           test -s "$apk"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='101' versionName='0.7.96-MANUAL-RESULT-LIFECYCLE'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='102' versionName='0.7.96-MANUAL-RESULT-LIFECYCLE'"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > /tmp/v089-cert.txt
           grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v089-cert.txt
           unzip -l "$apk" | grep -F 'assets/chaquopy/app.imy'
           unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
           cp "$apk" "$ARTIFACT.apk"
           sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
-          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=101\nversionName=0.7.96-MANUAL-RESULT-LIFECYCLE\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\nreal_market_paper_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=102\nversionName=0.7.96-MANUAL-RESULT-LIFECYCLE\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\nreal_market_paper_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
       - name: Upload verified Samsung ARM64 APK and evidence
         uses: actions/upload-artifact@v4
         with:
