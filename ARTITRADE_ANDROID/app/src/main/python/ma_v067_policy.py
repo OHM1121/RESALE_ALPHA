@@ -39,7 +39,7 @@ UP_SUBMIT_BEFORE_CLOSE_SECONDS=10
 UP_SUBMIT_END_BEFORE_CLOSE_SECONDS=2
 MAX_UP_FILL_DELAY_SECONDS=15
 # Entry setup only. The protective forced-SELL rule is kept unchanged.
-MA120_DOWN_TOLERANCE=Decimal('0.0050')
+MA120_DOWN_TOLERANCE=Decimal('0.0099')
 
 
 def number(x):
@@ -58,7 +58,7 @@ def slopes(prices):
 
 
 def ma120_down_for_entry(ma):
-    """MA120 delta <= +0.0050 is considered falling for new BUY screening.
+    """MA120 delta <= +0.0099 is allowed for user-defined upward-entry screening.
 
     This is an absolute moving-average-price delta, not a percentage.
     """
