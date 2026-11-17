@@ -29,9 +29,14 @@ class V079MAWatchAndEntry(unittest.TestCase):
 
     def test_first_flip_is_preview_only_until_verified_buy_window(self):
         prior=[Decimal('100')]*121
-        before={n:{'delta':Decimal('-0.20')} for n in (*policy.SHORT,120)}
-        current={n:{'delta':Decimal('0.10')} for n in policy.SHORT}
-        current[120]={'delta':Decimal('0.0050')}
+        # v089 requires four short SMA VALUES below MA120 in addition to
+        # the previously verified slope and timing contract.
+        before={n:{'delta':Decimal('-0.20'),'value':Decimal('90')}
+                for n in policy.SHORT}
+        before[120]={'delta':Decimal('-0.20'),'value':Decimal('100')}
+        current={n:{'delta':Decimal('0.10'),'value':Decimal('90')}
+                 for n in policy.SHORT}
+        current[120]={'delta':Decimal('0.0050'),'value':Decimal('100')}
         def fake_slopes(series):
             return before if len(series)==121 else current
         with patch.object(policy,'slopes',side_effect=fake_slopes):
