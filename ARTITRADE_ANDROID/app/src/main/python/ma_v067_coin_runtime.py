@@ -468,6 +468,22 @@ def _process_v067_exits(self,book,now):
                 applied=policy.apply_up_fill(updated,reason,actually,now,p['qty0'],px)
             c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
                       (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
+            # Original CoinLedger._sell increments first_sold_qty only for
+            # legacy reason text containing '1차 목표'. v067 uses immutable
+            # MA_V065_* reason IDs, so its native position first-stage ledger
+            # used to remain zero despite a confirmed actual PAPER SELL.
+            # Reconcile ONLY from the exact execution read above.
+            if reason in ('MA_V065_UP_FIRST_10PCT',
+                          'MA_V065_FIRST_30_AT_REVERSAL_HIGH'):
+                first_goal=(policy.up_stage_quantities(applied,p['qty0'])[0]
+                            if p['kind']=='REVERSAL_UP'
+                            else (policy.number(p['qty0']) or Decimal(0))*policy.FIRST_FRACTION)
+                confirmed=policy.number(applied.get('first_sold')) or Decimal(0)
+                existing=policy.number(p['first_sold_qty']) or Decimal(0)
+                verified=min(first_goal,confirmed)
+                if verified>existing:
+                    c.execute('UPDATE positions SET first_sold_qty=? WHERE id=?',
+                              (str(verified),p['id']))
             depth=max(Decimal(0),depth-actually)
 
 
