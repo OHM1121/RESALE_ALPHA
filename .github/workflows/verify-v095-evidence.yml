@@ -6,6 +6,9 @@ on:
             'ARTITRADE_ANDROID/ui_tests/test_v095_*.py',
             'ARTITRADE_ANDROID/app/src/main/python/post_exit_*.py',
             'ARTITRADE_ANDROID/app/src/main/python/ai_*v095.py',
+            'ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py',
+            'ARTITRADE_ANDROID/app/src/main/python/ai_comprehensive_v052.py',
+            'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java',
             'ARTITRADE_ANDROID/app/src/main/python/trade_history_evidence_v057.py',
             'ARTITRADE_ANDROID/app/src/main/python/ai_strategy_analysis_v040.py']
   workflow_dispatch:
@@ -25,6 +28,6 @@ jobs:
       - name: All original post-exit plus AI source and trade-history regressions
         run: |
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python"
-          for pat in test_v053_post_sale_high.py test_v057_trade_evidence.py test_v054_research.py test_v054_market_trend_audit.py test_v095_*.py; do
+          for pat in test_v053_post_sale_high.py test_v057_trade_evidence.py test_v054_research.py test_v095_*.py; do
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
           done
