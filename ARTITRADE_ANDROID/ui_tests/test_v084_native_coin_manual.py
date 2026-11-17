@@ -13,6 +13,8 @@ import time
 import unittest
 from pathlib import Path
 from uuid import uuid4
+from unittest.mock import patch
+import requests
 
 import android_manual_paper_sell_v085 as android
 import ma_v061_coin_runtime as v061
@@ -92,10 +94,42 @@ class NativePaperMA(unittest.TestCase):
         self.assertEqual(len(self.rows()[1]),1)
         self.assertEqual(self.rows()[0][1],'OPEN')
 
+    def test_stale_ws_book_can_use_independent_fresh_official_rest_bid(self):
+        self.runner.last_book.clear()
+        class Response:
+            def raise_for_status(self):pass
+            def json(self):
+                return [{'market':self_market,'timestamp':int(time.time()*1000),
+                    'orderbook_units':[{'ask_price':95.00,'ask_size':1000,
+                                        'bid_price':94.90,'bid_size':1000}]}]
+        self_market=self.code
+        with patch('requests.get',return_value=Response()) as fetch:
+            got=android._coin(self.rt,self.req,'ma')
+        self.assertEqual(str(got['qty']),'40')
+        self.assertEqual(self.rows()[0][1],'CLOSED')
+        self.assertEqual(len(self.rows()[1]),1)
+        self.assertEqual(fetch.call_count,1)
+        self.assertEqual(fetch.call_args.args[0],'https://api.upbit.com/v1/orderbook')
+
+    def test_stale_official_rest_book_must_not_fake_a_sell(self):
+        self.runner.last_book.clear()
+        class Response:
+            def raise_for_status(self):pass
+            def json(self):
+                return [{'market':self_market,'timestamp':int((time.time()-50)*1000),
+                    'orderbook_units':[{'ask_price':95,'ask_size':1000,
+                                        'bid_price':94.90,'bid_size':1000}]}]
+        self_market=self.code
+        with patch('requests.get',return_value=Response()):
+            with self.assertRaisesRegex(ValueError,'FRESH_COIN_ORDERBOOK_MISSING'):
+                android._coin(self.rt,self.req,'ma')
+        self.assertEqual(self.rows()[1],[])
+
     def test_unverified_book_cannot_sell(self):
         self.runner.last_book[self.code]['timestamp']=int((time.time()-60)*1000)
-        with self.assertRaisesRegex(ValueError,'FRESH_COIN_ORDERBOOK_MISSING'):
-            android._coin(self.rt,self.req,'ma')
+        with patch('requests.get',side_effect=requests.exceptions.Timeout('offline')):
+            with self.assertRaisesRegex(ValueError,'FRESH_COIN_ORDERBOOK_MISSING'):
+                android._coin(self.rt,self.req,'ma')
         self.assertEqual(self.rows()[1],[])
 
     def test_wrong_expected_quantity_cannot_sell(self):
