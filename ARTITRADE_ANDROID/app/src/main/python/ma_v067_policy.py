@@ -7,7 +7,7 @@ Buy at the reversal candle low or below, but never after the price has
 fallen below its low and rebounded back to the low.
 
 REVERSAL_UP: first 120-down / all 4-up transition on FORMING candle;
-requires a genuine recheck inside close-minus-10 to minus-2 seconds. No 4-below filter.
+requires genuine close-minus-10 to minus-2 second verification, with all four short averages below MA120.
 Any entry fill delayed over 15 seconds is prohibited.
 
 All new positions: forced 120-up / all 4-above-and-down instant exit,
@@ -126,10 +126,14 @@ def prewatch_upward_alignment(prior_closed, price):
     cur=slopes(list(prior_closed)+[price])
     if prev is None or cur is None:
         return {'kind':None,'reason':'INVALID_SMA_DATA'}
-    qualifies=lambda m:ma120_down_for_entry(m) and all(m[k]['delta']>0 for k in SHORT)
+    qualifies=lambda m:ma120_down_for_entry(m) and all(
+        m[k]['delta']>0 and m[k]['value']<m[120]['value'] for k in SHORT)
     fields={'ma_120_delta':str(cur[120]['delta']),
             'ma_60_delta':str(cur[60]['delta']),
-            'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE)}
+            'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE),
+            'short4_below120':all(cur[k]['value']<cur[120]['value'] for k in SHORT)}
+    if not fields['short4_below120']:
+        return {'kind':None,'reason':'SHORT4_NOT_BELOW_120',**fields}
     if not qualifies(cur):
         return {'kind':None,'reason':'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN',**fields}
     if qualifies(prev):
