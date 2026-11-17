@@ -10,6 +10,7 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/legacy_ma_exit_watch_v094.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/coin_partial_entry_v094.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py'
   workflow_dispatch:
 permissions: {contents: read}
