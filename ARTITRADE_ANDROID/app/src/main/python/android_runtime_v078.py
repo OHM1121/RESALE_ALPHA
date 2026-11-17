@@ -2255,6 +2255,11 @@ _install_coin_partial_v094()
 from trend_partial_entry_v094 import install as _install_trend_partial_v094
 _install_trend_partial_v094()
 
+# GMO continues only original D+1 partially funded positions at +2 KRX ticks.
+# Original quote freshness, user D+1 day and confirmed ledger remain mandatory.
+from gmo_partial_entry_v094 import install as _install_gmo_partial_v094
+_install_gmo_partial_v094()
+
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
 
