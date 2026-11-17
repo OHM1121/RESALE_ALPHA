@@ -8,7 +8,7 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/**'
-      - 'ARTITRADE_ANDROID/ui_tests/test_v089_*.py'
+      - 'ARTITRADE_ANDROID/ui_tests/**'
 permissions:
   contents: read
 jobs:
