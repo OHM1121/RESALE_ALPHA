@@ -1,4 +1,4 @@
-name: ARTITRADE v085 original strategy patch and entire original regression
+name: ARTITRADE v085 original strategy patch and legacy MA-compatible regression
 on:
   push:
     branches: [ fix-artitrade-v085-manual-exit-research-gmo-display-20261117 ]
