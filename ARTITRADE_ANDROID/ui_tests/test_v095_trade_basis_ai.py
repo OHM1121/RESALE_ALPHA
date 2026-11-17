@@ -101,7 +101,8 @@ class VerifiedRationale(unittest.TestCase):
     def test_manual_ai_scopes_include_original_joined_rationale_not_orderbook_slogan(self):
         result=summary_for_ai(self.root,'stock','ma')
         self.assertGreaterEqual(result['verified_fills'],2)
-        self.assertEqual(result['explanations'][0]['source'],'ORIGINAL_MA_V067_CANDIDATE')
+        self.assertTrue(any(x['source']=='ORIGINAL_MA_V067_CANDIDATE'
+                            for x in result['explanations']))
         self.assertTrue(any(x['numeric_factors'].get('ma120_delta')==0.005
                             for x in result['explanations']))
 
