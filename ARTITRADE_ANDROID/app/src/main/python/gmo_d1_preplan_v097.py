@@ -224,6 +224,7 @@ class Preplanner:
         scenario=next((i+1 for i,cap in enumerate(caps) if touch<=cap),0)
         if not scenario:return
         cap=caps[scenario-1]
+        changed=False
         with self.lock,svc._lock,engine._lock:
             if any(f.get("code")==code and str(f.get("time",""))[:10]<=plan["entry_date"]
                    for f in engine.fills):
@@ -263,6 +264,7 @@ class Preplanner:
                 active=engine._order(code,"BUY",f"D+1_V097_{venue}_S{scenario}",
                                       int(opener),int(cap),int(qty),at.isoformat())
                 engine.used.add(code+"|"+signal.entry_date)
+                changed=True
             elif scenario>int(plan.get("scenario") or 0):
                 # Replace only a still-active PAPER intent's limit; never create
                 # simultaneous scenario orders or exceed the fixed +2 cap.
@@ -270,6 +272,7 @@ class Preplanner:
                 active.purpose=f"D+1_V097_{venue}_S{scenario}"
                 engine._log(code,"GMO_D1_SCENARIO_ESCALATED",
                             f"order={active.id} S{scenario} limit={active.limit}",at.isoformat())
+                changed=True
             plan.update(status="ORDER_PENDING",scenario=max(int(plan.get("scenario") or 0),scenario),
                         limit_price=int(active.limit),order_id=active.id,
                         ceiling_2ticks=int(caps[2]),requested_qty=int(active.requested))
@@ -294,13 +297,15 @@ class Preplanner:
                         buy_missing_book=True,sell_missing_book=False)
             actual=engine.orders.get(active.id)
             if actual is not None and actual.filled>before:
+                changed=True
                 plan["filled_qty"]=int(actual.filled)
                 plan["status"]="PARTIALLY_FILLED" if actual.state!="FILLED" else "FILLED"
             if actual is not None and actual.state=="FILLED":
                 pos=engine.positions.get(code)
                 if pos is not None and pos.cost_basis >=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))-caps[2]:
                     plan["status"]="COMPLETED"
-            svc._persist(True)
+            if changed:
+                svc._persist(True)
 
     def snapshot(self):
         with self.lock:
@@ -382,11 +387,19 @@ def install(core):
         for row in out.get("pending") or []:
             q=by_code.get(row.get("code"))
             if q:
+                row["status"]="D+1 가상매수 "+q["venue"]+" "+q["status"]+" · S"+str(q["scenario"])
+                row["limit_price"]=q.get("limit_price")
                 row["preplan_status"]=q["status"]
                 row["preplan_venue"]=q["venue"]
                 row["preplan_ready_at"]=q["prepared_at"]
                 row["preplan_max_budget_won"]=q["max_budget_won"]
                 row["preplan_scenarios"]="시가 / 시가+1호가 / 시가+2호가"
+        for row in out.get("positions") or []:
+            q=by_code.get(row.get("code"))
+            if q:
+                row["preplan_status"]=q["status"]
+                row["preplan_scenario"]=q["scenario"]
+                row["preplan_limit_price"]=q.get("limit_price")
         return out
 
     def subscriptions(self,at=None):
