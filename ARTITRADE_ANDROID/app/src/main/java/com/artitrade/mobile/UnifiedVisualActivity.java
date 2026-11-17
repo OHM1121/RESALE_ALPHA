@@ -2653,7 +2653,7 @@ public final class UnifiedVisualActivity extends Activity {
             tile.addView(top);
             double pnl=tradePnL(p,"positions");
             double rate=tradeReturnPct(p,"positions",pnl);
-            String detail="매수가 "+formatMaybeMoney(p,"entry_price","entry","avg_buy_price")+
+            String detail="매수가 "+formatMaybePrice(p,"entry_price","entry","avg_buy_price")+
                 "    현재가 "+displayPositionMark(p)+
                 "    수량 "+formatMaybeNumber(p,"qty","quantity","holding_qty");
             TextView prices=text(detail,12);
@@ -3003,24 +3003,24 @@ public final class UnifiedVisualActivity extends Activity {
         if("positions".equals(kind)){
             switch(key){
                 case "a":return "보유 "+number(usefulNumber(r,"qty","quantity","holding_qty"));
-                case "b":return "매수가 "+formatMaybeMoney(r,"entry_price","avg_buy_price","buy_price");
+                case "b":return "매수가 "+formatMaybePrice(r,"entry_price","avg_buy_price","buy_price");
                 case "c":
                     double last=positionMark(r);
-                    return finite(last)?"현재가 "+money(last):"현재가 조회 중";
-                default:return "1차 목표 "+formatMaybeMoney(r,"first_target","target","target_price");
+                    return finite(last)?"현재가 "+WonFormat.price(last):"현재가 조회 중";
+                default:return "1차 목표 "+formatMaybePrice(r,"first_target","target","target_price");
             }
         }
         if("pending".equals(kind)){
             switch(key){
                 case "a":return "점수 "+formatMaybeNumber(r,"score","signal_score");
-                case "b":return "매수가 "+formatMaybeMoney(r,"limit_price","entry_price","price");
-                case "c":return "목표가 "+formatMaybeMoney(r,"first_target","target","target_price");
+                case "b":return "매수가 "+formatMaybePrice(r,"limit_price","entry_price","price");
+                case "c":return "목표가 "+formatMaybePrice(r,"first_target","target","target_price");
                 default:return "대기 상태 "+r.optString("status",r.optString("state","확인 중"));
             }
         }
         switch(key){
             case "a":return "구분 "+tradeSideOf(r);
-            case "b":return "체결가 "+formatMaybeMoney(r,"price","fill_price");
+            case "b":return "체결가 "+formatMaybePrice(r,"price","fill_price");
             case "c":return "체결량 "+formatMaybeNumber(r,"qty","quantity","fill_qty");
             default:return "순손익 "+formatMaybeMoney(r,"net_profit","net_realized","net_pnl","profit");
         }
@@ -3032,6 +3032,10 @@ public final class UnifiedVisualActivity extends Activity {
     private String formatMaybeMoney(JSONObject r,String... fields){
         double value=usefulNumber(r,fields);
         return finite(value)?money(value):"미기록";
+    }
+    private String formatMaybePrice(JSONObject r,String... fields){
+        double value=usefulNumber(r,fields);
+        return finite(value)?WonFormat.price(value):"미기록";
     }
     private void addGridCell(LinearLayout parent,String value){
         TextView t=text(value,13);
@@ -3120,7 +3124,7 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private String displayPositionMark(JSONObject r){
         double n=positionMark(r);
-        return finite(n)&&n>0?money(n):"가격 조회 중";
+        return finite(n)&&n>0?WonFormat.price(n):"가격 조회 중";
     }
     private double positionMark(JSONObject r){
         if(isStockPosition(r)){
@@ -3347,7 +3351,7 @@ public final class UnifiedVisualActivity extends Activity {
         historyEvidenceCell(fields,"기준봉·D일·매수일",
             referenceTimelineOf(r,item.source),198);
         historyEvidenceCell(fields,"체결구분",tradeSideOf(r),78);
-        historyEvidenceCell(fields,"체결가",formatMaybeMoney(r,"price","fill_price"),116);
+        historyEvidenceCell(fields,"체결가",formatMaybePrice(r,"price","fill_price"),116);
         historyEvidenceCell(fields,"체결수량",formatMaybeNumber(r,"qty","fill_qty"),106);
         historyEvidenceCell(fields,"판단점수",formatMaybeNumber(r,"score","signal_score"),92);
         historyEvidenceCell(fields,"매수·매도 근거",tradeReasonOf(r,tradeSideOf(r)),250);
@@ -3498,28 +3502,28 @@ public final class UnifiedVisualActivity extends Activity {
             figures.setOrientation(LinearLayout.HORIZONTAL);
             figures.setPadding(0,dp(7),0,dp(3));
             if("positions".equals(kind)){
-                tradeMetricTile(figures,"매수가",finite(price)?money(price):"—",true);
+                tradeMetricTile(figures,"매수가",finite(price)?WonFormat.price(price):"—",true);
                 String quoteStatus=r.optString("stock_quote_status","");
                 String quoteLabel=isStockPosition(r)&&"LAST_LEDGER".equals(quoteStatus)
                     ?"저장 평가가":isStockPosition(r)&&("LAST_0B".equals(quoteStatus)||
                     "LAST_REST".equals(quoteStatus))?"마지막 확인가":"현재가";
                 tradeMetricTile(figures,quoteLabel,
-                    finite(current)&&current>0?money(current):"가격 조회 중",true);
+                    finite(current)&&current>0?WonFormat.price(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
-                tradeMetricTile(figures,"1차 목표",formatMaybeMoney(r,"first_target","target","target_price"),false);
+                tradeMetricTile(figures,"1차 목표",formatMaybePrice(r,"first_target","target","target_price"),false);
             }else if("pending".equals(kind)){
                 tradeMetricTile(figures,"점수",formatMaybeNumber(r,"score","signal_score"),true);
-                tradeMetricTile(figures,"매수대기",formatMaybeMoney(r,"limit_price","entry_price","price"),true);
-                tradeMetricTile(figures,"목표가",formatMaybeMoney(r,"first_target","target","target_price"),false);
+                tradeMetricTile(figures,"매수대기",formatMaybePrice(r,"limit_price","entry_price","price"),true);
+                tradeMetricTile(figures,"목표가",formatMaybePrice(r,"first_target","target","target_price"),false);
                 tradeMetricTile(figures,"상태",r.optString("status",r.optString("state","확인 중")),false);
             }else if(isSell){
                 double buyPerShare=usefulNumber(r,"buy_price","entry_price");
-                tradeMetricTile(figures,"매수가",finite(buyPerShare)?money(buyPerShare):"미기록",true);
+                tradeMetricTile(figures,"매수가",finite(buyPerShare)?WonFormat.price(buyPerShare):"미기록",true);
                 tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
-                tradeMetricTile(figures,"매도가",formatMaybeMoney(r,"price","fill_price"),false);
+                tradeMetricTile(figures,"매도가",formatMaybePrice(r,"price","fill_price"),false);
                 tradeMetricTile(figures,"매도량",formatMaybeNumber(r,"sell_qty","qty","fill_qty"),false);
             }else{
-                tradeMetricTile(figures,"매수가",formatMaybeMoney(r,"price","fill_price"),true);
+                tradeMetricTile(figures,"매수가",formatMaybePrice(r,"price","fill_price"),true);
                 tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
                 tradeMetricTile(figures,"매수수량",formatMaybeNumber(r,"qty","fill_qty"),false);
                 tradeMetricTile(figures,"수수료",formatMaybeMoney(r,"fees","fee"),false);
@@ -4800,18 +4804,18 @@ public final class UnifiedVisualActivity extends Activity {
         Object at=firstValue(row,"buy_at");
         if(bought){
             String prefix="실거래 매수";
-            return new String[]{prefix+"  "+(finite(price)&&price>0?money(price):"미기록"),
+            return new String[]{prefix+"  "+(finite(price)&&price>0?WonFormat.price(price):"미기록"),
                 researchMoment(at)};
         }
         double virtual=num(row,"virtual_buy_price");
         if(observed&&finite(virtual)&&virtual>0){
             String prefix="gmo".equals(source.source)?"D+1 공식시가":"가상 진입가";
-            return new String[]{prefix+"  "+money(virtual),
+            return new String[]{prefix+"  "+WonFormat.price(virtual),
                 researchMoment(firstValue(row,"virtual_buy_at","first_observed_limit_touch"))};
         }
         double reference=num(row,"limit_price","buy_reference_price");
         if(finite(reference)&&reference>0)
-            return new String[]{"매수 기준가  "+money(reference)+" (미체결)",
+            return new String[]{"매수 기준가  "+WonFormat.price(reference)+" (미체결)",
                 "체결일 없음"};
         return new String[]{"매수가 미기록","체결일 없음"};
     }
@@ -4833,20 +4837,20 @@ public final class UnifiedVisualActivity extends Activity {
         String precisionText=precision==60?"1분봉":"5분봉";
         boolean gotHigh=minuteVerified&&finite(fetchedHigh)&&fetchedHigh>0&&fetchedPeak!=null;
         String highLine=gotHigh?
-            "후속고가  "+money(fetchedHigh)+"  ("+precisionText+")":"";
+            "후속고가  "+WonFormat.price(fetchedHigh)+"  ("+precisionText+")":"";
         String peakLine=gotHigh?researchMoment(fetchedPeak):"";
         if(bought&&!evidence.isEmpty()&&finite(sold)&&sold>0&&at!=null){
             String tag="실거래 매도";
             return gotHigh?
-                new String[]{tag+" "+money(sold)+" · "+highLine,
+                new String[]{tag+" "+WonFormat.price(sold)+" · "+highLine,
                     "매도 "+researchMoment(at)+" · 고점 "+peakLine}:
-                new String[]{tag+"  "+money(sold),researchMoment(at)};
+                new String[]{tag+"  "+WonFormat.price(sold),researchMoment(at)};
         }
         double virtual=num(row,"virtual_sell_price");
         Object virtualAt=firstValue(row,"virtual_sell_at");
         if(!bought&&!row.optString("virtual_sell_evidence","").isEmpty()&&
            finite(virtual)&&virtual>0&&virtualAt!=null)
-            return new String[]{"가상매도  "+money(virtual)+" (모의체결)",
+            return new String[]{"가상매도  "+WonFormat.price(virtual)+" (모의체결)",
                 researchMoment(virtualAt)};
 
         // Observed one-minute highs / BOOK_BID price paths are NEVER a
@@ -4858,13 +4862,13 @@ public final class UnifiedVisualActivity extends Activity {
         // never advertise them as a verified intraday high or target touch.
         if(!"at".equals(source.source)&&finite(observed)&&observed>0&&observedAt!=null&&
            !row.optString("observed_target_evidence","").isEmpty()){
-            return new String[]{"목표 고가관측  "+money(observed)+" (매도 체결 아님)",
+            return new String[]{"목표 고가관측  "+WonFormat.price(observed)+" (매도 체결 아님)",
                 researchMoment(observedAt)};
         }
         Object touched=firstValue(row,"first_observed_target_after_touch");
         double threshold=num(row,"first_target","target");
         if(!"at".equals(source.source)&&touched!=null&&finite(threshold)&&threshold>0)
-            return new String[]{"목표가격 관측  "+money(threshold)+" (매도 체결 아님)",
+            return new String[]{"목표가격 관측  "+WonFormat.price(threshold)+" (매도 체결 아님)",
                 researchMoment(touched)};
         // The original GMO engine records PAPER last-exit time separately from
         // the *first-target* sale. Show it as final exit, never as first TP.
@@ -5282,7 +5286,7 @@ public final class UnifiedVisualActivity extends Activity {
                          " 예상":" 확인")+" "+soldLabel;
             if(peak){
                 String observed=display.format(new Date(peakAt*1000L));
-                first+=" · 후속 최고 "+money(item.optDouble("peak"))+
+                first+=" · 후속 최고 "+WonFormat.price(item.optDouble("peak"))+
                     " · 매수 대비 "+String.format(Locale.KOREA,"%+.2f%%",
                                   item.optDouble("peak_pct"))+
                     " · "+observed;
@@ -5302,7 +5306,7 @@ public final class UnifiedVisualActivity extends Activity {
                     if(step==null)continue;
                     TextView mark=text(" ↳ 최고가 갱신 "+
                         display.format(new Date(step.optLong("high_at")*1000L))+
-                        "  "+money(step.optDouble("price"))+
+                        "  "+WonFormat.price(step.optDouble("price"))+
                         "  ("+String.format(Locale.KOREA,"%+.2f%%",
                                step.optDouble("pct_from_buy"))+")",11);
                     mark.setTextColor(PremiumUi.MUTED);
@@ -5855,8 +5859,8 @@ public final class UnifiedVisualActivity extends Activity {
 
             double entry=num(row,"buy_price","virtual_buy_price","limit_price","official_d1_open");
             double targetPrice=num(row,"first_target","target","observed_target_price");
-            String entryText=finite(entry)&&entry>0?money(entry):"미기록";
-            String goalText=finite(targetPrice)&&targetPrice>0?money(targetPrice):"미기록";
+            String entryText=finite(entry)&&entry>0?WonFormat.price(entry):"미기록";
+            String goalText=finite(targetPrice)&&targetPrice>0?WonFormat.price(targetPrice):"미기록";
             TextView priceFacts=text("매수·기준가 "+entryText+"  |  목표·관측가 "+goalText,12);
             priceFacts.setTextColor(Color.rgb(167,196,220));
             priceFacts.setMaxLines(3);
