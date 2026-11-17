@@ -3808,7 +3808,7 @@ public final class UnifiedVisualActivity extends Activity {
             new AlertDialog.Builder(this).setTitle("강제매도 처리 지연")
                 .setMessage(detail)
                 .setNegativeButton("닫기",null)
-                .setPositiveButton("동일 요청 결과 다시 확인",
+                .setPositiveButton("매도 요청 상태 다시 확인",
                     (dialog,which)->showManualPaperResult(requestId,0)).show();
             return;
         }
