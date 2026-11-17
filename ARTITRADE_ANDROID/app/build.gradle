@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 95
-            versionName '0.7.89-MA120-RSI-SELL-FIX'
+            versionCode 96
+            versionName '0.7.90-GMO-D1-OPEN-PRIORITY'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
