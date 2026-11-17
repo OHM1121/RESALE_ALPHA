@@ -90,6 +90,14 @@ class HistoricalPosition(unittest.TestCase):
             self.assertEqual(legacy_stock_exit(self.root,self.store,tick,book),20)
             self.assertEqual(legacy_stock_exit(self.root,self.store,tick,book),0)
         self.assertEqual(len(self.query("SELECT * FROM executions WHERE side='SELL'")),1)
+    def test_market_store_is_stock_subfolder_in_original_android_runtime(self):
+        self.assertIn('005930',legacy_stock_codes(self.root/'stock'))
+        book=StockBook(self.now)
+        tick=('005930','KOSPI','Test','202611171000',10200,10,self.now.isoformat(),'KRX',self.now.timestamp())
+        with patch('ma_v061_stock_runtime._slope_closes',return_value=[]):
+            self.assertEqual(legacy_stock_exit(self.root/'stock',self.store,tick,book),20)
+        self.assertEqual(len(self.query("SELECT * FROM executions WHERE side='SELL'")),1)
+
     def test_no_book_or_stale_book_never_creates_old_execution(self):
         book=StockBook(self.now-dt.timedelta(seconds=6))
         tick=('005930','KOSPI','Test','202611171000',10200,10,self.now.isoformat(),'KRX',self.now.timestamp())
