@@ -202,10 +202,11 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     if state is None:return previous(self,c,p,bid,now,book)
     from ma_v061_stock_runtime import _slope_closes
     trade=_latest_0b(self,p['code'],now)
-    if trade is None:return  # A fresh real print is needed for forming MA.
-    old=_slope_closes(self,p['code'],p['tf'],now)
-    forced=policy.forced_ma_exit(old,trade)
-    if not forced and _second_followup_bar(self,p,now,trade):
+    # Verified KRX 0D bid/depth can execute targets without a coincident 0B
+    # print. The protective forming-MA signals must still have a fresh 0B.
+    old=_slope_closes(self,p['code'],p['tf'],now) if trade is not None else []
+    forced=policy.forced_ma_exit(old,trade) if trade is not None else ''
+    if trade is not None and not forced and _second_followup_bar(self,p,now,trade):
         forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
     available=int(p['qty'])
     if available<=0:return
