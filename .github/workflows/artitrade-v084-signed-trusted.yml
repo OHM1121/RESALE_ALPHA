@@ -1,0 +1,192 @@
+name: ARTITRADE v0.7.84 verified legacy signer source and Android 15
+on:
+  push:
+    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
+    paths: [ '.github/workflows/artitrade-v084-signed-trusted.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v084-legacy-signer-verified
+  cancel-in-progress: false
+jobs:
+  build-verify-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CI: 'true'
+      SOURCE: 'fix-artitrade-v084-upbit-top40-tick-delivery-20261117'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.84_20261117'
+      TAG: 'ARTITRADE-v0.7.84-20261117'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 'fix-artitrade-v084-upbit-top40-tick-delivery-20261117'
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore original signing certificate (never generate a new key)
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Verify exactly the installed app signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "SIGNING_FINGERPRINT_ACTUAL=$actual"
+          test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+      - name: Verify v084 core SHA, original strategy and inspect unmodified d_live
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile,ast
+          from pathlib import Path
+          r=Path('ARTITRADE_ANDROID/app/src/main')
+          p=r/'assets/strategy_v070'
+          blob=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(blob).hexdigest()+'"' in (r/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              assert z.testzip() is None
+              z.extractall('/tmp/artitrade-v084-core')
+              assert len(z.namelist())==82
+              for n in z.namelist():
+                  if n.endswith('.py'):compile(z.read(n).decode(),n,'exec')
+              up=z.read('d_upbit.py').decode()
+              live=z.read('d_live.py').decode()
+              assert up.count('with connect(WS_URL,')==1
+              assert 'self._v084_tick_queue.put_nowait((code,price,stamp))' in up
+              assert 'def _v084_refresh_subscriptions(self)' in up
+              assert 'def _v084_consume_ticks(self)' in up
+              cls=next(x for x in ast.parse(up).body if isinstance(x,ast.ClassDef) and x.name=='UpbitPaperRunner')
+              ws=next(x for x in cls.body if isinstance(x,ast.FunctionDef) and x.name=='_ws')
+              body=ast.get_source_segment(up,ws)
+              assert 'self._both_watched_codes()' not in body
+              assert 'self.tracked' not in body
+              assert 'self.latest_prices[code]=' not in body
+              assert 'self._v084_bids' in body
+              assert 'self._v084_tick_seen' in body
+              assert 'self._v084_book_seen' in body
+              assert 'ping_interval=20,ping_timeout=30' in body
+              assert 'V071_KRX_0B_SILENT_45S_RECONNECT' not in live
+          g=(Path('ARTITRADE_ANDROID/app/build.gradle')).read_text()
+          assert "versionCode 90" in g
+          assert "versionName '0.7.84-WS-TOP40-TICK-COALESCE'" in g
+          trend=(r/'python/market_trend_runtime_v043.py').read_text()
+          policy=(r/'python/ma_v067_policy.py').read_text()
+          assert 'COIN_VERIFIED_TRADE_MAX_AGE_SEC=10.0' in trend
+          assert 'abs(time.time()-float(book.get("timestamp",0))/1000)>3' in trend
+          assert 'if submit and entry not in self._ordered:' in trend
+          assert "MAX_UP_FILL_DELAY_SECONDS=15" in policy
+          assert "MA_PREWATCH_BEFORE_CLOSE_SECONDS=30" in policy
+          print('V084_VERIFIED_NATIVE_82_MODULE_STRATEGY_AND_NO_DB_IN_WS_PASS')
+          PY
+      - name: Check code-driven v084 mailbox and observability remains present
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main')
+          b=base64.b64decode(''.join((p/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:s=z.read('d_upbit.py').decode()
+          assert 'self._v084_accept_tick(code,price,stamp,timestamp)' in s
+          assert 'self._v084_tick_pending[code]=(price,received)' in s
+          assert 'age<0 or age>0.75' in s
+          assert 'self._v084_sub_sends+=1' in s
+          overlay=(p/'python/android_runtime_v078.py').read_text()
+          assert "snapshot['upbit_ws_top40_v084']" in overlay
+          print('V084_TICK_COALESCE_AND_TOP40_DIAGNOSTICS_PASS')
+          PY
+      - name: Run regression - original MA, Trend, coin, stock, ledger, restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v084-core"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          for pat in 'test_v082_*.py' 'test_v081_*.py' 'test_v080_*.py' 'test_v079_*.py' 'test_v077_*.py' 'test_v076_*.py' 'test_android_ledger_backup.py' 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v053_*.py' 'test_v051_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v
+          done
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build x86_64 emulator test APK
+        env:
+          ARTITRADE_EMULATOR_ABI: x86_64
+        working-directory: ARTITRADE_ANDROID
+        run: |
+          gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+          mkdir -p ../downloaded-apks
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk
+      - name: Android 15 boot, service, warm return and no fatal exceptions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: PYTHONPATH=ARTITRADE_ANDROID/ui_tests python3 -c "import android_emulator_smoke_v054 as t; t.real_boot(); t.verify_no_fatal('v084_ws_isolation'); print('V084_ANDROID15_REAL_BOOT_PASS')"
+      - name: Rebuild Samsung ARM64 with original signer
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --rerun-tasks --stacktrace
+      - name: Verify manifest, version monotonic, signer and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='90' versionName='0.7.84-WS-TOP40-TICK-COALESCE'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > /tmp/v084-cert.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v084-cert.txt
+          unzip -l "$apk" | grep -F 'assets/chaquopy/app.imy'
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
+          cp "$apk" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=90\nversionName=0.7.84-WS-TOP40-TICK-COALESCE\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\nreal_market_paper_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
+      - name: Upload verified Samsung ARM64 APK and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.84_20261117
+          path: |
+            ARTITRADE_UNIFIED_v0.7.84_20261117.apk
+            ARTITRADE_UNIFIED_v0.7.84_20261117.sha256
+            ARTITRADE_UNIFIED_v0.7.84_20261117.compatibility.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish prerelease only after all checks succeed
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.compatibility.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE v0.7.84 (verified test build)" --notes "v0.7.84 native Upbit single public WS: v083 isolated SQLite subscriptions, v084 per-symbol genuine ticker coalescing with unchanged 0.75s lag cutoff; TOP40 submitted versus received ticker/book and trend-delivery telemetry, same 3s book, 10s coin trade TTL, RSI20 <=30, precheck and submit windows, MA120/15s gates and original wallets/partial sells preserved. Offline tests, original package/cert and Android 15 emulator only; not evidence of a real Samsung upgrade or observed real-market RSI paper fills. Install over existing app without clearing data." --prerelease
+      - name: Upload Android smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V084_ANDROID15_EVIDENCE
+          path: ui-smoke/**
+          retention-days: 14
+          if-no-files-found: ignore
