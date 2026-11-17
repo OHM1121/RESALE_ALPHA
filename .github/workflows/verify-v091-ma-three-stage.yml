@@ -2,7 +2,11 @@ name: ARTITRADE v091 MA 1st 2nd 3rd native PAPER sell regressions
 on:
   push:
     branches: [fix-artitrade-v091-ma-three-stage-sell-20261117]
-    paths: ['.github/workflows/verify-v091-ma-three-stage.yml']
+    paths:
+      - '.github/workflows/verify-v091-ma-three-stage.yml'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v091_ma_three_stage_real_ledger.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
   workflow_dispatch:
 permissions: {contents: read}
 jobs:
