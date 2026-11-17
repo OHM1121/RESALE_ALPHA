@@ -1,0 +1,58 @@
+name: ARTITRADE read-only GMO D+1 2026-11-17 exact entry forensic
+on:
+  push:
+    branches: [fix-artitrade-v090-gmo-d1-open-20261117]
+    paths: ['.github/workflows/forensic-gmo-d1-20261117.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Read only exact signed original 82-module GMO D+1 code
+        run: |
+          python3 - <<'PY'
+          import ast,base64,hashlib,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          archive=root/'assets/strategy_v070'
+          data=base64.b64decode(''.join((archive/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              print('GMO_ARCHIVE_SHA',hashlib.sha256(data).hexdigest())
+              for filename in ('d_gmo_runtime.py','d_live.py','projectgmo/engine.py'):
+                  if filename not in z.namelist():
+                      print('MISSING_FILE',filename)
+                      continue
+                  s=z.read(filename).decode();lines=s.splitlines();tree=ast.parse(s)
+                  print('GMO_CODE_FILE',filename,'lines',len(lines))
+                  keys=['d1_allowed_ceiling','open_entry','paper_match','GMO_D1_NO_ORDER',
+                        'ENGINE_ENTRY_REJECTED','_in_session','target = now.date()',
+                        'entry_date','_previous_day','_candidate','_scan',
+                        'on_quote','_open','09:','0930','0900','preopen',
+                        'subscribed','latest','_run','_loop','start','open_price']
+                  for idx,line in enumerate(lines):
+                      if (filename=='d_gmo_runtime.py' and
+                          any(x in line for x in keys) and
+                          (len(line)-len(line.lstrip())<22)):
+                          a=max(0,idx-6);b=min(len(lines),idx+9)
+                          print('GMO_CONTEXT_BEGIN',filename,idx+1)
+                          for k in range(a,b):print('%04d'% (k+1),lines[k][:200])
+                          print('GMO_CONTEXT_END')
+                  for node in ast.walk(tree):
+                      if not isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                          continue
+                      if any(x in node.name.lower() for x in ('entry','tick','quote','scan',
+                               'd1','candidate','preload','subscribe','paper_match','opening')):
+                          print('GMO_METHOD',filename,node.name,node.lineno,node.end_lineno)
+                          if filename=='projectgmo/engine.py' and node.end_lineno-node.lineno<160:
+                              print('GMO_METHOD_BODY_BEGIN',node.name)
+                              for j in range(node.lineno-1,node.end_lineno):
+                                  print('%04d'%(j+1),lines[j][:200])
+                              print('GMO_METHOD_BODY_END')
+          PY
