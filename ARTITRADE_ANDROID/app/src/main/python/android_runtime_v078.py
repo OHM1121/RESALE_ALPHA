@@ -184,6 +184,17 @@ def _phone_runtime_snapshot(self):
         coin_node['connected']=coin_trade
         snapshot['coin']=coin_node
         trend=getattr(self,'market_trend',None)
+        # Read-only TOP40 comparison: requested vs submitted vs genuine frames.
+        # This is diagnostic evidence, not a synthetic quote or execution gate.
+        try:
+            trend_codes=()
+            if trend is not None:
+                with trend.lock:
+                    trend_codes=tuple(trend._candidates.get('coin',{}))
+            if cr is not None and hasattr(cr,'_v084_ws_health'):
+                snapshot['upbit_ws_top40_v084']=cr._v084_ws_health(trend_codes)
+        except Exception as exc:
+            snapshot['upbit_ws_top40_v084']={'diagnostic_error':type(exc).__name__}
         warm={}
         for m in ('stock','coin'):
             required=0
@@ -1233,6 +1244,45 @@ def _research_source_audit(db,primary,evidence):
                 'source_error':type(exc).__name__,'evidence_counts':{}}
 
 
+def _v085_preserve_research(native, upstream):
+    """Preserve independently persisted strategy decisions attached to the core.
+
+    Legacy hub builds attached V074 MA decision evidence and then discarded it
+    by replacing the entire research object. This is a read-only merge: neither
+    simulated balances nor confirmed fills are modified or synthesized.
+    """
+    if not isinstance(native,dict):native={}
+    if not isinstance(upstream,dict):return native
+    merged=dict(native)
+    def identity(row):
+        if not isinstance(row,dict):return ('invalid',str(row))
+        eid=row.get('id') or row.get('event_key')
+        if eid:return ('event',str(eid))
+        return ('case',str(row.get('strategy') or ''),str(row.get('tf') or row.get('frame') or ''),
+                str(row.get('code') or row.get('symbol') or ''),
+                str(row.get('at') or row.get('ts') or row.get('created_at') or ''),
+                str(row.get('ref_ts') or row.get('ref_at') or ''),
+                str(row.get('reason') or row.get('decision') or ''))
+    preserved=0
+    for bucket in ('items','score_items'):
+        fresh=list(native.get(bucket) or [])
+        existing={identity(row) for row in fresh}
+        for row in upstream.get(bucket) or []:
+            if not isinstance(row,dict):continue
+            key=identity(row)
+            if key in existing:continue
+            fresh.append(row.copy())
+            existing.add(key)
+            preserved+=1
+        if fresh:
+            fresh.sort(key=lambda row:str(row.get('at') or row.get('ts') or ''),reverse=True)
+        merged[bucket]=fresh
+    merged['loaded_items']=len(merged.get('items') or [])
+    merged['upstream_decisions_preserved_v085']=preserved
+    # Preserve diagnostic error state even when upstream evidence is displayed.
+    return merged
+
+
 def _research_history(self, out):
     """Read every strategy independently: one legacy table failure must not mask other research.
 
@@ -1284,14 +1334,20 @@ def _research_history(self, out):
             result.update(audit)
             return result
     stock=out.setdefault('stock',{}).setdefault('at',{})
-    stock['research']=read('AT',lambda:_stock_at_research(self.root))
-    stock['research']['ma']=read('MA',lambda:_stock_ma_research(self.root))
+    prior_stock=stock.get('research') or {}
+    original_ma=prior_stock.get('ma') if isinstance(prior_stock,dict) else None
+    stock['research']=_v085_preserve_research(
+        read('AT',lambda:_stock_at_research(self.root)),prior_stock)
+    stock['research']['ma']=_v085_preserve_research(
+        read('MA',lambda:_stock_ma_research(self.root)),original_ma)
     out.setdefault('stock',{}).setdefault('cw',{})['research']=read(
         'CLOSE',lambda:_close_research(self.root))
     out.setdefault('coin',{}).setdefault('general',{})['research']=read(
         'COIN_BASE',lambda:_coin_research(self.root,'base'))
-    out.setdefault('coin',{}).setdefault('ma',{})['research']=read(
-        'COIN_MA',lambda:_coin_research(self.root,'ma'))
+    coin_ma=out.setdefault('coin',{}).setdefault('ma',{})
+    coin_ma['research']=_v085_preserve_research(
+        read('COIN_MA',lambda:_coin_research(self.root,'ma')),
+        coin_ma.get('research'))
     return out
 
 def _gmo_original_record(root):
@@ -2181,6 +2237,18 @@ start = _core.start
 stop = _core.stop
 snapshot = _core.snapshot
 hub_records = _core.hub_records
-set_live = _core.set_live
+# This APK has ONLY real-quote simulated fills and shadow/PAPER research.
+# Its original LIVE switch is a broker-order adapter, never the user-facing
+# "실거래" simulated-wallet label. A future real-account APK is separate.
+def set_live(market,enabled):
+    if enabled:
+        return json.dumps({'ok':False,'error':'SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS',
+            'live_enabled':{'stock':False,'coin':False}},ensure_ascii=False)
+    return _core.set_live(market,False)
+
+def manual_paper_sell(request):
+    from android_manual_paper_sell_v085 import perform
+    return perform(request)
+
 # v045 explicit score-independent market trend entry selection.
 from market_trend_runtime_v043 import set_manual_mode as set_trend_manual

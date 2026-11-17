@@ -1,0 +1,62 @@
+name: ARTITRADE v083 isolated WS source patch and safety regression
+on:
+  push:
+    branches: [ fix-artitrade-v083-upbit-trend-ws-20261116 ]
+    paths: [ '.github/workflows/artitrade-v083-prepare.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  source-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply single-file original core patch
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v083_ws_isolation.py
+      - name: Validate all bundled modules, immutable strategy, and original ledgers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,io,zipfile,ast,hashlib
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          blob=base64.b64decode(''.join((root/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(blob).hexdigest()+'"' in (root/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            assert z.testzip() is None
+            for n in z.namelist():
+              if n.endswith('.py'):compile(z.read(n).decode(),n,'exec')
+            src=z.read('d_upbit.py').decode()
+            node=next(x for x in ast.parse(src).body if isinstance(x,ast.ClassDef) and x.name=='UpbitPaperRunner')
+            ws=next(x for x in node.body if isinstance(x,ast.FunctionDef) and x.name=='_ws')
+            body=ast.get_source_segment(src,ws)
+            assert 'self._both_watched_codes()' not in body
+            assert 'self.latest_prices[code]=' not in body
+            assert 'self._v083_tick_queue.put_nowait' in body
+            assert 'self._v083_book_seen[code]' in body
+          trend=(root/'python/market_trend_runtime_v043.py').read_text()
+          policy=(root/'python/ma_v067_policy.py').read_text()
+          assert 'COIN_VERIFIED_TRADE_MAX_AGE_SEC=10.0' in trend
+          assert 'if submit and entry not in self._ordered:' in trend
+          assert 'abs(time.time()-float(book.get("timestamp",0))/1000)>3' in trend
+          assert "MAX_UP_FILL_DELAY_SECONDS=15" in policy
+          print('V083_NO_DB_IN_WS_RECV_AND_STRATEGY_POLICY_PASS')
+          PY
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+      - name: Commit only source package after checks pass (not APK release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(v083): isolate Upbit WS receive from SQLite and ticker callbacks"
+          git push origin HEAD:fix-artitrade-v083-upbit-trend-ws-20261116

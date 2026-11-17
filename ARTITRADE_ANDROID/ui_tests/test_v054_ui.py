@@ -9,7 +9,7 @@ class V054Ui(TestCase):
     def test_unified_release_is_v054_or_newer_with_incremented_versioncode(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf-8')
         self.assertRegex(gradle,r"versionCode (?:6[1-9]|[7-9][0-9])")
-        self.assertIn("versionName '0.7.82-LAZY-FILL-DETAILS'", gradle)
+        self.assertIn("versionName '0.7.85-RESEARCH-GMO-PAPER'", gradle)
         self.assertIn("applicationId 'com.artitrade.unified.s21dex'",gradle)
 
     def test_trend_is_primary_strategy_in_both_markets(self):
@@ -34,7 +34,7 @@ class V054Ui(TestCase):
         self.assertIn('renderTrendWatchPending()',UI)
         self.assertIn('market_trend_watch',UI)
         self.assertIn('RSI(20) ≤ 35',UI)
-        self.assertIn('RSI20 관측대기는 미주문',UI)
+        self.assertNotIn('RSI20 관측대기는 미주문',UI)
         self.assertIn('WATCH_PENDING',UI)
 
     def test_segregated_ledger_read_and_ai_path(self):

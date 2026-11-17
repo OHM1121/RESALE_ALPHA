@@ -30,6 +30,7 @@ public final class UnifiedTradingService extends Service {
     static final String SET_LIVE="com.artitrade.mobile.SET_LIVE";
     static final String SET_TREND_MANUAL="com.artitrade.mobile.SET_TREND_MANUAL";
     static final String APPLY_OPERATION="com.artitrade.mobile.APPLY_OPERATION";
+    static final String MANUAL_PAPER_SELL="com.artitrade.mobile.MANUAL_PAPER_SELL";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
     static final String SET_PC_SYNC="com.artitrade.mobile.SET_PC_LIVE_SYNC";
     static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
@@ -82,6 +83,11 @@ public final class UnifiedTradingService extends Service {
             }
             ensureChannel();
             startForeground(NOTIFY_ID,notification("안전 시작 · 최신 EXE 전략엔진 준비"));
+            if(intent!=null&&MANUAL_PAPER_SELL.equals(intent.getAction())){
+                final String payload=intent.getStringExtra("request");
+                new Thread(()->applyManualPaperSell(payload),
+                    "artitrade-v085-user-paper-exit").start();
+            }
             if(intent!=null&&SET_LIVE.equals(intent.getAction())){
                 String market=intent.getStringExtra("market");
                 boolean enabled=intent.getBooleanExtra("enabled",false);
@@ -284,6 +290,37 @@ public final class UnifiedTradingService extends Service {
                     "artitrade-pc-research-missing-only").start();
         }catch(Throwable e){crashes.add("pc_ledger_auto_check",e);}
     }
+    private void applyManualPaperSell(String raw){
+        JSONObject result=new JSONObject();
+        String requestId="";
+        try{
+            JSONObject request=new JSONObject(raw==null?"{}":raw);
+            requestId=request.optString("request_id","");
+            // Never accept an unconfirmed or owner-less action.
+            if(!request.optBoolean("user_confirmed",false))
+                result.put("ok",false).put("error","MANUAL_SELL_CONFIRMATION_REQUIRED");
+            else if(!running.get()||strategy==null||!strategy.isStarted())
+                result.put("ok",false).put("error","PAPER_STRATEGY_NOT_RUNNING");
+            else
+                result=strategy.manualPaperSell(request);
+        }catch(Exception e){
+            crashes.add("manual_paper_sell_service",e);
+            try{result.put("ok",false).put("error","MANUAL_SELL_REQUEST_INVALID")
+                .put("detail",e.getClass().getSimpleName());}
+            catch(Exception ignored){}
+        }
+        try{
+            result.put("request_id",requestId);
+            result.put("completed_at",System.currentTimeMillis());
+            getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
+                .edit().putString("last_result",result.toString()).commit();
+            if(!result.optBoolean("ok",false))
+                crashes.add("manual_paper_sell_rejected",
+                    new IllegalStateException(result.optString("error","UNKNOWN")+
+                        ": "+result.optString("detail","")));
+        }catch(Exception e){crashes.add("manual_paper_sell_result_store",e);}
+    }
+
     private void applyPendingOperation(){
         try{
             String raw=getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).getString("settings","");
