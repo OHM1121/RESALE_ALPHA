@@ -1874,7 +1874,8 @@ public final class UnifiedVisualActivity extends Activity {
         String status=row.optString("status","").toUpperCase(Locale.ROOT);
         String id=row.optString("id","");
         String reason=row.optString("reason","").toUpperCase(Locale.ROOT);
-        return mode.contains("MARKET_TREND")||mode.contains("마켓트렌드")||
+        return "trend".equalsIgnoreCase(row.optString("strategy",""))||
+            mode.contains("MARKET_TREND")||mode.contains("마켓트렌드")||
             status.startsWith("TREND_")||id.startsWith("MT43:")||id.startsWith("MT54:")||
             reason.startsWith("MARKET_TREND_");
     }
@@ -2194,22 +2195,13 @@ public final class UnifiedVisualActivity extends Activity {
     private void renderMaEntryObservations(){
         // The original MA wallet is the ONLY source of actual orders and fills.
         // Early 30-second observations are research, not a broker PENDING order.
-        renderList("실제 매수대기 · 원본 주문원장",stats(market,"ma").pending,"pending");
-
-        TextView guide=text("MA 사전관측: 마감 30초 전부터 · 실제 상승전환 매수판정: 마감 10~2초 전",13);
-        guide.setTextColor(Color.rgb(186,219,250));
-        guide.setPadding(dp(2),dp(12),0,dp(4));
-        content.addView(guide);
-        TextView caution=text("사전관측은 주문이 아님. 매수 직전 실제 체결가·호가(3초 이내)와 MA 조건을 다시 확인하며, 주문 후 체결 허용시간은 15초임.",12);
-        caution.setTextColor(PremiumUi.MUTED);
-        caution.setMaxLines(5);
-        content.addView(caution);
+        renderList("MA 매수대기",stats(market,"ma").pending,"pending");
 
         JSONObject local=copyCache().optJSONObject("local_records");
         JSONObject maWatch=local==null?null:local.optJSONObject("ma_watch_v076");
         JSONArray rows=maWatch==null?null:maWatch.optJSONArray(market);
         if(rows==null||rows.length()==0){
-            empty("MA 사전관측 및 최종 판정 이력 없음 · 실제 체결가가 수신되어야 관측 가능함. 이력 0건은 매수조건 만족을 뜻하지 않음");
+            empty("MA 관측 내역 없음");
             return;
         }
         for(int phase=0;phase<2;phase++){
@@ -2237,23 +2229,6 @@ public final class UnifiedVisualActivity extends Activity {
                 what.setTextColor(Color.rgb(228,199,149));
                 what.setMaxLines(4);
                 tile.addView(what);
-                JSONObject facts=r.optJSONObject("ma_details");
-                if(facts!=null&&facts.length()>0){
-                    StringBuilder detail=new StringBuilder();
-                    for(String k:new String[]{"remaining_sec","seconds_to_close","ma_120_delta",
-                        "ma120_delta","ma_60_delta","ma120_down_tolerance","book_age_sec",
-                        "trade_price","last_trade_price","ask","live_source"}){
-                        if(!facts.has(k))continue;
-                        if(detail.length()>0)detail.append(" · ");
-                        detail.append(k).append(" ").append(facts.optString(k,""));
-                    }
-                    if(detail.length()>0){
-                        TextView values=text(detail.toString(),11);
-                        values.setTextColor(Color.rgb(143,180,206));
-                        values.setMaxLines(5);
-                        tile.addView(values);
-                    }
-                }
                 TextView when=text("기준봉 마감 "+r.optString("bar_end","미확인")+
                     " · 관측 시각 "+formatKst(r.opt("at")),11);
                 when.setTextColor(PremiumUi.MUTED);
@@ -2286,38 +2261,10 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text("마켓트렌드 · RSI(20) ≤ 35 매수대기",20);
         title.setTypeface(null,Typeface.BOLD);
         content.addView(title);
-        TextView detail=text("RSI20 관측대기는 미주문 · 사전확인 마감 22~12.5초 전 · 실제 매수 판정 12~7초 전 · RSI30 충족과 신선한 체결가·호가 필요",12);
-        detail.setTextColor(PremiumUi.MUTED);
-        detail.setPadding(dp(2),dp(6),0,dp(10));
-        content.addView(detail);
         JSONObject trendDiag=local==null?null:local.optJSONObject("market_trend_status");
         JSONObject marketDiag=trendDiag==null?null:trendDiag.optJSONObject(market);
-        JSONObject blocked=marketDiag==null?null:marketDiag.optJSONObject("entry_block_reasons");
-        if(blocked!=null&&blocked.length()>0){
-            StringBuilder hint=new StringBuilder("미진입 사유(누적) · ");
-            java.util.Iterator<String> keys=blocked.keys();int shown=0;
-            while(keys.hasNext()&&shown<3){
-                String reason=keys.next();int count=blocked.optInt(reason,0);
-                if(count<=0)continue;
-                if(shown>0)hint.append(" / ");
-                hint.append(reason).append(" ").append(count);
-                shown++;
-            }
-            if(shown>0){
-                TextView why=text(hint.toString(),11);
-                why.setTextColor(PremiumUi.MUTED);
-                why.setMaxLines(4);
-                content.addView(why);
-            }
-        }
         if(pending.length()==0){
-            // Reuse the diagnostics already resolved above; no redeclaration.
-            int candidates=marketDiag==null?0:marketDiag.optInt("candidates",0);
-            String err=marketDiag==null?"":marketDiag.optString("error","");
-            String info="현재 관측 대기 0건 · 스캔 후보 "+candidates+
-                "종목 · RSI 35 이하 실시간 증거 없음";
-            if(!err.isEmpty())info+=" · 마지막 진단: "+err;
-            empty(info);
+            empty("매수대기 종목 없음");
             return;
         }
         for(int i=0;i<pending.length();i++){
@@ -2331,7 +2278,7 @@ public final class UnifiedVisualActivity extends Activity {
                 " · 현재가 "+formatMaybeMoney(row,"price"),13));
             panel.addView(text("진입 재무장 "+(row.optBoolean("armed",false)?"완료":"대기")+
                 " · RSI30 관측 "+(row.optBoolean("touched_30",false)?"있음":"없음")+
-                " · 상태: 미주문 관측",11));
+                "",11));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
             lp.setMargins(0,0,0,dp(9));
             content.addView(panel,lp);
@@ -2751,7 +2698,7 @@ public final class UnifiedVisualActivity extends Activity {
         headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
         content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
         if("trend".equals(strategy)){
-            TextView status=text("RSI20 독립 자동감시 · 5분/30분/1시간/일봉 · 각 시장의 승인된 LIVE/PAPER 상태 적용",12);
+            TextView status=text("RSI20 독립 자동감시 · 5분/30분/1시간/일봉",12);
             status.setTextColor(Color.rgb(119,229,180));
             content.addView(status,new LinearLayout.LayoutParams(-1,dp(27)));
         }
@@ -4815,7 +4762,7 @@ public final class UnifiedVisualActivity extends Activity {
         double price=num(row,"buy_price");
         Object at=firstValue(row,"buy_at");
         if(bought){
-            String prefix="gmo".equals(source.source)?"PAPER 매수":"원장 매수";
+            String prefix="실거래 매수";
             return new String[]{prefix+"  "+(finite(price)&&price>0?money(price):"미기록"),
                 researchMoment(at)};
         }
@@ -4852,7 +4799,7 @@ public final class UnifiedVisualActivity extends Activity {
             "후속고가  "+money(fetchedHigh)+"  ("+precisionText+")":"";
         String peakLine=gotHigh?researchMoment(fetchedPeak):"";
         if(bought&&!evidence.isEmpty()&&finite(sold)&&sold>0&&at!=null){
-            String tag="gmo".equals(source.source)?"PAPER 매도":"원장 매도";
+            String tag="실거래 매도";
             return gotHigh?
                 new String[]{tag+" "+money(sold)+" · "+highLine,
                     "매도 "+researchMoment(at)+" · 고점 "+peakLine}:
@@ -5378,11 +5325,8 @@ public final class UnifiedVisualActivity extends Activity {
         summary.setPadding(0,dp(6),0,dp(4));
         panel.addView(summary);
         JSONObject modes=overall.optJSONObject("by_execution_mode");
-        String byMode="LIVE "+(modes==null?0:modes.optInt("LIVE",0))+
-            " · PAPER "+(modes==null?0:modes.optInt("PAPER",0))+
-            " · 가상추적 "+(modes==null?0:modes.optInt("SHADOW_UNFILLED",0))+
-            " · 미확인 "+(modes==null?0:
-               modes.optInt("UNKNOWN_FILLED_LEDGER",0));
+        String byMode="실거래(가상계좌) "+(modes==null?0:modes.optInt("PAPER",0)+modes.optInt("LIVE",0)+modes.optInt("UNKNOWN_FILLED_LEDGER",0))+
+            " · PAPER(미매수) "+(modes==null?0:modes.optInt("SHADOW_UNFILLED",0));
         TextView modeLine=text(byMode,12);
         modeLine.setTextColor(PremiumUi.MUTED);
         panel.addView(modeLine);
@@ -5879,8 +5823,7 @@ public final class UnifiedVisualActivity extends Activity {
             boolean actualEntry=bool(row,"bought");
             boolean unselected=bool(row,"unselected")||
                 row.optString("entry_status","").contains("UNSELECTED");
-            String tag=actualEntry?("gmo".equals(item.source)?"PAPER체결":"원장체결"):
-                unselected?"불채택":"가상";
+            String tag=actualEntry?"실거래":unselected?"불채택":"PAPER";
             String outcomeKo="HIT".equals(outcome)?
                 (actualEntry?"1차 매도 확인":"가상 목표관측"):
                 "MISS".equals(outcome)?
@@ -5931,14 +5874,14 @@ public final class UnifiedVisualActivity extends Activity {
             // Only originally recorded position/fill timestamps prove a trade.
             Object buyAt=firstValue(row,"buy_at");
             if(actualEntry&&buyAt!=null){
-                TextView bought=text(("gmo".equals(item.source)?"PAPER 매수":"원장 매수")+
+                TextView bought=text("실거래 매수"+
                     " · "+researchMoment(buyAt),12);
                 bought.setTextColor(PremiumUi.MUTED);
                 identityCol.addView(bought);
             }
             Object sellAt=firstValue(row,"sell_at");
             if(actualEntry&&sellAt!=null&&!row.optString("sell_evidence","").isEmpty()){
-                TextView sold=text(("gmo".equals(item.source)?"PAPER 매도":"원장 매도")+
+                TextView sold=text("실거래 매도"+
                     " · "+researchMoment(sellAt),12);
                 sold.setTextColor(PremiumUi.MUTED);observedCol.addView(sold);
                 TextView exit=text("매도 원인 · "+tradeReasonOf(row,"매도"),12);
@@ -6429,12 +6372,13 @@ public final class UnifiedVisualActivity extends Activity {
             }
         }catch(Exception ignored){}
 
-        JSONObject live=copyCache().optJSONObject("live_orders");boolean armed=live!=null&&live.optBoolean(market,false);
-        LinearLayout ctrl=card();TextView t=text("S21+ 메인 실행권한",17);t.setTypeface(null,Typeface.BOLD);ctrl.addView(t);
-        LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(9),0,0);dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(44),1);offp.setMargins(dp(8),0,0,0);dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);ctrl.addView(dr);
-        TextView lt=text("실거래 자동주문",17);lt.setTypeface(null,Typeface.BOLD);lt.setPadding(0,dp(14),0,0);ctrl.addView(lt);
-        LinearLayout lr=new LinearLayout(this);lr.setOrientation(LinearLayout.HORIZONTAL);lr.setPadding(0,dp(9),0,0);lr.addView(button("실거래 ON",armed,()->setLive(true)),new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams of=new LinearLayout.LayoutParams(0,dp(44),1);of.setMargins(dp(8),0,0,0);lr.addView(button("실거래 OFF",!armed,()->setLive(false)),of);ctrl.addView(lr);
-        TextView hint=text(armed?"실거래 ON · 최신 EXE 전략 신호가 실제 주문으로 연결됨":"실거래 OFF · 시세/전략은 계속 실행, 실제 주문만 차단",12);hint.setTextColor(armed?Color.rgb(62,224,181):Color.rgb(255,194,91));hint.setPadding(0,dp(9),0,0);ctrl.addView(hint);
+        LinearLayout ctrl=card();TextView t=text("가상매매 실행",17);t.setTypeface(null,Typeface.BOLD);ctrl.addView(t);
+        LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(9),0,0);
+        dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(44),1));
+        LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(44),1);offp.setMargins(dp(8),0,0,0);
+        dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);ctrl.addView(dr);
+        TextView hint=text("실거래: 실시간 시세 기반 가상계좌 체결\\nPAPER: 미매수 후보의 가상체결·후속연구",12);
+        hint.setTextColor(PremiumUi.MUTED);hint.setPadding(0,dp(10),0,0);ctrl.addView(hint);
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(12),0,0);content.addView(ctrl,cp);
     }
 
