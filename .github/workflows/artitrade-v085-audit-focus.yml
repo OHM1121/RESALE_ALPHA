@@ -28,6 +28,9 @@ jobs:
             'projectgmo/engine.py':[(344,428)],
             'd_gmo_runtime.py':[(1,100),(125,185),(270,358),(870,920),(1013,1097),(1102,1165),(1166,1238)],
             'android_live_bridge.py':[(235,323),(362,395),(421,477)],
+            'd_gmo_runtime.py':[(205,255),(500,600),(655,775)],
+            'projectgmo/engine.py':[(185,228),(520,650)],
+            'coin_ma_engine.py':[(1,110)],
           }
           for filename,ranges in choices.items():
               lines=z.read(filename).decode().splitlines()
