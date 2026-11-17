@@ -174,7 +174,7 @@ class PreparedCoinTrend:
         with self._lock:
             plan["budget_won"]=max(0,budget)
             if q is None:
-                plan["status"]="WAIT_FRESH_BOOK"
+                plan["status"]=("WAIT_FRESH_UPBIT_BOOK" if self.market=="coin" else "WAIT_FRESH_BOOK")
                 return plan
             levels=_limits(q["ask"],symbol,q.get("instrument_tick"),self.market)
             if len(levels)!=3:
@@ -290,7 +290,7 @@ class PreparedCoinTrend:
         q=co._quote(self.market,code)
         book=self._quote_mark(code)
         if q is None or book is None:
-            plan["status"]="WAIT_FRESH_BOOK"
+            plan["status"]=("WAIT_FRESH_UPBIT_BOOK" if self.market=="coin" else "WAIT_FRESH_BOOK")
             self._emit_skip(code,frame,barid,"VERIFIED_BOOK_MISSING",live)
             return
         ask=_dec(q.get("ask"))
