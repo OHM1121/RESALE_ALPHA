@@ -1,0 +1,27 @@
+name: ARTITRADE v089 MA entry exit and manual sell regressions
+on:
+  push:
+    branches: [ fix-artitrade-v089-sell-ma-forensics-20261117 ]
+    paths:
+      - '.github/workflows/artitrade-v089-verify.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/**'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v089_*.py'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: v089 failure reproduction and previous MA safety regression
+        run: |
+          set -euo pipefail
+          PYTHONPATH=ARTITRADE_ANDROID/app/src/main/python python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_*.py' -v
+          PYTHONPATH=ARTITRADE_ANDROID/app/src/main/python python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v087_*.py' -v
