@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * S21+ phone-main runtime.
@@ -39,6 +40,8 @@ public final class UnifiedTradingService extends Service {
     private final AtomicBoolean running=new AtomicBoolean(false);
     private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
     private final AtomicBoolean uiRecordCollecting=new AtomicBoolean(false);
+    // Explicit PAPER exits take precedence over expensive read-only snapshots.
+    private final AtomicInteger manualSellOutstanding=new AtomicInteger(0);
     private volatile long uiRecordLastStartedMs=0L;
     private volatile long lastMigrationPoll=0L;
     private volatile String lastAutomaticMigrationSha="";
@@ -97,12 +100,30 @@ public final class UnifiedTradingService extends Service {
                 // Durable claim before any attempt. Never execute the same UUID twice.
                 if(!results.contains(resultKey)){
                     JSONObject waiting=new JSONObject().put("request_id",requestId)
-                        .put("status","MANUAL_SELL_PENDING")
+                        .put("status","MANUAL_SELL_PENDING").put("stage","QUEUED")
+                        .put("market",manualRequest.optString("market",""))
+                        .put("strategy",manualRequest.optString("strategy",""))
+                        .put("code",manualRequest.optString("code",""))
                         .put("submitted_at",System.currentTimeMillis());
                     if(!results.edit().putString(resultKey,waiting.toString()).commit())
                         throw new IllegalStateException("MANUAL_SELL_PENDING_NOT_DURABLE");
-                    new Thread(()->applyManualPaperSell(payload),
-                        "artitrade-v089-user-paper-exit").start();
+                    manualSellOutstanding.incrementAndGet();
+                    try{
+                        Thread worker=new Thread(()->applyManualPaperSell(payload),
+                            "artitrade-v096-user-paper-exit");
+                        worker.setPriority(Thread.NORM_PRIORITY+2);
+                        worker.start();
+                    }catch(Throwable launchError){
+                        manualSellOutstanding.decrementAndGet();
+                        crashes.add("manual_paper_sell_thread_start",launchError);
+                        JSONObject failed=new JSONObject().put("request_id",requestId)
+                            .put("ok",false).put("status","FAILED")
+                            .put("error","MANUAL_SELL_WORKER_START_FAILED")
+                            .put("detail",launchError.getClass().getSimpleName())
+                            .put("completed_at",System.currentTimeMillis());
+                        if(!results.edit().putString(resultKey,failed.toString()).commit())
+                            throw new IllegalStateException("MANUAL_SELL_START_FAILURE_NOT_DURABLE");
+                    }
                 }
             }
             if(intent!=null&&SET_LIVE.equals(intent.getAction())){
@@ -310,35 +331,63 @@ public final class UnifiedTradingService extends Service {
     private void applyManualPaperSell(String raw){
         JSONObject result=new JSONObject();
         String requestId="";
+        long began=System.currentTimeMillis();
+        android.content.SharedPreferences results=getSharedPreferences(
+            "artitrade_manual_sale_v085",MODE_PRIVATE);
         try{
             JSONObject request=new JSONObject(raw==null?"{}":raw);
             requestId=request.optString("request_id","");
-            // Never accept an unconfirmed or owner-less action.
+            // Mark the exact UUID's worker state before entering the
+            // synchronized Python bridge; it may be busy building UI snapshots.
+            JSONObject active=new JSONObject().put("request_id",requestId)
+                .put("status","MANUAL_SELL_RUNNING").put("stage","ENGINE_LOCK_WAIT")
+                .put("started_at",began)
+                .put("market",request.optString("market",""))
+                .put("strategy",request.optString("strategy",""))
+                .put("code",request.optString("code",""));
+            if(!results.edit().putString("result_"+requestId,active.toString()).commit())
+                throw new IllegalStateException("MANUAL_SELL_RUNNING_NOT_DURABLE");
             if(!request.optBoolean("user_confirmed",false))
                 result.put("ok",false).put("error","MANUAL_SELL_CONFIRMATION_REQUIRED");
             else if(!running.get()||strategy==null||!strategy.isStarted())
                 result.put("ok",false).put("error","PAPER_STRATEGY_NOT_RUNNING");
-            else
+            else{
+                active.put("stage","ENGINE_EXECUTION_REQUESTED")
+                    .put("engine_request_at",System.currentTimeMillis());
+                if(!results.edit().putString("result_"+requestId,active.toString()).commit())
+                    throw new IllegalStateException("MANUAL_SELL_EXECUTING_NOT_DURABLE");
                 result=strategy.manualPaperSell(request);
-        }catch(Exception e){
-            crashes.add("manual_paper_sell_service",e);
-            try{result.put("ok",false).put("error","MANUAL_SELL_REQUEST_INVALID")
-                .put("detail",e.getClass().getSimpleName());}
-            catch(Exception ignored){}
+                if(!result.has("ok"))
+                    result.put("ok",false).put("error","MANUAL_SELL_RESULT_INVALID");
+            }
+        }catch(Throwable error){
+            try{crashes.add("manual_paper_sell_service",error);}catch(Throwable ignored){}
+            try{result=new JSONObject().put("ok",false)
+                .put("error","MANUAL_SELL_EXECUTION_EXCEPTION")
+                .put("detail",error.getClass().getSimpleName()+": "+
+                    String.valueOf(error.getMessage()));}
+            catch(Throwable ignored){result=new JSONObject();}
+        }finally{
+            try{
+                result.put("request_id",requestId);
+                result.put("completed_at",System.currentTimeMillis());
+                result.put("elapsed_ms",System.currentTimeMillis()-began);
+                // Persist the exact UUID's result before permitting another
+                // UI snapshot. Never synthesize a fill or retry an unknown order.
+                boolean saved=results.edit().putString("result_"+requestId,result.toString())
+                    .putString("last_result",result.toString()).commit();
+                if(!saved)throw new IllegalStateException("MANUAL_SELL_RESULT_NOT_DURABLE");
+                if(!result.optBoolean("ok",false))
+                    crashes.add("manual_paper_sell_rejected",
+                        new IllegalStateException(result.optString("error","UNKNOWN")+
+                            ": "+result.optString("detail","")));
+            }catch(Throwable storeError){
+                try{crashes.add("manual_paper_sell_result_store",storeError);}
+                catch(Throwable ignored){}
+            }finally{
+                manualSellOutstanding.decrementAndGet();
+            }
         }
-        try{
-            result.put("request_id",requestId);
-            result.put("completed_at",System.currentTimeMillis());
-            // The UI waits on the exact UUID, never on another position's last_result.
-            boolean saved=getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
-                .edit().putString("result_"+requestId,result.toString())
-                .putString("last_result",result.toString()).commit();
-            if(!saved)throw new IllegalStateException("MANUAL_SELL_RESULT_NOT_DURABLE");
-            if(!result.optBoolean("ok",false))
-                crashes.add("manual_paper_sell_rejected",
-                    new IllegalStateException(result.optString("error","UNKNOWN")+
-                        ": "+result.optString("detail","")));
-        }catch(Exception e){crashes.add("manual_paper_sell_result_store",e);}
     }
 
     private void applyPendingOperation(){
@@ -374,7 +423,8 @@ public final class UnifiedTradingService extends Service {
      * On a hidden UI only the display refresh slows; executions do not.
      */
     private void scheduleUiRecordsIfDue(LocalHubClient hub){
-        if(!running.get()||strategy==null||!strategy.isStarted())return;
+        if(!running.get()||strategy==null||!strategy.isStarted()
+            ||manualSellOutstanding.get()>0)return;
         long now=System.currentTimeMillis();
         android.content.SharedPreferences visibility=getSharedPreferences(
             "artitrade_ui_visibility_v087",MODE_PRIVATE);
@@ -387,7 +437,8 @@ public final class UnifiedTradingService extends Service {
         Thread worker=new Thread(()->{
             long began=android.os.SystemClock.elapsedRealtime();
             try{
-                if(!running.get()||!strategy.isStarted())return;
+                if(!running.get()||!strategy.isStarted()
+                    ||manualSellOutstanding.get()>0)return;
                 JSONObject localRecords=strategy.hubRecords();
                 if(!running.get())return;
                 String serialized=localRecords.toString();
@@ -416,6 +467,7 @@ public final class UnifiedTradingService extends Service {
             }
         },"artitrade-v087-view-snapshot");
         worker.setDaemon(true);
+        worker.setPriority(Thread.MIN_PRIORITY+1);
         worker.start();
     }
 
