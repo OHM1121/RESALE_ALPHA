@@ -25,7 +25,7 @@ class ThreeStageRecovery(unittest.TestCase):
         self.i.submit("ORDER-A",plan["qty"],plan["verified_book_ms"])
         self.i.acknowledge("ORDER-A")
         self.assertEqual(self.quote()["action"],"MONITOR")
-        self.assertEqual(self.i.status()["reserved_won"],"491470.98")
+        self.assertEqual(D(self.i.status()["reserved_won"]),D("491470.98"))
 
     def test_partial_cannot_duplicate_until_terminal_broker_acknowledgement(self):
         plan=self.quote()
