@@ -28,6 +28,16 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile
+          parts=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          packed=base64.b64decode(''.join((parts/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(packed)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              z.extractall('/tmp/artitrade-v090-core')
+          PY
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v090-core"
           python3 -m compileall -q ARTITRADE_ANDROID/ui_tests
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v090_gmo_*.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v063_*.py' -v
