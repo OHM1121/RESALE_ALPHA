@@ -7,6 +7,8 @@ ARTITRADE 통합 안드로이드 — 새 대화 인수인계서 (2026-11-17 / v0
 - 원본 서명 APK 릴리스: ARTITRADE-v0.7.95-20261117
 - 직접 다운로드: https://github.com/OHM1121/RESALE_ALPHA/releases/download/ARTITRADE-v0.7.95-20261117/ARTITRADE_UNIFIED_v0.7.95_20261117.apk
 - 앱 패키지: com.artitrade.unified.s21dex / versionCode 101
+- 릴리스 APK SHA-256: 1d5f888ed368d78cb32def50c8d9feece88061795908bfcdf28ff73e35e1ceac
+- APK 파일 크기: 30,220,389바이트 / GitHub Actions 전체 성공
 - 기존 서명 SHA256: 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
 - 빌드 및 Android15 검증: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44041886861
 - 기존 앱 삭제 금지. 반드시 원본 서명으로 덮어 설치하여 모든 기존 주식/코인 원장, 체결 기록, AI 연구 DB를 보존할 것.
