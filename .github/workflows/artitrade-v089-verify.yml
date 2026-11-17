@@ -23,5 +23,15 @@ jobs:
       - name: v089 failure reproduction and previous MA safety regression
         run: |
           set -euo pipefail
-          PYTHONPATH=ARTITRADE_ANDROID/app/src/main/python python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_*.py' -v
-          PYTHONPATH=ARTITRADE_ANDROID/app/src/main/python python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v087_*.py' -v
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          folder=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((folder/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              assert z.testzip() is None
+              z.extractall('/tmp/artitrade-v089-core')
+          PY
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v089-core"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v087_*.py' -v
