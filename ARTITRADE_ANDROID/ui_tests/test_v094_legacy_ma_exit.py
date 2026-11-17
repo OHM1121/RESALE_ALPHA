@@ -97,9 +97,9 @@ class HistoricalPosition(unittest.TestCase):
         book=StockBook(self.now)
         tick=('005930','KOSPI','Test','202611171000',10200,10,
               self.now.isoformat(),'KRX',self.now.timestamp())
-        with patch('stock_ma_engine.live_session',return_value=True), \\
-             patch('stock_ma_engine.after_market_entitlement',return_value=(True,'')), \\
-             patch('ma_v061_stock_runtime._slope_closes',return_value=[]):
+        with (patch('stock_ma_engine.live_session',return_value=True),
+              patch('stock_ma_engine.after_market_entitlement',return_value=(True,'')),
+              patch('ma_v061_stock_runtime._slope_closes',return_value=[])):
             # Identical MA gate and on_tick path as production d_live worker.
             if tick[0] in service.watched_codes():
                 service.on_tick(tick,book)
