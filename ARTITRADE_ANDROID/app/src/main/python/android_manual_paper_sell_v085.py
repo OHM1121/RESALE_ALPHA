@@ -46,11 +46,49 @@ def _coin_book(rt,code):
     if runner is None:raise ValueError('COIN_FEED_NOT_READY')
     with runner._lock:
         b=dict(runner.last_book.get(code) or {})
-    if b.get('market')!=code or abs(time.time()-float(b.get('timestamp',0))/1000)>3:
-        raise ValueError('FRESH_COIN_ORDERBOOK_MISSING')
-    if _quant(b.get('bid',0))<=0 or _quant(b.get('bid_size',0))<=0:
-        raise ValueError('NO_COIN_BID_DEPTH')
-    return b
+    # Prefer the identical upstream WS evidence used by automatic entries.
+    if b.get('market')==code and abs(time.time()-float(b.get('timestamp',0))/1000)<=3:
+        if _quant(b.get('bid',0))<=0 or _quant(b.get('bid_size',0))<=0:
+            raise ValueError('NO_COIN_BID_DEPTH')
+        return b
+
+    # An existing holding may no longer be subscribed in the TOP50 WS feed.
+    # A *user-confirmed* PAPER exit can read ONE fresh public Upbit orderbook
+    # without opening another WebSocket, subscribing, or submitting an order.
+    # Use the exchange's real bid/depth; no candle, ticker, or cached price is
+    # ever substituted for the missing current best bid.
+    try:
+        import requests
+        reply=requests.get('https://api.upbit.com/v1/orderbook',
+            params={'markets':code,'count':1},
+            headers={'accept':'application/json'},timeout=(1.0,2.0))
+        reply.raise_for_status()
+        payload=reply.json()
+        if not isinstance(payload,list) or len(payload)!=1:
+            raise ValueError('ORDERBOOK_RESPONSE_COUNT')
+        item=payload[0]
+        if not isinstance(item,dict) or item.get('market')!=code:
+            raise ValueError('ORDERBOOK_RESPONSE_MARKET')
+        stamp=int(item.get('timestamp',0))
+        age=time.time()-stamp/1000
+        if not -.5<=age<=3.0:
+            raise ValueError('ORDERBOOK_EXCHANGE_TIMESTAMP_STALE')
+        units=item.get('orderbook_units')
+        if not isinstance(units,list) or not units or not isinstance(units[0],dict):
+            raise ValueError('ORDERBOOK_TOP_LEVEL_MISSING')
+        best=units[0]
+        bid=_quant(best.get('bid_price',0))
+        size=_quant(best.get('bid_size',0))
+        ask=_quant(best.get('ask_price',0))
+        ask_size=_quant(best.get('ask_size',0))
+        if bid>ask:
+            raise ValueError('ORDERBOOK_CROSSED_OR_INVALID')
+        return {'market':code,'bid':str(bid),'bid_size':str(size),
+                'ask':str(ask),'ask_size':str(ask_size),'timestamp':stamp}
+    except Exception as exc:
+        # Fail closed. No execution is created without independently fresh
+        # exchange bid depth; return one stable, useful error to Android.
+        raise ValueError('FRESH_COIN_ORDERBOOK_MISSING') from exc
 
 def _stock_at(rt,req):
     tick=_stock_tick(rt,req['code'],None)
