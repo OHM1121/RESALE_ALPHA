@@ -404,8 +404,8 @@ class PreparedCoinTrend:
                 recovery.terminal(original_order,"FILLED",broker_confirmed=True)
                 plan["recovery_state"]=recovery.status()
             except (RuntimeError,ValueError,ArithmeticError) as evidence_error:
-                plan["recovery_audit_error"]=type(evidence_error).__name__+":"+
-                    str(evidence_error)[:100]
+                plan["recovery_audit_error"]=(type(evidence_error).__name__+":"+
+                    str(evidence_error)[:100])
             co._positions[(self.market,"trend",frame,code)]=position
             co._ordered.add(key)
             co.watch.discard(self.market,code,frame)
