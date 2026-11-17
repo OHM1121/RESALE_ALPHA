@@ -372,9 +372,9 @@ class Coordinator:
                     if (code.startswith("KRW-") and code not in ("KRW-USDT","KRW-USDC")
                         and (not allowed or code in allowed) and vol is not None):
                         observed.append((vol,code))
-                if len(observed)<40:raise RuntimeError("UPBIT_TOP40_INCOMPLETE")
+                if len(observed)<50:raise RuntimeError("UPBIT_TOP50_INCOMPLETE")
                 observed.sort(reverse=True)
-                picked=[(code,("CRYPTO",code)) for _,code in observed[:40]]
+                picked=[(code,("CRYPTO",code)) for _,code in observed[:50]]
             with self.lock:
                 self._candidates[market]=dict(picked)
                 self._last_rank[market]=time.monotonic()
