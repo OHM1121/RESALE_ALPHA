@@ -55,6 +55,10 @@ class V093StrategySubscriptionPriority(unittest.TestCase):
         self.assertEqual(res,protected)
         self.assertEqual(len(res),200)
 
+    def test_zero_capacity_never_claims_a_live_subscription(self):
+        self.assertEqual(allocate_priority([['A'], [], [], [], ['B']],
+                                           protected=['HELD'],capacity=0),[])
+
     def test_qualifying_symbols_must_be_provided_not_forged(self):
         bands=[['A','B'],['C'],[],[],['D']]
         selected=allocate_priority(bands,capacity=200)
