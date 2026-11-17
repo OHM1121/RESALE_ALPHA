@@ -11,6 +11,7 @@ import math
 import os
 import threading
 from projectgmo.prices import plus_ticks, up_tick
+from buy_execution_recovery_v082 import Intent
 
 KST=dt.timezone(dt.timedelta(hours=9))
 _INSTALLED=False
@@ -62,6 +63,7 @@ class Preplanner:
         self.clock=clock
         self.lock=threading.RLock()
         self.plans={}
+        self._v082_intents={}
         self.runner=None
 
     def _key(self,code,venue,at):
@@ -255,7 +257,7 @@ class Preplanner:
             ask,bid,ask_qty,bid_qty=map(int,book[:4])
             if ask<=0 or bid<=0 or ask<bid or ask_qty<=0:return
             last=int(tick[4]);qty_depth=max(1,ask_qty//2)
-            self._step(plan,at,last,ask,qty_depth,venue)
+            self._step(plan,at,last,ask,qty_depth,venue,tick=tick,bid=bid)
         else:
             from d_gmo_runtime import _number
             opener=service.opens.get((code,at.date().isoformat()))
@@ -270,13 +272,45 @@ class Preplanner:
             # KRX PAPER fill is delegated back to its original 0B+0D matcher.
             self._step(plan,at,last,ask,max(0,int(q.ask_size)),venue,q=q,tick=tick)
 
-    def _step(self,plan,at,last,ask,depth,venue,q=None,tick=None):
+    def _step(self,plan,at,last,ask,depth,venue,q=None,tick=None,bid=None):
         svc=self.service;engine=svc.engine
         code=plan["code"];signal=engine.signals.get(code)
         if not signal or not _d1_verified(svc,signal,at):return
         opener=plan.get("opening_price")
         if not opener:return
         caps=(int(opener),plus_ticks(int(opener),1),plus_ticks(int(opener),2))
+        # Only a real same-venue verified 0B exchange timestamp may drive
+        # the recovery command. A missing/expired quote leaves the original
+        # plan waiting; no backfilled print or fake order acknowledgement.
+        proof=None
+        if tick is not None and len(tick)>=9:
+            stamp=_stamp(tick[8])
+            if stamp is not None and abs((at-stamp).total_seconds())<=3:
+                best_bid=(bid if bid is not None else getattr(q,"bid",0))
+                proof={"symbol":code,"exchange_ms":int(stamp.timestamp()*1000),
+                       "ask":int(ask),"bid":int(best_bid or 0),
+                       "ask_size":max(0,int(depth))}
+        if proof is not None:
+            intent_key=(plan["entry_date"],code,venue)
+            intent=self._v082_intents.get(intent_key)
+            if intent is None:
+                try:
+                    per=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))
+                    intent=Intent("gmo","stock",code,
+                        plan["entry_date"]+":"+venue,str(opener),str(per),
+                        str(engine.cfg.buy_fee))
+                    self._v082_intents[intent_key]=intent
+                except (ValueError,TypeError,ArithmeticError):
+                    intent=None
+            if intent is not None:
+                observed=intent.quote(proof,int(at.timestamp()*1000))
+                plan["v082_recovery"]=dict(intent.status(),
+                    action=observed.get("action"),
+                    quote_reason=observed.get("reason"),
+                    original_order_owner="GMO_PAPER")
+                if observed.get("action")=="WAIT":
+                    plan["status"]="WAIT_VERIFIED_RECOVERY_BOOK"
+                    return
         # Resolve pre-created rule templates only from the original verified
         # opening reference; preflight NEVER substitutes a prior close.
         for template,price in zip(plan.get("scenario_templates",()),caps):
@@ -327,8 +361,21 @@ class Preplanner:
                     if not (venue=="KRX" and prior_own):
                         plan["status"]="BLOCKED";return
                 engine._v097_managed_codes.add(code)
+                # Scenario 1 is an IMMEDIATE aggressive +2-tick limit, not
+                # a best-ask-sized passive order. Original 0B/0D matcher
+                # still fills only proved actual PAPER liquidity at or below
+                # the limit, then keeps the SAME intent for residual shares.
                 active=engine._order(code,"BUY",f"D+1_V097_{venue}_S{scenario}",
-                                      int(opener),int(cap),int(qty),at.isoformat())
+                                      int(opener),int(caps[2]),int(qty),at.isoformat())
+                if proof is not None:
+                    intent=self._v082_intents.get((plan["entry_date"],code,venue))
+                    if intent is not None:
+                        try:
+                            intent.submit(str(active.id),str(qty),proof["exchange_ms"])
+                            intent.acknowledge(str(active.id))
+                        except (RuntimeError,ValueError,ArithmeticError) as issue:
+                            plan["v082_order_audit"]=type(issue).__name__+
+                                ":"+str(issue)[:100]
                 engine.used.add(code+"|"+signal.entry_date)
                 changed=True
             elif scenario>int(plan.get("scenario") or 0):
@@ -362,6 +409,14 @@ class Preplanner:
                     engine.paper_match_krx_print_proxy(q,int(tick[5]),
                         buy_missing_book=True,sell_missing_book=False)
             actual=engine.orders.get(active.id)
+            if actual is not None:
+                plan["v082_actual_order_status"]={
+                    "original_order_id":str(actual.id),
+                    "original_state":str(actual.state),
+                    "original_requested_qty":int(actual.requested),
+                    "original_filled_qty":int(actual.filled),
+                    "original_unfilled_qty":max(0,int(actual.requested)-int(actual.filled)),
+                    "aggressive_ceiling_2ticks":int(caps[2])}
             if actual is not None and actual.filled>before:
                 changed=True
                 plan["filled_qty"]=int(actual.filled)
