@@ -2260,7 +2260,7 @@ _install_trend_partial_v094()
 from gmo_partial_entry_v094 import install as _install_gmo_partial_v094
 _install_gmo_partial_v094()
 
-# v097: prepare verified D+1 PAPER buys at 07:58 NXT / 08:58 KRX;
+# v0.8.0: preplan D+1 PAPER buys at 07:50 NXT / 08:50 KRX;
 # only real same-venue 0B/0D may execute the three staged +0/+1/+2 prices.
 # Original GMO SELL, DATE, funding and native ledgers remain authoritative.
 from gmo_d1_preplan_v097 import install as _install_gmo_d1_preplan_v097
