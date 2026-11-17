@@ -28,7 +28,11 @@ def main():
         "market":"coin","strategy":"ma","code":"KRW-ERA",
         "position_id":742614,"expected_qty":"40","percent":100,
         "request_id":request_id,"user_confirmed":True},separators=(",",":"))
-    result=smoke.adb("shell","am","start-foreground-service","-n",
+    # adb shell runs as UID 2000 and is NOT permitted to access our
+    # intentionally non-exported trading service. Invoke from the same
+    # app UID via run-as, just as the first-party Activity does.
+    result=smoke.adb("shell","run-as",smoke.PACKAGE,"am",
+        "start-foreground-service","-n",
         smoke.PACKAGE+"/"+smoke.SERVICE,
         "-a","com.artitrade.mobile.MANUAL_PAPER_SELL",
         "--es","request","'"+payload+"'",timeout=35,check=False)
