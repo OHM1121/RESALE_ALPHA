@@ -24,7 +24,7 @@ jobs:
           raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
           with zipfile.ZipFile(io.BytesIO(raw)) as z:
             for name,names in {
-                'android_live_bridge.py':('KiwoomBroker','UpbitBroker','LiveConnectionProxy','Runtime'),
+                'android_live_bridge.py':('KiwoomBroker','UpbitBroker','LiveConnectionProxy','LiveOrderJournal','Runtime'),
                 'd_upbit.py':('CoinLedger','UpbitPaperRunner'),
                 'd_live.py':('LivePaperRunner',),
                 'd_gmo_runtime.py':('GMOService',),
@@ -39,7 +39,7 @@ jobs:
                   if not any(key in method.name.lower() for key in ('fok','order','fill','sell','buy','process_book','on_book','on_tick','event','subscription','_before','snapshot','_ws')):
                     continue
                   print('###METHOD',cls.name+'.'+method.name,method.lineno,method.end_lineno)
-                  if cls.name in ('KiwoomBroker','UpbitBroker') and 'fok' in method.name:
+                  if cls.name in ('KiwoomBroker','UpbitBroker','LiveOrderJournal') and any(k in method.name for k in ('fok','prepare','get','set','_finish','_find_fill')):
                     print('\n'.join(f'{i+1}: '+line[:200] for i,line in enumerate(lines[method.lineno-1:method.end_lineno],method.lineno-1)))
                   elif cls.name=='CoinLedger' and method.name in ('process_book','_buy','_sell'):
                     print('\n'.join(f'{i+1}: '+line[:200] for i,line in enumerate(lines[method.lineno-1:method.end_lineno],method.lineno-1))[:11000])
