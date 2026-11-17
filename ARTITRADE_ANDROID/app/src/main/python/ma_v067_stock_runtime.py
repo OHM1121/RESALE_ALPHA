@@ -236,6 +236,25 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     else:
         state=policy.apply_up_fill(changed,reason,actually,now,p['qty0'],px)
     _store_state(c,p['id'],state,now)
+    # The v067 staged state is the execution authority, but the original
+    # position flags are still read by native snapshots and legacy consumers.
+    # Keep those flags in sync ONLY after an exact confirmed SELL ledger row.
+    if kind=='REVERSAL_UP':
+        first_goal,second_goal=policy.up_stage_quantities(state,p['qty0'])
+    else:
+        initial=policy.number(p['qty0']) or Decimal(0)
+        first_goal=initial*policy.FIRST_FRACTION
+        second_goal=(initial-first_goal)*policy.SECOND_FRACTION_OF_REMAINING
+    first_confirmed=bool(first_goal>0 and
+        (policy.number(state.get('first_sold')) or Decimal(0))>=first_goal)
+    second_confirmed=bool(second_goal>0 and
+        (policy.number(state.get('second_sold')) or Decimal(0))>=second_goal)
+    if first_confirmed or second_confirmed:
+        c.execute("""UPDATE positions SET
+            first_sold=CASE WHEN ? THEN 1 ELSE first_sold END,
+            second_sold=CASE WHEN ? THEN 1 ELSE second_sold END
+            WHERE id=?""",
+            (int(first_confirmed),int(second_confirmed),p['id']))
 
 
 def _close_seconds(now,frame):
