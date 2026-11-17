@@ -121,5 +121,29 @@ class PreplanTests(unittest.TestCase):
         active=[o for o in self.svc.engine._active_buys() if o.code=="005930"]
         self.assertEqual(active,[])
 
+    def test_nxt_partial_then_krx_at_9_preserves_one_budget(self):
+        from projectgmo.engine import Quote
+        self.p.runner=SimpleNamespace(nxt_snapshot=SimpleNamespace(allows=lambda *a:True),
+                                      _subscribed_groups={"1":["005930_NX"]})
+        nstart=dt.datetime(2026,11,17,7,58,tzinfo=KST)
+        self.p.prepare("NXT",nstart)
+        nxt=dt.datetime(2026,11,17,8,0,tzinfo=KST)
+        plan_nxt=self.p.plans[("2026-11-17","005930","NXT")]
+        plan_nxt["opening_price"]=10000
+        native_window=self.svc.engine._d1_buy_window_ok
+        self.svc.engine._d1_buy_window_ok=lambda order,when:(
+            order.time[:10]==when[:10] if "V097_NXT" in order.purpose
+            else native_window(order,when))
+        self.p._step(plan_nxt,nxt,10000,10000,5,"NXT")
+        self.assertEqual(self.svc.engine.positions["005930"].qty,5)
+        self.p._clear_nxt(dt.datetime(2026,11,17,8,50,tzinfo=KST))
+        self.assertEqual(self.p.prepare("KRX",self.ready),("005930",))
+        krx_plan=self.p.plans[("2026-11-17","005930","KRX")]
+        krx_plan["opening_price"]=10020
+        q=Quote("005930",self.now.isoformat(),1,10020,10020,10010,40,30,"KRX",0)
+        self.p._step(krx_plan,self.now,10020,10020,40,"KRX",q=q)
+        self.assertGreater(self.svc.engine.positions["005930"].qty,5)
+        self.assertLessEqual(sum(f["paid"] for f in self.svc.engine.buy_fills),500000.01)
+
 if __name__=="__main__":
     unittest.main()
