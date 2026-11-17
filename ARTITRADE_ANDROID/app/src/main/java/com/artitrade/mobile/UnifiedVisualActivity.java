@@ -3792,26 +3792,44 @@ public final class UnifiedVisualActivity extends Activity {
                 .getString("result_"+requestId,"{}");
             result=new JSONObject(raw);
         }catch(Exception e){new RuntimeCrashStore(this).add("paper_sell_result_read",e);}
-        boolean stillPending=result!=null
-            &&"MANUAL_SELL_PENDING".equals(result.optString("status",""));
-        if(result==null||!requestId.equals(result.optString("request_id",""))||stillPending){
-            if(attempt<12)main.postDelayed(
-                ()->showManualPaperResult(requestId,attempt+1),1300);
-            else new AlertDialog.Builder(this).setTitle("매도 처리 상태 확인 중")
-                .setMessage("요청 ID별 처리 결과가 아직 확정되지 않았습니다. 원장 체결 여부를 확인할 때까지 자동 재주문하지 않습니다.")
+        boolean match=result!=null&&requestId.equals(result.optString("request_id",""));
+        String state=match?result.optString("status",""):"";
+        boolean pending="MANUAL_SELL_PENDING".equals(state)||
+            "MANUAL_SELL_RUNNING".equals(state);
+        if(!match||pending){
+            if(attempt<12){
+                main.postDelayed(()->showManualPaperResult(requestId,attempt+1),1300);
+                return;
+            }
+            String stage=match?result.optString("stage",""):"RESULT_NOT_STORED";
+            String detail="요청 ID: "+requestId+
+                "\n처리 단계: "+(stage.isEmpty()?"확인 불가":stage)+
+                "\n매도 실행 결과를 아직 확인하지 못했습니다. 거래 원장의 SELL 체결을 대조하기 전에는 재주문하지 않습니다.";
+            new AlertDialog.Builder(this).setTitle("강제매도 처리 지연")
+                .setMessage(detail)
                 .setNegativeButton("닫기",null)
-                .setPositiveButton("매도 요청 상태 다시 확인",
+                .setPositiveButton("동일 요청 결과 다시 확인",
                     (dialog,which)->showManualPaperResult(requestId,0)).show();
             return;
         }
         boolean ok=result.optBoolean("ok",false);
-        String state=result.optString("status","");
-        boolean pending=ok&&state.startsWith("PENDING");
-        String title=!ok?"강제매도 실패":pending?"강제매도 접수":"강제매도 체결 확인";
-        String detail=ok?(pending
-            ?"실제 KRX 체결가가 추가 수신되어 호가 조건을 충족해야 체결됩니다. 현재는 매도 접수 상태입니다."
-            :"가상계좌 원장에 매도 체결이 기록되었습니다.")
-            :result.optString("error","원인 확인 필요")+" · "+result.optString("detail","");
+        boolean awaitingFill=ok&&state.startsWith("PENDING");
+        String title=!ok?"강제매도 실패":awaitingFill?"강제매도 접수":"강제매도 체결 확인";
+        String detail;
+        if(!ok){
+            detail="원인: "+result.optString("error","UNKNOWN")+
+                "\n상세: "+result.optString("detail",result.optString("message",""))+
+                "\n요청 ID: "+requestId;
+        }else if(awaitingFill){
+            detail="매도 의도 접수 완료. 실제 KRX 체결가 및 잔량 조건이 충족되어야 원장에 체결됩니다."+
+                "\n주문 ID: "+result.optString("order_id","미기록")+
+                "\n요청 ID: "+requestId;
+        }else{
+            detail="가상계좌 원장에 매도 체결이 기록되었습니다."+
+                "\n체결수량: "+result.optString("qty","조회 필요")+
+                "\n체결가격: "+result.optString("price","조회 필요")+
+                "\n요청 ID: "+requestId;
+        }
         new AlertDialog.Builder(this).setTitle(title).setMessage(detail)
             .setPositiveButton("확인",null).show();
         refresh(false);
