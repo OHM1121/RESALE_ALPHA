@@ -208,6 +208,15 @@ final class StrategyRuntimeBridge {
         catch(Throwable e){crashes.add("operation_apply",e);return error("OPERATION_APPLY",e);}
     }
 
+    /** Paper-wallet-only explicit manual exit; no broker-order adapter is called. */
+    synchronized JSONObject manualPaperSell(JSONObject request){
+        if(module==null||!started)return error("PAPER_SELL_RUNTIME_NOT_READY",null);
+        try{return parse(module.callAttr("manual_paper_sell",
+            request==null?"{}":request.toString()));}
+        catch(Throwable e){crashes.add("python_manual_paper_sell",e);
+            return error("MANUAL_PAPER_SELL_FAILED",e);}
+    }
+
     synchronized JSONObject setTrendManual(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))
             return error("INVALID_TREND_MARKET",null);
@@ -220,6 +229,7 @@ final class StrategyRuntimeBridge {
     synchronized JSONObject setLive(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))
             return error("INVALID_LIVE_MARKET",null);
+        if(enabled)return error("SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS",null);
         if(enabled&&(!started||module==null))
             return error("LIVE_RUNTIME_NOT_READY",null);
         try{
