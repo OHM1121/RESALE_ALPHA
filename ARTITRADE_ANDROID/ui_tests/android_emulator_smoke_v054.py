@@ -60,8 +60,13 @@ def dump(label):
     name=capture(label)
     for attempt in range(4):
         try:
-            adb("shell","uiautomator","dump","/sdcard/artitrade_ui.xml",timeout=35)
-            raw=subprocess.run(["adb","exec-out","cat","/sdcard/artitrade_ui.xml"],
+            # A reused /sdcard/artitrade_ui.xml silently returned OLD XML even
+            # after screenshots showed the correct export widgets on Android 15.
+            # Use a fresh per-capture/per-attempt file and require it to exist.
+            xml_target=f"/sdcard/artitrade_ui_{SCREENSHOT_COUNT}_{attempt}.xml"
+            adb("shell","rm","-f",xml_target,timeout=15,check=False)
+            adb("shell","uiautomator","dump",xml_target,timeout=35)
+            raw=subprocess.run(["adb","exec-out","cat",xml_target],
                                capture_output=True,timeout=25,check=True).stdout
             if b"<hierarchy" not in raw:raise AssertionError("UI hierarchy missing")
             (BASE/f"{SCREENSHOT_COUNT:02d}_{name}.xml").write_bytes(raw)
