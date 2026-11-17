@@ -1350,6 +1350,57 @@ def _research_history(self, out):
         coin_ma.get('research'))
     return out
 
+def _v086_enrich_gmo_executions(rows):
+    """Source-only cash/cost evidence for BUY and partial SELL fills.
+
+    Original GMO engine.fill() records net_profit AFTER cost basis, sell fee
+    and stock sell tax. Therefore a SELL lot's exact allocated acquisition
+    cost equals sell gross minus SELL fee/tax minus the recorded net P&L.
+    No candle/high, unfilled order, virtual fill or guessed basis is used.
+    """
+    if not isinstance(rows,list):return rows
+    for fill in rows:
+        if not isinstance(fill,dict):continue
+        try:
+            qty=float(fill.get('qty'))
+            price=float(fill.get('price'))
+        except (TypeError,ValueError,OverflowError):continue
+        if not (math.isfinite(qty) and qty>0 and math.isfinite(price) and price>0):
+            continue
+        side=str(fill.get('side') or '').upper()
+        if side=='BUY':
+            fill['buy_amount']=round(price*qty,2)
+            fill['buy_price']=price
+            fill['buy_qty']=qty
+            fill['gmo_buy_amount_basis']='ORIGINAL_BUY_FILL_PRICE_X_QTY'
+        elif side=='SELL':
+            fill['sell_qty']=qty
+            try:
+                net=float(fill['net_profit'])
+                fees=float(fill['fees'])
+                tax=float(fill['tax'])
+            except (KeyError,ValueError,TypeError,OverflowError):
+                # Missing fee/tax or net evidence must not become a fake ROI.
+                continue
+            if not all(math.isfinite(x) and x>=0 for x in (fees,tax)):
+                continue
+            if not math.isfinite(net):continue
+            allocated_cost=price*qty-fees-tax-net
+            if allocated_cost<=0 or not math.isfinite(allocated_cost):
+                continue
+            fill['buy_amount']=round(allocated_cost,2)
+            fill['gmo_allocated_buy_cost']=round(allocated_cost,2)
+            # If the original linked BUY fill supplied an exact purchase
+            # price, preserve it. Otherwise show effective per-unit cost
+            # WITH buy fees rather than pretend a historical fill price.
+            if fill.get('buy_price') in (None,''):
+                fill['buy_price']=round(allocated_cost/qty,6)
+                fill['gmo_buy_unit_basis']='ALLOCATED_COST_INCLUDES_BUY_FEE'
+            fill['realized_pct']=round(net/allocated_cost*100,5)
+            fill['gmo_realized_pct_basis']='ORIGINAL_NET_PROFIT_OVER_ALLOCATED_COST'
+    return rows
+
+
 def _gmo_original_record(root):
     """Read the unmodified PC GMO SQLite + full JSON state without an engine restart.
 
@@ -1398,9 +1449,10 @@ def _gmo_original_record(root):
         qty = int(p.get('qty') or 0)
         if qty <= 0: continue
         original_buy=entry_fill(dict(p,code=code),buys) or {}
-        active.append({'tf':'gmo','strategy':'gmo','code':code,
+        active.append({'tf':'gmo','strategy':'gmo','code':code,'gmo':True,
             'name':p.get('name') or names.get(code,code),'qty':qty,
             'entry_price':p.get('entry_price'),'last_price':None,
+            'gmo_cost_basis':p.get('cost_basis'),
             'entry_at':original_buy.get('entry_at'),
             'buy_at':original_buy.get('entry_at'),
             'buy_reason':original_buy.get('buy_reason'),
@@ -1446,6 +1498,7 @@ def _gmo_original_record(root):
             _attach_fill_cost(e,{'entry_price':unique_price})
         elif str(e.get('side') or '').upper()=='BUY':
             _attach_fill_cost(e)
+    _v086_enrich_gmo_executions(executions)
     executions.sort(key=lambda x:str(x.get('ts') or ''),reverse=True)
     # Use exactly the EXE's original 15-session evidence and paper-fill
     # attribution. A candle HIGH is not a broker/paper SELL execution.
@@ -1728,6 +1781,22 @@ def _hub_records_v078(self):
                 queue_phone_buy_evidence(self.root,captured)
             except Exception as evidence_exc:
                 self._err('gmo_phone_buy_evidence',evidence_exc)
+            # Preserve the exact original position cost basis and sell fees
+            # for a consistent net liquidation estimate. This does not
+            # modify GMO engine holdings or turn REST marks into live fills.
+            try:
+                cfg=gmo.engine.cfg
+                for pos in (snap.get('positions') or []):
+                    original=gmo.engine.positions.get(str(pos.get('code') or ''))
+                    if original is None:continue
+                    pos['gmo']=True
+                    pos['strategy']='gmo'
+                    pos['gmo_cost_basis']=float(original.cost_basis)
+                    pos['gmo_sell_fee_rate']=float(cfg.sell_fee)
+                    pos['gmo_sell_tax_rate']=float(cfg.sell_tax)
+            except Exception as cost_exc:
+                self._err('gmo_original_cost_basis_v086',cost_exc)
+            _v086_enrich_gmo_executions(snap.get('executions') or [])
             wallet=snap.get('wallet') or {}
             sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']
             wins=sum(1 for x in sells if float(x.get('net_profit') or 0)>0)
