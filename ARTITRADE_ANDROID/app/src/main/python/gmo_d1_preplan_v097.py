@@ -374,8 +374,8 @@ class Preplanner:
                             intent.submit(str(active.id),str(qty),proof["exchange_ms"])
                             intent.acknowledge(str(active.id))
                         except (RuntimeError,ValueError,ArithmeticError) as issue:
-                            plan["v082_order_audit"]=type(issue).__name__+
-                                ":"+str(issue)[:100]
+                            plan["v082_order_audit"]=(type(issue).__name__+
+                                ":"+str(issue)[:100])
                 engine.used.add(code+"|"+signal.entry_date)
                 changed=True
             elif scenario>int(plan.get("scenario") or 0):
