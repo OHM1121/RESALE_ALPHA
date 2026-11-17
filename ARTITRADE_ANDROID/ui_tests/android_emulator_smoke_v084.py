@@ -42,6 +42,11 @@ def main():
         raise AssertionError("Manual negative request was not persisted by service")
     smoke.verify_no_fatal("v084_after_rejected_manual_exit")
     smoke.adb("shell","am","force-stop",smoke.PACKAGE)
+    # Real Android regression: an unexpected integer persisted under a
+    # string-valued navigation field MUST NOT crash every future launch.
+    # This deliberately corrupts disposable EMULATOR UI prefs only.
+    smoke.put_pref("artitrade_ui_navigation_v1",{
+        "market":911,"page":"positions","strategy":"ma","integrated_mode":0})
     smoke.adb("shell","am","start","-W","-n",
         smoke.PACKAGE+"/"+smoke.ACTIVITY,timeout=60)
     time.sleep(9)
