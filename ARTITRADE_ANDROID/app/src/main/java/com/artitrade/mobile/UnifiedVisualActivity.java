@@ -262,8 +262,22 @@ public final class UnifiedVisualActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        ProcessHealthV087.install(this);
-        restoreNavigation(state);
+        // Corrupt navigation preferences must never create an infinite launcher
+        // crash loop. Recover ONLY view state; retain all original SQLite,
+        // orders, filled trades, API credentials and research history.
+        try{
+            ProcessHealthV087.install(this);
+            restoreNavigation(state);
+        }catch(Throwable bootstrapError){
+            try{new RuntimeCrashStore(this).add(
+                "startup_navigation_recovered",bootstrapError);}catch(Throwable ignored){}
+            market="stock";
+            strategy="at";
+            page="home";
+            integratedMode=false;
+            historyFilterStock="current";
+            historyFilterCoin="current";
+        }
         // v088 error logs remain private and exportable; no error-table screen.
         if("errors".equals(page))page="home";
         try{
