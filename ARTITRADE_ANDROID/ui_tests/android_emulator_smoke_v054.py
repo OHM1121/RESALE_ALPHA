@@ -60,15 +60,18 @@ def dump(label):
     name=capture(label)
     for attempt in range(4):
         try:
-            # A reused /sdcard/artitrade_ui.xml silently returned OLD XML even
-            # after screenshots showed the correct export widgets on Android 15.
-            # Use a fresh per-capture/per-attempt file and require it to exist.
-            xml_target=f"/sdcard/artitrade_ui_{SCREENSHOT_COUNT}_{attempt}.xml"
-            adb("shell","rm","-f",xml_target,timeout=15,check=False)
-            adb("shell","uiautomator","dump",xml_target,timeout=35)
+            # Android 15 uiautomator intermittently ignores a custom XML
+            # destination. The supported default is /sdcard/window.xml.
+            # Remove it BEFORE every dump so a stale file cannot pass a test.
+            xml_target="/sdcard/window.xml"
+            adb("shell","rm","-f",xml_target,timeout=15)
+            diagnostic=adb("shell","uiautomator","dump",timeout=35,check=False)
             raw=subprocess.run(["adb","exec-out","cat",xml_target],
-                               capture_output=True,timeout=25,check=True).stdout
-            if b"<hierarchy" not in raw:raise AssertionError("UI hierarchy missing")
+                               capture_output=True,timeout=25,check=False).stdout
+            if b"<hierarchy" not in raw:
+                (BASE/f"{SCREENSHOT_COUNT:02d}_{name}_xml_failure.txt").write_text(
+                    diagnostic+"\n"+adb("shell","ls","-l",xml_target,check=False),encoding="utf-8")
+                raise AssertionError("Fresh default UI hierarchy unavailable")
             (BASE/f"{SCREENSHOT_COUNT:02d}_{name}.xml").write_bytes(raw)
             return ET.fromstring(raw)
         except Exception as exc:
