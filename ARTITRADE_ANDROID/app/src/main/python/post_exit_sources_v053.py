@@ -392,10 +392,10 @@ def scan(root,now_epoch):
     """Return authenticated per-trade study windows; never mutate input files."""
     sources=[
       ("stock","at","stock/ARTITRADE_D.sqlite3"),
-      ("stock","ma","stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"),
+      ("stock","ma","stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3"),
       ("stock","close","stock/close/AT_CLOSE_PAPER.sqlite3"),
       ("coin","general","coin/base/upbit_paper.sqlite3"),
-      ("coin","ma","coin/ma/upbit_paper.sqlite3"),
+      ("coin","ma","coin/ma_epoch_v062/upbit_paper.sqlite3"),
     ]
     out=[];problems=[]
     for market,strategy,path in sources:
