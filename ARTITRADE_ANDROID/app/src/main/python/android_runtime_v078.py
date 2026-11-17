@@ -2266,9 +2266,10 @@ _install_gmo_partial_v094()
 from gmo_d1_preplan_v097 import install as _install_gmo_d1_preplan_v097
 _install_gmo_d1_preplan_v097(_core)
 
-# v099: coin MarketTrend RSI35 watch prepares three 0/1/2-tick entry
-# scenarios. Original MT54 wallet and verified Upbit book still own fills.
-# This is a separate coin-only worker, never a real broker authorization.
+# v0.8.1: stock+coin MarketTrend RSI35 watches prepare three 0/1/2
+# *exchange tick* entry budgets. Original MT54 wallet, KRX 0D/Upbit
+# verified books and preclose constraints still own fills. Neither
+# preplanner may transmit a real broker BUY or create a fake execution.
 from market_trend_preplan_v099 import install as _install_trend_preplan_v099
 _install_trend_preplan_v099()
 
