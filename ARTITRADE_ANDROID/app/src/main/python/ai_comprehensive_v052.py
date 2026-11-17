@@ -549,6 +549,26 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
                    "STRATEGY_POSITION_LEDGER")
         if case is None:continue
         _ingest_before_entry(case,trade)
+        # A confirmed original BUY is the only bridge to verified MA/MT
+        # numerical entry conditions. Do not infer a past signal from
+        # today's indicators; retain textual exit rules as exit evidence,
+        # NOT as numeric pre-entry predictors.
+        if strategy in ('ma','trend') and case.get('source_id'):
+            try:
+                from trade_decision_basis_v095 import from_original
+                original_buy=from_original(root,market,strategy,frame,
+                    case["symbol"],case["source_id"],'BUY')
+                if original_buy:
+                    case["verified_entry_basis"]=original_buy["verified_trade_basis"]
+                    _add(case,"entry",original_buy["verified_numeric_factors"],
+                        original_buy["verified_basis_source"],case["entry_ts"])
+                original_sell=from_original(root,market,strategy,frame,
+                    case["symbol"],case["source_id"],'SELL')
+                if original_sell:
+                    case["verified_exit_basis"]=original_sell["verified_trade_basis"]
+                    case["sources"].add(original_sell["verified_basis_source"])
+            except (ImportError,ValueError,TypeError,sqlite3.Error):
+                case["missing"]["V095_EXACT_ORIGINAL_EXECUTION_NOT_LINKED"]+=1
         # Preserve every numeric field found in the original position state.
         # Timestamp/unverified fields never enter pre-buy causal comparisons.
         _add(case,"unverified",raw,"ORIGINAL_POSITION_STATE_AS_OBSERVED")
@@ -677,8 +697,13 @@ def analyze(root,market,strategy,signals,trades,lifecycle,archive=None,now=None,
         "missing_evidence_reasons":dict(missing.most_common(25)),
         "factor_comparisons_evaluated":len(ranked),
         "factors_preview":ranked[:25],
+        "verified_entry_reason_cases":sum(bool(c.get("verified_entry_basis")) for c in cases),
+        "verified_exit_reason_cases":sum(bool(c.get("verified_exit_basis")) for c in cases),
+        "verified_reasons_use_original_executions_only":True,
         "cases_preview":[{"symbol":c["symbol"],"frame":c["frame"],"mode":c["mode"],
             "kind":c["kind"],"entry_ts":c["entry_ts"],"closed_roi":c["roi"],
+            "verified_entry_basis":c.get("verified_entry_basis"),
+            "verified_exit_basis":c.get("verified_exit_basis"),
             "metric_count":len(c["features"]),"source_count":len(c["sources"]),
             "missing_n":sum(c["missing"].values())}
             for c in cases[:MAX_EVIDENCE_PREVIEW]],
