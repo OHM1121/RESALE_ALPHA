@@ -845,13 +845,13 @@ class Coordinator:
                     if rsi<=30:
                         self._record_entry_block(market,code,frame,barid,
                             'RSI30_PRECHECK_PASSED_NOT_AN_ORDER',rsi,trade_age)
-                if submit and (self._prechecked.get(entry,100)>30 or rsi>30):
-                    self._entry_block_counts[market][
-                        'PRECHECK_MISSING_OR_RSI_ABOVE_30'
-                        if entry not in self._prechecked else 'RSI_ABOVE_30'
-                    ]+=1
-                    if rsi<=30:self._record_entry_block(market,code,frame,barid,
-                        'RSI_TRIGGER_PRECHECK_MISSING',rsi,trade_age)
+                # v099: the RSI 35 watch is preparation, not a requirement
+                # that RSI had ALREADY reached 30 during the earlier -22s
+                # precheck. A valid first 30 downward cross may occur for the
+                # first time inside the -12s submit window. Keep previous
+                # CLOSED RSI>30, fresh trade, real book and latch unchanged.
+                if submit and rsi>30:
+                    self._entry_block_counts[market]['RSI_ABOVE_30']+=1
                     continue
                 if submit and entry not in self._ordered:
                     # Financial execution gates remain independent from RSI.
