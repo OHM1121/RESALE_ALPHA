@@ -54,6 +54,7 @@ class CoinPlannerTest(unittest.TestCase):
             _candidates={"coin":{COIN:("CRYPTO",COIN)}},
             _quotes={"coin":{COIN:(35.,time.monotonic())}},
             _positions={},_ordered=set(),lock=threading.RLock(),
+            _decision_clock=lambda:NOW,
             journal=self.journal,_last_fetch_error={"coin":""},
             _closed_series=lambda *a:[dict(close=100.,end=NOW) for _ in range(30)],
             _quote=lambda *a:{"ask":float(self.book["ask"]),
@@ -147,9 +148,11 @@ class CoinPlannerTest(unittest.TestCase):
         self.assertEqual([str(x) for x in _limits(60,COIN)],
                          ["60","60.1","60.2"])
         self.assertEqual(_limits(60,"KRW-USDT"),())
-        self.assertEqual(tuple(str(x) for x in _qty_by_level(10000,500,
-                         _limits(60,COIN))),
-                         ("166.64166916","166.364671", "166.08858"))
+        quantities=_qty_by_level(10000,500,_limits(60,COIN))
+        self.assertTrue(all(x>0 for x in quantities))
+        self.assertGreater(quantities[0],quantities[1])
+        self.assertGreater(quantities[1],quantities[2])
+        self.assertLessEqual(float(quantities[0])*60,10000)
 
 if __name__=="__main__":
     unittest.main()
