@@ -1,0 +1,46 @@
+name: Inspect v082 original trading-core interfaces
+on:
+  push:
+    branches: [ fix-artitrade-v082-errors-cancel-three-stage-orders-20261117 ]
+    paths: [ '.github/workflows/forensic-v082-trading-core.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read-only-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Print public bundled engine interface excerpts without secrets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for name,names in {
+                'android_live_bridge.py':('KiwoomBroker','UpbitBroker','LiveConnectionProxy','Runtime'),
+                'd_upbit.py':('CoinLedger','UpbitPaperRunner'),
+                'd_live.py':('LivePaperRunner',),
+                'd_gmo_runtime.py':('GMOService',),
+            }.items():
+              lines=z.read(name).decode().splitlines()
+              tree=ast.parse('\n'.join(lines))
+              print('###SOURCE',name)
+              for cls in tree.body:
+                if not isinstance(cls,ast.ClassDef) or cls.name not in names:continue
+                for method in cls.body:
+                  if not isinstance(method,(ast.FunctionDef,ast.AsyncFunctionDef)):continue
+                  if not any(key in method.name.lower() for key in ('fok','order','fill','sell','buy','process_book','on_book','on_tick','event','subscription','_before','snapshot','_ws')):
+                    continue
+                  print('###METHOD',cls.name+'.'+method.name,method.lineno,method.end_lineno)
+                  if cls.name in ('KiwoomBroker','UpbitBroker') and 'fok' in method.name:
+                    print('\n'.join(f'{i+1}: '+line[:200] for i,line in enumerate(lines[method.lineno-1:method.end_lineno],method.lineno-1)))
+                  elif cls.name=='CoinLedger' and method.name in ('process_book','_buy','_sell'):
+                    print('\n'.join(f'{i+1}: '+line[:200] for i,line in enumerate(lines[method.lineno-1:method.end_lineno],method.lineno-1))[:11000])
+          PY
