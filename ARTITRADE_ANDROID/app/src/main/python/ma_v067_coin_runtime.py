@@ -479,7 +479,8 @@ def _process_v067_exits(self,book,now):
                             if p['kind']=='REVERSAL_UP'
                             else (policy.number(p['qty0']) or Decimal(0))*policy.FIRST_FRACTION)
                 confirmed=policy.number(applied.get('first_sold')) or Decimal(0)
-                existing=policy.number(p['first_sold_qty']) or Decimal(0)
+                existing=(policy.number(p['first_sold_qty']) or Decimal(0)
+                          if 'first_sold_qty' in p.keys() else Decimal(0))
                 verified=min(first_goal,confirmed)
                 if verified>existing:
                     c.execute('UPDATE positions SET first_sold_qty=? WHERE id=?',
