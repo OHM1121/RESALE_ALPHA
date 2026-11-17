@@ -30,6 +30,8 @@ def allocate_priority(bands, protected=(), capacity=KIWOOM_MAX_SUBSCRIPTIONS, ph
     if len(bands) != len(STRATEGY_WEIGHTS):
         raise ValueError("EXPECTED_FIVE_STRATEGY_BANDS")
     limit = max(0, min(int(capacity), KIWOOM_MAX_SUBSCRIPTIONS))
+    if limit == 0:
+        return []
     chosen = []
     assigned = set()
     for code in protected:
