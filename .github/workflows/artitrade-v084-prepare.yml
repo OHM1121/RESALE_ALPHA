@@ -119,7 +119,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py ARTITRADE_ANDROID/ui_tests/test_v080_ma_trend_data.py
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java ARTITRADE_ANDROID/app/build.gradle ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py ARTITRADE_ANDROID/ui_tests/test_v080_ma_trend_data.py ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py ARTITRADE_ANDROID/ui_tests/test_v054_ui.py
           git diff --cached --quiet && exit 1
           git commit -m "fix(v084): coalesce authenticated per-symbol ticks and expose TOP40 live feed coverage"
           git push origin HEAD:fix-artitrade-v084-upbit-top40-tick-delivery-20261117
