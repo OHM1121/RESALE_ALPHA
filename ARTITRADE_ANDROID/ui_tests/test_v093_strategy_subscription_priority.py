@@ -4,7 +4,7 @@ These tests use synthetic symbol IDs only and do not access orders/accounts.
 """
 import unittest
 
-from stock_priority_runtime_v093 import allocate_priority
+from stock_priority_runtime_v093 import allocate_priority, critical_priority_codes
 
 class V093StrategySubscriptionPriority(unittest.TestCase):
     def test_200_slots_cover_all_five_strategies_in_declared_order(self):
@@ -54,6 +54,29 @@ class V093StrategySubscriptionPriority(unittest.TestCase):
                               protected=protected,capacity=200,phase=99)
         self.assertEqual(res,protected)
         self.assertEqual(len(res),200)
+
+    def test_reference_candle_candidate_does_not_preempt_higher_rank_stock(self):
+        # Old _pinned_stocks includes GMO candidate dates, not only positions.
+        protected=critical_priority_codes(
+            supply_active=['SR_HELD','OVERLAP'],
+            close_active=['CW_PENDING'],
+            ma_active=['MA_HELD'],
+            trend_active=['MT_HELD'],
+            gmo_held=['GMO_HELD','OVERLAP'])
+        self.assertEqual(protected,[
+            'SR_HELD','OVERLAP','CW_PENDING','MA_HELD','MT_HELD','GMO_HELD'])
+        self.assertNotIn('GMO_UNBOUGHT_CANDIDATE',protected)
+
+    def test_fifth_priority_reference_candidate_stays_eligible_via_band(self):
+        p=critical_priority_codes(
+            supply_active=['A'],close_active=['C'],ma_active=[],
+            trend_active=[],gmo_held=[])
+        selection=allocate_priority(
+            [['S'+str(i) for i in range(300)],
+             ['C'],['MA'],['MT'],['GMO_UNBOUGHT_CANDIDATE']],
+            protected=p,capacity=200,phase=0)
+        self.assertIn('GMO_UNBOUGHT_CANDIDATE',selection)
+        self.assertEqual(selection[:2],['A','C'])
 
     def test_zero_capacity_never_claims_a_live_subscription(self):
         self.assertEqual(allocate_priority([['A'], [], [], [], ['B']],
