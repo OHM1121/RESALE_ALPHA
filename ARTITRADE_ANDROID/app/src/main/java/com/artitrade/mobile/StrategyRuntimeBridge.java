@@ -25,7 +25,7 @@ import java.util.zip.GZIPInputStream;
 final class StrategyRuntimeBridge {
     private static final int PARTS=22;
     private static final int LIVE_BRIDGE_PARTS=8; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
-    private static final String CORE_SHA256="28b799d795cb4ba7e9ebf109dc458c48057d4ea623ec36b808cf4bd06048dda0";
+    private static final String CORE_SHA256="5285721f3eda241b6f80e5ef804d3ba98144f537ae78993733173eda58e7dbe3";
     private static final String LIVE_BRIDGE_SHA256="e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e";
     private final Context context;
     private final RuntimeCrashStore crashes;

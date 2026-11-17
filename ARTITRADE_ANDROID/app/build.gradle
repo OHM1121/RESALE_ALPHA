@@ -46,8 +46,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 91
-            versionName '0.7.85-RESEARCH-GMO-PAPER'
+            versionCode 92
+            versionName '0.7.86-RSI-FIRST-CROSS-GMO-FEED'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE 통합'
