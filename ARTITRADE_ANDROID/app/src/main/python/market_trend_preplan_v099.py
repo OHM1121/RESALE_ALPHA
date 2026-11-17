@@ -286,7 +286,11 @@ class PreparedCoinTrend:
                 plan["status"]="BROKER_UNCERTAIN"
                 return
             name=str(co._candidates["coin"][code][1])
-            at=dt.datetime.now(mt.KST)
+            # Re-read the current decision clock at commit time. A test
+            # fixture may inject the same KST clock; production uses the
+            # actual wall clock, never an expired stored watch timestamp.
+            at=(co._decision_clock() if hasattr(co,"_decision_clock")
+                else dt.datetime.now(mt.KST))
             if at>=finish or co.stop_event.is_set():return
             # The existing wallet recalculates its own quantities, SQLite
             # cash, maximum holdings, same market book and filled provenance.
