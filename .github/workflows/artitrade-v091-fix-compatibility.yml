@@ -1,0 +1,26 @@
+name: ARTITRADE v091 correct release compatibility versionCode metadata only
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths: ['.github/workflows/artitrade-v091-fix-compatibility.yml']
+permissions:
+  contents: write
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Correct release sidecar only, NEVER touch validated APK/signature
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=ARTITRADE-v0.7.91-20261117
+          file=ARTITRADE_UNIFIED_v0.7.91_20261117.compatibility.txt
+          printf 'source=28c3103f7fc94944f3c9f65641695e13a65877ad\npackage=com.artitrade.unified.s21dex\nversionCode=97\nversionName=0.7.91-MA-STAGE-LEDGER\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\nreal_market_paper_fills_verified=false\n' > "$file"
+          gh release upload "$tag" "$file" --clobber --repo "$GITHUB_REPOSITORY"
+          mkdir -p /tmp/sidecar-verify
+          gh release download "$tag" -p "$file" -D /tmp/sidecar-verify --repo "$GITHUB_REPOSITORY"
+          cmp "$file" "/tmp/sidecar-verify/$file"
+          echo V091_RELEASE_COMPATIBILITY_VERSIONCODE97_VERIFIED
