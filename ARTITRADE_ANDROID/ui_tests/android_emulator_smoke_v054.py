@@ -347,6 +347,22 @@ def real_boot():
     independent=adb("shell","run-as",PACKAGE,"ls","-l",wallet,check=False,timeout=15)
     if "market_trend_wallet_v054.sqlite3" not in independent:
         raise AssertionError("MT54_INDEPENDENT_WALLET_NOT_INITIALIZED_AFTER_REAL_BOOT")
+    # This is the actual service-enabled APK, with both strategy engines
+    # started. Verify the new atomic display snapshot was published without
+    # blocking foreground order workers or restarting the Android process.
+    view_file="files/artitrade_view_record_snapshot_v087.json"
+    view=adb("shell","run-as",PACKAGE,"ls","-l",view_file,check=False,timeout=15)
+    if "artitrade_view_record_snapshot_v087.json" not in view:
+        raise AssertionError("V087_SERVICE_ATOMIC_UI_RECORD_NOT_PUBLISHED")
+    health=adb("shell","run-as",PACKAGE,"cat",
+        "shared_prefs/artitrade_process_health_v087.xml",check=False,timeout=15)
+    if "last_memory_sample" not in health:
+        raise AssertionError("V087_ANDROID_MEMORY_SAMPLE_NOT_PERSISTED")
+    memory=adb("shell","dumpsys","meminfo",PACKAGE,timeout=45,check=False)
+    (BASE/"v087_service_memory_pss.txt").write_text(memory,encoding="utf-8")
+    if "TOTAL" not in memory:
+        raise AssertionError("V087_SERVICE_PROCESS_MEMORY_NOT_REPORTED")
+    print("V087_REAL_PROCESS_HEALTH_AND_ATOMIC_VIEW_STORE_PASS",flush=True)
     verify_no_fatal("real_boot")
 
 def fixtures():
@@ -360,6 +376,10 @@ def fixtures():
     adb("shell","am","force-stop",PACKAGE)
     print(adb("install","-r",str(fixture_apk),timeout=180),flush=True)
     adb("shell","am","force-stop",PACKAGE)
+    # This is an isolated emulator fixture. Ensure seeded historical records
+    # are selected instead of a real-boot private atomic file from the prior APK.
+    adb("shell","run-as",PACKAGE,"rm","-f",
+        "files/artitrade_view_record_snapshot_v087.json",check=False)
     put_pref("artitrade_local_records_v075",{
         "records":json.dumps(fixture(),ensure_ascii=False,separators=(",",":")),
         "updated_at":int(time.time()*1000)})
