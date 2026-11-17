@@ -213,8 +213,14 @@ public final class UnifiedVisualActivity extends Activity {
     private static final int REQUEST_EXPORT_SCOPED_ERRORS=7716;
     private String pendingAiExportScope;
     private String pendingAiExportReport;
-    private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
+    // Static across Activity recreation: never start a second export while
+    // the previous screen's worker still owns a SQLite snapshot or SAF stream.
+    private static final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
         new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicBoolean errorExportCancelRequested=
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static volatile Thread scopedErrorWorker;
+    private static volatile OutputStream scopedErrorOutput;
     private byte[] pendingResearchExport;
     private String pendingResearchReports;
     private String pendingErrorsReports;
@@ -1064,6 +1070,9 @@ public final class UnifiedVisualActivity extends Activity {
             errorActions.addView(export,lp);
         }
         panel.addView(errorActions);
+        Button stopErrors=button("진행 중인 오류 추출 취소",false,this::cancelScopedErrorExport);
+        stopErrors.setTextSize(11);
+        panel.addView(stopErrors,new LinearLayout.LayoutParams(-1,dp(42)));
 
         updateHeader();
 
@@ -4509,13 +4518,56 @@ public final class UnifiedVisualActivity extends Activity {
         }
     }
 
+    private File scopedErrorCancelMarker(){
+        return new File(getCacheDir(),"artitrade_scoped_error_export_v082.cancel");
+    }
+
+    private void cancelScopedErrorExport(){
+        Thread worker=scopedErrorWorker;
+        if(worker==null||!worker.isAlive()){
+            if(pendingScopedErrorScope!=null){
+                pendingScopedErrorScope=null;
+                exportStage("errors","CANCELLED","폴더 선택 취소 요청",0,
+                    "파일 선택 화면에서 뒤로 가기를 눌러 닫을 수 있습니다.",false,false);
+            }else{
+                new AlertDialog.Builder(this).setTitle("오류 추출")
+                    .setMessage("현재 실행 중인 오류 ZIP 생성 작업이 없습니다.")
+                    .setPositiveButton("확인",null).show();
+            }
+            return;
+        }
+        errorExportCancelRequested.set(true);
+        try{
+            File marker=scopedErrorCancelMarker();
+            try(FileOutputStream out=new FileOutputStream(marker)){
+                out.write(1);
+                out.flush();
+            }
+        }catch(IOException error){
+            new RuntimeCrashStore(this).add("error_export_cancel_marker",error);
+        }
+        worker.interrupt();
+        // Some Android document providers block inside write(). Close the
+        // current output from a separate thread, never on the UI thread.
+        final OutputStream stream=scopedErrorOutput;
+        if(stream!=null)new Thread(()->{
+            try{stream.close();}catch(IOException ignored){}
+        },"artitrade-error-export-abort-stream").start();
+        exportStage("errors","CANCEL_REQUESTED","오류 추출 중단 요청",0,
+            "현재 파일 작업 중단과 임시파일 정리를 진행 중",true,false);
+    }
+
     private void requestScopedErrorExport(String scope){
         if(!("stock".equals(scope)||"coin".equals(scope)||"all".equals(scope)))
             return;
         if(fullExportRunning.get()){
-            new AlertDialog.Builder(this).setTitle("오류 ZIP 추출 진행 중")
-                .setMessage("기존 추출이 끝난 후 다시 실행하십시오.")
-                .setPositiveButton("확인",null).show();
+            AlertDialog.Builder notice=new AlertDialog.Builder(this)
+                .setTitle("ZIP 추출 작업 진행 중")
+                .setMessage("기존 추출이 완료되지 않아 다음 작업이 차단됨. 오류 추출은 수동 취소할 수 있습니다.")
+                .setNegativeButton("닫기",null);
+            if(scopedErrorWorker!=null&&scopedErrorWorker.isAlive())
+                notice.setPositiveButton("오류 추출 취소",(d,w)->cancelScopedErrorExport());
+            notice.show();
             return;
         }
         pendingScopedErrorScope=scope;
@@ -4656,16 +4708,31 @@ public final class UnifiedVisualActivity extends Activity {
         },"artitrade-scoped-multipart-research").start();
     }
 
+    private void checkScopedErrorCancel() throws IOException {
+        if(errorExportCancelRequested.get()||
+            Thread.currentThread().isInterrupted()||scopedErrorCancelMarker().isFile())
+            throw new IOException("ARTITRADE_ERROR_EXPORT_CANCELLED");
+    }
+
     private void exportScopedErrorToFolder(Uri tree,String scope){
         if(!fullExportRunning.compareAndSet(false,true))return;
+        errorExportCancelRequested.set(false);
+        File cancelMarker=scopedErrorCancelMarker();
+        if(cancelMarker.exists()&&!cancelMarker.delete()){
+            fullExportRunning.set(false);
+            exportStage("errors","FAILED","취소 신호 정리 실패",0,
+                "이전 중단 표시 파일을 지울 수 없습니다.",false,true);
+            return;
+        }
         exportStage("errors","PREPARE","원본 오류자료 준비",2,
             "SQLite/WAL 스냅샷·ZIP 생성",true,false);
         File progressFile=new File(getCacheDir(),PY_EXPORT_PROGRESS);
         if(progressFile.exists())progressFile.delete();
-        new Thread(()->{
+        Thread worker=new Thread(()->{
             File folder=new File(getCacheDir(),"artitrade_error_bundle_"+System.nanoTime());
             java.util.List<Uri> newDocuments=new java.util.ArrayList<>();
             try{
+                checkScopedErrorCancel();
                 if(!folder.mkdirs()&&!folder.isDirectory())
                     throw new IOException("사전 검증 임시폴더 생성 실패");
                 if(!Python.isStarted())
@@ -4693,7 +4760,8 @@ public final class UnifiedVisualActivity extends Activity {
                     .callAttr("make_bundle",runtime.getAbsolutePath(),
                         folder.getAbsolutePath(),scope,500_000_000,
                         progressFile.getAbsolutePath(),"errors",
-                        nativeReport.toString()).toString();
+                        nativeReport.toString(),cancelMarker.getAbsolutePath()).toString();
+                checkScopedErrorCancel();
                 JSONObject info=new JSONObject(raw);
                 if(!info.optBoolean("ok")||info.optInt("parts")<=0)
                     throw new IOException("분할 리서치 생성 검증 실패");
@@ -4706,6 +4774,7 @@ public final class UnifiedVisualActivity extends Activity {
                     "기존 원장 "+info.optInt("source_files",0)+"개 검증 완료",true,false);
                 long verified=0;
                 for(int i=0;i<parts.length();i++){
+                    checkScopedErrorCancel();
                     JSONObject item=parts.getJSONObject(i);
                     String filename=item.getString("name");
                     if(!filename.matches("ARTITRADE_[A-Z]+_ERROR_HISTORY_[A-Za-z0-9_]+_PART_[0-9]{3}_OF_[0-9]{3}\\.zip"))
@@ -4722,9 +4791,17 @@ public final class UnifiedVisualActivity extends Activity {
                     try(InputStream input=new FileInputStream(source);
                         OutputStream output=getContentResolver().openOutputStream(saved,"w")){
                         if(output==null)throw new IOException("ZIP 저장 스트림 없음");
+                        scopedErrorOutput=output;
                         byte[] buf=new byte[1024*1024];int n;
-                        while((n=input.read(buf))!=-1){output.write(buf,0,n);streamed.update(buf,0,n);}
+                        while((n=input.read(buf))!=-1){
+                            checkScopedErrorCancel();
+                            output.write(buf,0,n);
+                            streamed.update(buf,0,n);
+                        }
+                        checkScopedErrorCancel();
                         output.flush();
+                    }finally{
+                        scopedErrorOutput=null;
                     }
                     String expected=item.getString("sha256");
                     if(!expected.equalsIgnoreCase(hex(streamed.digest())))
@@ -4734,7 +4811,11 @@ public final class UnifiedVisualActivity extends Activity {
                     try(InputStream input=getContentResolver().openInputStream(saved)){
                         if(input==null)throw new IOException("저장된 ZIP 재열기 실패");
                         byte[] buf=new byte[1024*1024];int n;
-                        while((n=input.read(buf))!=-1){disk.update(buf,0,n);bytes+=n;}
+                        while((n=input.read(buf))!=-1){
+                            checkScopedErrorCancel();
+                            disk.update(buf,0,n);
+                            bytes+=n;
+                        }
                     }
                     if(bytes!=source.length()||
                         !expected.equalsIgnoreCase(hex(disk.digest())))
@@ -4745,6 +4826,7 @@ public final class UnifiedVisualActivity extends Activity {
                         String.format(Locale.KOREA,"%d/%d파트 · %,d바이트 검증",
                             i+1,parts.length(),verified),true,false);
                 }
+                checkScopedErrorCancel();
                 exportStage("errors","DONE","오류 ZIP 저장 완료",100,
                     String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
                     false,false);
@@ -4755,26 +4837,43 @@ public final class UnifiedVisualActivity extends Activity {
                     "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
                     "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",false,"오류이력 분할 ZIP 추출");
             }catch(Throwable e){
-                // A failed multi-file transfer must not masquerade as a complete export.
+                // A failed or canceled multi-file transfer is never complete.
                 for(Uri created:newDocuments){
                     try{DocumentsContract.deleteDocument(getContentResolver(),created);}
                     catch(Exception ignored){}
                 }
-                new RuntimeCrashStore(this).add("combined_error_export",e);
-                exportStage("errors","FAILED","오류 ZIP 저장 실패",0,
-                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
-                    false,true);
-                fullLedgerExportResult(false,
-                    "통합 오류이력 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\\n"+
-                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),false,"오류이력 분할 ZIP 추출");
+                boolean cancelled=errorExportCancelRequested.get()||
+                    String.valueOf(e.getMessage()).contains("ARTITRADE_ERROR_EXPORT_CANCELLED")||
+                    e instanceof InterruptedException;
+                if(cancelled){
+                    exportStage("errors","CANCELLED","오류 ZIP 추출 중단",0,
+                        "사용자 요청에 따라 중단함. 불완전한 ZIP은 정리됨.",false,false);
+                    fullLedgerExportResult(false,"오류 추출을 취소했습니다. 기존 원장과 체결 기록은 유지됩니다.",
+                        false,"오류이력 추출 취소");
+                }else{
+                    new RuntimeCrashStore(this).add("combined_error_export",e);
+                    exportStage("errors","FAILED","오류 ZIP 저장 실패",0,
+                        e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
+                        false,true);
+                    fullLedgerExportResult(false,
+                        "통합 오류이력 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\\n"+
+                        e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
+                        false,"오류이력 분할 ZIP 추출");
+                }
             }finally{
                 File[] files=folder.listFiles();
                 if(files!=null)for(File file:files)if(file.isFile())file.delete();
                 folder.delete();
                 if(progressFile.exists())progressFile.delete();
+                if(cancelMarker.exists())cancelMarker.delete();
+                scopedErrorOutput=null;
+                scopedErrorWorker=null;
+                errorExportCancelRequested.set(false);
                 fullExportRunning.set(false);
             }
-        },"artitrade-scoped-multipart-errors").start();
+        },"artitrade-scoped-multipart-errors");
+        scopedErrorWorker=worker;
+        worker.start();
     }
 
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
