@@ -1,0 +1,42 @@
+name: ARTITRADE v088 inspect original coin MA KeyError high source
+on:
+  push:
+    branches: [ fix-artitrade-v088-log-forensics-export-ma-20261117 ]
+    paths: [ '.github/workflows/artitrade-v088-original-forensic.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Print exact original 82-module MA book stack-producing code
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+              for name in z.namelist():
+                  if not name.endswith('.py'):continue
+                  src=z.read(name).decode('utf8')
+                  if 'MA_BOOK_PROCESS_FAIL' in src:
+                      print('ORIGINAL_MA_BOOK_ERROR_SOURCE',name)
+                      for no,line in enumerate(src.splitlines(),1):
+                          if 'MA_BOOK_PROCESS_FAIL' in line: print('ERROR_CALL',no,src.splitlines()[max(0,no-10):no+2])
+                  if name in ('coin_ma_engine.py','d_upbit.py','sr_exit_engine.py','ma_exit_native.py'):
+                      print('INSPECT_MODULE',name,'lines',len(src.splitlines()))
+                      node=ast.parse(src)
+                      for el in ast.walk(node):
+                          if not isinstance(el,(ast.FunctionDef,ast.AsyncFunctionDef)):continue
+                          if el.name not in ('process_book','_process_book','_on_orderbook','_on_book','_ws','_sell','_bear_candidate'):continue
+                          body=ast.get_source_segment(src,el)
+                          print('BEGIN',name,el.name,el.lineno,body[:9600])
+                      for no,line in enumerate(src.splitlines(),1):
+                          if ("['high']" in line or '["high"]' in line) and 'coin_ma_engine' in name:
+                              print('HIGH_ACCESS',name,no,line[:250])
+          PY
