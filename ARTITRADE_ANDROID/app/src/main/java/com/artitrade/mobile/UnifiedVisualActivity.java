@@ -659,8 +659,6 @@ public final class UnifiedVisualActivity extends Activity {
         startupStage=text("원장 · 전략별 요약 · 화면 자료를 준비 중",12);
         startupStage.setTextColor(Color.rgb(116,143,178));
         startupStage.setPadding(0,dp(14),0,0);p.addView(startupStage);
-        TextView note=text("거래·시세·원장 상태를 백그라운드에서 준비한 뒤 메인화면을 엽니다.",11);
-        note.setTextColor(PremiumUi.MUTED);note.setPadding(0,dp(7),0,0);p.addView(note);
         root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
@@ -2662,12 +2660,6 @@ public final class UnifiedVisualActivity extends Activity {
             prices.setTextColor(Color.rgb(168,193,219));
             prices.setMaxLines(2);
             tile.addView(prices);
-            if(isStockPosition(p)){
-                TextView quoteProof=text(stockQuoteCaption(p),10);
-                quoteProof.setTextColor(PremiumUi.MUTED);
-                quoteProof.setMaxLines(2);
-                tile.addView(quoteProof);
-            }
             TextView result=text("평가손익 "+
                 (finite(pnl)?WonFormat.signed(pnl):"—")+
                 (finite(rate)?" ("+signedPct(rate)+")":""),14);
@@ -2681,25 +2673,6 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderHome(){
         Stats selected=stats(market,strategy);
-        if("ma".equals(strategy)){
-            JSONObject account=ledger(market,"ma");
-            JSONObject epoch=account.optJSONObject("ma_epoch_v062");
-            if(epoch!=null && !epoch.optString("started_at","").isEmpty()){
-                TextView point=text("신규 MA 시작  "+
-                    researchMoment(epoch.optString("started_at"))+
-                    "  ·  새 MA 손익만 집계 · 과거 기록 별도 보존",12);
-                point.setTextColor(Color.rgb(112,214,178));
-                content.addView(point,new LinearLayout.LayoutParams(-1,dp(39)));
-            }
-            int oldOpen=account.optInt("ma_legacy_open_count",0);
-            if(oldOpen>0){
-                TextView risk=text("기존 MA 미청산 "+oldOpen+
-                    "건 보존 · 신규 MA 계좌와 별도 · 실제 증권사/거래소 잔고 및 주문은 초기화되지 않음",12);
-                risk.setTextColor(Color.rgb(255,181,91));
-                risk.setMaxLines(3);
-                content.addView(risk,new LinearLayout.LayoutParams(-1,-2));
-            }
-        }
         if("stock".equals(market)&&"gmo".equals(strategy)&&
            selected.positions.length()+selected.executions.length()+selected.research.length()==0){
             JSONObject diag=ledger(market,strategy).optJSONObject("load_diagnostic");
@@ -2712,26 +2685,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text(strategyName(market,strategy),20);
         title.setTypeface(null,Typeface.BOLD);
         headline.addView(title,new LinearLayout.LayoutParams(0,dp(29),1));
-        TextView source=text("trend".equals(strategy)?"● 독립 마켓트렌드":"● 전략별 계좌",12);
-        source.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-        source.setTextColor(Color.rgb(132,177,213));
-        headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
         content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
-        if("trend".equals(strategy)){
-            TextView status=text("RSI20 독립 자동감시 · 5분/30분/1시간/일봉",12);
-            status.setTextColor(Color.rgb(119,229,180));
-            content.addView(status,new LinearLayout.LayoutParams(-1,dp(27)));
-        }
-
-        // v054 independent RSI strategy: never expose the obsolete MT43
-        // manual toggle on original AT/MA strategy tabs. Preserve saved legacy
-        // flags and old positions for existing-exit reconciliation only.
-        if("at".equals(strategy)||"general".equals(strategy)||"ma".equals(strategy)){
-            TextView active=text("기준봉·MA·마켓트렌드 각각 독립 원장 · 다른 전략 연구자료 미포함",12);
-            active.setTextColor(Color.rgb(119,229,180));
-            content.addView(active,new LinearLayout.LayoutParams(-1,dp(23)));
-        }
-
         String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"trend".equals(strategy)?"업비트 · KRW TOP40":"업비트 · KRW TOP35";
         content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(46)));
 
@@ -3436,13 +3390,6 @@ public final class UnifiedVisualActivity extends Activity {
             sourceReason.setMaxLines(4);
             panel.addView(sourceReason,new LinearLayout.LayoutParams(-1,-2));
         }
-        if(sell && e.has("post_sale_state") &&
-            !e.has("post_sale_peak")){
-            TextView note=text("실제 매도는 원장에 기록됨. 후속고가는 매도체결 이후 수신한 실제 시세만 집계하며, 관측값이 아직 없으면 고가를 임의 계산하지 않음.",11);
-            note.setTextColor(PremiumUi.MUTED);
-            note.setMaxLines(4);
-            panel.addView(note,new LinearLayout.LayoutParams(-1,-2));
-        }
     }
 
     private void renderList(String title,JSONArray a,String kind){
@@ -3546,13 +3493,6 @@ public final class UnifiedVisualActivity extends Activity {
             int netWidth=Math.max(92,Math.min(142,(screenDp-58)*39/100));
             top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
             panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
-            if("positions".equals(kind)&&isStockPosition(r)){
-                TextView quoteProof=text(stockQuoteCaption(r),10);
-                quoteProof.setTextColor(PremiumUi.MUTED);
-                quoteProof.setPadding(dp(3),0,0,dp(2));
-                quoteProof.setMaxLines(2);
-                panel.addView(quoteProof);
-            }
 
             LinearLayout figures=new LinearLayout(this);
             figures.setOrientation(LinearLayout.HORIZONTAL);
@@ -3884,9 +3824,6 @@ public final class UnifiedVisualActivity extends Activity {
             int pageLast=HistoryPager.end(pageFirst,entries.size());
             queryTradeHistoryEvidence(entries.subList(pageFirst,pageLast));
         }
-        TextView note=text("표시 "+entries.size()+"건 · 좌우 스크롤: 거래별 정량·AI·매도후 고가 · 열 터치: 정렬",11);
-        note.setTextColor(PremiumUi.MUTED);note.setPadding(dp(3),0,0,dp(6));
-        content.addView(note);
         if(entries.isEmpty()){
             empty(scoped?"해당 종목의 기록 없음 / 적용한 필터 확인":
                 "조건에 맞는 실제 체결 기록 없음");
@@ -5111,11 +5048,6 @@ public final class UnifiedVisualActivity extends Activity {
         int listHeight=Math.min((int)(getResources().getDisplayMetrics().heightPixels*.55f),
             dp(91)*Math.max(1,Math.min(sourceRows.size(),8)));
         body.addView(list,new LinearLayout.LayoutParams(-1,listHeight));
-        TextView footer=text("O 확인된 목표 달성 · X 관측기간 종료 후 미달성 · "+
-            "— 판정보류. 고가관측과 실제 매도체결은 별도 근거임.",11);
-        footer.setTextColor(Color.rgb(174,179,194));
-        footer.setPadding(dp(6),dp(7),dp(5),dp(4));
-        body.addView(footer);
         final Runnable[] redraw=new Runnable[1];
         redraw[0]=()->{
             shown.clear();shown.addAll(sourceRows);
@@ -5324,11 +5256,6 @@ public final class UnifiedVisualActivity extends Activity {
         }
         panel.addView(text("실제 매수 후 추적 "+actual+"건 · PAPER 가상 추적 "+
             paper+"건 · 완료 "+complete+"건",13));
-        TextView basis=text("5분·30분 5일 / 1시간 10일 / 일봉 15일 / 수급·종가 5일"+
-            " · 주식 거래일, 코인 연속일 기준",12);
-        basis.setTextColor(PremiumUi.MUTED);
-        basis.setPadding(0,dp(6),0,dp(4));
-        panel.addView(basis);
         SimpleDateFormat display=new SimpleDateFormat("MM/dd HH:mm:ss",Locale.KOREA);
         display.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
         JSONArray cases=data.optJSONArray("cases");
@@ -5391,12 +5318,6 @@ public final class UnifiedVisualActivity extends Activity {
             warning.setPadding(0,dp(6),0,0);
             panel.addView(warning);
         }
-        TextView footer=text("전체 1분 관측값·고가 갱신이력: "+
-            data.optString("raw_research_db","POST_EXIT_HIGH_V053.sqlite3")+
-            " (분석 추출 ZIP에 포함)",11);
-        footer.setTextColor(PremiumUi.MUTED);
-        footer.setPadding(0,dp(8),0,0);
-        panel.addView(footer);
         content.addView(panel);
     }
 
@@ -5476,11 +5397,6 @@ public final class UnifiedVisualActivity extends Activity {
             note.setPadding(0,dp(9),0,0);
             panel.addView(note);
         }
-        TextView exportHint=text("각 거래의 출처·관측시각·수치·누락 사유는 "+
-            "종합분석 SQLite 및 분석 추출 ZIP에 보존됨",11);
-        exportHint.setTextColor(PremiumUi.MUTED);
-        exportHint.setPadding(0,dp(8),0,0);
-        panel.addView(exportHint);
         content.addView(panel);
     }
 
@@ -5522,9 +5438,6 @@ public final class UnifiedVisualActivity extends Activity {
         stat.setTextColor(PremiumUi.MUTED);
         stat.setPadding(0,dp(8),0,dp(4));
         panel.addView(stat);
-        TextView note=text("상세 수치·미수신 사유·원천 기록은 분석 추출 ZIP에 포함",11);
-        note.setTextColor(Color.rgb(131,193,236));
-        panel.addView(note);
         content.addView(panel,new LinearLayout.LayoutParams(-1,-2));
     }
 
@@ -5644,10 +5557,6 @@ public final class UnifiedVisualActivity extends Activity {
         exLp.setMargins(dp(8),0,0,0);
         controls.addView(export,exLp);
         header.addView(controls,new LinearLayout.LayoutParams(-1,dp(51)));
-        TextView hint=text("정량 비교표·근거·시장점수·주문·AI원본 전체를 검증 ZIP으로 저장",11);
-        hint.setTextColor(PremiumUi.MUTED);
-        hint.setPadding(dp(1),dp(7),0,0);
-        header.addView(hint);
         content.addView(header);
 
         if(aiAnalysisRunning&&scope.equals(aiAnalysisScope)){
@@ -5868,10 +5777,6 @@ public final class UnifiedVisualActivity extends Activity {
                 params.height=dp(height);matrixPair.setLayoutParams(params);
             }
         }
-        TextView note=text("실제 열 더블탭 → 실제 진입만 / 가상 열 → 가상 진입만 표시 · "+
-            "확인도달 비중=목표확인 건수÷전체 진입 건수 (판정보류는 실패로 간주하지 않음)",12);
-        note.setTextColor(Color.rgb(150,170,195));
-        note.setPadding(dp(3),dp(7),dp(3),dp(4));content.addView(note);
 
         LinearLayout researchHead=new LinearLayout(this);
         researchHead.setOrientation(LinearLayout.HORIZONTAL);
@@ -6175,7 +6080,6 @@ public final class UnifiedVisualActivity extends Activity {
         zp.setMargins(dp(5),0,0,0);
         errorsHead.addView(zip,zp);
         content.addView(errorsHead,new LinearLayout.LayoutParams(-1,dp(45)));
-        TextView note=text("선택 전략과 무관하게 해당 시장의 실시간·전략·주문·원장 오류를 통합 표시",10);note.setTextColor(Color.rgb(135,160,190));note.setPadding(0,dp(3),0,dp(9));content.addView(note);
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
         addKpi(summary,"전체",String.valueOf(all.length()));
         int auth=0,feed=0,order=0;
@@ -6377,7 +6281,6 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void addFrameOperationSection(String title,String m,String stg,JSONObject settings){
         TextView h=text(title,19);h.setTypeface(null,Typeface.BOLD);h.setTextColor(Color.rgb(224,226,236));h.setPadding(0,dp(18),0,dp(7));content.addView(h);
-        TextView note=text("5분 · 30분 · 1시간 · 일봉 각각 별도 시드 / 최대보유 설정",12);note.setTextColor(Color.rgb(120,131,154));note.setPadding(0,0,0,dp(8));content.addView(note);
         String[] frames={"5m","30m","60m","day"};
         for(int row=0;row<2;row++){
             LinearLayout line=new LinearLayout(this);line.setOrientation(LinearLayout.HORIZONTAL);
@@ -6472,13 +6375,11 @@ public final class UnifiedVisualActivity extends Activity {
             }
         }catch(Exception ignored){}
 
-        LinearLayout ctrl=card();TextView t=text("가상매매 실행",17);t.setTypeface(null,Typeface.BOLD);ctrl.addView(t);
+        LinearLayout ctrl=card();TextView t=text("실거래(가상계좌) · PAPER(미매수)",17);t.setTypeface(null,Typeface.BOLD);ctrl.addView(t);
         LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(9),0,0);
         dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(44),1));
         LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(44),1);offp.setMargins(dp(8),0,0,0);
         dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);ctrl.addView(dr);
-        TextView hint=text("실거래: 실시간 시세 기반 가상계좌 체결\\nPAPER: 미매수 후보의 가상체결·후속연구",12);
-        hint.setTextColor(PremiumUi.MUTED);hint.setPadding(0,dp(10),0,0);ctrl.addView(hint);
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(12),0,0);content.addView(ctrl,cp);
     }
 
