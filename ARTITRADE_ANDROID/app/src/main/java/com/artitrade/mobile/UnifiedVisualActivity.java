@@ -3754,15 +3754,19 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject result=null;
         try{
             String raw=getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
-                .getString("last_result","{}");
+                .getString("result_"+requestId,"{}");
             result=new JSONObject(raw);
         }catch(Exception e){new RuntimeCrashStore(this).add("paper_sell_result_read",e);}
-        if(result==null||!requestId.equals(result.optString("request_id",""))){
+        boolean stillPending=result!=null
+            &&"MANUAL_SELL_PENDING".equals(result.optString("status",""));
+        if(result==null||!requestId.equals(result.optString("request_id",""))||stillPending){
             if(attempt<12)main.postDelayed(
                 ()->showManualPaperResult(requestId,attempt+1),1300);
-            else new AlertDialog.Builder(this).setTitle("매도 결과 확인 필요")
-                .setMessage("처리 응답을 확인하지 못했습니다. 체결이력과 원장을 확인하십시오. 중복 매도를 방지하기 위해 자동으로 재주문하지 않습니다.")
-                .setPositiveButton("확인",null).show();
+            else new AlertDialog.Builder(this).setTitle("매도 처리 상태 확인 중")
+                .setMessage("요청 ID별 처리 결과가 아직 확정되지 않았습니다. 원장 체결 여부를 확인할 때까지 자동 재주문하지 않습니다.")
+                .setNegativeButton("닫기",null)
+                .setPositiveButton("매도 요청 상태 다시 확인",
+                    (dialog,which)->showManualPaperResult(requestId,0)).show();
             return;
         }
         boolean ok=result.optBoolean("ok",false);

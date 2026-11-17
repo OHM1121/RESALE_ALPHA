@@ -88,8 +88,22 @@ public final class UnifiedTradingService extends Service {
             startForeground(NOTIFY_ID,notification("안전 시작 · 최신 EXE 전략엔진 준비"));
             if(intent!=null&&MANUAL_PAPER_SELL.equals(intent.getAction())){
                 final String payload=intent.getStringExtra("request");
-                new Thread(()->applyManualPaperSell(payload),
-                    "artitrade-v085-user-paper-exit").start();
+                JSONObject manualRequest=new JSONObject(payload==null?"{}":payload);
+                String requestId=manualRequest.optString("request_id","");
+                if(requestId.isEmpty())throw new IllegalArgumentException("MANUAL_SELL_REQUEST_ID_REQUIRED");
+                android.content.SharedPreferences results=getSharedPreferences(
+                    "artitrade_manual_sale_v085",MODE_PRIVATE);
+                String resultKey="result_"+requestId;
+                // Durable claim before any attempt. Never execute the same UUID twice.
+                if(!results.contains(resultKey)){
+                    JSONObject waiting=new JSONObject().put("request_id",requestId)
+                        .put("status","MANUAL_SELL_PENDING")
+                        .put("submitted_at",System.currentTimeMillis());
+                    if(!results.edit().putString(resultKey,waiting.toString()).commit())
+                        throw new IllegalStateException("MANUAL_SELL_PENDING_NOT_DURABLE");
+                    new Thread(()->applyManualPaperSell(payload),
+                        "artitrade-v089-user-paper-exit").start();
+                }
             }
             if(intent!=null&&SET_LIVE.equals(intent.getAction())){
                 String market=intent.getStringExtra("market");
@@ -315,8 +329,11 @@ public final class UnifiedTradingService extends Service {
         try{
             result.put("request_id",requestId);
             result.put("completed_at",System.currentTimeMillis());
-            getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
-                .edit().putString("last_result",result.toString()).commit();
+            // The UI waits on the exact UUID, never on another position's last_result.
+            boolean saved=getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
+                .edit().putString("result_"+requestId,result.toString())
+                .putString("last_result",result.toString()).commit();
+            if(!saved)throw new IllegalStateException("MANUAL_SELL_RESULT_NOT_DURABLE");
             if(!result.optBoolean("ok",false))
                 crashes.add("manual_paper_sell_rejected",
                     new IllegalStateException(result.optString("error","UNKNOWN")+
