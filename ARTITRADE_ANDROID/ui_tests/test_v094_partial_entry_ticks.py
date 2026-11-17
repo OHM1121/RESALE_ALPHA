@@ -21,7 +21,7 @@ class TwoRealTicks(unittest.TestCase):
         self.assertEqual(two_ticks_max('coin','9.99'),D('10.10'))
         self.assertEqual(two_ticks_max('coin','9999'),D('10010'))
         self.assertEqual(two_ticks_max('coin','999.0'),D('1001'))
-        self.assertEqual(two_ticks_max('coin','0.0999'),D('0.1001'))
+        self.assertEqual(two_ticks_max('coin','0.0999'),D('0.1010'))
 
     def test_special_upbit_instrument_tick_overrides_generic_ladder(self):
         self.assertEqual(two_ticks_max('coin','1500',symbol='KRW-USDT',instrument_tick='0.5'),D('1501.0'))
