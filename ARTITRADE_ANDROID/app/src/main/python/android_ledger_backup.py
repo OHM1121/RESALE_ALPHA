@@ -29,10 +29,11 @@ PRIVATE = ("credential", "secret", "token", "password", "apikey",
 SKIP_PARTS = {"tmp", "temp", "cache", "__pycache__", "logs", "backups"}
 
 
-def _sha256(file: Path) -> str:
+def _sha256(file: Path, check_cancel=None) -> str:
     digest = hashlib.sha256()
     with file.open("rb") as source:
         for block in iter(lambda: source.read(1024 * 1024), b""):
+            if check_cancel:check_cancel()
             digest.update(block)
     return digest.hexdigest()
 
@@ -67,10 +68,14 @@ def _candidate(root: Path, file: Path) -> bool:
     return True
 
 
-def _copy_checked(source: Path, target: Path) -> None:
+def _copy_checked(source: Path, target: Path, check_cancel=None) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     with source.open("rb") as src, target.open("wb") as dst:
-        shutil.copyfileobj(src, dst, length=1024 * 1024)
+        while True:
+            if check_cancel:check_cancel()
+            block=src.read(1024 * 1024)
+            if not block:break
+            dst.write(block)
         dst.flush()
         os.fsync(dst.fileno())
     if source.name == "PROJECTGMO_V1.0_account_state.json":
@@ -82,7 +87,7 @@ def _copy_checked(source: Path, target: Path) -> None:
             raise ValueError("GMO account-state positions malformed; export cancelled")
 
 
-def _db_snapshot(source: Path, target: Path) -> dict:
+def _db_snapshot(source: Path, target: Path, check_cancel=None) -> dict:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         target.unlink()
@@ -93,7 +98,11 @@ def _db_snapshot(source: Path, target: Path) -> dict:
             with closing(sqlite3.connect(uri, uri=True, timeout=15)) as read, \
                  closing(sqlite3.connect(str(target), timeout=15)) as write:
                 read.execute("PRAGMA busy_timeout=15000")
-                read.backup(write, pages=256, sleep=0.03)
+                if check_cancel:check_cancel()
+                read.backup(write, pages=256, sleep=0.03,
+                            progress=(lambda status,remaining,total: check_cancel())
+                            if check_cancel else None)
+                if check_cancel:check_cancel()
                 write.commit()
             break
         except (sqlite3.OperationalError, PermissionError):
@@ -101,6 +110,7 @@ def _db_snapshot(source: Path, target: Path) -> dict:
                 raise
             time.sleep(0.25 * (attempt+1))
     with closing(sqlite3.connect(target.resolve().as_uri()+"?mode=ro", uri=True)) as check:
+        if check_cancel:check_cancel()
         integrity=check.execute("PRAGMA quick_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("SQLite online backup failed integrity check: "+source.name)
@@ -108,6 +118,7 @@ def _db_snapshot(source: Path, target: Path) -> dict:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
         counts={}
         for name in tables:
+            if check_cancel:check_cancel()
             escaped=name.replace('"','""')
             counts[name]=int(check.execute('SELECT COUNT(*) FROM "'+escaped+'"').fetchone()[0])
     return counts
