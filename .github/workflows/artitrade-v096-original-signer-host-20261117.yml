@@ -1,0 +1,310 @@
+name: ARTITRADE v0.7.96 original signer restored build and release
+on:
+  push:
+    branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
+    paths: [ '.github/workflows/artitrade-v096-original-signer-host-20261117.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v096-original-signer-host-verified
+  cancel-in-progress: false
+jobs:
+  build-verify-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CI: 'true'
+      SOURCE: '8cd4bfe37e46e968e9de3e499bb7eec4f38d99d4'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.7.96_20261117'
+      TAG: 'ARTITRADE-v0.7.96-20261117'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '8cd4bfe37e46e968e9de3e499bb7eec4f38d99d4'
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore original signing certificate (never generate a new key)
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Verify exactly the installed app signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          actual="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "SIGNING_FINGERPRINT_ACTUAL=$actual"
+          test "$actual" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+      - name: Apply exact v092 Kiwoom login PING and Upbit 15-level quote patch before all tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v093_strategy_priority_metadata.py
+      - name: Verify v093 five-strategy priority and unchanged original trading strategy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile,ast
+          from pathlib import Path
+          r=Path('ARTITRADE_ANDROID/app/src/main')
+          p=r/'assets/strategy_v070'
+          blob=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          assert 'CORE_SHA256="'+hashlib.sha256(blob).hexdigest()+'"' in (r/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              assert z.testzip() is None
+              z.extractall('/tmp/artitrade-v089-core')
+              assert len(z.namelist())==82
+              for n in z.namelist():
+                  if n.endswith('.py'):compile(z.read(n).decode(),n,'exec')
+              up=z.read('d_upbit.py').decode()
+              live=z.read('d_live.py').decode()
+              assert up.count('with connect(WS_URL,')==1
+              assert 'self._v084_accept_tick(code,price,stamp,trade_stamp)' in up
+              assert 'def _v083_refresh_subscriptions(self)' in up
+              assert 'def _v083_consume_ticks(self)' in up
+              cls=next(x for x in ast.parse(up).body if isinstance(x,ast.ClassDef) and x.name=='UpbitPaperRunner')
+              ws=next(x for x in cls.body if isinstance(x,ast.FunctionDef) and x.name=='_ws')
+              body=ast.get_source_segment(up,ws)
+              assert 'self._both_watched_codes()' not in body
+              assert 'self.tracked' not in body
+              assert 'self.latest_prices[code]=' not in body
+              assert 'self._v083_bids' in body
+              assert 'self._v083_tick_seen' in up
+              assert 'self._v083_book_seen' in body
+              assert 'ping_interval=20,ping_timeout=30' in body
+              assert 'V071_KRX_0B_SILENT_45S_RECONNECT' not in live
+          g=(Path('ARTITRADE_ANDROID/app/build.gradle')).read_text()
+          assert "versionCode 99" in g
+          assert "versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'" in g
+          trend=(r/'python/market_trend_runtime_v043.py').read_text()
+          policy=(r/'python/ma_v067_policy.py').read_text()
+          assert 'COIN_VERIFIED_TRADE_MAX_AGE_SEC=10.0' in trend
+          assert 'abs(time.time()-float(book.get("timestamp",0))/1000)>3' in trend
+          assert 'if submit and entry not in self._ordered:' in trend
+          assert "MAX_UP_FILL_DELAY_SECONDS=15" in policy
+          assert "MA_PREWATCH_BEFORE_CLOSE_SECONDS=30" in policy
+          assert "MA120_DOWN_TOLERANCE=Decimal('0.0099')" in policy
+          import io,zipfile,base64
+          packed=base64.b64decode(''.join((r/'assets/strategy_v070'/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(packed)) as z:
+              original_gmo=z.read('d_gmo_runtime.py').decode()
+              assert len(z.namelist())==82
+              assert 'def _maintenance_loop(self):' in original_gmo
+              assert 'PROJECTGMO_D1_OPEN_PRIORITY' in original_gmo
+              assert "self._stop.wait(1.0 if '0850' <= hm < GMO_PRIORITY_END else 40.0)" in original_gmo
+              assert "if q.last <= ceiling and entry_ask <= ceiling and paper:" in original_gmo
+          assert "m[k]['value']<m[120]['value']" in policy
+          assert "versionCode 99" in g
+          assert "versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'" in g
+          print('V084_VERIFIED_NATIVE_82_MODULE_STRATEGY_AND_NO_DB_IN_WS_PASS')
+          PY
+      - name: Check official Upbit authenticated exchange trade timestamps and ws worker integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main')
+          b=base64.b64decode(''.join((p/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:s=z.read('d_upbit.py').decode()
+          assert 'self._v084_accept_tick(code,price,stamp,trade_stamp)' in s
+          assert 'self._v084_tick_pending[code]=(price,received)' in s
+          assert "trade_stamp=item.get('trade_timestamp')" in s
+          assert 'trade_age > 10.0' in s
+          assert 'self._v086_tick_replay_rejected' in s
+          assert 'age<0 or age>0.75' in s
+          assert 'self._v084_sub_sends+=1' in s
+          overlay=(p/'python/android_runtime_v078.py').read_text()
+          assert "snapshot['upbit_ws_top40_v084']" in overlay
+          ma=(p/'python/ma_v067_coin_runtime.py').read_text()
+          assert "str(reason).startswith(('MA_V065_','MA_V067_'))" in ma
+          health=(p/'java/com/artitrade/mobile/ProcessHealthV087.java').read_text()
+          assert 'getHistoricalProcessExitReasons' in health
+          monitor=(p/'java/com/artitrade/mobile/UnifiedTradingService.java').read_text()
+          assert 'scheduleUiRecordsIfDue(hub);' in monitor
+          assert 'LargeRecordStoreV087.write(this,serialized)' in monitor
+          assert 'requestScopedErrorExport(selected)' in (p/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'exportScopedErrorToFolder' in (p/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'verified_or_fail_closed_range' in ma
+          stock_ma=(p/'python/ma_v067_stock_runtime.py').read_text()
+          assert 'AND reason=? ORDER BY id DESC LIMIT 1' in stock_ma
+          check=(p/'python/market_trend_v043.py').read_text()
+          assert 'FRAMES=("5m","30m","60m","day")' in check
+          assert 'FRAME_SECS={"5m":300,"30m":1800,"60m":3600,"day":86400}' in check
+          store=(p/'java/com/artitrade/mobile/RuntimeCrashStore.java').read_text()
+          assert '.put("app_version",appVersion())' in store
+          archive=(p/'python/android_research_bundle.py').read_text()
+          assert 'bundle_kind="research"' in archive
+          assert 'max_part_bytes=DEFAULT_PART_BYTES' in archive
+          print('V089_MA_HIGH_GUARD_AND_500MB_SCOPED_ERROR_EXPORT_PASS')
+          PY
+      - name: Verify v085 GMO D and D+1 timing, data lineage and no live brokerage arming
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          archive=root/'assets/strategy_v070'
+          data=base64.b64decode(''.join((archive/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              g=z.read('d_gmo_runtime.py').decode()
+          assert "target = now.date() if hm >= '1530'" in g
+          assert "if _date(x['entry_date']) < today" in g
+          operation=(root/'python/android_runtime_v078.py').read_text()
+          assert "def manual_paper_sell(request)" in operation
+          assert "def set_live(market,enabled)" in operation
+          assert "'SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS'" in operation
+          ui=(root/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert "requestManualPaperSell(position,owner,percent)" in ui
+          assert 'button("실거래 ON"' not in ui[ui.index('private void renderOperation()'):ui.index('private void renderMore()')]
+          print('V085_GMO_D1530_MODE_ONLY_PAPER_SELL_PASS')
+          PY
+      - name: Apply monotonic v096 unified APK identity before entire version-pinned regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/build.gradle')
+          s=p.read_text()
+          old="versionCode 99\n            versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'"
+          new="versionCode 102\n            versionName '0.7.96-MANUAL-RESULT-LIFECYCLE'"
+          assert s.count(old)==1, 'expected prepared source with v093 then monotonic v096'
+          p.write_text(s.replace(old,new))
+          print('V096_UNIFIED_CODE_101_AND_ORIGINAL_SIGNING_PACKAGE')
+          PY
+      - name: Test v085/v086 and emergency v087 MA 1st SELL, Android process exits and price sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/ui_tests ARTITRADE_ANDROID/app/src/main/python
+          python3 -m pip install -q requests websockets holidays
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v089-core"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v085_*.py' -q
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_*.py' -q
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v087_*.py' -q
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v088_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v091_ma_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v092_realtime_ws_latency.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v093_strategy_subscription_priority.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v090_gmo_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v095_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v096_*.py' -v
+      - name: Run all prior stock, coin, research and order regression groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v089-core"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          failed=0
+          for pat in 'test_v082_*.py' 'test_v081_*.py' 'test_v080_*.py' 'test_v079_*.py' 'test_v077_*.py' 'test_v076_*.py' 'test_android_ledger_backup.py' 'test_v075_*.py' 'test_v074_*.py' 'test_v073_*.py' 'test_v072_*.py' 'test_v071_*.py' 'test_v069_*.py' 'test_v068_*.py' 'test_v067_*.py' 'test_v066_*.py' 'test_v064_*.py' 'test_v063_*.py' 'test_v062_*.py' 'test_v061_*.py' 'test_v060_*.py' 'test_v059_*.py' 'test_v058_*.py' 'test_v057_*.py' 'test_v054_*.py' 'test_v053_*.py' 'test_v051_*.py' 'test_v048_*.py' 'test_v047_*.py' 'test_v042_*.py'; do
+            echo "FULL_REGRESSION_GROUP $pat"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pat" -v || failed=1
+          done
+          exit "$failed"
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build x86_64 emulator test APK
+        env:
+          ARTITRADE_EMULATOR_ABI: x86_64
+        working-directory: ARTITRADE_ANDROID
+        run: |
+          gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+          mkdir -p ../downloaded-apks
+          cp app/build/outputs/apk/unified/debug/app-unified-debug.apk ../downloaded-apks/ARTITRADE_UNIFIED_EMULATOR_x86_64.apk
+      - name: Android 15 boot, service, warm return and no fatal exceptions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: PYTHONPATH=ARTITRADE_ANDROID/ui_tests python3 ARTITRADE_ANDROID/ui_tests/android_emulator_smoke_v089.py
+      - name: Rebuild Samsung ARM64 with original signer
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:assembleUnifiedDebug --rerun-tasks --stacktrace
+      - name: Verify manifest, version monotonic, signer and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.artitrade.unified.s21dex' versionCode='102' versionName='0.7.96-MANUAL-RESULT-LIFECYCLE'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > /tmp/v089-cert.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v089-cert.txt
+          unzip -l "$apk" | grep -F 'assets/chaquopy/app.imy'
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
+          cp "$apk" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=102\nversionName=0.7.96-MANUAL-RESULT-LIFECYCLE\noriginal_signing_certificate_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6\nreal_market_paper_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
+      - name: Upload verified Samsung ARM64 APK and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_UNIFIED_v0.7.96_20261117
+          path: |
+            ARTITRADE_UNIFIED_v0.7.96_20261117.apk
+            ARTITRADE_UNIFIED_v0.7.96_20261117.sha256
+            ARTITRADE_UNIFIED_v0.7.96_20261117.compatibility.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Android smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V096_ANDROID15_EVIDENCE
+          path: ui-smoke/**
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Publish signed source-pinned verified test APK (no main merge)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c "$ARTIFACT.sha256"
+          cat > /tmp/artitrade-v096-release-notes.txt <<'RELEASE_NOTES'
+          ARTITRADE v0.7.96 original signer verified TEST APK: same unified package com.artitrade.unified.s21dex, versionCode 102. Never uninstall the existing phone app. No account, fills or existing research SQLite were reset.
+          V096 POST-SELL HIGH: independent read-only tracker now scans both original MA v067 stock+coin wallets as well as the preserved v062 historical wallets. The v054 independent market-trend wallet contributes each actual partial TP1/TP2 SELL and its distinct final SELL. WAL-aware source updates refresh the tracker and live ticker observations update highest genuinely observed trade price AFTER the exact execution episode, separately per partial/final fill. Unobserved prices remain unknown. The Android execution history re-queries post-sale studies every 20s instead of permanently caching an empty result.
+          V096 CAUSAL REASONS: Original MA v067 completed candidate + first positive 5/10/20/60 slope turn below MA120, actual stored MA120 delta and frame, original 1st/2nd/3rd filled exit reason, or original MT54 Wilder RSI(20) first crossing <=30 and confirmed MT54 TP1/TP2/TP3 exit are matched to exact stock/coin position ID, symbol, frame, execution ID, timestamp. No generic quote-only buy description is substituted when verified original strategy evidence exists. Unverified causes are not invented.
+          V096 MANUAL AI: verified source-linked detailed entry/exit reasons are exposed in strategy AI scope and original numerical MA120 delta and RSI20 value become entry-phase features in the comprehensive read-only statistical analysis, never current market lookahead. Post-sale outcomes are connected to actual fill episode research. No AI writes trade/broker SQLite and no live order state is modified.
+          V094 PREVIOUS: genuine KRX 0D manual MA sell depth without mandatory same-second 0B, pending-only GMO 0D sell until original real-paper matcher verifies the fill, legacy original-wallet MA v061/v062 first TP monitoring and stock/coin underfunded +2 true exchange tick continuation retained.
+          V093: stock strategy quote priority supply>close>MA>market trend>GMO 200-slot rotating cohort preserved. V092 original Kiwoom PING and Upbit 15-level quote bandwidth fixes preserved.
+          PRE-RELEASE: Android 15 emulator and signed package tests are not a live Samsung order/fill verification. Older archived MA fills before update have no retroactively fabricated post-sale high. If a symbol is not subscribed at the time of a trade, historical highs are not guessed; independent actual public book/ticker evidence is required. No automatic chat input is performed by this APK or this delivery.
+          RELEASE_NOTES
+          gh release create "$TAG" \
+            "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.compatibility.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE" \
+            --title "ARTITRADE v0.7.96 (original-signer verified test APK)" \
+            --notes-file /tmp/artitrade-v096-release-notes.txt --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,assets --jq '{tagName: .tagName, assets: [.assets[].name] }'
