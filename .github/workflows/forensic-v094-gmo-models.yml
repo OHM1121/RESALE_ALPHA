@@ -1,0 +1,22 @@
+name: ARTITRADE v094 GMO Engine exact model constructor
+on:
+  push:
+    branches: [fix-artitrade-v094-forced-exits-ma-legacy-partial-chase-20261117]
+    paths: ['.github/workflows/forensic-v094-gmo-models.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for n,start,end in [('projectgmo/engine.py',1,177),('projectgmo/engine.py',297,346),('d_gmo_runtime.py',680,850)]:
+              l=z.read(n).decode().splitlines()
+              for i in range(start-1,min(end,len(l))):print('SRC',n,i+1,l[i][:310])
+          PY
