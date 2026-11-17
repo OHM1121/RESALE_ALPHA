@@ -304,7 +304,8 @@ class PreparedCoinTrend:
             if recovery is None:
                 try:
                     recovery=Intent("trend",self.market,code,barid,
-                        str(book["ask"]),str(plan.get("budget_won") or 0),
+                        str(plan.get("anchor_price") or book["ask"]),
+                        str(plan.get("budget_won") or 0),
                         str(STOCK_FEE if self.market=="stock" else COIN_FEE))
                     plan["_v082_intent"]=recovery
                 except (ValueError,TypeError,ArithmeticError):
@@ -313,11 +314,15 @@ class PreparedCoinTrend:
         proof=recovery.quote({
             "symbol":code,"exchange_ms":book["book_timestamp_ms"],
             "ask":str(book["ask"]),"bid":str(book["bid"]),
-            "ask_size":str(book["ask_size"])},int(now.timestamp()*1000))
+            "ask_size":str(book["ask_size"])},int(time.time()*1000))
         plan["recovery_state"]=recovery.status()
         if proof["action"]!="PLACE":
             if proof["action"]=="WAIT":
-                plan["status"]="WAIT_"+str(proof.get("reason") or "BOOK")
+                # Preserve the original status contract and immutable cap
+                # so a faster worker cannot chase a later, higher best ASK.
+                plan["status"]=("ABOVE_SCENARIO_3_CEILING"
+                    if proof.get("reason")=="ABOVE_FIRST_VERIFIED_PLUS2_TICKS"
+                    else "WAIT_"+str(proof.get("reason") or "BOOK"))
             else:
                 plan["status"]="BUY_ORDER_PENDING_OR_UNCERTAIN"
             return
