@@ -165,6 +165,8 @@ jobs:
       - name: Test v085/v086 and emergency v087 MA 1st SELL, Android process exits and price sources
         shell: bash
         run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
           export PYTHONPATH="$(pwd)/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v089-core"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v085_*.py' -q
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_*.py' -q
