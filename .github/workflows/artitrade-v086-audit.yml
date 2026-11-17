@@ -42,6 +42,10 @@ jobs:
                       for i in range(n.lineno-1,min(n.end_lineno,n.lineno-1+limit)):
                           print(f'SRC:{name}:{i+1}: {lines[i][:270]}')
                   if name=='d_live.py':
+                      for a,b in ((1628,1735),(1890,1970)):
+                          print('D_LIVE_SOURCE_RANGE',a,b)
+                          for i in range(a-1,min(len(lines),b)):
+                              print(f'CORE:{i+1}: {lines[i][:360]}')
                       hints=re.compile('read|recv|ping|pong|refresh|REG|REAL|queue|source',re.I)
                       for n in ast.walk(tree):
                           if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and hints.search(n.name):
