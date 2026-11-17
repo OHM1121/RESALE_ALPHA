@@ -2,7 +2,7 @@ name: ARTITRADE v0.8.4 Native Coin Manual + Crash-Safe Startup original-signer A
 on:
   push:
     branches: [ artitrade-phone-main-v070-live-orders-20261112 ]
-    paths: [ '.github/workflows/artitrade-v083-coin-ma-manual-signed.yml' ]
+    paths: [ '.github/workflows/artitrade-v084-original-signer-recovery.yml' ]
   workflow_dispatch:
 permissions:
   contents: write
