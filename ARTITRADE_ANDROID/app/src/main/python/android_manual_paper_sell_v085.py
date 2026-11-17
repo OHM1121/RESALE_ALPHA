@@ -31,10 +31,10 @@ def _quant(value):
 def _stock_tick(rt,code,venue='KRX'):
     runner=rt.stock_runner
     if runner is None:raise ValueError('STOCK_FEED_NOT_READY')
-    tick=runner.latest_trade(code,venue)
+    tick=(runner.latest_krx_trade(code) if venue=='KRX' else runner.latest_trade(code))
     if not tick or len(tick)<9 or str(tick[0])!=code:
         raise ValueError('FRESH_STOCK_TRADE_MISSING')
-    if str(tick[7])!=venue:
+    if venue is not None and str(tick[7])!=venue:
         raise ValueError('WRONG_STOCK_VENUE')
     from d_minute_repair_fast import exchange_stamp_is_fresh
     if not exchange_stamp_is_fresh(tick[8],tick[6]):
