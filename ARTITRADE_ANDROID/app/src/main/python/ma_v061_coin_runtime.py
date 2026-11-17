@@ -297,7 +297,9 @@ def install():
     def protected_sell(self,c,p,desired,price,at,reason,event_key=None):
         row=c.execute("""SELECT kind FROM ma_v061_positions
             WHERE position_id=?""",(p['id'],)).fetchone()
-        if row and row['kind']=='TURNPOINT' and not str(reason).startswith('MA_V061_'):
+        manual=(str(event_key or '').startswith('USER:') and
+                str(reason).startswith('사용자 가상 강제매도 '))
+        if row and row['kind']=='TURNPOINT' and not (str(reason).startswith('MA_V061_') or manual):
             return False # Legacy SR1/V24/V26 exits cannot usurp pivot state
         return original_sell(self,c,p,desired,price,at,reason,event_key=event_key)
     ma.MACoinLedger._sell=protected_sell
