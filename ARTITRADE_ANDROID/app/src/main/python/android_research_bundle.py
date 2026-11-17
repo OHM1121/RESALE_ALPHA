@@ -26,11 +26,17 @@ SCHEMA="ARTITRADE_RESEARCH_BUNDLE_V1"
 DEFAULT_PART_BYTES=500_000_000
 
 
-def _copy_piece(source: Path, offset: int, size: int, out) -> None:
+class ExportCancelled(RuntimeError):
+    """An explicit user cancellation, never a failed broker trade."""
+    pass
+
+
+def _copy_piece(source: Path, offset: int, size: int, out, check_cancel=None) -> None:
     with source.open("rb") as stream:
         stream.seek(offset)
         left=size
         while left:
+            if check_cancel:check_cancel()
             chunk=stream.read(min(left,1024*1024))
             if not chunk:
                 raise IOError("Research source changed during snapshot staging")
@@ -112,9 +118,15 @@ def _put_compressed_error_item(pieces,used,capacity,record,source,limit):
 
 
 def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
-                progress_path=None, bundle_kind="research", native_errors_json=None):
+                progress_path=None, bundle_kind="research", native_errors_json=None,
+                cancel_path=None):
     progress=Path(progress_path).resolve() if progress_path else None
+    cancel=Path(cancel_path).resolve() if cancel_path else None
+    def check_cancel():
+        if cancel is not None and cancel.is_file():
+            raise ExportCancelled("ARTITRADE_ERROR_EXPORT_CANCELLED")
     def announce(pct,stage,done=0,total=0,detail=''):
+        check_cancel()
         if progress is None:return
         try:
             tmp=progress.with_suffix(progress.suffix+'.tmp')
@@ -147,11 +159,14 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                    "execution_decisions_v074.sqlite3"}
     if scope in ("stock","all"):
         shared_scores.add("phone_buy_evidence_v035.sqlite3")
-    originals=sorted((p for p in root.rglob("*")
-        if (_candidate(root,p) and (
-            scope=="all" or p.relative_to(root).parts[0]==scope))
-        or (p.is_file() and p.parent==root and p.name in shared_scores)),
-        key=lambda p:p.relative_to(root).as_posix())
+    originals=[]
+    for source in root.rglob("*"):
+        check_cancel()
+        if ((_candidate(root,source) and (
+                scope=="all" or source.relative_to(root).parts[0]==scope)) or
+                (source.is_file() and source.parent==root and source.name in shared_scores)):
+            originals.append(source)
+    originals.sort(key=lambda p:p.relative_to(root).as_posix())
     if not originals:raise ValueError("No original research ledger files for "+scope)
     announce(8,'연구원장 검사',0,len(originals),'원본 '+str(len(originals))+'개')
     if len(originals)>MAX_FILES:raise ValueError("Too many original research files")
@@ -176,18 +191,19 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
         staged=stage/"snapshots"
         staged.mkdir()
         for serial,original in enumerate(originals):
+            check_cancel()
             rel=original.relative_to(root).as_posix()
             announce(10+int(45*serial/max(1,len(originals))),
                      '원본 SQLite/WAL 스냅샷',serial,len(originals),rel)
             target=staged/rel
             if original.suffix.lower() in (".sqlite3",".sqlite",".db"):
-                tables=_db_snapshot(original,target)
+                tables=_db_snapshot(original,target,check_cancel=check_cancel)
                 kind="sqlite"
             else:
-                _copy_checked(original,target)
+                _copy_checked(original,target,check_cancel=check_cancel)
                 tables=None
                 kind="file"
-            record={"path":rel,"serial":serial,"sha256":_sha256(target),
+            record={"path":rel,"serial":serial,"sha256":_sha256(target,check_cancel),
                     "size":target.stat().st_size,"kind":kind,
                     "tables":tables,"fragments":[]}
             source_records[rel]=record
@@ -237,11 +253,13 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
         announce(56,'분할 ZIP 구성',len(originals),len(originals),
                  '원본 SHA 및 분할계획 계산')
         for record in all_records.values():
-            if bundle_kind=="errors":
-                _put_compressed_error_item(pieces,used,capacity,record,
-                                           staged/record["path"],max_part_bytes)
-            else:
-                _put_plan_item(pieces,capacity,used,record,record["size"])
+            check_cancel()
+            # The old error exporter DEFLATE-compressed EVERY source merely
+            # to predict ZIP sizes, then compressed a second time to write.
+            # Conservatively reserve uncompressed bytes instead. A DEFLATED
+            # ZIP can only be slightly larger (headers + max expansion already
+            # covered by the reserved per-part metadata margin).
+            _put_plan_item(pieces,capacity,used,record,record["size"])
         for record in all_records.values():
             record.pop("serial",None)
         index={"schema":SCHEMA,"scope":scope,"bundle_kind":bundle_kind,
@@ -256,6 +274,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
         results=[]
         try:
             for i,entries in enumerate(pieces,1):
+                check_cancel()
                 announce(60+int(25*(i-1)/max(1,len(pieces))),
                          '분할 ZIP 기록',i-1,len(pieces),
                          '파트 '+str(i)+'/'+str(len(pieces)))
@@ -264,22 +283,31 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 compression=(zipfile.ZIP_DEFLATED if bundle_kind=="errors"
                              else zipfile.ZIP_STORED)
                 with zipfile.ZipFile(intermediate,"w",compression=compression,
-                                     compresslevel=6 if bundle_kind=="errors" else None,
+                                     compresslevel=1 if bundle_kind=="errors" else None,
                                      allowZip64=True) as z:
                     z.writestr("analysis/bundle_index.json",encoded)
                     for rel,fragment in entries:
+                        check_cancel()
                         with z.open(fragment["entry"],"w",force_zip64=True) as output:
-                            _copy_piece(staged/rel,fragment["offset"],fragment["size"],output)
+                            _copy_piece(staged/rel,fragment["offset"],
+                                        fragment["size"],output,check_cancel)
                 size=intermediate.stat().st_size
                 if size>max_part_bytes:
                     raise ValueError("Research part exceeds declared byte limit")
                 with zipfile.ZipFile(intermediate,"r") as verify:
-                    if verify.testzip() is not None:
-                        raise ValueError("Research ZIP member CRC failed")
+                    # testzip() blocks until a whole multi-hundred-MB ZIP is
+                    # reread. Stream verification with per-MiB cancel checks.
+                    for member in verify.infolist():
+                        check_cancel()
+                        with verify.open(member) as stream:
+                            while True:
+                                check_cancel()
+                                if not stream.read(1024*1024):break
                 results.append({"name":name,"path":str(folder/name),
-                                "bytes":size,"sha256":_sha256(intermediate)})
+                                "bytes":size,"sha256":_sha256(intermediate,check_cancel)})
             announce(88,'분할 ZIP 완료',len(results),len(results),'전체 파트 검증 후 저장')
             for item in results:
+                check_cancel()
                 os.replace(stage/item["name"],folder/item["name"])
                 created.append(folder/item["name"])
         except Exception:
@@ -287,6 +315,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 try:path.unlink()
                 except OSError:pass
             raise
+    check_cancel()
     announce(92,'분할 ZIP 검증 완료',len(results),len(results),
              'Android 저장소 전송 준비')
     return json.dumps({"ok":True,"schema":SCHEMA,"scope":scope,"bundle_kind":bundle_kind,
