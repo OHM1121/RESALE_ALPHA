@@ -27,8 +27,7 @@ jobs:
                   x=s.splitlines()
                   if ('process_book=' in s or 'process_book =' in s or 'MA_BOOK_PROCESS_FAIL' in s):
                       for i,line in enumerate(x):
-                          if (('process_book=' in line or 'process_book =' in line) and
-                              ('MA' in line or 'ma' in line or 'CoinPaperLedger' in line)):
+                          if ('process_book=' in line or 'process_book =' in line) and ('MA' in line or 'ma' in line or 'CoinPaperLedger' in line):
                               print('HOOK',name,i+1,line[:200])
                   if name=='d_upbit.py':
                       tree=ast.parse(s)
@@ -37,9 +36,7 @@ jobs:
                       for method in methods:
                           print('ORIGINAL_METHOD',name,method.name,method.lineno)
                           for sub in ast.walk(method):
-                              if isinstance(sub,ast.Subscript) and
-                                 isinstance(sub.slice,ast.Constant) and
-                                 sub.slice.value=='high':
+                              if isinstance(sub,ast.Subscript) and isinstance(sub.slice,ast.Constant) and sub.slice.value=='high':
                                   print('BOOK_HIGH_ACCESS',method.name,sub.lineno,
                                         ' '.join(x[max(0,sub.lineno-4):sub.lineno+3]))
                   if 'MACoinLedger.process_book' in s and name!='d_upbit.py':
