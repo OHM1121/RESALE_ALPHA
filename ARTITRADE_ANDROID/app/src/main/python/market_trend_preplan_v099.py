@@ -102,7 +102,10 @@ class PreparedCoinTrend:
         frame=str(row.get("frame") or "")
         barid=str(row.get("bar_end") or "")
         if not symbol or frame not in mt.FRAMES or not barid:return None
-        if _dec(row.get("rsi20_live")) is None:return None
+        try:
+            val=float(row.get("rsi20_live"))
+            if not math.isfinite(val) or val<0 or val>35:return None
+        except (ValueError,TypeError):return None
         with self.co.lock:
             if symbol not in self.co._candidates["coin"]:return None
         try:finish=dt.datetime.fromisoformat(barid)
@@ -273,7 +276,7 @@ class PreparedCoinTrend:
             # A signal is strictly the ORIGINAL first 30 cross. A prepared
             # RSI35 watch never authorizes an order by itself.
             latch=co.journal.latch("coin",code,frame)
-            if not latch.armed or latch.fired:
+            if not latch.offer(barid,live):
                 plan["status"]="SIGNAL_NOT_ARMED"
                 return
             if co.standalone_wallet.owned("coin",code):
