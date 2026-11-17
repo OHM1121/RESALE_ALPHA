@@ -18,6 +18,22 @@ jobs:
         env:
           PYTHONPATH: ARTITRADE_ANDROID/app/src/main/python
         run: python3 ARTITRADE_ANDROID/ui_tests/forensic_xpl_public_rsi_20261117.py
+      - name: Inspect native original Upbit and KRX timeframe routing
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          blob=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              for file in ('d_upbit.py','d_engine.py','stock_ma_engine.py'):
+                  source=z.read(file).decode()
+                  for node in ast.walk(ast.parse(source)):
+                      if not isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):continue
+                      if node.name not in ('candles','history_bars','_candles','_load_candles'):continue
+                      print('NATIVE_CANDLE_ROUTING',file,node.name,node.lineno,
+                            ast.get_source_segment(source,node)[:2400].replace('\\n',' '))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
