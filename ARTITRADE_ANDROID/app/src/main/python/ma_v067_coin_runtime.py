@@ -489,6 +489,22 @@ def install():
         return old_stage(self,c,p,kind)
     previous._entry_stage=distinct_v067_stage
 
+    # The original MA 5m range filter indexes f['high'] and f['low'].
+    # Historical/imported old candidates may lack one of those values.
+    # That used to escape as KeyError('high') from process_book, aborting
+    # evaluation of OTHER valid pending orders and sell-side work.
+    # Reject only the unverifiable/incomplete source metadata. Keep the
+    # original threshold logic untouched for every complete native record,
+    # and keep the explicit V061/V067 MA rules exactly as before.
+    previous_range=ma.MACoinLedger._enough_5m_range
+    def verified_or_fail_closed_range(f):
+        if not isinstance(f,dict):
+            return False
+        if not f.get('ma_v061_kind') and ('high' not in f or 'low' not in f):
+            return False
+        return previous_range(f)
+    ma.MACoinLedger._enough_5m_range=staticmethod(verified_or_fail_closed_range)
+
     old_init=ma.MACoinLedger.__init__
     def init(self,*a,**kw):
         old_init(self,*a,**kw)
@@ -540,7 +556,32 @@ def install():
         if now.tzinfo is None:return 0
         _new_up_candidate(self,raw,now)
         _process_v067_exits(self,raw,now)
-        return older_book(self,raw,at)
+        try:
+            return older_book(self,raw,at)
+        except KeyError as error:
+            # Preserve strict non-fabricated execution and the original
+            # caller's MA_BOOK_PROCESS_FAIL handling. Store a rate-limited
+            # exact source line so recurring legacy failures are diagnosable.
+            symbol=str(raw.get('market') or '') if isinstance(raw,dict) else ''
+            last=getattr(self,'_v088_keyerror_trace_seen',{})
+            elapsed=time.monotonic()
+            sig=(symbol,str(error))
+            if elapsed-last.get(sig,0)>180:
+                last[sig]=elapsed
+                if len(last)>150:last.clear()
+                self._v088_keyerror_trace_seen=last
+                try:
+                    import traceback
+                    stack=traceback.extract_tb(error.__traceback__)
+                    frame=stack[-1] if stack else None
+                    location=(str(frame.name)+':'+str(frame.lineno)
+                              if frame is not None else 'unknown')
+                    self.write_issue('MA_BOOK_KEYERROR_SOURCE_V088',
+                        symbol+' '+str(error)[:80]+' origin='+location,
+                        severity='ERROR')
+                except Exception:
+                    pass
+            raise
     ma.MACoinLedger.process_book=book
 
     # Observe the same genuine Upbit WS ticker on an independent, short,
