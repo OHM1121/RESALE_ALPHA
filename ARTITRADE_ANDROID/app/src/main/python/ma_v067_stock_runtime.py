@@ -257,6 +257,119 @@ def _exit_policy(self,c,p,bid,now,book,previous):
             (int(first_confirmed),int(second_confirmed),p['id']))
 
 
+def _topup_partial_stock(self,tick,shared_book):
+    """Complete an ACTUALLY underfilled MA BUY, not create a new entry.
+
+    The exact first confirmed BUY execution sets an immutable +2 KRX-tick
+    ceiling. No top-up after 15s, after ANY sale, or beyond the original
+    account's per-position seed. One original SQLite transaction persists
+    both added shares and their actual fresh 0D ask execution.
+    """
+    from partial_entry_v094 import qualified_topup,two_ticks_max
+    from stock_ma_engine import _connect,FEE
+    if len(tick)<8 or tick[7]!='KRX':return 0
+    try:
+        now=dt.datetime.fromisoformat(str(tick[6]))
+        if now.tzinfo is None or abs((dt.datetime.now(KST)-now).total_seconds())>3:
+            return 0
+        code=str(tick[0])
+        with shared_book._lock:
+            quote=shared_book._items.get((code,'KRX'))
+        if quote is None:return 0
+        ask,bid,asksize,observed_at=quote
+        if (ask<=0 or ask<bid or asksize<=0 or
+            not -.5<=(now-observed_at).total_seconds()<=3):
+            return 0
+        from android_live_bridge import _RUNTIME
+        if _RUNTIME is not None and _RUNTIME.live_enabled('stock'):
+            # LIVE broker FOK/partial reconciliation is separate; never
+            # credit a new PAPER BUY while the physical broker is armed.
+            return 0
+    except (TypeError,ValueError,AttributeError,OverflowError,ImportError):
+        return 0
+    with self.lock,_connect(self.db) as c:
+        c.execute('BEGIN IMMEDIATE')
+        _table(c)
+        positions=c.execute("""SELECT p.*,s.kind,s.state_json
+            FROM positions p JOIN ma_v067_positions s ON s.position_id=p.id
+            WHERE p.code=? AND p.status='OPEN' AND p.qty>0
+            ORDER BY p.id""",(code,)).fetchall()
+        for p in positions:
+            try:
+                if int(p['qty'])!=int(p['qty0']) or int(p['first_sold']) or int(p['second_sold']):
+                    continue
+                entered=dt.datetime.fromisoformat(str(p['entry_at']))
+                if entered.tzinfo is None or not 0<(now-entered).total_seconds()<=15:
+                    continue
+                if c.execute("SELECT 1 FROM executions WHERE position_id=? AND side='SELL' LIMIT 1",
+                             (p['id'],)).fetchone():
+                    continue
+                fills=c.execute("""SELECT price,qty,fees,ts FROM executions
+                    WHERE position_id=? AND side='BUY' ORDER BY id""",(p['id'],)).fetchall()
+                if not fills:continue
+                # Only a persisted real 0D original BUY can establish the
+                # reference. NEVER rebase this ceiling on a later average.
+                first=int(fills[0]['price'])
+                spent=sum(int(x['price'])*int(x['qty'])+int(x['fees']) for x in fills)
+                wallet=c.execute('SELECT seed,cash,max_positions FROM accounts WHERE tf=?',
+                                 (p['tf'],)).fetchone()
+                if wallet is None or int(wallet['max_positions'])<=0:continue
+                per_symbol=int(wallet['seed'])//int(wallet['max_positions'])
+                if not qualified_topup('stock',first,ask,spent,per_symbol,False,True):
+                    continue
+                cash=int(wallet['cash'])
+                budget=min(cash,per_symbol-spent)
+                desired=int(math.floor(budget/(ask*(1+FEE))))
+                if desired<1:continue
+                ceiling=two_ticks_max('stock',first)
+                proof,_=shared_book.available(code,'KRX',now,int(ceiling),desired)
+                if proof is None or int(proof[0])!=int(ask):continue
+                qty=min(desired,int(proof[1]))
+                while qty>0 and (qty*ask+round(qty*ask*FEE)>budget):
+                    qty-=1
+                if qty<1:continue
+                # One same-second execution per position, not a fabricated
+                # replay of a cached top quote or an extra position.
+                if c.execute("""SELECT 1 FROM executions WHERE position_id=?
+                    AND side='BUY' AND ts=? LIMIT 1""",
+                    (p['id'],now.isoformat())).fetchone():
+                    continue
+                if not shared_book.reserve(code,'KRX',now,ask,qty):continue
+                fee=round(qty*ask*FEE)
+                updated_qty=int(p['qty0'])+qty
+                weighted=int(round((int(p['entry'])*int(p['qty0'])+ask*qty)/updated_qty))
+                state=json.loads(p['state_json'])
+                if p['kind']=='REVERSAL_UP':
+                    first_target=max(1,min(updated_qty,int(math.ceil(updated_qty*.10))))
+                    second_target=(max(1,int(math.ceil((updated_qty-first_target)*.5)))
+                                   if updated_qty>first_target else 0)
+                    state['rounded_first_goal']=str(first_target)
+                    state['rounded_second_goal']=str(second_target)
+                    target=math.ceil(float(policy.up_targets(weighted,p['tf'])[0]))
+                else:
+                    first_target=max(1,int(math.ceil(updated_qty*.30)))
+                    target=int(p['target'])
+                c.execute('UPDATE accounts SET cash=cash-? WHERE tf=?',
+                          (qty*ask+fee,p['tf']))
+                c.execute("""UPDATE positions SET entry=?,qty0=?,qty=?,first_qty=?,
+                    target=?,last_price=? WHERE id=? AND status='OPEN'""",
+                          (weighted,updated_qty,int(p['qty'])+qty,first_target,
+                           target,ask,p['id']))
+                c.execute("""INSERT INTO executions(tf,position_id,code,name,ts,side,qty,
+                    price,fees,tax,net_profit,reason)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (p['tf'],p['id'],code,p['name'],now.isoformat(),'BUY',
+                     qty,ask,fee,0,None,'MA_V094_PARTIAL_TWO_TICKS'))
+                _store_state(c,p['id'],state,now)
+                c.commit()
+                return qty
+            except (TypeError,ValueError,KeyError,OverflowError,sqlite3.Error):
+                # Do not commit any half-updated wallet on audit failure.
+                c.rollback()
+                raise
+    return 0
+
+
 def _close_seconds(now,frame):
     today=now.date()
     if frame=='day':
@@ -472,6 +585,10 @@ def install():
         if result:
             with self.lock,native._connect(self.db) as c:
                 _join_new_positions(self,c,str(data[0]))
+        # Original native frame/entry decision is still the ONLY way to
+        # open a position. A later fresh 0D can merely complete its
+        # verified partial size within the original 15-second window.
+        _topup_partial_stock(self,data,book)
         return result
     native.StockMAService.on_tick=tick
 
