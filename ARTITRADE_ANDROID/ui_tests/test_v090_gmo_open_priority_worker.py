@@ -68,10 +68,13 @@ class GmoOpenPriorityRegression(unittest.TestCase):
             tries.append(time.monotonic())
         service._scan_one=slow_d_scan
         service._fetch_missing_opens=check_krx_open
+        # Simulate a scan started before the 08:50 priority window and
+        # still blocking when the KRX market opens at 09:00:07.
+        clock={"time":dt.datetime(2026,11,17,8,49,59,tzinfo=g.KST)}
         class FixedClock(dt.datetime):
             @classmethod
             def now(cls,tz=None):
-                return dt.datetime(2026,11,17,9,0,7,tzinfo=g.KST)
+                return clock["time"]
         times=itertools.count(start=100)
         fake_time=SimpleNamespace(monotonic=lambda:next(times)*5)
         try:
@@ -80,6 +83,7 @@ class GmoOpenPriorityRegression(unittest.TestCase):
                     lambda:{"012200":("KOSPI","계양전기")})
                 self.assertTrue(entered_scan.wait(.55),
                     "Must reproduce a truly blocking D-history scan")
+                clock["time"]=dt.datetime(2026,11,17,9,0,7,tzinfo=g.KST)
                 time.sleep(.18)
                 self.assertGreaterEqual(len(tries),2,
                     "KRX D+1 official-open recovery is starved behind slow D scan")
