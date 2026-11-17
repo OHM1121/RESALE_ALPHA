@@ -19,9 +19,14 @@ class TwoRealTicks(unittest.TestCase):
 
     def test_upbit_two_ticks_across_price_bands(self):
         self.assertEqual(two_ticks_max('coin','9.99'),D('10.10'))
-        self.assertEqual(two_ticks_max('coin','9999'),D('10010'))
+        self.assertEqual(two_ticks_max('coin','9995'),D('10010'))
         self.assertEqual(two_ticks_max('coin','999.0'),D('1001'))
         self.assertEqual(two_ticks_max('coin','0.0999'),D('0.1010'))
+
+    def test_nonexchange_prices_cannot_be_used_as_first_or_topup_execution(self):
+        self.assertIsNone(two_ticks_max('coin','9999'))
+        self.assertIsNone(two_ticks_max('stock','10003'))
+        self.assertFalse(qualified_topup('coin','9995','10003',5000,100000,False,True))
 
     def test_special_upbit_instrument_tick_overrides_generic_ladder(self):
         self.assertEqual(two_ticks_max('coin','1500',symbol='KRW-USDT',instrument_tick='0.5'),D('1501.0'))
