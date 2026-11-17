@@ -32,7 +32,7 @@ def main():
     # intentionally non-exported trading service. Invoke from the same
     # app UID via run-as, just as the first-party Activity does.
     result=smoke.adb("shell","run-as",smoke.PACKAGE,"am",
-        "start-foreground-service","-n",
+        "start-foreground-service","--user","0","-n",
         smoke.PACKAGE+"/"+smoke.SERVICE,
         "-a","com.artitrade.mobile.MANUAL_PAPER_SELL",
         "--es","request","'"+payload+"'",timeout=35,check=False)
