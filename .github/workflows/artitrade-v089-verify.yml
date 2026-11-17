@@ -23,6 +23,7 @@ jobs:
       - name: v089 failure reproduction and previous MA safety regression
         run: |
           set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
           python3 - <<'PY'
           import base64,io,zipfile
           from pathlib import Path
