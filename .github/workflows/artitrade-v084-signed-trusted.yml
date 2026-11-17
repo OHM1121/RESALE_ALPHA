@@ -77,7 +77,7 @@ jobs:
               assert 'self.tracked' not in body
               assert 'self.latest_prices[code]=' not in body
               assert 'self._v083_bids' in body
-              assert 'self._v083_tick_seen' in body
+              assert 'self._v083_tick_seen' in up
               assert 'self._v083_book_seen' in body
               assert 'ping_interval=20,ping_timeout=30' in body
               assert 'V071_KRX_0B_SILENT_45S_RECONNECT' not in live
