@@ -3578,7 +3578,7 @@ public final class UnifiedVisualActivity extends Activity {
                 scenario.setMaxLines(4);
                 LinearLayout actions=new LinearLayout(this);
                 actions.setOrientation(LinearLayout.HORIZONTAL);
-                Button sell=button("강제매도",false,()->showManualSellInfo(r));
+                Button sell=button("강제매도",false,()->showManualSellInfo(r,source));
                 sell.setTextSize(12);
                 actions.addView(sell,new LinearLayout.LayoutParams(0,dp(35),1));
                 Button policy=button("정책이력",false,()->{
@@ -3690,11 +3690,78 @@ public final class UnifiedVisualActivity extends Activity {
         persistNavigation();render();
     }
 
-    private void showManualSellInfo(JSONObject position){
+    private void showManualSellInfo(JSONObject position,String owner){
+        final String[] quantities={"전량 (100%)","절반 (50%)","25%"};
+        final int[] selected={0};
         String identity=nameOf(position);
-        new AlertDialog.Builder(this).setTitle(identity+" · 강제매도")
-            .setMessage("이 버전에서는 강제매도 버튼이 실제 주문을 발행하지 않습니다. 현재 EXE의 가상 수동매도와 Android 실거래 주문 상태머신이 동일한 결과를 보장하는지 확인되지 않았습니다.\n\n오주문 방지를 위해 강제매도를 차단합니다. 실거래 중에는 증권사/거래소 앱에서 직접 매도하십시오.")
+        new AlertDialog.Builder(this).setTitle(identity+" · 가상계좌 강제매도")
+            .setMessage("실제 수신 시세·호가로만 처리하며 원장에 기록합니다. 실계좌 주문은 실행하지 않습니다.")
+            .setSingleChoiceItems(quantities,0,(d,which)->selected[0]=which)
+            .setNegativeButton("취소",null)
+            .setPositiveButton("매도 실행",(d,w)->{
+                int percent=selected[0]==0?100:selected[0]==1?50:25;
+                requestManualPaperSell(position,owner,percent);
+            }).show();
+    }
+
+    private void requestManualPaperSell(JSONObject position,String owner,int percent){
+        String code=position.optString("code",position.optString("market",""));
+        String qty=position.optString("qty",position.optString("quantity",""));
+        int id=position.optInt("id",-1);
+        if(code.isEmpty()||qty.isEmpty()||(!"gmo".equals(owner)&&id<0)){
+            new AlertDialog.Builder(this).setTitle("강제매도 확인 불가")
+                .setMessage("종목·보유수량·원장 ID를 확인할 수 없습니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        final String requestId=java.util.UUID.randomUUID().toString();
+        try{
+            JSONObject request=new JSONObject()
+                .put("market",market).put("strategy",owner)
+                .put("code",code).put("position_id",id)
+                .put("expected_qty",qty).put("percent",percent)
+                .put("request_id",requestId).put("user_confirmed",true);
+            Intent action=new Intent(this,UnifiedTradingService.class);
+            action.setAction(UnifiedTradingService.MANUAL_PAPER_SELL);
+            action.putExtra("request",request.toString());
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(action);
+            else startService(action);
+            main.postDelayed(()->showManualPaperResult(requestId,0),1100);
+        }catch(Exception e){
+            new RuntimeCrashStore(this).add("paper_manual_sell_request",e);
+            new AlertDialog.Builder(this).setTitle("매도 요청 실패")
+                .setMessage(e.getClass().getSimpleName())
+                .setPositiveButton("확인",null).show();
+        }
+    }
+
+    private void showManualPaperResult(String requestId,int attempt){
+        if(isFinishing()||isDestroyed())return;
+        JSONObject result=null;
+        try{
+            String raw=getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
+                .getString("last_result","{}");
+            result=new JSONObject(raw);
+        }catch(Exception e){new RuntimeCrashStore(this).add("paper_sell_result_read",e);}
+        if(result==null||!requestId.equals(result.optString("request_id",""))){
+            if(attempt<12)main.postDelayed(
+                ()->showManualPaperResult(requestId,attempt+1),1300);
+            else new AlertDialog.Builder(this).setTitle("매도 결과 확인 필요")
+                .setMessage("처리 응답을 확인하지 못했습니다. 체결이력과 원장을 확인하십시오. 중복 매도를 방지하기 위해 자동으로 재주문하지 않습니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        boolean ok=result.optBoolean("ok",false);
+        String state=result.optString("status","");
+        boolean pending=ok&&state.startsWith("PENDING");
+        String title=!ok?"강제매도 실패":pending?"강제매도 접수":"강제매도 체결 확인";
+        String detail=ok?(pending
+            ?"실제 KRX 체결가가 추가 수신되어 호가 조건을 충족해야 체결됩니다. 현재는 매도 접수 상태입니다."
+            :"가상계좌 원장에 매도 체결이 기록되었습니다.")
+            :result.optString("error","원인 확인 필요")+" · "+result.optString("detail","");
+        new AlertDialog.Builder(this).setTitle(title).setMessage(detail)
             .setPositiveButton("확인",null).show();
+        refresh(false);
     }
     private void policyHistoryCell(LinearLayout row,String content,float weight,
                                     int color,boolean header){
