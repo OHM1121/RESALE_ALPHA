@@ -184,6 +184,17 @@ def _phone_runtime_snapshot(self):
         coin_node['connected']=coin_trade
         snapshot['coin']=coin_node
         trend=getattr(self,'market_trend',None)
+        # Read-only TOP40 comparison: requested vs submitted vs genuine frames.
+        # This is diagnostic evidence, not a synthetic quote or execution gate.
+        try:
+            trend_codes=()
+            if trend is not None:
+                with trend.lock:
+                    trend_codes=tuple(trend._candidates.get('coin',{}))
+            if cr is not None and hasattr(cr,'_v084_ws_health'):
+                snapshot['upbit_ws_top40_v084']=cr._v084_ws_health(trend_codes)
+        except Exception as exc:
+            snapshot['upbit_ws_top40_v084']={'diagnostic_error':type(exc).__name__}
         warm={}
         for m in ('stock','coin'):
             required=0

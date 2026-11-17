@@ -83,7 +83,7 @@ class V080MissedEntries(unittest.TestCase):
             self.assertIn('ping_interval=20,ping_timeout=30,max_size=2**20,max_queue=64',src)
             self.assertIn('self._v083_codes=codes | bids',src)
             self.assertIn('self._v083_active_codes=codes;self._v083_active_bids=bids',src)
-            self.assertIn('self._v083_tick_queue.put_nowait((code,price,stamp))',src)
+            self.assertIn('self._v084_accept_tick(code,price,stamp,timestamp)',src)
             compile(src,'d_upbit.py','exec')
         overlay=(APP/'market_trend_runtime_v043.py').read_text()
         self.assertIn('if abs(time.time()-float(book.get("timestamp",0))/1000)>3',overlay)
