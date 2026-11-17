@@ -524,8 +524,13 @@ def install():
     def scoped_sell(self,c,p,desired,price,at,reason,event_key=None):
         _table(c)
         row=c.execute('SELECT 1 FROM ma_v067_positions WHERE position_id=?',(p['id'],)).fetchone()
-        if row and not str(reason).startswith('MA_V067_'):
-            return False # Prior SR1/V24/V061 exits cannot override new case.
+        # V067 positions use the verified v065 policy's original reason
+        # names for target/stop orders. The former V067-only prefix gate
+        # silently rejected ALL legitimate +2% first-profit sells.
+        # Retain the legacy-policy isolation: only reasons from the
+        # exact v065 policy or the v067 second-bar guard may pass.
+        if row and not str(reason).startswith(('MA_V065_','MA_V067_')):
+            return False
         return previous_sell(self,c,p,desired,price,at,reason,event_key=event_key)
     ma.MACoinLedger._sell=scoped_sell
 
