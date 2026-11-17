@@ -515,7 +515,9 @@ public final class UnifiedTradingService extends Service {
                 // a user-confirmed PAPER SELL is waiting to execute.
                 if(manualSellOutstanding.get()>0){
                     ProcessHealthV087.sample(this,"manual_sell_priority",0L,0L,false);
-                    try{Thread.sleep(250L);}
+                    // Retain the original 2.5-second lease/heartbeat cadence,
+                    // instead of hammering the hub while a sell is pending.
+                    try{Thread.sleep(2500L);}
                     catch(InterruptedException e){Thread.currentThread().interrupt();break;}
                     continue;
                 }
