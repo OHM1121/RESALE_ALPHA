@@ -265,4 +265,54 @@ class MarketSourceRecovery(unittest.TestCase):
         self.assertEqual(factors['KOSDAQ'],-.3)
 
 
+    def test_yahoo_intraday_domestic_last_traded_at_must_be_current(self):
+        now=1795000000
+        def payload(_url,_params):
+            return {'chart':{'result':[{'meta':{'regularMarketTime':now-30,
+                'regularMarketPrice':103.,'previousClose':100.}}]}}
+        with patch.object(score,'_public_json',side_effect=payload):
+            self.assertEqual(score._yahoo_current_index_change('KOSPI','^KS11',now=now),3.)
+        def stale(_url,_params):
+            return {'chart':{'result':[{'meta':{'regularMarketTime':now-1800,
+                'regularMarketPrice':103.,'previousClose':100.}}]}}
+        with patch.object(score,'_public_json',side_effect=stale):
+            self.assertIsNone(score._yahoo_current_index_change('KOSPI','^KS11',now=now))
+
+    def test_worker_is_restarted_by_strategy_coordinator_without_ui_poll(self):
+        from types import SimpleNamespace
+        fake=SimpleNamespace(snapshot=lambda:{'coin':{'score':14.,'stale':False}})
+        co=trend.Coordinator.__new__(trend.Coordinator)
+        co.rt=SimpleNamespace(root='/tmp/fake_worker')
+        with patch.object(score,'ensure_worker',return_value=fake) as start:
+            self.assertEqual(co._read_score('coin')['score'],14.)
+            start.assert_called_once_with(co.rt.root)
+        with patch.object(score,'ensure_worker',side_effect=OSError('SQLite unready')):
+            r=co._read_score('coin')
+            self.assertIsNone(r['score'])
+            self.assertTrue(r['stale'])
+
+    def test_live_source_health_separates_stock_ws_upbit_ws_and_rest_mark(self):
+        import threading
+        from types import SimpleNamespace
+        import market_feed_health_v004 as feed
+        now=1795000000;mono=1000.
+        stock=SimpleNamespace(api=object(),_confirmed_ws_session=True,
+            _v066_quote_lock=threading.RLock(),
+            _v066_quote_by_venue={('990001','KRX'):{'exchange_ms':int((now-1)*1000),'is_fresh':True}},
+            engine=SimpleNamespace(book=SimpleNamespace(_bid_depth={})))
+        coin=SimpleNamespace(client=object(),_ws_connected=True,
+            _v083_lock=threading.RLock(),_v083_codes={'KRW-BTC'},
+            _v083_active_codes={'KRW-BTC'},_v083_bids={'KRW-BTC'},
+            _v083_active_bids={'KRW-BTC'},_last_ws_quote=mono-1,
+            last_live=mono-5,_ws_last_reason='')
+        rt=SimpleNamespace(root='/tmp/nonexistent_feed_health',stock_runner=stock,coin_runner=coin)
+        r=feed.snapshot(rt,now=now,clock=mono)
+        self.assertEqual(r['stock']['quote_status'],'RECEIVING_VERIFIED_EXCHANGE_BOOK_OR_TRADE')
+        self.assertEqual(r['coin']['quote_status'],'WS_CURRENT')
+        coin._ws_connected=False;coin._last_ws_quote=mono-100
+        r=feed.snapshot(rt,now=now,clock=mono)
+        self.assertEqual(r['coin']['quote_status'],'REST_MARK_ONLY_NOT_TRADE_PROOF')
+        self.assertNotEqual(r['coin']['quote_status'],'WS_CURRENT')
+
+
 if __name__=='__main__':unittest.main()
