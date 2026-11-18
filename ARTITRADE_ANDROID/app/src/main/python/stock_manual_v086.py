@@ -386,12 +386,21 @@ def manual_stock_gmo(rt,request):
         prior=next((o for o in service.engine.orders.values() if
             o.side=='SELL' and o.code==request['code'] and
             o.purpose==reason),None)
-        if prior and prior.state=='FILLED':
-            record=next((r for r in reversed(service.engine.fills)
-                         if r.get('order_id')==prior.id),None)
-            if record is None:raise ValueError('STOCK_GMO_FILL_LEDGER_NOT_RECORDED')
-            return {'already_executed':True,'qty':prior.filled,'price':record['price'],
-                    'status':'FILLED','paper_only':True}
+        if prior is not None:
+            # A confirmed UUID belongs to its ORIGINAL intent even after
+            # a partial or full fill. Never quote or submit it twice.
+            records=[f for f in service.engine.fills
+                     if f.get('order_id')==prior.id]
+            verified=sum(int(f.get('qty',0)) for f in records)
+            if verified!=int(prior.filled):
+                raise ValueError('STOCK_GMO_EXISTING_FILL_LEDGER_MISMATCH')
+            status=('FILLED' if prior.state=='FILLED' else
+                    'PARTIAL_PENDING' if verified>0 else
+                    'PENDING_REAL_KRX_BOOK')
+            response={'already_executed':True,'qty':verified,
+                'status':status,'order_id':prior.id,'paper_only':True}
+            if records:response['price']=records[-1]['price']
+            return response
         p=service.engine.positions.get(request['code'])
         if p is None or p.qty<=0:raise ValueError('STOCK_GMO_POSITION_NOT_OPEN')
         if int(p.qty)!=int(Decimal(str(request['expected_qty']))):
