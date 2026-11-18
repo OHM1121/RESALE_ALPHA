@@ -49,6 +49,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Ephemeral test-only certificate on CI. Not used for any USER APK.
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=ARTITRADE CI DEBUG ONLY,O=Regression,L=Test,C=KR"
           gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
-          test -s app/build/outputs/apk/unified/debug/app-unified-debug.apk ||
-            find app/build/outputs/apk -name '*.apk' -size +10M -print -quit | grep -q apk
+          find app/build/outputs/apk -name '*.apk' -size +10M -print -quit |
+            grep -q apk
