@@ -320,19 +320,11 @@ public final class UnifiedTradingService extends Service {
                 crashes.add("ui_initial_bounded_snapshot_v104",viewError);
             }
         }
-        String state=migration.optString("status","");
-        JSONObject audit=new JSONObject();
-        if("FILES_INSTALLED".equals(state)||"LOCAL_FILES_PRESENT".equals(state)){
-            // Allow asynchronous EXE runner bootstrap to finish initializing the
-            // strategy snapshots. No tick or market order is synthesized here.
-            for(int attempt=0;attempt<3&&records.length()==0;attempt++){
-                try{Thread.sleep(500L);}catch(InterruptedException ie){Thread.currentThread().interrupt();break;}
-                records=strategy.hubRecordsUi();
-            }
-            audit=strategy.ledgerAudit(migration.optJSONObject("manifest"));
-        }
-        JSONObject verified=importer.finishRuntimeVerification(migration,started,records,audit);
-        saveMigrationResult(verified);
+        // A new fresh-only epoch has NO older PC rows to verify or inherit.
+        // Source ledgers come exclusively from the eight newly started wallets.
+        // The former importer's finishRuntimeVerification() intentionally
+        // cannot be called because all legacy migration is disabled.
+        saveMigrationResult(migration);
         applyPendingOperation();
     }
     private void safeStartStrategy(){
