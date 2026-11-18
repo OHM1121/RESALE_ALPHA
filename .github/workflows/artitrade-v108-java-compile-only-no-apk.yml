@@ -7,6 +7,7 @@ on:
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FreshEpochGateV106.java
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LegacyLedgerMigration.java
   workflow_dispatch:
 permissions:
   contents: read
