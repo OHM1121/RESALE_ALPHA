@@ -2113,6 +2113,40 @@ public final class UnifiedVisualActivity extends Activity {
         int researchVirtualEvaluated=0,researchVirtualHit=0,researchVirtualMiss=0,researchVirtualPending=0,researchVirtualEntry=0;
         int flowPending=0,flowBought=0,flowHolding=0,flowSold=0;
         boolean flowKnown=false;
+        boolean sourceReady=false;
+        boolean sourceError=false;
+    }
+
+    /** A fresh but EMPTY original wallet is valid and has zero P&L.
+     * The UI may NOT turn a missing or unreadable source into a fake 0.
+     */
+    private boolean ledgerSourceReady(JSONObject ledger){
+        if(ledger==null||ledger.length()==0)return false;
+        JSONObject diagnostic=ledger.optJSONObject("load_diagnostic");
+        if(diagnostic!=null){
+            String stage=diagnostic.optString("stage","").toUpperCase(Locale.ROOT);
+            if(stage.contains("MISSING")||stage.contains("NOT_READY")||
+               stage.contains("ERROR")||stage.contains("FAIL"))return false;
+        }
+        return ledger.has("positions")||ledger.has("holdings")||
+            ledger.has("executions")||ledger.has("fills")||
+            ledger.has("accounts")||ledger.has("performance_by_frame")||
+            ledger.has("wallets")||ledger.has("realized_pnl")||
+            ledger.has("unrealized_pnl")||ledger.has("cash")||
+            ledger.has("total_pnl");
+    }
+
+    private void normalizeFreshZeroPnl(Stats st){
+        if(!st.sourceReady)return;
+        // With no CLOSED SELL a verified new wallet's realized P&L is
+        // mathematically zero. With no OPEN holdings its floating P&L
+        // is zero. Do not infer prices, fills, wins, or profits otherwise.
+        if(st.flowSold==0&&st.executions.length()==0&&
+            !finite(st.realized))st.realized=0.0;
+        if(st.positions.length()==0&&!finite(st.unrealized))
+            st.unrealized=0.0;
+        if(finite(st.realized)&&finite(st.unrealized))
+            st.total=st.realized+st.unrealized;
     }
 
     private Stats stats(String m,String s){
@@ -2157,6 +2191,11 @@ public final class UnifiedVisualActivity extends Activity {
 
     private Stats calculateStats(JSONObject snapshot,String m,String s){
         Stats st=new Stats();JSONObject l=ledger(snapshot,m,s);
+        st.sourceReady=ledgerSourceReady(l);
+        JSONObject diagnostic=l.optJSONObject("load_diagnostic");
+        st.sourceError=diagnostic!=null&&
+            diagnostic.optString("stage","").toUpperCase(Locale.ROOT)
+                .matches(".*(ERROR|CORRUPT|FAIL).*");
         if("trend".equals(s)){
             JSONArray all=array(l,"positions"),open=new JSONArray();
             for(int i=0;i<all.length();i++){
@@ -2187,6 +2226,7 @@ public final class UnifiedVisualActivity extends Activity {
             st.bought=bought;st.closed=sold;
             st.flowPending=st.pending.length();st.flowHolding=st.positions.length();
             st.flowBought=bought;st.flowSold=sold;st.flowKnown=true;
+            normalizeFreshZeroPnl(st);
             return st;
         }
         st.positions=rows(l,m,s,"positions","holdings");
@@ -2303,6 +2343,7 @@ public final class UnifiedVisualActivity extends Activity {
         st.researchVirtualEntry=rs.optInt("virtual_entry",0);
         st.confirmed=st.researchActualEvaluated+st.researchVirtualEvaluated;
         st.hits=st.researchActualHit+st.researchVirtualHit;
+        normalizeFreshZeroPnl(st);
         return st;
     }
 
@@ -2323,6 +2364,8 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private Stats calculateStatsTf(JSONObject snapshot,String m,String stg,String tf,Stats all){
         Stats st=new Stats();
+        st.sourceReady=all.sourceReady;
+        st.sourceError=all.sourceError;
         st.positions=filterTf(all.positions,tf);st.pending=filterTf(all.pending,tf);st.executions=filterTf(all.executions,tf);st.research=filterTf(all.research,tf);
         JSONObject l=ledger(snapshot,m,stg);
         JSONObject pf=l.optJSONObject("performance_by_frame");JSONObject p=pf==null?null:pf.optJSONObject(tf);
@@ -2366,6 +2409,7 @@ public final class UnifiedVisualActivity extends Activity {
             st.flowSold=st.closed;
             st.flowBought=Math.max(st.flowHolding+st.flowSold,st.bought);
         }
+        normalizeFreshZeroPnl(st);
         return st;
     }
 
