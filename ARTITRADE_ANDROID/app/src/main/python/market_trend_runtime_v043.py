@@ -366,27 +366,51 @@ class Coordinator:
             if market=="stock":
                 runner=self.rt.stock_runner
                 ranks=(runner.api.ranks(per_market=50) if runner and runner.api else {})
-                if len(ranks)<50:raise RuntimeError("KRX_TOP50_INCOMPLETE")
-                picked=list(ranks.items())
+                if not isinstance(ranks,dict):
+                    raise RuntimeError("KRX_TOP50_RANK_FORMAT_INVALID")
+                # The ranked 50-per-market list, not just the native
+                # baseline watch list, owns NEW LEGACY trend coverage.
+                picked=[(code,identity) for code,identity in ranks.items()
+                        if str(code).strip()][:100]
             else:
                 runner=self.rt.coin_runner
                 rows=runner.client.tickers() if runner else []
-                allowed=set(getattr(runner,"markets",{}))
+                if not isinstance(rows,list):
+                    raise RuntimeError("UPBIT_TOP50_RANK_FORMAT_INVALID")
                 observed=[]
                 for r in rows:
+                    if not isinstance(r,dict):continue
                     code=str(r.get("market") or "")
                     vol=mt._finite(r.get("acc_trade_price_24h"))
                     if (code.startswith("KRW-") and code not in ("KRW-USDT","KRW-USDC")
-                        and (not allowed or code in allowed) and vol is not None):
+                        and vol is not None and vol>0):
                         observed.append((vol,code))
-                if len(observed)<50:raise RuntimeError("UPBIT_TOP50_INCOMPLETE")
-                observed.sort(reverse=True)
-                picked=[(code,("CRYPTO",code)) for _,code in observed[:50]]
+                # IMPORTANT: never intersect TOP50 with runner.markets.
+                # That legacy universe is capped at 35/40 and previously
+                # made the required 50 impossible to reach.
+                observed.sort(key=lambda x:(-x[0],x[1]))
+                seen_codes=set();picked=[]
+                for volume,code in observed:
+                    if code in seen_codes:continue
+                    seen_codes.add(code)
+                    picked.append((code,("CRYPTO",code)))
+                    if len(picked)==50:break
+            if not picked:
+                raise RuntimeError("TOP50_NO_VERIFIED_RANKING_DATA")
+            # A partially returned API page must not be described as a
+            # completed TOP50. Keep verified available symbols visible for
+            # monitoring, report coverage explicitly and re-query promptly.
+            expected=100 if market=="stock" else 50
             with self.lock:
                 self._candidates[market]=dict(picked)
-                self._last_rank[market]=time.monotonic()
-            # Coin ticker subscription is augmented dynamically by the tracked
-            # property; do not permanently add every past candidate to base.
+                self._last_rank[market]=(time.monotonic() if
+                    len(picked)>=expected else time.monotonic()-285)
+                self._last_fetch_error[market]=("" if len(picked)>=expected
+                    else "TOP50_PARTIAL_VERIFIED_"+str(len(picked))+
+                         "_OF_"+str(expected))
+            # Existing tracked / watched-code properties now dynamically
+            # subscribe exactly the ranked symbols; order execution still
+            # needs genuinely fresh exchange print and depth evidence.
         except Exception as exc:
             self._last_fetch_error[market]="RANK:"+type(exc).__name__
             self._record_entry_block(market,'__ENGINE__','all',
