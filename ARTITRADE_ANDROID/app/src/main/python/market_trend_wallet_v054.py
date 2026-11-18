@@ -317,7 +317,8 @@ class TrendWalletV054:
             positions.append(p)
         return positions
 
-    def sell(self,pos,price,at,reason,bid_size=None,manual_fraction=None):
+    def sell(self,pos,price,at,reason,bid_size=None,manual_fraction=None,
+             verified_manual_bid_qty=None):
         if pos.strategy!='trend':return 0,'WRONG_POSITION_OWNER'
         market,frame,symbol=pos.market,pos.frame,pos.symbol
         at=_as_kst(at)
@@ -356,15 +357,29 @@ class TrendWalletV054:
                 balance=float(r['qty'])
                 if market=='stock':
                     qty=int(balance) if fraction>=.999 else max(1,int(round(balance*fraction)))
-                    runner=getattr(self.rt,'stock_runner',None)
-                    book=getattr(getattr(runner,'engine',None),'book',None)
-                    if book is not None:
-                        amount=book.available_sell(symbol,'KRX',at,int(price),qty)
-                        qty=min(qty,int(amount))
-                        if qty<=0 or not book.reserve_sell(symbol,'KRX',at,int(price),qty):
-                            return 0,'INSUFFICIENT_FRESH_BID_DEPTH'
-                    elif bid_size is not None:
-                        qty=min(qty,int(bid_size))
+                    if manual_fraction is not None and verified_manual_bid_qty is not None:
+                        # Only the confirmed user PAPER path may supply a
+                        # newly verified official KRX 0D/ka10004 bid size.
+                        # Its price/timestamp and available depth were
+                        # independently checked before calling this wallet;
+                        # do not demand an unrelated 0B ticker event.
+                        if pos.execution_mode!='PAPER' or not str(reason).startswith('USER_SIM_MANUAL:'):
+                            return 0,'MANUAL_BID_EVIDENCE_NOT_AUTHORIZED'
+                        size=int(verified_manual_bid_qty)
+                        if size<=0:return 0,'INSUFFICIENT_VERIFIED_MANUAL_DEPTH'
+                        qty=min(qty,size)
+                    else:
+                        # Native automatic exit, shared reservations and
+                        # broker safeguards remain completely unchanged.
+                        runner=getattr(self.rt,'stock_runner',None)
+                        book=getattr(getattr(runner,'engine',None),'book',None)
+                        if book is not None:
+                            amount=book.available_sell(symbol,'KRX',at,int(price),qty)
+                            qty=min(qty,int(amount))
+                            if qty<=0 or not book.reserve_sell(symbol,'KRX',at,int(price),qty):
+                                return 0,'INSUFFICIENT_FRESH_BID_DEPTH'
+                        elif bid_size is not None:
+                            qty=min(qty,int(bid_size))
                 else:
                     if bid_size is None:return 0,'NO_FRESH_BID_DEPTH'
                     limit=_coin_qty(Decimal(str(bid_size))*Decimal('.5'))
