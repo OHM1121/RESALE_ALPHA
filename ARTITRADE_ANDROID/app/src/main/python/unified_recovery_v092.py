@@ -361,6 +361,13 @@ class RecoveryObserver:
             try:
                 from d_v19_portfolio import live_session
                 stock_open=bool(live_session(kst,"KRX") or live_session(kst,"NXT"))
+                # The same official calendar/override used by the original
+                # Kiwoom feed must decide holidays; weekday alone is unsafe.
+                if stock_open and stock is not None:
+                    from d_calendar import calendar_status,load_closed_overrides
+                    active,_why=calendar_status(
+                        kst,load_closed_overrides(stock.store.root))
+                    stock_open=bool(active)
             except Exception:pass
         joined={}
         subscriptions=None
