@@ -41,6 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import com.chaquo.python.Python;
+import com.chaquo.python.android.AndroidPlatform;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -348,6 +349,20 @@ public final class UnifiedVisualActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
+        // Fresh-only successor to v0.9.5: abandon ALL previous PAPER ledgers
+        // before restoring UI, starting the trading service or opening any
+        // exchange connections. No old-paper-holding migration is permitted.
+        try{
+            if(FreshEpochGateV106.mandatoryFreshStartPending(this)){
+                beginMandatoryPaperFreshStart();
+                return;
+            }
+        }catch(Throwable markerError){
+            renderFreshStartBlocked("새 원장 마커 손상: "+
+                markerError.getClass().getSimpleName()+
+                " · 주문 및 엔진 시작을 차단했습니다.");
+            return;
+        }
         // Corrupt navigation preferences must never create an infinite launcher
         // crash loop. Recover ONLY view state; retain all original SQLite,
         // orders, filled trades, API credentials and research history.
@@ -7585,6 +7600,94 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void restartFeeds(){try{Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.RESTART_FEEDS);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Exception e){new RuntimeCrashStore(this).add("native_restart_feeds",e);}}
+
+    /** Mandatory one-time new PAPER epoch, isolated from all trading threads.
+      * Called before the first Activity-created START intent. No broker login,
+      * history import, order execution, or APK signing is performed here.
+      */
+    private void beginMandatoryPaperFreshStart(){
+        renderFreshStartBlocked("신규 PAPER 원장 생성 중 · 기존 8전략 보유/체결/연구 자료 폐기");
+        new Thread(()->{
+            try{
+                // An existing service or Python interpreter could still own
+                // SQLite WAL / exchange threads. Never delete under its feet.
+                if(UnifiedTradingService.isServiceActiveForFreshReset()){
+                    stopService(new Intent(this,UnifiedTradingService.class));
+                    throw new IllegalStateException(
+                        "SERVICE_WAS_ACTIVE_REOPEN_APP_FOR_COLD_RESET");
+                }
+                if(Python.isStarted()){
+                    throw new IllegalStateException(
+                        "PYTHON_ALREADY_RUNNING_REOPEN_APP_FOR_COLD_RESET");
+                }
+                android.content.SharedPreferences live=getSharedPreferences(
+                    "unified_live_orders",MODE_PRIVATE);
+                if(live.getBoolean("live_stock",false)||
+                   live.getBoolean("live_coin",false))
+                    throw new SecurityException(
+                        "LIVE_BROKER_ENABLED_PAPER_RESET_BLOCKED");
+                File ledger=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                if(!ledger.isDirectory()&&!ledger.mkdirs())
+                    throw new IOException("FRESH_LEDGER_DIRECTORY_CREATE_FAILED");
+                Python.start(new AndroidPlatform(getApplicationContext()));
+                String raw=Python.getInstance()
+                    .getModule("fresh_epoch_reset_v106")
+                    .callAttr("reset_once_json",ledger.getAbsolutePath())
+                    .toString();
+                JSONObject result=new JSONObject(raw);
+                String phase=result.optString("status","");
+                if(!"COMMITTED".equals(phase)&&
+                   !"ALREADY_COMMITTED".equals(phase))
+                    throw new IllegalStateException(
+                        "FRESH_PAPER_RESET_NOT_COMMITTED:"+phase);
+                // In-process caches can no longer refer to 2026-11-14 or
+                // any previous PC ZIP. Settings/API secrets are preserved.
+                FreshEpochGateV106.clearDerivedCachesIfNeeded(this);
+                if(FreshEpochGateV106.mandatoryFreshStartPending(this))
+                    throw new IllegalStateException(
+                        "FRESH_PAPER_MARKER_NOT_COMMITTED");
+                main.post(()->{
+                    renderFreshStartBlocked(
+                        "새 PAPER 원장 초기화 완료 · 주식·코인 8전략 모두 0건에서 시작");
+                    // Re-enter normal onCreate only AFTER durable commit.
+                    main.postDelayed(this::recreate,200);
+                });
+            }catch(Throwable error){
+                try{new RuntimeCrashStore(this).add(
+                    "mandatory_first_paper_epoch",error);}
+                catch(Throwable ignored){}
+                String code=error.getClass().getSimpleName()+": "+
+                    String.valueOf(error.getMessage());
+                main.post(()->renderFreshStartBlocked(
+                    "초기화 차단 · "+code+
+                    "\n기존 데이터는 자동 복구·승계하지 않습니다."+
+                    "\n앱을 완전히 종료한 뒤 다시 실행하십시오."));
+            }
+        },"artitrade-mandatory-fresh-epoch-no-broker").start();
+    }
+
+    private void renderFreshStartBlocked(String message){
+        if(root==null){
+            root=new FrameLayout(this);
+            root.setBackgroundColor(PremiumUi.BG);
+            setContentView(root);
+        }
+        root.removeAllViews();
+        LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(dp(28),dp(20),dp(28),dp(20));
+        TextView headline=text("ARTITRADE · 신규 PAPER 원장",21);
+        headline.setGravity(Gravity.CENTER);
+        panel.addView(headline);
+        TextView details=text(message,13);
+        details.setTextColor(PremiumUi.MUTED);
+        details.setPadding(0,dp(16),0,dp(18));
+        details.setGravity(Gravity.CENTER);
+        panel.addView(details);
+        // Never offer an option to bypass the first reset and use old data.
+        root.addView(panel,new FrameLayout.LayoutParams(-1,-1));
+    }
 
     private void startRuntimeLater(){
         if(runtimeStartIssued)return;runtimeStartIssued=true;
