@@ -997,7 +997,8 @@ def _ma_pending_diagnostics(self,snap):
 
 def _stock_ma_full(self):
     if not self.stock_runner:
-        return {}    snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
+        return {}
+    snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
     perf=snap.get('performance_by_frame') or {}
     from ma_epoch_v062 import stock_active
     db=stock_active(self.root)
@@ -1996,7 +1997,8 @@ def _hub_records_v078(self,for_ui=False):
     except Exception as exc:
         self._err('hub_records_v078',exc)
         # Never read an old imported PC GMO database to fill holes in a
-        # failed current wallet snapshot; leave the error visible.        try:
+        # failed current wallet snapshot; leave the error visible.
+        try:
             # Passive, read-only worker. Network and SQLite work only on its
             # daemon thread; this hub snapshot/order thread only enqueues.
             from market_research_v033 import offer_records
