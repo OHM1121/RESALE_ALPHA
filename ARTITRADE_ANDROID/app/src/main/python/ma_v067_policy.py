@@ -19,7 +19,7 @@ Case 2 uses the user's subsequent explicit first/second targets and
 confirmed-fill-only 10% / 50%-of-remainder exit stages.
 """
 from __future__ import annotations
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from datetime import datetime, timedelta
 from typing import Mapping
 import ma_v061_rules as legacy
@@ -357,7 +357,17 @@ def up_stage_quantities(state,initial):
     if (first_integer is not None and first_integer>0 and
         first_integer<=n and first_integer==first_integer.to_integral_value()):
         first=first_integer
+    # Upbit original wallet executes fractional quantities at 8-decimal
+    # precision. Never demand untradeable sub-step dust before arming TP2:
+    # 4345.65326032 * 30% = 1303.695978096, but native SELL confirms
+    # only 1303.69597809; without matching floor, the first stage NEVER
+    # advances, even after a valid native SQLite SELL.
+    step=number(state.get('coin_qty_step'))
+    if step is not None and step>0 and step<1:
+        first=(first/step).to_integral_value(rounding=ROUND_DOWN)*step
     second=(n-first)*UP_SECOND_FRACTION_OF_REMAINDER
+    if step is not None and step>0 and step<1:
+        second=(second/step).to_integral_value(rounding=ROUND_DOWN)*step
     second_integer=number(state.get('rounded_second_goal'))
     if (second_integer is not None and second_integer>=0 and
         second_integer<=n-first and
