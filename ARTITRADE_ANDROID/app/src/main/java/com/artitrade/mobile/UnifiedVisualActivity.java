@@ -3638,8 +3638,7 @@ public final class UnifiedVisualActivity extends Activity {
                 tradeMetricTile(figures,"매수가",finite(price)?WonFormat.price(price):"—",true);
                 String quoteStatus=r.optString("stock_quote_status","");
                 String quoteLabel=isStockPosition(r)&&"LAST_LEDGER".equals(quoteStatus)
-                    ?"저장 평가가":isStockPosition(r)&&("LAST_0B".equals(quoteStatus)||
-                    "LAST_REST".equals(quoteStatus))?"마지막 확인가":"현재가";
+                    ?"저장 평가가":"현재가";
                 tradeMetricTile(figures,quoteLabel,
                     finite(current)&&current>0?WonFormat.price(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
