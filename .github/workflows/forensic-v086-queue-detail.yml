@@ -1,0 +1,28 @@
+name: V086 focused source inspection
+on:
+  push:
+    branches: [audit-artitrade-v086-queue-api-20261118]
+    paths: ['.github/workflows/forensic-v086-queue-detail.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          ranges={'d_live.py':[(100,160),(550,720),(900,987),(1908,2025)],'d_upbit.py':[(450,493),(940,965),(1310,1405),(2740,2775),(3635,3719),(3790,3918)]}
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for f,spans in ranges.items():
+              ls=z.read(f).decode('utf8').splitlines()
+              for a,b in spans:
+                print(f'\n=== {f} {a}-{b} ===')
+                for i in range(a-1,min(b,len(ls))):print(f'{i+1:5d}: {ls[i][:240]}')
+          PY
