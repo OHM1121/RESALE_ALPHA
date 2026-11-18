@@ -26,7 +26,13 @@ class ManualPaperSellLifecycle(unittest.TestCase):
         self.assertIn('원인: "+result.optString("error"',UI)
         self.assertNotIn('startForegroundService(action)',UI[UI.index('private void showManualPaperResult'):UI.index('private void policyHistoryCell')])
     def test_original_fill_truth_is_unchanged(self):
-        self.assertIn("PENDING_REAL_KRX_PRINT",MANUAL)
+        # v086 uses an independently verified KRX best-bid+available-depth
+        # PAPER matcher for an explicitly confirmed manual GMO SELL. The
+        # superseded 0B-PENDING-only path is no longer the completion gate.
+        STOCK=(ROOT/"python/stock_manual_v086.py").read_text(encoding="utf-8")
+        self.assertIn("PENDING_REAL_KRX_BOOK",STOCK)
+        self.assertIn("service.engine.fill(prior.id,qty,book['bid'],now.isoformat())",STOCK)
+        self.assertIn("STOCK_GMO_MANUAL_FILL_NOT_RECORDED",STOCK)
         self.assertIn("COIN_MANUAL_FILL_NOT_RECORDED",MANUAL)
         self.assertIn('synchronized JSONObject manualPaperSell',BRIDGE)
 
