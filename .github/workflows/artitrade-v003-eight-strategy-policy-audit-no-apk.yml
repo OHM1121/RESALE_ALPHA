@@ -34,8 +34,11 @@ jobs:
                   print('ORIGINAL_SOURCE',f)
           print('STRATEGY_SOURCE_FILE_INDEX_END')
           wanted=('d_engine.py','d_v19_portfolio.py','d_upbit.py',
-                  'd_close.py','stock_ma_engine.py',
-                  'd_gmo.py','d_gmo_engine.py','d_kiwoom.py')
+                  'stock_ma_engine.py','coin_ma_engine.py',
+                  'at_close_engine.py','at_close_runner.py',
+                  'projectgmo/engine.py','d_gmo_runtime.py',
+                  'reference_policy.py','coin_hold_policy.py',
+                  'sr_exit.py')
           for f in wanted:
               if f not in files:continue
               a=z.read(f).decode('utf8').splitlines()
@@ -45,7 +48,7 @@ jobs:
               for node in ast.walk(t):
                   if not isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):continue
                   if not re.search(r'buy|sell|exit|stop|target|signal|candidate|enter|entry|tick|match|watch|cross|close|decide|portfolio',node.name,re.I):continue
-                  if node.end_lineno-node.lineno>280:continue
+                  if node.end_lineno-node.lineno>310:continue
                   print('POLICY_METHOD',f,node.name,node.lineno,node.end_lineno)
                   for i in range(node.lineno-1,min(node.end_lineno,node.lineno+92)):
                       line=a[i]
