@@ -1,0 +1,49 @@
+name: ARTITRADE v086 quotes, stages and ZIP read-only RED/GREEN
+on:
+  push:
+    branches: [fix-artitrade-v086-live-quotes-exits-export-20261118]
+    paths:
+      - '.github/workflows/verify-v086-quotes-stages-zip.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_ledger_backup.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/stock_quote_truth_v066.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v086_live_quotes_stages_export.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Restore exact original 82-module native PAPER engine
+        run: |
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          data=base64.b64decode(''.join((root/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              assert len(z.namelist())==82 and z.testzip() is None
+              z.extractall('/tmp/artitrade-v086')
+          PY
+      - name: Compile modified Python and original EXE modules
+        run: |
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m compileall -q /tmp/artitrade-v086
+      - name: Run native stage 1-2-3 real SQLite and new recovery regression
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v086:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_live_quotes_stages_export.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v091_ma_three_stage_real_ledger.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v084_native_coin_manual.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_legacy_ma_exit.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v085_exit_pnl_parity.py' -v
