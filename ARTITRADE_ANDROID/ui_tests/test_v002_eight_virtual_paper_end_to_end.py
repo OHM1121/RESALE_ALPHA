@@ -56,7 +56,7 @@ class EightRealPaperWallets(unittest.TestCase):
             c.execute('INSERT INTO bars(code,market,frame,ts,open,high,low,close,volume,source) VALUES(?,?,?,?,?,?,?,?,?,?)',
               (code,'KOSDAQ','30m','20261117133000',2600,3200,2500,2800,15000,'SYNTHETIC_0B'))
             c.execute('INSERT INTO signals(event_key,ts,tf,code,name,market,ref_ts,buy_price,target,score,features,decision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-              ('SIM_REF','20261117140000','30m',code,'SIM_AT','KOSDAQ','20261117133000',2500,2800,69.,'{}','PENDING'))
+              ('SIM_REF','20261117140000','30m',code,'SIM_AT','KOSDAQ','20261117133000',2500,2800,69.,'{"ranking_engine":"AT_DIVERSE_1_1_ACTIVE"}','PENDING'))
             sid=c.execute('SELECT last_insert_rowid()').fetchone()[0]
             c.execute('INSERT INTO v19_orders(signal_id,code,tf,venue,score,limit_won,since_ts,status) VALUES(?,?,?,?,?,?,?,?)',
               (sid,code,'30m','KRX',69.,2600,'20261117140000','PENDING'))
