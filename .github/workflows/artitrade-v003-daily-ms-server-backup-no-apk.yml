@@ -10,6 +10,11 @@ on:
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HubService.java
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LocalHubClient.java
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/DailyBackupStoreV003.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/DailyRecoveryV003.java
+      - ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+      - ARTITRADE_ANDROID/app/src/main/python/stock_at_policy_reconcile_v091.py
+      - ARTITRADE_ANDROID/ui_tests/test_v004_clean_ledger_empty_ui.py
+      - ARTITRADE_ANDROID/app/build.gradle
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
       - ARTITRADE_ANDROID/ui_tests/test_v003_daily_market_backup.py
@@ -36,6 +41,9 @@ jobs:
           set -euo pipefail
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_daily_paper_backup_v003.py ARTITRADE_ANDROID/app/src/main/python/android_ledger_backup.py
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v004_clean_ledger_empty_ui.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v001_fresh_performance_version.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v102_plain_version_label.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v003_daily_market_backup.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_ledger_rollback_guard.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v088_export_zip_full_500mb_coin_monotonic.py' -v
