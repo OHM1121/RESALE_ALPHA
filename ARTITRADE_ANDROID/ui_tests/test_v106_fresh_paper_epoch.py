@@ -155,7 +155,9 @@ class FreshEpochV106(unittest.TestCase):
                         svc.index("JSONObject started=strategy.start();"))
         self.assertIn("if(FreshEpochGateV106.hasMarker(this))return;", svc)
         self.assertIn('"FRESH_EPOCH_BLOCKED".equals(epochState)', svc)
-        self.assertIn("NO_OLD_PC_LEDGER_IN_FRESH_EPOCH", svc)
+        self.assertNotIn("checkPendingPCArchive(", svc)
+        self.assertNotIn("APPLY_PC_MIGRATION.equals(", svc)
+        self.assertIn("LedgerAntiRollbackV002.verify(this);", svc)
 
 
 if __name__ == "__main__":
