@@ -997,7 +997,8 @@ class Coordinator:
                     if not sold and (status in ("LIVE_POSITION_BROKER_DISABLED",
                             "PAPER_POSITION_LIVE_MODE","POSITION_FILL_MODE_UNVERIFIED")
                             or str(status).startswith(('BROKER:', 'UNSAFE:'))):
-                        self._last_fetch_error[market]="SELL:"+status                    if sold:
+                        self._last_fetch_error[market]="SELL:"+status
+                    if sold:
                         # A reconnect/gap can place the first received genuine
                         # bid above both TP1 and TP2. Consume two CONFIRMED
                         # native wallet SELLs on that ONE fresh book, with
