@@ -17,11 +17,11 @@ jobs:
       CI: 'true'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.9.4_20261118'
       TAG: 'ARTITRADE-v0.9.4-20261118'
-      SOURCE: 'fa84a9884332b32732ab75a41193f3e16274bbcd'
+      SOURCE: 'd8319d4f001a46af92411ab44d2860800319af70'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 'fa84a9884332b32732ab75a41193f3e16274bbcd'
+          ref: 'd8319d4f001a46af92411ab44d2860800319af70'
           persist-credentials: false
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
