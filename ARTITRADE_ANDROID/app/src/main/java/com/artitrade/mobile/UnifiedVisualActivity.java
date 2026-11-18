@@ -1419,8 +1419,11 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject previousHub=previous.packet.optJSONObject("records");
             boolean hubGapChanged=!(records.toString().equals(
                 previousHub==null?"{}":previousHub.toString()));
+            boolean quoteChanged=!liveQuoteRevision(packet).equals(
+                liveQuoteRevision(previous.packet));
+            boolean recordChanged=!reusedLocalRecords||hubGapChanged||previous.totals.isEmpty();
             if(reusedLocalRecords&&meaningfulLocalRecords&&!hubGapChanged
-                &&!previous.totals.isEmpty()){
+                &&!quoteChanged&&!previous.totals.isEmpty()){
                 preparedTotals=previous.totals;
                 preparedFrames=previous.frames;
             }else{
@@ -1445,13 +1448,15 @@ public final class UnifiedVisualActivity extends Activity {
             }
             if(!preloadScreenReady)updateStartupProgress(76,"주식·코인 전략별 화면 자료 사전 계산");
             boolean ledgerChanged=preparedTotals!=previous.totals;
-            Map<String,java.util.List<HistoryRow>> histories=ledgerChanged
+            // A live price changed, but SELL history/AI did not. Keep those
+            // potentially huge prepared tables while repainting current prices.
+            Map<String,java.util.List<HistoryRow>> histories=recordChanged
                 ?prepareHistories(preparedTotals):previous.histories;
-            Map<String,RealizedTrend.Series> trends=ledgerChanged
+            Map<String,RealizedTrend.Series> trends=recordChanged
                 ?prepareTrends(preparedTotals):previous.trends;
-            Map<String,ResearchScoreGrid> researchGrids=ledgerChanged
+            Map<String,ResearchScoreGrid> researchGrids=recordChanged
                 ?prepareResearchGrids(preparedTotals):previous.researchGrids;
-            int rows=ledgerChanged?countPreparedRows(preparedTotals):previous.preloadRows;
+            int rows=recordChanged?countPreparedRows(preparedTotals):previous.preloadRows;
             long preloadMs=android.os.SystemClock.elapsedRealtime()-preloadStart;
             uiSnapshot=new UiSnapshot(packet,preparedTotals,preparedFrames,histories,
                 trends,researchGrids,preloadMs,rows,!ledgerChanged);
@@ -1972,6 +1977,42 @@ public final class UnifiedVisualActivity extends Activity {
         Stats preloaded=uiSnapshot.totals.get(m+"/"+s);
         return preloaded==null?new Stats():preloaded;
     }
+    /** Apply ONLY quote evidence from the 2.5s service heartbeat, never use
+     * these display prices as executable KRX 0D sell depth or a broker fill.
+     * A large SQLite UI snapshot can be 6.5-17s old without delaying price.
+     */
+    private void overlayLiveStockQuotes(JSONObject snapshot,JSONArray positions){
+        JSONObject runtime=snapshot.optJSONObject("strategy_runtime");
+        JSONObject live=runtime==null?null:runtime.optJSONObject("stock_quote_live_v086");
+        JSONObject quotes=live==null?null:live.optJSONObject("quotes");
+        if(quotes==null||positions==null)return;
+        for(int i=0;i<positions.length();i++){
+            JSONObject held=positions.optJSONObject(i);
+            if(held==null||!isStockPosition(held))continue;
+            String code=held.optString("code",held.optString("symbol","")).trim();
+            if(code.startsWith("A")&&code.length()==7)code=code.substring(1);
+            JSONObject q=quotes.optJSONObject(code);
+            if(q==null)continue;  // no false live price for missing instruments
+            double price=num(q,"price");
+            if(!finite(price)||price<=0)continue;
+            try{
+                held.put("stock_quote_checked_v066",true);
+                held.put("stock_quote_status",q.optString("status","NOT_RECEIVED"));
+                held.put("stock_quote_source",q.optString("source",""));
+                held.put("stock_quote_venue",q.optString("venue",""));
+                held.put("stock_quote_exchange_at",q.optString("exchange_at",""));
+                held.put("stock_quote_received_at",q.optString("received_at",""));
+                held.put("stock_quote_expires_ms",q.optLong("expires_ms",0L));
+                held.put("stock_quote_display_price",price);
+            }catch(org.json.JSONException ignored){}
+        }
+    }
+    private String liveQuoteRevision(JSONObject packet){
+        JSONObject r=packet==null?null:packet.optJSONObject("strategy_runtime");
+        JSONObject q=r==null?null:r.optJSONObject("stock_quote_live_v086");
+        return q==null?"":q.optString("revision","");
+    }
+
     private Stats calculateStats(JSONObject snapshot,String m,String s){
         Stats st=new Stats();JSONObject l=ledger(snapshot,m,s);
         if("trend".equals(s)){
@@ -1982,6 +2023,7 @@ public final class UnifiedVisualActivity extends Activity {
                     x.optDouble("qty",0)>0)open.put(x);
             }
             st.positions=open;
+            if("stock".equals(m))overlayLiveStockQuotes(snapshot,st.positions);
             JSONObject local=snapshot.optJSONObject("local_records");
             JSONObject watches=local==null?null:local.optJSONObject("market_trend_watch");
             st.pending=watches==null?new JSONArray():array(watches,m);
@@ -2006,6 +2048,7 @@ public final class UnifiedVisualActivity extends Activity {
             return st;
         }
         st.positions=rows(l,m,s,"positions","holdings");
+        if("stock".equals(m))overlayLiveStockQuotes(snapshot,st.positions);
         // Shadow observations are research, not broker pending orders.
         // They remain in the trend research journal and approved evidence.
         JSONArray sourcePending=rows(l,m,s,"pending","pending_orders","orders","candidates");
