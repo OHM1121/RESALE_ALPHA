@@ -71,7 +71,7 @@ def _put_plan_item(pieces,capacity,used,record,size):
 
 
 def _deflated_bytes(source: Path, offset: int, size: int,
-                    check_cancel=None) -> int:
+                    check_cancel=None, stop_after=None) -> int:
     """Estimate exactly the same raw DEFLATE level as the final error ZIP.
 
     Streaming and cancellable: large coin WAL snapshots are never materialized
@@ -89,6 +89,8 @@ def _deflated_bytes(source: Path, offset: int, size: int,
             if not data:raise IOError("Snapshot changed during compression planning")
             remaining-=len(data)
             total+=len(obj.compress(data))
+            if stop_after is not None and total>stop_after:
+                return int(stop_after)+1
     if check_cancel:check_cancel()
     return total+len(obj.flush())
 
@@ -101,6 +103,22 @@ def _put_compressed_error_item(pieces,used,capacity,record,source,limit,check_ca
     Each source fragment has the same lossless index schema as RESEARCH bundles.
     """
     size=record["size"]
+    # An error ZIP is meant to be extractable with a normal ZIP tool. If a
+    # whole SQLite (even 1GB raw) compresses into a SINGLE part, do not
+    # artificially split it into fragments/00000/*.bin. The previous
+    # 100MB-RAW slicing forced reassembly even for a one-part archive.
+    # A bounded compressed-byte scan stops as soon as it exceeds one part.
+    if size>0:
+        full=_deflated_bytes(source,0,size,check_cancel,stop_after=capacity)
+        if full<=capacity and (used[-1]==0 or used[-1]+full<=capacity):
+            if used[-1] and used[-1]+full>capacity:
+                pieces.append([]);used.append(0)
+            fragment={"part":len(pieces),"entry":record["path"],
+                "offset":0,"size":size}
+            record["fragments"].append(fragment)
+            pieces[-1].append((record["path"],fragment))
+            used[-1]+=full
+            return pieces,used
     raw_chunk=min(100_000_000,max(16_384,capacity//2))
     offset=0
     index=0
