@@ -3310,7 +3310,7 @@ public final class UnifiedVisualActivity extends Activity {
                 case "c":
                     double last=positionMark(r);
                     return finite(last)?"현재가 "+WonFormat.price(last):"현재가 조회 중";
-                default:return "1차 목표 "+formatMaybePrice(r,"first_target","target","target_price");
+                default:return "1차 목표 "+stockAtFirstTargetDisplay(r,strategy);
             }
         }
         if("pending".equals(kind)){
@@ -3496,6 +3496,23 @@ public final class UnifiedVisualActivity extends Activity {
     /** Two-level cards: a 10sp key followed by a 16sp value, not dense
      * label/value sentences spread across the entire panel.
      */
+    private String stockAtFirstTargetDisplay(JSONObject position,String source){
+        if(position==null)return "원장 확인 중";
+        // D19/PC FIX31 stores the real durable first target under
+        // exit_first_target; legacy D19 positions use ref_bodytop.
+        // Neither is first_target (a candidate-preview-only field).
+        if("stock".equals(market)&&
+            ("at".equalsIgnoreCase(source)||"기준봉".equals(source))){
+            double target=usefulNumber(position,"exit_first_target");
+            if(!finite(target)||target<=0)
+                target=usefulNumber(position,"ref_bodytop");
+            return finite(target)&&target>0?WonFormat.price(target):
+                "기준봉 상단 미확인";
+        }
+        double value=usefulNumber(position,"first_target","target","target_price");
+        return finite(value)&&value>0?WonFormat.price(value):"미기록";
+    }
+
     private TextView tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
         LinearLayout tile=new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
@@ -3817,17 +3834,32 @@ public final class UnifiedVisualActivity extends Activity {
             TextView net=text(value,19);
             net.setTypeface(null,Typeface.BOLD);
             net.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
-            net.setSingleLine(true);
-            autoSingle(net,16,19);
             if(finite(profit))paintProfit(net,profit);
             else if(finite(rate))paintProfit(net,rate);
             else net.setTextColor(PremiumUi.MUTED);
-            // Reserve a bounded cell for P/L so long values cannot push
-            // the symbol name outside the viewport on narrow devices.
             int screenDp=getResources().getConfiguration().screenWidthDp;
-            int netWidth=Math.max(92,Math.min(142,(screenDp-58)*39/100));
-            top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
-            panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
+            if(screenDp<520){
+                // Portrait phones cannot fit the symbol and a signed P/L
+                // amount PLUS percent in the same fixed-width horizontal
+                // row. The prior END gravity cut digits from the LEFT.
+                // Use a full-width, wrap-content second line instead.
+                panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
+                if(finite(profit)&&finite(rate))
+                    net.setText(money(profit)+"   ("+signedPct(rate)+")");
+                net.setSingleLine(false);
+                net.setHorizontallyScrolling(false);
+                net.setEllipsize(null);
+                net.setMaxLines(2);
+                net.setTextSize(17);
+                net.setPadding(0,0,dp(3),dp(3));
+                panel.addView(net,new LinearLayout.LayoutParams(-1,-2));
+            }else{
+                net.setSingleLine(true);
+                autoSingle(net,13,19);
+                int netWidth=Math.max(142,Math.min(210,(screenDp-58)*34/100));
+                top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
+                panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
+            }
 
             TextView fastAmount=null;
             LinearLayout figures=new LinearLayout(this);
@@ -3841,7 +3873,7 @@ public final class UnifiedVisualActivity extends Activity {
                 fastAmount=tradeMetricTile(figures,quoteLabel,
                     finite(current)&&current>0?WonFormat.price(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
-                tradeMetricTile(figures,"1차 목표",formatMaybePrice(r,"first_target","target","target_price"),false);
+                tradeMetricTile(figures,"1차 목표",stockAtFirstTargetDisplay(r,source),false);
             }else if("pending".equals(kind)){
                 tradeMetricTile(figures,"점수",formatMaybeNumber(r,"score","signal_score"),true);
                 tradeMetricTile(figures,"매수대기",formatMaybePrice(r,"limit_price","entry_price","price"),true);

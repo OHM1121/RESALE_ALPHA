@@ -2385,6 +2385,14 @@ def ledger_audit(manifest_json):
 from stock_at_catchup_v086 import install as _install_stock_at_catchup_v086
 _install_stock_at_catchup_v086()
 
+# D19 AT portfolio uses its OWN independent BUY/SELL methods. The old
+# PaperEngine-only 3LEG31 installer did not initialize D19's durable
+# exit_policy/first_target or price its catch-up sales at observed 0B.
+# Preserve all original member/legacy holdings and repair ONLY provably
+# post-phone unsold D19 buys; then arm the same three-leg native engine.
+from stock_at_policy_reconcile_v091 import install as _install_at_policy_v091
+_install_at_policy_v091()
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
