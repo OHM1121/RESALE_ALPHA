@@ -298,8 +298,11 @@ public final class UnifiedVisualActivity extends Activity {
             }else if(time.length()>=19){
                 time=time.substring(11,19)+" 체결";
             }
+            String venue=quote.optString("venue","");
             String label=(fresh?"실시간 "+source+" WS":
                 "마지막 "+source+" 시세(실시간 아님)");
+            if("stock".equals(item.market)&&!venue.isEmpty())
+                label+=" · "+venue;
             item.amount.setText(item.prefix+WonFormat.price(price)+item.suffix);
             item.status.setText(label+(time.isEmpty()?"":" · "+time)+
                 " · 화면용 가격 · 체결판단·원장 손익은 별도");
@@ -392,7 +395,10 @@ public final class UnifiedVisualActivity extends Activity {
                 }
                 // Even if the local-hub request stalls, never trap the user in
                 // the full-screen boot view waiting for an I/O worker.
-                main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS);
+                long elapsed=Math.max(0L,
+                    android.os.SystemClock.elapsedRealtime()-preloadStartedAt);
+                main.postDelayed(this::preloadWatchdog,
+                    Math.max(200L,PRELOAD_WATCHDOG_MS-elapsed));
             }
             // Begin both original broker feeds before slow UI/hub aggregation.
             // START is idempotent and never re-arms live broker orders.
