@@ -198,9 +198,15 @@ def _entry_window(self,market,now):
     for code,(signal,quote,previous,trade) in ordered.items():
         frame,rsi,boll,watch=signal
         if self.stop_event.is_set():return
-        # Score/manual-trend switch gates NEW BUY only, never the durable
-        # RSI watch, nor any existing holding's mandatory SELL.
-        if self.mode(market)!="MARKET_TREND":continue
+        # NEW LEGACY 11.18 has its own RSI20 + Bollinger entry logic.
+        # Coordinator._update_score deliberately keeps native AT/MA mode
+        # ORIGINAL (MT54 independent wallet), so requiring MARKET_TREND
+        # here made ALL otherwise valid trend BUYs impossible, even though
+        # the exchange was connected and the watch/book were verified.
+        # The workbook does NOT require a signed-market-score mode switch
+        # for this independent strategy. Existing native wallet guards
+        # (current quote/depth, market session, slot, funds and re-entry)
+        # remain authoritative; no BUY/fill is synthesized.
         at=self._decision_clock()
         if at.tzinfo is None:continue
         if at>=dt.datetime.fromisoformat(watch["expires_at"]):continue
