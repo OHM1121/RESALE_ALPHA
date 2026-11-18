@@ -200,7 +200,8 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
     # manual mode, stop-day blocks and real-vs-shadow signal decisions.
     shared_scores={"market_research_v033.sqlite3",
                    "market_trend_v043.sqlite3",
-                   "execution_decisions_v074.sqlite3"}
+                   "execution_decisions_v074.sqlite3",
+                   "execution_entry_plans_v107.sqlite3"}
     if scope in ("stock","all"):
         shared_scores.add("phone_buy_evidence_v035.sqlite3")
     originals=[]
