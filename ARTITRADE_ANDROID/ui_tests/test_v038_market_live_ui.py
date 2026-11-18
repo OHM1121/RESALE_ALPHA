@@ -16,7 +16,8 @@ import market_research_v033 as m
 
 def fake_tickers(n=40):
     return [{"market":f"KRW-TEST{i}","signed_change_rate":0.01 if i%3 else -0.01,
-             "acc_trade_price_24h":float(10000000+i)} for i in range(n)]
+             "acc_trade_price_24h":float(10000000+i),
+             "timestamp":int(time.time()*1000)} for i in range(n)]
 
 
 def daily(count):
@@ -149,12 +150,13 @@ class MarketV038(unittest.TestCase):
 
     def test_normal_hub_result_publishes_market_score(self):
         source=(BASE/"app/src/main/python/android_runtime_v078.py").read_text()
-        block=source[source.index("def _hub_records_v078(self):"):
+        block=source[source.index("def _hub_records_v078(self,for_ui=False):"):
                      source.index("def _stock_at_ledger_v19(self):")]
-        tail=block.rfind("    return json.dumps(out,ensure_ascii=False,default=str)")
+        tail=block.rfind("    return _serialize_hub_v104(out,for_ui)")
         pub=block.rfind("out['market_research']=offer_records(self.root,out)")
         self.assertGreater(tail,pub)
-        self.assertLess(tail-pub,600,"market scores must publish on normal path")
+        self.assertLess(tail-pub,1300,"market scores must publish on normal path")
+        self.assertIn("out['market_feed_health_v004']=feed_health(self)",block)
 
 
 if __name__=="__main__":
