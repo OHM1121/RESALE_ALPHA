@@ -286,19 +286,39 @@ public final class UnifiedVisualActivity extends Activity {
             root=new FrameLayout(this);
             root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
-            preloadStartedAt=android.os.SystemClock.elapsedRealtime();
-            preloadStartedWallMs=System.currentTimeMillis();
+            long nowElapsed=android.os.SystemClock.elapsedRealtime();
+            long nowWall=System.currentTimeMillis();
+            // An orientation change recreates the Activity but must NEVER
+            // bypass the original stock+coin preload gate. Persist only UI
+            // progress; the foreground trading service and SQLite remain owned
+            // by their original workers.
+            boolean restoringBoot=state!=null&&state.containsKey("preload_ready_v089")
+                &&!state.getBoolean("preload_ready_v089",false);
+            long priorElapsed=restoringBoot
+                ?state.getLong("preload_started_elapsed_v089",nowElapsed):nowElapsed;
+            preloadStartedAt=priorElapsed>=0L&&priorElapsed<=nowElapsed
+                ?priorElapsed:nowElapsed;
+            long priorWall=restoringBoot
+                ?state.getLong("preload_started_wall_v089",nowWall):nowWall;
+            preloadStartedWallMs=priorWall>0L&&priorWall<=nowWall?priorWall:nowWall;
+            if(restoringBoot)preloadExitNote=state.getString("preload_exit_note_v089","");
             recordUiEntry(state);
             if(shouldRestoreShellImmediately(state)){
-                // Re-creating the Activity is NOT evidence that the trading engine
-                // stopped. Draw an honest, initially stale shell immediately.
                 preloadScreenReady=true;
                 showShell();
             }else{
                 showBoot();
-                // Even if the local-hub request stalls, never trap the user in
-                // the full-screen boot view waiting for an I/O worker.
-                main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS);
+                if(restoringBoot){
+                    startupProgress.setProgress(Math.min(98,Math.max(5,
+                        state.getInt("preload_percent_v089",5))));
+                    startupStage.setText(state.getString("preload_stage_v089",
+                        "주식·코인 실시간 연결 및 원장 준비 중"));
+                }
+                // Keep the SAME watchdog deadline across rotations. Repeated
+                // 90/270-degree turns cannot reset or short-circuit preload.
+                long elapsed=Math.max(0L,nowElapsed-preloadStartedAt);
+                main.postDelayed(this::preloadWatchdog,
+                    Math.max(0L,PRELOAD_WATCHDOG_MS-elapsed));
             }
             // Begin both original broker feeds before slow UI/hub aggregation.
             // START is idempotent and never re-arms live broker orders.
@@ -341,14 +361,14 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private boolean shouldRestoreShellImmediately(Bundle saved){
-        // Activity recreation and a verified service heartbeat are independent
-        // reasons to avoid the full-screen startup cover. UI status remains
-        // 'waiting' until a new strategy snapshot confirms market connectivity.
-        // Prior UI PID alone does not prove a running trading service.
-        // After a genuine service/process stop, show cold-start progress again.
-        // Foreground service heartbeat still bypasses repeated preload when
-        // returning from sleep, another app, or Activity recreation.
-        return saved!=null||isRecentBackgroundHeartbeat();
+        if(saved!=null&&saved.containsKey("preload_ready_v089")){
+            // A fresh service heartbeat means the engine is alive, NOT that a
+            // previous Activity had finished the both-market preload.
+            return saved.getBoolean("preload_ready_v089",false);
+        }
+        // Cold app return may bypass the cover only with a VERIFIED running
+        // service heartbeat. No broker session is fabricated from this.
+        return isRecentBackgroundHeartbeat();
     }
 
     private void preloadWatchdog(){
@@ -552,6 +572,17 @@ public final class UnifiedVisualActivity extends Activity {
         state.putString("strategy",strategy);
         state.putString("page",page);
         state.putBoolean("integrated_mode",integratedMode);
+        state.putBoolean("preload_ready_v089",preloadScreenReady);
+        state.putLong("preload_started_elapsed_v089",preloadStartedAt);
+        state.putLong("preload_started_wall_v089",preloadStartedWallMs);
+        state.putString("preload_exit_note_v089",preloadExitNote);
+        if(!preloadScreenReady){
+            state.putInt("preload_percent_v089",startupProgress==null
+                ?5:startupProgress.getProgress());
+            state.putString("preload_stage_v089",startupStage==null
+                ?"주식·코인 실시간 연결 및 원장 준비 중":
+                String.valueOf(startupStage.getText()));
+        }
         persistNavigation();
         super.onSaveInstanceState(state);
     }
