@@ -63,6 +63,9 @@ public final class UnifiedTradingService extends Service {
     private volatile long lastHubPublish=0L;
     private volatile boolean publishOneShot=false;
     private volatile boolean lastMserverAuthOk=false;
+    private volatile boolean antiRollbackReady=false;
+    private volatile long lastAntiRollbackCheckMs=0L;
+    private static final long ANTI_ROLLBACK_CHECK_MS=30_000L;
 
     @Override public void onCreate(){
         super.onCreate();
@@ -301,6 +304,21 @@ public final class UnifiedTradingService extends Service {
                 }catch(Exception reportError){crashes.add("fresh_epoch_report",reportError);}
                 return;
             }
+        }
+        // Verify the committed epoch against an independent durable
+        // high-water mark BEFORE opening any original exchange session.
+        // If the old 11/14 paper database has reappeared, no buy/sell engine
+        // may run and no automatic restore is attempted.
+        try{
+            LedgerAntiRollbackV002.verify(this);
+            antiRollbackReady=true;
+            lastAntiRollbackCheckMs=System.currentTimeMillis();
+        }catch(Throwable rollback){
+            LedgerAntiRollbackV002.block(this,rollback);
+            crashes.add("PAPER_LEDGER_ROLLBACK_START_BLOCKED",rollback);
+            stopSafely();
+            stopSelf();
+            return;
         }
         JSONObject started=strategy.start();
         if(!started.optBoolean("ok",true))
@@ -610,6 +628,23 @@ public final class UnifiedTradingService extends Service {
         LocalHubClient hub=new LocalHubClient(this);
         RealtimeState live=new RealtimeState(this);
         while(running.get()){
+            // Outside quote/order threads: periodically catch a replaced
+            // or older SQLite/WAL snapshot even while the app remains open.
+            // Do not compete with a user-confirmed PAPER SELL worker.
+            if(antiRollbackReady&&manualSellOutstanding.get()==0&&
+                System.currentTimeMillis()-lastAntiRollbackCheckMs>=
+                    ANTI_ROLLBACK_CHECK_MS){
+                try{
+                    LedgerAntiRollbackV002.verify(this);
+                    lastAntiRollbackCheckMs=System.currentTimeMillis();
+                }catch(Throwable rollback){
+                    LedgerAntiRollbackV002.block(this,rollback);
+                    crashes.add("PAPER_LEDGER_ROLLBACK_RUNTIME_BLOCKED",rollback);
+                    stopSafely();
+                    stopSelf();
+                    return;
+                }
+            }
             try{
                 JSONObject hs=hub.status();
                 lastMserverAuthOk=hs.optBoolean("ok",false);
