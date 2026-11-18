@@ -2414,18 +2414,28 @@ def quote_snapshot_v089():
                 else:
                     delivered=dict(getattr(cr,'_v084_tick_delivered',{}) or {})
                 prices=dict(getattr(cr,'latest_prices',{}) or {})
-                priorities=set(getattr(cr,'_held_codes',set()) or ())
-                priorities.update(getattr(cr,'tracked',set()) or ())
-                # Freshly delivered actual WS ticks are more important than
-                # non-held REST-only marks. Do not force 200+ network requests.
-                priorities.update(code for code,row in delivered.items()
-                    if isinstance(row,(tuple,list)) and len(row)>1 and
-                    0<=now-float(row[1])<15.0)
-                codes=[x for x in sorted(priorities)
-                    if isinstance(x,str) and x.startswith('KRW-') and x in prices]
-                if len(codes)<220:
-                    codes.extend(x for x in sorted(prices) if isinstance(x,str)
-                        and x.startswith('KRW-') and x not in priorities)
+                held=set(getattr(cr,'_held_codes',set()) or ())
+                tracked=set(getattr(cr,'tracked',set()) or ())
+                # Critically prioritize ACTUAL held coins before TOP40,
+                # candidate-only marks and stale REST cache. This bound is a
+                # CPU/memory guard, not an API subscription or new request.
+                recent=set()
+                for code,row in delivered.items():
+                    try:
+                        if isinstance(row,(tuple,list)) and len(row)>1 and (
+                            0<=now-float(row[1])<15.0):
+                            recent.add(code)
+                    except (ValueError,TypeError,OverflowError):pass
+                codes=[]
+                seen=set()
+                for group in (held,recent,tracked,set(prices)):
+                    for code in sorted(group):
+                        if (not isinstance(code,str) or not code.startswith('KRW-')
+                            or code not in prices or code in seen):continue
+                        seen.add(code)
+                        codes.append(code)
+                        if len(codes)>=220:break
+                    if len(codes)>=220:break
                 ws_connected=bool(getattr(cr,'_ws_connected',False) and
                     float(getattr(cr,'_ws_last_frame',0) or 0)>0 and
                     now-float(getattr(cr,'_ws_last_frame',0) or 0)<15.0)
