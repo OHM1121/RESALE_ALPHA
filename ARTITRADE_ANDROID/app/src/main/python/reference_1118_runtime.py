@@ -107,6 +107,10 @@ def _act(self,c,p,minute,at):
         plan["qty"]=float(p["qty"])
         if plan["qty"]<=0:return p
         score=_market_score(self.store.root,"stock")
+        # An out-of-order exchange print must not reverse stage/watch state.
+        previous=str(plan.get('last_verified_tick_at') or '')
+        if previous and str(at)<previous:return p
+        plan['last_verified_tick_at']=str(at)
         due=nl.exit_signal(plan,verified_price,at_dt,score)
         _save(c,plan)
         if due is None:return p
@@ -143,6 +147,16 @@ def _act(self,c,p,minute,at):
                 plan["sell_intents"][1]["state"]="FILLED"
         plan["qty"]=float(done["qty"])
         _save(c,plan)
+        # A genuinely observed post-gap 0B price can clear BOTH profit
+        # targets before another tick arrives. Execute TP2 in this same
+        # verified native SQLite transaction, but only after a real TP1
+        # SELL is written and confirmed. Never trigger TP3 recursively.
+        if (reason=="NL1118_TP1" and plan["stage"]==1 and
+            plan["qty"]>0 and verified_price>=float(plan["second"])):
+            current=c.execute("SELECT * FROM positions WHERE id=? AND status='OPEN'",
+                              (p["id"],)).fetchone()
+            if current is not None:
+                return _act(self,c,current,minute,at)
         return done
     except (ValueError,TypeError,KeyError,ArithmeticError,sqlite3.Error):
         # Reject unsafe fallback; do not manufacture a SELL.
@@ -237,52 +251,73 @@ def install():
             bid=float(book["bid"]);size=float(book["bid_size"])
             if bid<=0 or size<=0 or not math.isfinite(bid):return result
             symbol=str(book["market"])
+            from d_upbit import dec,qty_floor
             with self.lock,self.connect() as c:
                 c.execute(_TBL)
                 positions=c.execute("""SELECT * FROM positions WHERE
                      market=? AND status='OPEN' AND qty!='0' ORDER BY id""",
                      (symbol,)).fetchall()
                 for pos in positions:
-                    plan=_read(c,pos["id"])
-                    if plan is None:continue
-                    plan["qty"]=float(pos["qty"])
-                    score=_market_score(Path(self.path).resolve().parent.parent.parent,"coin")
-                    exit_due=nl.exit_signal(plan,bid,now,score)
-                    _save(c,plan)
-                    if not exit_due:continue
-                    reason,fraction=exit_due
-                    from d_upbit import dec,qty_floor
-                    wanted=qty_floor(min(dec(pos["qty"])*dec(fraction),
-                        dec(size)*dec('.5')))
-                    if wanted<=0:continue
-                    key=("NL1118:"+str(pos["id"])+":"+reason+":"+
-                         str(int(float(book["timestamp"]))))
-                    if not self._sell(c,pos,wanted,dec(bid),now.isoformat(),
-                                      reason,event_key=key):continue
-                    proof=c.execute("""SELECT qty,price FROM executions
-                        WHERE event_key=? AND position_id=? AND side='SELL'
-                        ORDER BY id DESC LIMIT 1""",
-                        (key,pos["id"])).fetchone()
-                    if proof is None or dec(proof["qty"])<=0:
-                        raise RuntimeError("NL1118_COIN_SELL_RECORD_NOT_CONFIRMED")
-                    wanted=dec(proof["qty"])
-                    if reason=="NL1118_TP1":
-                        plan["stage1_filled"]+=float(wanted)
-                        if plan["stage1_filled"]+1e-7>=nl.stage_quantity(
-                                plan["qty0"],"coin",1):
-                            plan["stage"]=max(1,plan["stage"])
-                            plan["sell_intents"][0]["state"]="FILLED"
-                    elif reason=="NL1118_TP2":
-                        plan["stage2_filled"]+=float(wanted)
-                        if plan["stage2_filled"]+1e-7>=nl.stage_quantity(
-                                plan["qty0"],"coin",2):
-                            plan["stage"]=max(2,plan["stage"])
-                            plan["sell_intents"][1]["state"]="FILLED"
-                            plan["peak_after_second"]=bid
-                    updated=c.execute("SELECT qty FROM positions WHERE id=?",
-                                      (pos["id"],)).fetchone()
-                    if updated:plan["qty"]=float(updated[0])
-                    _save(c,plan)
+                    # One verified current book can execute TP1 then TP2.
+                    # Never exceed actual half visible 0D capacity, and
+                    # never reuse an older/replayed book timestamp.
+                    available_depth=dec(size)*dec('.5')
+                    for stage_attempt in range(2):
+                        if stage_attempt:
+                            pos=c.execute("SELECT * FROM positions WHERE id=? AND status='OPEN'",
+                                          (pos['id'],)).fetchone()
+                            if pos is None:break
+                        if available_depth<=0:break
+                        plan=_read(c,pos["id"])
+                        if plan is None:continue
+                        plan["qty"]=float(pos["qty"])
+                        stamp=int(float(book['timestamp']))
+                        if (stage_attempt==0 and stamp<=int(plan.get('last_verified_book_ms') or 0)):
+                            break
+                        # Save chronology on EVERY verified observation, not
+                        # only on a SELL. Late books cannot forge a reversal.
+                        plan['last_verified_book_ms']=stamp
+                        score=_market_score(Path(self.path).resolve().parent.parent.parent,"coin")
+                        exit_due=nl.exit_signal(plan,bid,now,score)
+                        _save(c,plan)
+                        if not exit_due:break
+                        reason,fraction=exit_due
+                        if stage_attempt and reason!='NL1118_TP2':break
+                        from d_upbit import dec,qty_floor
+                        wanted=qty_floor(min(dec(pos["qty"])*dec(fraction),
+                            available_depth))
+                        if wanted<=0:break
+                        key=("NL1118:"+str(pos["id"])+":"+reason+":"+
+                             str(int(float(book["timestamp"]))))
+                        if not self._sell(c,pos,wanted,dec(bid),now.isoformat(),
+                                          reason,event_key=key):break
+                        proof=c.execute("""SELECT qty,price FROM executions
+                            WHERE event_key=? AND position_id=? AND side='SELL'
+                            ORDER BY id DESC LIMIT 1""",
+                            (key,pos["id"])).fetchone()
+                        if proof is None or dec(proof["qty"])<=0:
+                            raise RuntimeError("NL1118_COIN_SELL_RECORD_NOT_CONFIRMED")
+                        wanted=dec(proof["qty"])
+                        available_depth=max(dec(0),available_depth-wanted)
+                        if reason=="NL1118_TP1":
+                            plan["stage1_filled"]+=float(wanted)
+                            if plan["stage1_filled"]+1e-7>=nl.stage_quantity(
+                                    plan["qty0"],"coin",1):
+                                plan["stage"]=max(1,plan["stage"])
+                                plan["sell_intents"][0]["state"]="FILLED"
+                        elif reason=="NL1118_TP2":
+                            plan["stage2_filled"]+=float(wanted)
+                            if plan["stage2_filled"]+1e-7>=nl.stage_quantity(
+                                    plan["qty0"],"coin",2):
+                                plan["stage"]=max(2,plan["stage"])
+                                plan["sell_intents"][1]["state"]="FILLED"
+                                plan["peak_after_second"]=bid
+                        updated=c.execute("SELECT qty FROM positions WHERE id=?",
+                                          (pos["id"],)).fetchone()
+                        if updated:plan["qty"]=float(updated[0])
+                        plan['last_verified_book_ms']=int(float(book['timestamp']))
+                        _save(c,plan)
+                        if reason!='NL1118_TP1' or plan['stage']!=1:break
         except (sqlite3.Error,KeyError,TypeError,ValueError,ArithmeticError,
                 AttributeError):
             return result
