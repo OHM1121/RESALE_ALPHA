@@ -15,13 +15,13 @@ jobs:
     timeout-minutes: 75
     env:
       CI: 'true'
-      SOURCE: 'a4ed7fb5ede0f6370bb974ba7245866129632d59'
+      SOURCE: 'b5b103cf8f6ec6b25cadc2877638835f27444912'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.8.5_20261118'
       TAG: 'ARTITRADE-v0.8.5-20261118'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 'a4ed7fb5ede0f6370bb974ba7245866129632d59'
+          ref: 'b5b103cf8f6ec6b25cadc2877638835f27444912'
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -299,7 +299,7 @@ jobs:
           sha256sum -c "$ARTIFACT.sha256"
           cat > /tmp/artitrade-v082-release-notes.txt <<'RELEASE_NOTES'
           ARTITRADE v0.8.5 (111) verified original-signer PAPER test APK. DO NOT uninstall or clear app data.
-          Source-pinned change set: a4ed7fb5ede0f6370bb974ba7245866129632d59
+          Source-pinned change set: b5b103cf8f6ec6b25cadc2877638835f27444912
           Stock display reads authentic Kiwoom 0B and official ka10001 price evidence from the compact 2.5-second service heartbeat, not the slow 6.5-17-second SQLite UI cache. Prices are labelled current with source and timestamp, and a stale trade is never presented as an executable bid.
           Stock and coin MA: after authentic quote recovery, step 1 and step 2 may be evaluated on the SAME confirmed fresh KRX 0B+0D or Upbit bid/depth, with each SELL stage proven against the original native PAPER SQLite before advancing.
           Stock AT 3LEG31: the first fresh KRX 0B after an observation gap can fill the 1st and 2nd profit steps at the genuine observed PAPER price, with original native fees, stop-first precedence, and no duplicate history.
