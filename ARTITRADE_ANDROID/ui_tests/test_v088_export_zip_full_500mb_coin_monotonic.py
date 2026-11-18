@@ -107,6 +107,9 @@ class LargeCoinExport(unittest.TestCase):
         limit=160_000
         result=self.export("coin",limit)
         self.assertGreater(result["parts"],1)
+        # Every non-final ZIP should use most of the 500MB allowance.
+        # A tiny 160KB cap exercises the exact same compressed-byte packer.
+        self.assertGreater(result["files"][0]["bytes"],int(limit*.90))
         with zipfile.ZipFile(self.out/result["files"][0]["name"]) as z:
             index=json.loads(z.read("analysis/bundle_index.json"))
         record=index["sources"]["coin/base/random_errors.jsonl"]
