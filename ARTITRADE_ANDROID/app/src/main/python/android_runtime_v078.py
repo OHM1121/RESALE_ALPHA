@@ -2462,15 +2462,11 @@ _install_stock_at_catchup_v086()
 from stock_at_policy_reconcile_v091 import install as _install_at_policy_v091
 _install_at_policy_v091()
 
-# v107: current signed score <0 forbids only NEW AT/coin-general
-# reference-bar buys. Existing positions and SELL callbacks stay untouched.
-from at_market_score_gate_v107 import install as _install_reference_score_gate_v107
-_install_reference_score_gate_v107()
-
-# v107: observe original qualifying BUY candidates/targets for all 8
-# strategy wallets. This never makes an order or modifies any SELL policy.
-from entry_plan_hooks_v107 import install as _install_entry_plan_hooks_v107
-_install_entry_plan_hooks_v107(_core)
+# 0.0.1 reset-only regression fix: do not inject additional AT/coin-general
+# BUY gates or SQLite candidate-audit wrappers into the proven v0.9.5
+# execution path. The user's next-version workbook changes are separate.
+# New candidate/market-score evidence remains accessible through the native
+# journal and the read-only market-score observer.
 
 # One recovery plan shared by five stock and three coin strategy ledgers.
 # It monitors genuine 0B/Upbit authenticated events, prioritizes held-stock
