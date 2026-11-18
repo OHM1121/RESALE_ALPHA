@@ -120,6 +120,14 @@ def _act(self,c,p,minute,at):
         done=self._sell(c,p,at,qty,int(verified_price),reason,
                         event_key=event_key)
         if done is None:return p
+        executed=c.execute("""SELECT qty,price FROM executions
+            WHERE event_key=? AND position_id=? AND side='SELL'
+            ORDER BY id DESC LIMIT 1""",(event_key,p["id"])).fetchone()
+        if executed is None:
+            raise RuntimeError("NL1118_STOCK_SELL_RECORD_NOT_CONFIRMED")
+        qty=int(executed["qty"])
+        if qty<=0:
+            raise RuntimeError("NL1118_STOCK_SELL_ZERO_QTY")
         if reason=="NL1118_TP1":
             plan["stage1_filled"]+=qty
             if plan["stage1_filled"]+1e-8>=nl.stage_quantity(
@@ -251,6 +259,13 @@ def install():
                          str(int(float(book["timestamp"]))))
                     if not self._sell(c,pos,wanted,dec(bid),now.isoformat(),
                                       reason,event_key=key):continue
+                    proof=c.execute("""SELECT qty,price FROM executions
+                        WHERE event_key=? AND position_id=? AND side='SELL'
+                        ORDER BY id DESC LIMIT 1""",
+                        (key,pos["id"])).fetchone()
+                    if proof is None or dec(proof["qty"])<=0:
+                        raise RuntimeError("NL1118_COIN_SELL_RECORD_NOT_CONFIRMED")
+                    wanted=dec(proof["qty"])
                     if reason=="NL1118_TP1":
                         plan["stage1_filled"]+=float(wanted)
                         if plan["stage1_filled"]+1e-7>=nl.stage_quantity(
