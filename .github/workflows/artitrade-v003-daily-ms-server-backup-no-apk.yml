@@ -1,0 +1,48 @@
+name: ARTITRADE v0.0.2 daily MSERVER 8-wallet backup tests - NO APK
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-v003-daily-ms-server-backup-no-apk.yml
+      - ARTITRADE_ANDROID/app/src/main/python/android_ledger_backup.py
+      - ARTITRADE_ANDROID/app/src/main/python/android_daily_paper_backup_v003.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HubServer.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HubService.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LocalHubClient.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/DailyBackupStoreV003.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+      - ARTITRADE_ANDROID/ui_tests/test_v003_daily_market_backup.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-full-backups-and-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Verify KST market schedule and independently authentic full wallet ZIPs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/android_daily_paper_backup_v003.py ARTITRADE_ANDROID/app/src/main/python/android_ledger_backup.py
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v003_daily_market_backup.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_ledger_rollback_guard.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v088_export_zip_full_500mb_coin_monotonic.py' -v
+      - name: Compile two-app source APIs only; do NOT build or sign APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p ARTITRADE_ANDROID :app:compileUnifiedDebugJavaWithJavac :app:compileHubDebugJavaWithJavac --no-daemon
+          test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
+          echo "WAL_SAFE_FULL_BACKUP_CLIENT_HUB_COMPILED_NO_APK"
