@@ -51,6 +51,12 @@ def _stamp(c,store,p,source):
          'source':source,'from':'LEGACY_40_60_DEFAULT',
          'to':'3LEG31_30_35_35','entry_qty':qty,
          'first_sell_qty':first,'exit_first_target':target,
+         # Persist exact original BUY-time thresholds in the existing audit.
+         # These diagnostics never replace native 3LEG31 SELL decisions.
+         'entry_price_at_buy':int(p['entry_price']),
+         'first_target_won':target,
+         'second_target_threshold_won':str(Decimal(target)*Decimal('1.03')),
+         'second_target_formula':'3LEG31_FIRST_TARGET_X_1_03',
          'prior_buy_qty_unchanged':True,'prior_buy_price_unchanged':True,
          'prior_sells_unchanged':True,'auto_sell_executed':False})
     return True
