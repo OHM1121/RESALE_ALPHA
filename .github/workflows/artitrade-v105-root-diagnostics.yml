@@ -52,9 +52,27 @@ jobs:
           set -euo pipefail
           python3 -m pip install -q requests
           PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v105_manual_rest_bid.py' -v
+      - name: Apply exact official quote-only change in source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v105_ka10004_readonly.py
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              live=z.read('d_live.py').decode()
+              assert "('ka10004','/api/dostk/mrkcond')" in live
+              assert "('kt10000'" not in live
+              assert "if (api_id,path) not in allowed:raise RuntimeError" in live
+              assert z.testzip() is None and len(z.namelist())==82
+          print('V105_READONLY_QUOTE_WHITELIST_PASS')
+          PY
       - name: Existing v094 safety / memory regression
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v104_ui_json_oom_root_cause.py -v
-          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v100_manual_denial_and_targets.py -v
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v100_manual_denial_and_targets.py -v
