@@ -69,6 +69,20 @@ class PureDisplayRateGuard(unittest.TestCase):
         self.assertIn('runner.stop_event.wait(2.0)',QUOTE)
 
 class OriginalPaperCatchupPreserved(unittest.TestCase):
+    def test_plus_17_percent_after_gap_real_fresh_quote(self):
+        from test_v086_at_native_catchup import NativeAtCatchup
+        fixture=NativeAtCatchup('test_one_actual_post_gap_trade_fills_first_and_second_at_observed_price')
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        position,sells,_=fixture.event(117)
+        self.assertEqual([x['qty'] for x in sells],[30,35])
+        self.assertEqual([x['price'] for x in sells],[117,117])
+        self.assertEqual(position['exit_stage'],2)
+        self.assertEqual(position['qty'],35)
+        # The remaining 35% is retained for the ORIGINAL third-stage rules.
+        _,second,_=fixture.event(117)
+        self.assertEqual(len(second),2)
+
     def test_verified_0b_only_and_original_sell_accounting(self):
         self.assertIn("LIVE_KRX_0B_TRADE_TOUCH_PAPER_ESTIMATE",STAGE)
         self.assertIn('original_sell(self,c,p,at,qty,price,reason',STAGE)
