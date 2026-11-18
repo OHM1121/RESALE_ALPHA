@@ -1802,6 +1802,14 @@ def hub_records_ui_v104():
 
 
 def _hub_records_v078(self,for_ui=False):
+    # Authentic market-score collection must initialize even when the
+    # fresh PAPER epoch has no old research/GMO rows. It must not wait for
+    # the expensive combined original-ledger display snapshot to complete.
+    try:
+        from market_research_v033 import ensure_worker
+        ensure_worker(self.root)
+    except Exception as score_error:
+        self._err('market_score_worker_bootstrap_001',score_error)
     _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
     try:
