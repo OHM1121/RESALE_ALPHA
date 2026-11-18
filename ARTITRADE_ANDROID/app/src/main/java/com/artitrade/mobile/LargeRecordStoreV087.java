@@ -14,7 +14,10 @@ import java.nio.charset.StandardCharsets;
 final class LargeRecordStoreV087 {
     // A display snapshot is NOT the original database. Never truncate source
     // SQLite/history; fail the display update if too large for a safe refresh.
-    static final int MAX_UI_RECORD_CHARS=24_000_000;
+    // 5M-character Python UI window; stale pre-v104 oversized snapshots
+    // must not be read into the Samsung 256MB Java heap.
+    static final int MAX_UI_RECORD_CHARS=6_000_000;
+    private static final long MAX_UI_RECORD_BYTES=12_000_000L;
     private static final String NAME="artitrade_view_record_snapshot_v087.json";
     private LargeRecordStoreV087(){}
 
@@ -48,13 +51,15 @@ final class LargeRecordStoreV087 {
     }
     static String read(Context ctx)throws IOException{
         AtomicFile atomic=store(ctx);
+        if(atomic.getBaseFile().length()>MAX_UI_RECORD_BYTES)
+            throw new IOException("UI_RECORD_PREVIOUS_OVERSIZE_REBUILD_REQUIRED");
         try(FileInputStream input=atomic.openRead();
             ByteArrayOutputStream buffer=new ByteArrayOutputStream(65536)){
             byte[] bytes=new byte[16384];
             int n;long read=0;
             while((n=input.read(bytes))!=-1){
                 read+=n;
-                if(read>MAX_UI_RECORD_CHARS*4L)throw new IOException(
+                if(read>MAX_UI_RECORD_BYTES)throw new IOException(
                     "UI_RECORD_FILE_CORRUPT_OR_OVERSIZE");
                 buffer.write(bytes,0,n);
             }
