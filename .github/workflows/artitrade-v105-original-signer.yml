@@ -130,10 +130,10 @@ jobs:
           apk=ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='com.artitrade.unified.s21dex' versionCode='121' versionName='0.9.4'"
+            grep -F "package: name='com.artitrade.unified.s21dex' versionCode='122' versionName='0.9.5'"
           package="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep '^package: ')"
           case "$package" in
-            *"versionCode='121' versionName='0.9.4'"*) ;;
+            *"versionCode='122' versionName='0.9.5'"*) ;;
             *) echo "BANNER_VERSION_MUST_BE_EXACTLY_0.9.5" >&2; exit 1;;
           esac
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" >/tmp/v101_cert.txt
@@ -141,7 +141,7 @@ jobs:
           unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
           cp "$apk" "$ARTIFACT.apk"
           sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
-          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=121\nversionName=0.9.5\nzip_max_part_bytes=95000000\nanalysis_json=true\nreal_market_paper_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=122\nversionName=0.9.5\nzip_max_part_bytes=95000000\nanalysis_json=true\nreal_market_paper_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
       - name: Upload signed APK and verification files
         uses: actions/upload-artifact@v4
         with:
