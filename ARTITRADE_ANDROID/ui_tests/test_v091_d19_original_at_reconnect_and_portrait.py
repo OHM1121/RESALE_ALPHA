@@ -8,6 +8,9 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from datetime import datetime
+from unittest.mock import patch
+from d_storage import KST
 from decimal import Decimal
 from pathlib import Path
 
@@ -109,6 +112,48 @@ class ActualD19StockAtPolicy(unittest.TestCase):
             finally:self.engine._execution_context.fill_method=(
                 'LOCAL_1M_PRICE_TOUCH_ESTIMATE')
         return self.holding(pid)
+
+    def test_actual_d19_new_buy_opens_with_original_threeleg_immediately(self):
+        # End-to-end real D19 limit matcher, genuine source order row,
+        # original SQLite BUY ledger and same-transaction threeleg opt-in.
+        when=datetime(2026,11,18,13,28,5,tzinfo=KST)
+        at=when.strftime('%Y%m%d%H%M%S')
+        with self.store.lock,self.store.connect() as c:
+            c.execute("""INSERT INTO bars(
+                code,market,frame,ts,open,high,low,close,volume,source)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (K,'KOSDAQ','30m','20261117133000',2600,3000,
+                 2500,2800,15000,'LIVE_WS_0B'))
+            c.execute("""INSERT INTO signals(
+                event_key,ts,tf,code,name,market,ref_ts,buy_price,
+                target,score,features,decision)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ('v091-native-signal', '20261117140000','30m',K,
+                 'REAL ORIGINAL MATCHER','KOSDAQ','20261117133000',
+                 2500,2800,69.0,
+                 '{"ranking_engine":"AT_DIVERSE_1_1_ACTIVE"}','PENDING'))
+            sid=c.execute('SELECT last_insert_rowid()').fetchone()[0]
+            c.execute("""INSERT INTO v19_orders(
+                signal_id,code,tf,venue,score,limit_won,since_ts,status)
+                VALUES(?,?,?,?,?,?,?,?)""",
+                (sid,K,'30m','KRX',69.0,2600,'20261117140000','PENDING'))
+            row=c.execute("SELECT * FROM v19_orders WHERE signal_id=?",
+                          (sid,)).fetchone()
+            self.engine.book._items[(K,'KRX')]=(2600,2580,350,when)
+            with patch('d_v19_portfolio.live_session',return_value=True):
+                outcome=self.engine._buy_limit_depth(
+                    c,row,when,'KRX',2600,1000)
+            self.assertTrue(outcome[0],outcome)
+        with self.store.connect() as c:
+            p=dict(c.execute("SELECT * FROM positions WHERE code=?",(K,)).fetchone())
+            buys=c.execute("SELECT COUNT(*) FROM executions WHERE position_id=? AND side='BUY'",
+                           (p['id'],)).fetchone()[0]
+            self.assertEqual(p['exit_policy'],'3LEG31')
+            self.assertEqual(p['exit_first_target'],2800)
+            self.assertEqual(p['first_sell_qty'],
+                max(1,(p['entry_qty']*30+50)//100))
+            self.assertEqual(buys,1)
+            self.assertEqual(p['qty'],p['entry_qty'])
 
     def test_root_cause_legacy_default_repaired_without_false_trade(self):
         pid=self.create_open()
