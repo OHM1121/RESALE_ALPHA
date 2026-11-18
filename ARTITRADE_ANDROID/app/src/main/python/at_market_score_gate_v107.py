@@ -31,7 +31,11 @@ def score_evidence(root,market):
         worker=_WORKERS.get(str(Path(root).resolve()))
     if worker is None:
         return {"negative":False,"score":None,"basis":"SCORE_NOT_YET_AVAILABLE"}
-    row=(worker.snapshot() or {}).get(market) or {}
+    try:
+        row=(worker.snapshot() or {}).get(market) or {}
+    except Exception:
+        return {"negative":False,"score":None,
+                "basis":"SCORE_WORKER_UNAVAILABLE"}
     try:
         value=float(row.get("score"))
         if not math.isfinite(value) or value < -100 or value > 100:
