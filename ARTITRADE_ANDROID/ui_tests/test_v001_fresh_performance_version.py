@@ -14,8 +14,8 @@ GRADLE=(ROOT/"app/build.gradle").read_text("utf8")
 
 class FreshOnlyPerfVersion(unittest.TestCase):
     def test_app_version_name_and_monotonic_android_upgrade_code(self):
-        self.assertIn("versionCode 123",GRADLE)
-        self.assertIn("versionName '0.0.1'",GRADLE)
+        self.assertIn("versionCode 124",GRADLE)
+        self.assertIn("versionName '0.0.2'",GRADLE)
         self.assertIn("applicationId 'com.artitrade.unified.s21dex'",GRADLE)
         self.assertIn("resValue 'string', 'app_name', 'ARTITRADE'",GRADLE)
         self.assertIn('return version.matches(',UI)
