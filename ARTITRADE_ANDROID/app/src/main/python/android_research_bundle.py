@@ -25,6 +25,8 @@ from android_ledger_backup import (
 SCHEMA="ARTITRADE_RESEARCH_BUNDLE_V1"
 DEFAULT_PART_BYTES=500_000_000
 
+RESTORE_PARTS_PY = "#!/usr/bin/env python3\n\"\"\"Reassemble only this ARTITRADE export bundle; original ZIPs stay read-only.\n\nUsage: python restore_parts.py FIRST_PART.zip DESTINATION_FOLDER\nStandard-library only; no broker login, network or order execution.\n\"\"\"\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport sys\nimport zipfile\n\nCHUNK = 1024 * 1024\n\ndef recover(first, output):\n    first = Path(first).expanduser().resolve()\n    output = Path(output).expanduser().resolve()\n    with zipfile.ZipFile(first) as z:\n        index = json.loads(z.read(\"analysis/bundle_index.json\"))\n    number = int(index[\"part_count\"])\n    if number < 1 or number > 999:\n        raise ValueError(\"Invalid bundle part count\")\n    if \"_PART_\" not in first.name:\n        raise ValueError(\"Select a PART_001_OF_... ZIP\")\n    prefix = first.name.rsplit(\"_PART_\", 1)[0]\n    parts = [\n        first.with_name(\"%s_PART_%03d_OF_%03d.zip\" % (prefix, i, number))\n        for i in range(1, number + 1)\n    ]\n    if first.name != parts[0].name:\n        raise ValueError(\"Select the first ZIP part\")\n    encoded = json.dumps(index, sort_keys=True, ensure_ascii=False)\n    for item in parts:\n        with zipfile.ZipFile(item) as z:\n            other = json.loads(z.read(\"analysis/bundle_index.json\"))\n            if json.dumps(other, sort_keys=True, ensure_ascii=False) != encoded:\n                raise ValueError(\"Wrong part or mismatched index: \" + item.name)\n            bad = z.testzip()\n            if bad is not None:\n                raise ValueError(\"ZIP CRC error: \" + bad)\n    output.mkdir(parents=True, exist_ok=True)\n    root = str(output)\n    recovered = 0\n    for rel, row in {\n        **index.get(\"sources\", {}), **index.get(\"reports\", {})\n    }.items():\n        name = Path(rel)\n        if name.is_absolute() or not rel or \"..\" in name.parts:\n            raise ValueError(\"Unsafe output path: \" + rel)\n        target = output.joinpath(*name.parts)\n        if os.path.commonpath([root, str(target.resolve())]) != root:\n            raise ValueError(\"Output escapes destination\")\n        target.parent.mkdir(parents=True, exist_ok=True)\n        expected_size = int(row[\"size\"])\n        fragments = sorted(row[\"fragments\"], key=lambda x: int(x[\"offset\"]))\n        copied = 0\n        digest = hashlib.sha256()\n        with target.open(\"wb\") as out:\n            for frag in fragments:\n                part = int(frag[\"part\"])\n                if part < 1 or part > len(parts) or int(frag[\"offset\"]) != copied:\n                    raise ValueError(\"Incomplete source fragments: \" + rel)\n                with zipfile.ZipFile(parts[part - 1]) as z:\n                    with z.open(frag[\"entry\"]) as stream:\n                        received = 0\n                        while True:\n                            data = stream.read(CHUNK)\n                            if not data:\n                                break\n                            out.write(data)\n                            digest.update(data)\n                            copied += len(data)\n                            received += len(data)\n                        if received != int(frag[\"size\"]):\n                            raise ValueError(\"Incorrect fragment size: \" + rel)\n        if copied != expected_size or digest.hexdigest() != row[\"sha256\"]:\n            target.unlink(missing_ok=True)\n            raise ValueError(\"Source SHA-256 mismatch: \" + rel)\n        recovered += 1\n    print(\"ARTITRADE_RESTORED_VERIFIED\", recovered, \"files\", output)\n\nif __name__ == \"__main__\":\n    if len(sys.argv) != 3:\n        raise SystemExit(\"Usage: python restore_parts.py PART_001_OF_NNN.zip DIR\")\n    recover(sys.argv[1], sys.argv[2])\n"
+
 
 class ExportCancelled(RuntimeError):
     """An explicit user cancellation, never a failed broker trade."""
@@ -298,6 +300,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 "ARTITRADE 주식·코인 오류 원본 — "+scope+"\n"
                 "오류화면은 표시하지 않지만 원본 SQLite/JSON/JSONL은 유지됨.\n"
                 "각 ZIP은 독립적으로 열 수 있음. 원본 fragment 복원 시 모든 PART 필요.\n"
+                "analysis/restore_parts.py FIRST_PART.zip OUTPUT_DIR 로 원본 무결성 복원.\n"
                 "각 파트 500,000,000바이트 이하, bundle_index.json에 원본 해시 수록.\n"
                 "Android OS 종료 이유는 수집된 경우 error_history_summary.json에 포함.\n"
                 "코인·주식 원본 계좌·주문·체결은 수정하지 않음.\n"
@@ -350,6 +353,12 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                                      compresslevel=1 if bundle_kind=="errors" else None,
                                      allowZip64=True) as z:
                     z.writestr("analysis/bundle_index.json",encoded)
+                    # Every ZIP has a no-dependency, read-only restorer.
+                    # A plain ZIP extractor can open complete DB entries
+                    # directly; multi-part originals require this tool.
+                    z.writestr("analysis/restore_parts.py",
+                        RESTORE_PARTS_PY.encode("utf8"),
+                        compress_type=zipfile.ZIP_DEFLATED,compresslevel=1)
                     for rel,fragment in entries:
                         check_cancel()
                         with z.open(fragment["entry"],"w",force_zip64=True) as output:
