@@ -78,7 +78,10 @@ class FreshScoreBootstrap(unittest.TestCase):
             three = score.ensure_worker(self.root)
             self.assertIsNot(two, three)
             self.assertEqual(len(_FakeWorker.instances), 3)
-            result = score.offer_records(self.root, {"coin": {"general": {}}})
+            # offer_records also triggers a separate async AI archive task.
+            # Isolate this test so that daemon cannot race TempDirectory cleanup.
+            with mock.patch("ai_research_v040.offer_records",return_value=None):
+                result = score.offer_records(self.root, {"coin": {"general": {}}})
             self.assertIsNone(result["stock"]["score"])
             self.assertIsNone(result["coin"]["score"])
             self.assertEqual(three.records, {"coin": {"general": {}}})
