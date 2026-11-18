@@ -361,7 +361,12 @@ class Coordinator:
         return {"trade":price,"ask":ask,"bid":bid,"ask_size":size,"bid_size":bid_size}
 
     def _refresh_rank(self,market):
-        if time.monotonic()-self._last_rank[market]<300:return
+        # A zero last-rank means NO scan has ever run. The old arithmetic
+        # skipped the very first TOP50 fetch whenever system uptime was
+        # below 300 seconds (e.g. a fresh emulator or cold-start process).
+        # Rate-limit only after an actual successful scan timestamp.
+        previous=self._last_rank.get(market,0.0)
+        if previous and time.monotonic()-previous<300:return
         try:
             if market=="stock":
                 runner=self.rt.stock_runner
