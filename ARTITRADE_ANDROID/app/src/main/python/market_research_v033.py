@@ -862,7 +862,11 @@ class _MarketWorker:
                 with self._cache_lock:
                     self._cache[market]={"score":None,
                         "status":"시장점수 원장 오류: "+type(exc).__name__}
-            self._stop.wait(interval)
+            # A failed public source should recover without waiting a whole
+            # normal polling cycle. Prevent excessive calls during 429s.
+            failed=bool(self._last_failure.get(market))
+            retry=(15 if market=="coin" else 45) if failed else interval
+            self._stop.wait(retry)
 
     def _loop(self):
         ledger=None
