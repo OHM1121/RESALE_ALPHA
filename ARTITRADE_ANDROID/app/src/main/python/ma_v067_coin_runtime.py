@@ -106,6 +106,9 @@ def _on_real_buy(self,c,p):
                  'status':'PRESTAGED_PAPER_TARGET'}]
             state['hard_stop']=str(policy.number(p['entry'])*Decimal('.85'))
             state['policy_source']='NEW LEGACY(11.18).xlsx'
+            # Store the execution precision with each position. The same
+            # 8dp floor is used by native Upbit CoinLedger._sell.
+            state['coin_qty_step']='0.00000001'
         stamp=str(p['entry_at'])
         c.execute("""INSERT INTO ma_v067_positions(position_id,kind,frame,code,
             state_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)""",
@@ -113,9 +116,10 @@ def _on_real_buy(self,c,p):
              stamp,stamp))
         qty=policy.number(p['qty0'])
         target=policy.number(features['ma_v067_high']) if kind=='REVERSAL_BEAR' else policy.up_targets(p['entry'],p['tf'])[0]
-        first=Decimal('.30')
+        first=(policy.up_stage_quantities(state,qty)[0]
+               if kind=='REVERSAL_UP' else qty*Decimal('.30'))
         c.execute('UPDATE positions SET first_qty=?,target=? WHERE id=?',
-                  (str(qty*first),str(target),p['id']))
+                  (str(first),str(target),p['id']))
     except (ValueError,TypeError,KeyError):pass
 
 
@@ -459,6 +463,13 @@ def _process_v067_exits(self,book,now):
                 if qty<=0:break
                 try:state=json.loads(p['state_json'] or '{}')
                 except (TypeError,ValueError):break
+                # A v0.0.2 position may already have a real 8dp TP1 SELL
+                # before this fix. Recover its persisted policy metadata
+                # WITHOUT changing cash, fills, entry or position quantity.
+                if p['kind']=='REVERSAL_UP' and not state.get('coin_qty_step'):
+                    state['coin_qty_step']='0.00000001'
+                    c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
+                              (json.dumps(state,ensure_ascii=False),now.isoformat(),p['id']))
                 closes=_prior_verified_closes(p['tf'],symbol,now)
                 forced=(policy.forced_ma_exit(closes,trade)
                         if trade is not None and p['kind']=='REVERSAL_BEAR'
