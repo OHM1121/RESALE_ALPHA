@@ -1,0 +1,48 @@
+name: ARTITRADE v107 source audit - NO APK
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-v107-source-audit-no-apk.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Audit embedded original source methods without build or signing
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast, base64, io, zipfile, re
+          from pathlib import Path
+          root=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          data=base64.b64decode("".join((root/("part_%02d.txt"%i)).read_text("ascii") for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(data))
+          print("EMBEDDED_MODULE_COUNT",len(z.namelist()))
+          for fname in ("d_engine.py","d_live.py","d_upbit.py","d_v19_portfolio.py","at_close_bridge.py"):
+              if fname not in z.namelist():
+                  print("FILE_MISSING",fname);continue
+              source=z.read(fname).decode("utf8")
+              tree=ast.parse(source)
+              print("FILE",fname,"LINES",len(source.splitlines()))
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.ClassDef,ast.FunctionDef,ast.AsyncFunctionDef)):
+                      if isinstance(node,ast.ClassDef):
+                          if re.search(r'Engine|Runner|Wallet|Ledger|Market|Score',node.name,re.I):
+                              print(" CLASS",node.name,node.lineno)
+                      elif re.search(r'buy|_entry|candidate|score|_buy|_sell|_handle|_on_tick|_try|_evaluate|_process|target|_record|_cycle',node.name,re.I):
+                          owner=[p.name for p in ast.walk(tree) if isinstance(p,ast.ClassDef) and node in p.body]
+                          print(" METHOD",owner[0] if owner else "module",node.name,"@",node.lineno)
+              lines=source.splitlines()
+              hits=[(i+1,s.strip()[:210]) for i,s in enumerate(lines) if re.search(r'(market.score|market_score|_buy_if_touch|_buy_limit_depth|buy_reason|buy_target|first_target|INSERT INTO (positions|executions)|def .*(buy|entry|target))',s,re.I)]
+              for line,s in hits[:85]:print(" HIT",line,s)
+          PY
+      - name: Assert source-only
+        run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
