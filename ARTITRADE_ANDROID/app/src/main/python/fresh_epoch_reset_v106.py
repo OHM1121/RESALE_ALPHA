@@ -11,6 +11,7 @@ No APK, network calls, broker orders or automatic deletion on import.
 from __future__ import annotations
 
 import datetime as dt
+from contextlib import closing
 import json
 import os
 import sqlite3
@@ -105,7 +106,7 @@ def _check_real_order_proof(root, plan):
         possible.append(journal)
     for db in possible:
         try:
-            with _sqlite_ro(db) as con:
+            with closing(_sqlite_ro(db)) as con:
                 tables = {row[0] for row in con.execute(
                     "SELECT name FROM sqlite_master WHERE type='table'")}
                 if db == journal:
