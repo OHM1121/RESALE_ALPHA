@@ -141,8 +141,8 @@ class WorkbookNovember18(unittest.TestCase):
             self.assertEqual(x["sell_intents"][1]["quantity"],35.)
             self.assertEqual(x["stop"],85.)
             self.assertTrue(all(x["state"]=="ARMED" for x in x["sell_intents"]))
-            c.execute("CREATE TABLE candidates(tf TEXT,market TEXT,ref_at TEXT,features TEXT)")
-            c.execute("INSERT INTO candidates VALUES(?,?,?,?)",
+            c.execute("CREATE TABLE candidates(id INTEGER PRIMARY KEY,tf TEXT,market TEXT,ref_at TEXT,features TEXT)")
+            c.execute("INSERT INTO candidates(tf,market,ref_at,features) VALUES(?,?,?,?)",
                       ("60m","KRW-TST","2026-11-18T11:00",
                        json.dumps({"low":90,"high":95})))
             coin=dict(id=11,tf="60m",market="KRW-TST",ref_at="2026-11-18T11:00",
