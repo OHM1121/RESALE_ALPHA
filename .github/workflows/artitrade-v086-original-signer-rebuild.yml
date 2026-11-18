@@ -15,13 +15,13 @@ jobs:
     timeout-minutes: 75
     env:
       CI: 'true'
-      SOURCE: '3f1bf8768b5b2d10f876dce73afc91fa97e2e480'
+      SOURCE: '90c5605b4ef2ae5e538b1354c0c5bcb21ab5f24c'
       ARTIFACT: 'ARTITRADE_UNIFIED_v0.8.6_20261118'
       TAG: 'ARTITRADE-v0.8.6-20261118'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: '3f1bf8768b5b2d10f876dce73afc91fa97e2e480'
+          ref: '90c5605b4ef2ae5e538b1354c0c5bcb21ab5f24c'
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -299,7 +299,7 @@ jobs:
           sha256sum -c "$ARTIFACT.sha256"
           cat > /tmp/artitrade-v082-release-notes.txt <<'RELEASE_NOTES'
           ARTITRADE v0.8.6 (112) ORIGINAL-SIGNER PAPER TEST APK. IN-PLACE UPDATE ONLY. DO NOT uninstall or clear data.
-          Source pinned to 3f1bf8768b5b2d10f876dce73afc91fa97e2e480; source v0.8.5 retained.
+          Source pinned to 90c5605b4ef2ae5e538b1354c0c5bcb21ab5f24c; source v0.8.5 retained.
           Confirmed user PAPER manual stock exits for all 5 owners: AT uses original DStore SELL and realized PnL without requiring coincident 0B; MA current v067 + historical V061/V062 wallets use original SELL ledger; CW stock CLOSE now routes to original CW wallet; MT trend uses native PAPER verified SELL after SQLite qty/mode reconfirmation; GMO uses its original pending Intent and genuine verified bid/depth PAPER fill, including partial/UUID proof. A manual PAPER sale never becomes a real Kiwoom exchange order.
           Market bid provenance: fresh KRX 0D existing shared socket OR, when this quote is unavailable, ONE official Kiwoom ka10004 REST best bid/quantity with source time, symbol and KRX session verified <=3 seconds. No 0B event or cached last/ka10001 display quote is manufactured; after-hours/stale/no depth fail closed.
           Only confirmed original executions update wallet realized PnL; a partial sale stays partial, a pending intent is not called a fill, and repeated UUID cannot create a second SELL. Live broker orders still disabled.
