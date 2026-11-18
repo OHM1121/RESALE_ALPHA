@@ -2439,6 +2439,12 @@ _install_entry_plan_hooks_v107(_core)
 from unified_recovery_v092 import install as _install_unified_recovery_v092
 _install_unified_recovery_v092(_core)
 
+# Final workbook (NEW LEGACY 11.18): overrides obsolete RSI first-close
+# next-open entry, but leaves all original market quote/FOK wallet SELL safety.
+from market_trend_1118_runtime import install as _install_nl1118_trend
+_install_nl1118_trend()
+
+
 # Only Android knows whether the current active network is validated.
 # This has no ability to make an order or authorize stale 0B/0D.
 def set_network_v092(validated):
