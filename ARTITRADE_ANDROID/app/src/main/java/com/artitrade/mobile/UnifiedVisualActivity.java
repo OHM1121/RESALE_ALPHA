@@ -1513,49 +1513,12 @@ public final class UnifiedVisualActivity extends Activity {
                     packet.put("local_records",localRecords);
                     packet.put("local_records_at",lp.getLong("updated_at",0L));
                 }catch(Exception e){packet.put("local_records",new JSONObject());}
-                // v0.7.25: source-by-source gap recovery. The old global flag
-                // hid MA/CLOSE/GMO or coin data whenever AT had any records.
-                // Keep phone-created records authoritative, and fetch MSERVER only
-                // for a *missing bucket*, not for an entire market.
-                long now=android.os.SystemClock.elapsedRealtime();
-                boolean hubResponding=packet.optJSONObject("status")!=null
-                    &&packet.optJSONObject("status").optBoolean("ok",false);
-                boolean pollGaps=preloadScreenReady&&hubResponding&&
-                    now-lastHubGapPollMs>=25_000L;
-                if(pollGaps)lastHubGapPollMs=now;
-                boolean anyHub=false;
-                for(String[] k:RECORDS){
-                    JSONObject marketTree=localRecords.optJSONObject(k[0]);
-                    JSONObject strategyTree=marketTree==null?null:marketTree.optJSONObject(k[1]);
-                    JSONObject localBucket=strategyTree==null?null:strategyTree.optJSONObject(k[2]);
-                    if(meaningfulRecord(localBucket)
-                        &&!missingNestedBucket(localBucket,k[3]))continue;
-                    JSONObject response=cachedHubGapRecords.optJSONObject(k[3]);
-                    if(pollGaps){
-                        try{
-                            JSONObject fresh=client.record(k[0],k[1],k[2]);
-                            JSONObject data=fresh.optJSONObject("data");
-                            if(meaningfulRecord(data)){
-                                cachedHubGapRecords.put(k[3],fresh);
-                                response=fresh;
-                            }else if(fresh.optBoolean("ok",false)){
-                                // Confirmed empty data must replace stale cache.
-                                cachedHubGapRecords.remove(k[3]);
-                                response=fresh;
-                            }
-                        }catch(Exception e){
-                            new RuntimeCrashStore(this).add("hub_gap_"+k[3],e);
-                        }
-                    }
-                    if(response!=null&&meaningfulRecord(response.optJSONObject("data"))){
-                        records.put(k[3],response);
-                        anyHub=true;
-                    }
-                }
-                packet.put("using_hub_fallback",anyHub);
-                packet.put("hub_gap_refresh_available",hubResponding);
-                packet.put("hub_gap_status",anyHub?"MISSING_BUCKETS_FROM_MSERVER":
-                    hubResponding?"LOCAL_OR_EMPTY":"MSERVER_OFFLINE");
+                // Fresh PAPER epoch never reads old remote PC buckets back
+                // into the new UI. Only local phone execution ledgers are
+                // authoritative; MServer is an outgoing sync/status source.
+                packet.put("using_hub_fallback",false);
+                packet.put("hub_gap_refresh_available",false);
+                packet.put("hub_gap_status","FRESH_PHONE_LEDGER_ONLY");
                 try{
                     android.content.SharedPreferences sp=getSharedPreferences("artitrade_mserver_sync_v078",MODE_PRIVATE);
                     packet.put("mserver_sync",new JSONObject()
@@ -1566,16 +1529,8 @@ public final class UnifiedVisualActivity extends Activity {
                         .put("started_at",sp.getLong("started_at",0L)).put("updated_at",sp.getLong("updated_at",0L))
                         .put("complete",sp.getBoolean("complete",false)));
                 }catch(Exception e){packet.put("mserver_sync",new JSONObject());}
-                try{
-                    android.content.SharedPreferences ip=getSharedPreferences("artitrade_pc_ledger_import_progress_v078",MODE_PRIVATE);
-                    packet.put("pc_import_progress",new JSONObject()
-                        .put("stage",ip.getString("stage","")).put("detail",ip.getString("detail",""))
-                        .put("done",ip.getLong("done",0L)).put("total",ip.getLong("total",0L))
-                        .put("percent",ip.getInt("percent",0)).put("updated_at",ip.getLong("updated_at",0L))
-                        .put("complete",ip.getBoolean("complete",false)).put("error",ip.getString("error","")));
-                }catch(Exception e){packet.put("pc_import_progress",new JSONObject());}
-                try{packet.put("mserver_migration",client.migrationStatus());}
-                catch(Exception e){packet.put("mserver_migration",new JSONObject());}
+                packet.put("pc_import_progress",new JSONObject());
+                packet.put("mserver_migration",new JSONObject());
                 try{
                     android.content.SharedPreferences hp=getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE);
                     packet.put("hub_publish",new JSONObject()
@@ -1588,11 +1543,7 @@ public final class UnifiedVisualActivity extends Activity {
                         .put("last_bucket",hp.getString("last_bucket",""))
                         .put("last_http_status",hp.getInt("last_http_status",200)));
                 }catch(Exception e){packet.put("hub_publish",new JSONObject());}
-                try{
-                    android.content.SharedPreferences mp=getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE);
-                    String raw=mp.getString("result","{}");
-                    packet.put("pc_ledger_migration",new JSONObject(raw));
-                }catch(Exception e){packet.put("pc_ledger_migration",new JSONObject());}
+                packet.put("pc_ledger_migration",new JSONObject());
                 try{
                     android.content.SharedPreferences ap=getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE);
                     packet.put("mserver_auth",new JSONObject()
@@ -1687,13 +1638,10 @@ public final class UnifiedVisualActivity extends Activity {
         boolean stopped=halted!=null&&!halted.isNull(market)&&halted.optJSONObject(market)!=null;
         long recordsAt=c.optLong("local_records_at",0L);
         String sync=recordsAt>0?" · 원장 "+Math.max(0,(System.currentTimeMillis()-recordsAt)/1000)+"초":" · 원장 준비";
-        JSONObject mp=c.optJSONObject("mserver_sync"),ip=c.optJSONObject("pc_import_progress"),ms=c.optJSONObject("mserver_migration");
+        JSONObject mp=c.optJSONObject("mserver_sync");
         String progress="";
-        if(mp!=null&&!mp.optBoolean("complete",false)&&mp.optInt("total",0)>0)progress+=" · MSERVER "+mp.optInt("percent",0)+"%";
-        int ipp=ip==null?0:ip.optInt("percent",0);
-        if(ip!=null&&!ip.optBoolean("complete",false)&&ip.optInt("total",0)>0)progress+=" · 과거원장 "+ipp+"%";
-        else if(ms!=null&&!ms.optBoolean("ready",false)&&ms.optInt("total_chunks",0)>0)
-            progress+=" · PC전송 "+Math.max(0,Math.min(100,ms.optInt("received",0)*100/Math.max(1,ms.optInt("total_chunks",1))))+"%";
+        if(mp!=null&&!mp.optBoolean("complete",false)&&mp.optInt("total",0)>0)
+            progress=" · 전송 "+mp.optInt("percent",0)+"%";
         statusText.setText((live?"실시간 LIVE":"실시간 대기")+sync+progress+(stopped?" · 주문정지":""));
         statusText.setTextColor(stopped?Color.rgb(255,119,133):!progress.isEmpty()?Color.rgb(255,201,94):live?Color.rgb(62,224,181):Color.rgb(255,201,94));
     }
