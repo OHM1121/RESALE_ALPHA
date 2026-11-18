@@ -952,7 +952,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.8")
+        return b.setContentTitle("ARTITRADE")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
@@ -960,7 +960,7 @@ public final class UnifiedTradingService extends Service {
         if(Build.VERSION.SDK_INT>=26){
             NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
             if(nm!=null){
-                NotificationChannel c=new NotificationChannel(CHANNEL,"ARTITRADE S21+ 메인 엔진",NotificationManager.IMPORTANCE_LOW);
+                NotificationChannel c=new NotificationChannel(CHANNEL,"ARTITRADE",NotificationManager.IMPORTANCE_LOW);
                 c.setDescription("최신 EXE 전략·키움·업비트 실시간·실주문 엔진");
                 nm.createNotificationChannel(c);
             }
