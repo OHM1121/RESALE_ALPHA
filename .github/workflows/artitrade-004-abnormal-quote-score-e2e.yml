@@ -7,6 +7,7 @@ on:
       - ARTITRADE_ANDROID/app/src/main/python/**
       - ARTITRADE_ANDROID/ui_tests/test_v004_abnormal_reconnect_six.py
       - ARTITRADE_ANDROID/ui_tests/test_v033_market_research.py
+      - ARTITRADE_ANDROID/ui_tests/test_v038_market_live_ui.py
   workflow_dispatch:
 permissions:
   contents: read
