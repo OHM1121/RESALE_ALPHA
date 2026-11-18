@@ -139,13 +139,6 @@ class Coordinator:
         self._quotes={"stock":{},"coin":{}}
         self._history={}
         self._history_requests={}
-        # v108: last-close local read is bounded and never loops on a broker
-        # REST request inside the critical 10-second BUY decision window.
-        self._due_close_read_at={}
-        # RSI20 across the same 10 closed bars must not be recalculated at
-        # 5Hz during one entry window. Cache by immutable source candles;
-        # changed broker evidence always invalidates the cached decision.
-        self._fresh_closed_signal_cache={}
         # One diagnostic per source/bar/window, not every 200ms precheck poll.
         self._v078_missing_trade_seen=set()
         self._last_closed={}
@@ -519,62 +512,6 @@ class Coordinator:
                 self.stop_event.wait(.20 if market=="coin" else .35)
             self.stop_event.wait(2)
 
-    def _refresh_due_closed_local_v108(self,market,code,frame,begins):
-        """Fresh REAL completed bar lookup for the ten-second entry window.
-
-        Historical prefetch runs every 45s once it has 21 bars; without this
-        branch the latest just-closed bar was systematically absent for 5m,
-        30m, 60m and day signals during the exact 10s allowed BUY window.
-        Use only the existing KRX verified SQLite bars or native Upbit verified
-        completed-candle history. NEVER synthesize a price or query the live
-        broker REST API in the order callback.
-        """
-        key=(market,code,frame)
-        with self.lock:
-            cached=self._history.get(key,())
-            if len(cached)>=30 and cached[-1]["end"]>=begins:
-                return
-        stamp=(market,code,frame,begins.isoformat())
-        now=time.monotonic()
-        if now-self._due_close_read_at.get(stamp,-1e9)<1.6:
-            return
-        self._due_close_read_at[stamp]=now
-        try:
-            if market=="coin":
-                rows=self._native_coin_history(frame,code,dt.datetime.now(mt.KST))
-            else:
-                runner=self.rt.stock_runner
-                if runner is None:return
-                with runner.store.connect() as source:
-                    raw=source.execute("""SELECT ts,close,high,low FROM bars
-                      WHERE code=? AND frame=? ORDER BY ts DESC LIMIT 90""",
-                      (code,frame)).fetchall()
-                rows=[]
-                for bar in raw:
-                    end=_stock_bar_end(bar["ts"],frame)
-                    if end is None or end>begins:continue
-                    close=mt._finite(bar["close"])
-                    high=mt._finite(bar["high"])
-                    low=mt._finite(bar["low"])
-                    if (close is None or high is None or low is None or
-                        close<=0 or low>close or high<close):continue
-                    rows.append({"start":end-dt.timedelta(seconds=mt.FRAME_SECS[frame]),
-                                 "end":end,"close":close,"high":high,"low":low,
-                                 "source":"LOCAL_KRX_VERIFIED"})
-                rows=sorted(rows,key=lambda row:row["end"])[-90:]
-            if len(rows)<30:return
-            if rows[-1]["end"]>begins:return
-            # The final source must belong to this or the expected previous
-            # session; the closed-entry predicate makes the final decision.
-            with self.lock:
-                old=self._history.get(key,())
-                if not old or rows[-1]["end"]>old[-1]["end"]:
-                    self._history[key]=rows
-        except (AttributeError,KeyError,ValueError,TypeError,sqlite3.Error) as exc:
-            self._last_fetch_error[market]="CLOSED_LOCAL_SOURCE:"+type(exc).__name__
-        if len(self._due_close_read_at)>24000:
-            self._due_close_read_at.clear()
-
     def _closed_series(self,market,code,frame,bar_end):
         with self.lock:barrows=list(self._history.get((market,code,frame),[]))
         if len(barrows)<21:return []
@@ -782,169 +719,229 @@ class Coordinator:
                                  strategy='ma',ma_details=details)
 
     def _preclose_candidates(self,market,now):
-        """v107 closed-candle first-under-30 rule; only next-open [0,10)s.
-
-        Retains the original TrendWalletV054 executable quote/book, fee,
-        available-quantity, position/slot and PAPER fill authority.
-        No forming RSI can authorize a trade.
-        """
-        from market_trend_closed_entry_v107 import (
-            first_closed_cross, first_ten_seconds, verified_closed_rows)
+        self._prune_evaluation_cache(now)
+        # Independent trend evaluates regardless of the signed market score.
+        # Score bypass must never permit KRX trading outside regular session.
         if market=="stock":
-            from krx_session_v041 import is_regular_open, SPECIAL_SESSIONS, START
-            if not is_regular_open(now):return
-        else:
+            from krx_session_v041 import is_regular_open
+            if not is_regular_open():return
+        elif market=="coin":
+            # The original Upbit ledger/research/candle preload may run while
+            # v081's already-authenticated single public socket primes quotes.
+            # It is observation-only until that authoritative native preflight
+            # validates positions/pending and unlocks new candidate scans.
             native=getattr(self.rt,'coin_runner',None)
             gate=getattr(native,'preload_gate',None)
             if gate is not None and not gate.snapshot().get('ready',False):
                 return
+        # Evaluate the time-sensitive gate once per timeframe, not once per
+        # instrument. Outside verified -22..12.5 precheck and -12..7 entry,
+        # skip quote/book/RSI calls without ever manufacturing live prices.
         scheduled=[]
         for frame in mt.FRAMES:
             finish=_end_clock(now,market,frame)
             if finish is None:continue
-            if market=="stock":
-                # KRX 60m final candle can be 30 minutes long. Derive the
-                # start from the actual official trading session, not
-                # finish-3600 (which incorrectly opens it at 14:30).
-                from krx_session_v041 import END
-                opening,closing=SPECIAL_SESSIONS.get(
-                    now.date().isoformat(),(START,END))
-                first=now.replace(hour=opening//60,minute=opening%60,
-                                  second=0,microsecond=0)
-                if frame=="day":
-                    begins=first
-                else:
-                    elapsed=max(0,(now-first).total_seconds())
-                    steps=int(elapsed//mt.FRAME_SECS[frame])
-                    begins=first+dt.timedelta(
-                        seconds=steps*mt.FRAME_SECS[frame])
-            else:
-                begins=finish-dt.timedelta(seconds=mt.FRAME_SECS[frame])
-            if first_ten_seconds(now,begins):
-                scheduled.append((frame,finish,begins))
+            barid=finish.isoformat()
+            if self._evaluation_window_passed(now,finish,frame,market):
+                if self._sealed_watch.get((market,frame))!=barid:
+                    gate=(market,frame,barid)
+                    if gate not in self._v074_window_seen:
+                        self._record_entry_block(market,'__ENGINE__',frame,barid,
+                            'OPERATIONAL_SUBMIT_SECOND_NOT_EVALUATED')
+                        self._v074_window_seen.add(gate)
+                    self._sealed_watch[(market,frame)]=barid
+                    self.watch.expire(market,frame,barid)
+                continue
+            check=mt.live_rsi_check_due(now,finish,frame,market)
+            submit=mt.preclose_due(now,finish,frame,market)
+            if check or submit:
+                if submit:self._v074_window_seen.add((market,frame,barid))
+                scheduled.append((frame,finish,check,submit))
+        with self.lock:
+            perf=self._performance[market]
+            perf["preclose_cycles"]+=1
+            if not scheduled:perf["preclose_no_due_cycles"]+=1
+            else:perf["preclose_due_cycles"]+=1
         if not scheduled:return
         with self.lock:
             candidates=dict(self._candidates[market])
-        # The old 45s prefetch alone made the required 0..10s closed RSI
-        # impossible at most candle starts. Fast local verification is
-        # read-only, throttled and uses no made-up OHLC.
-        for code in candidates:
-            for frame,finish,begins in scheduled:
-                self._refresh_due_closed_local_v108(market,code,frame,begins)
+            self._performance[market]["preclose_symbols_examined"]+=len(candidates)
+        # v080: PRECHECK at -22..12.5s observes real fresh prints, not
+        # full 0D depth. The old precheck required 0D even though only RSI
+        # was being observed. This wrongly discarded eligible stock/coin
+        # crosses whenever orderbook arrived AFTER the price print.
+        # From -12 through -7s, actual BUY still REQUIRES verified fresh
+        # 0D/Upbit order book, available quantity and native FOK checks.
+        due=collections.defaultdict(list)
         with self.lock:
-            histories={k:list(v) for k,v in self._history.items()
-                       if k[0]==market and k[2] in {x[0] for x in scheduled}}
-        # These are confirmed close observations. A candidate is not an
-        # order until the original wallet verifies real market liquidity.
-        qualified=collections.defaultdict(list)
+            observed_prices=dict(self._quotes[market])
+        observed_at=time.monotonic()
         for code in candidates:
-            for frame,finish,begins in scheduled:
-                history=histories.get((market,code,frame),())
-                if len(history)<30:continue
-                # Closed bars are immutable evidence: this signature also
-                # detects late Kiwoom/Upbit corrections at the same timestamp.
-                source_signature=tuple((x["end"],x["close"])
-                                       for x in history[-30:])
-                cache_key=(market,code,frame,begins.isoformat())
-                cached=self._fresh_closed_signal_cache.get(cache_key)
-                if cached is not None and cached[0]==source_signature:
-                    signal,closed_at=cached[1],cached[2]
-                else:
-                    rows=verified_closed_rows(history,begins,market,frame)
-                    signal=(first_closed_cross([x["close"] for x in rows],
-                                               mt.rsi20) if rows else None)
-                    closed_at=rows[-1]["end"] if rows else None
-                    self._fresh_closed_signal_cache[cache_key]=(
-                        source_signature,signal,closed_at)
-                if signal is None or closed_at is None:continue
-                key=(market,code,frame,closed_at.isoformat())
-                if key in self._ordered:continue
-                qualified[code].append((frame,finish,begins,closed_at,signal))
-        if len(self._fresh_closed_signal_cache)>12000:
-            self._fresh_closed_signal_cache.clear()
-        for code,options in qualified.items():
-            chosen=mt.choose_frame([x[0] for x in options])
-            candidate=next((x for x in options if x[0]==chosen),None)
-            if candidate is None:continue
-            frame,finish,begins,closed_at,signal=candidate
-            at=self._decision_clock()
-            if not first_ten_seconds(at,begins):
-                self._record_entry_block(market,code,frame,closed_at.isoformat(),
-                    'CLOSED_RSI_NEXT_OPEN_10S_EXPIRED',signal["rsi20_closed"])
+            observed=observed_prices.get(code)
+            observed_trade=None
+            max_trade_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
+            trade_age=observed_at-observed[1] if observed is not None else None
+            if (observed is not None and
+                    -0.5<=trade_age<=max_trade_age):
+                observed_trade=mt._finite(observed[0])
+            if observed_trade is None:
+                # Compatibility for read-only injected/synthetic proven
+                # quotes where the price memory is not populated. This is
+                # only a valid 0D+trade fallback, NEVER an invented trade.
+                backed=self._quote(market,code)
+                observed_trade=(mt._finite(backed.get('trade'))
+                                if isinstance(backed,dict) else None)
+            if observed_trade is None or observed_trade<=0:
+                # The same one-second precheck is polled several times; count
+                # distinct missed opportunities, but keep retrying the real WS
+                # price throughout that second if a genuine trade arrives.
+                for frame,finish,check,submit in scheduled:
+                    key=(market,code,frame,finish.isoformat(),bool(submit))
+                    if key in self._v078_missing_trade_seen:continue
+                    self._v078_missing_trade_seen.add(key)
+                    self._entry_block_counts[market]['FRESH_0B_TRADE_MISSING_AT_PRECHECK']+=1
+                    if submit:self._record_entry_block(market,code,frame,finish.isoformat(),
+                        'VERIFIED_TRADE_STALE_OR_MISSING',trade_age_sec=trade_age)
+                if len(self._v078_missing_trade_seen)>12000:
+                    self._v078_missing_trade_seen.clear()
                 continue
-            key=(market,code,frame,closed_at.isoformat())
-            if key in self._ordered:continue
-            if (self.journal.stop_reentry_blocked(market,code,at) or
-                self.standalone_wallet.stop_reentry_blocked(market,code,at)):
-                self._record_entry_block(market,code,frame,closed_at.isoformat(),
-                    'STOP_REENTRY_LOCK',signal["rsi20_closed"])
-                self._ordered.add(key)
+            for frame,finish,check,submit in scheduled:
+                barid=finish.isoformat()
+                entry=(market,code,frame,barid)
+                closed=self._closed_series(market,code,frame,finish)
+                if not closed:
+                    self._entry_block_counts[market]['CLOSED_CANDLE_HISTORY_MISSING']+=1
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'CLOSED_CANDLE_HISTORY_MISSING',trade_age_sec=trade_age)
+                    continue
+                completed_closes=[x["close"] for x in closed]
+                rsi=mt.rsi20(completed_closes,observed_trade)
+                if rsi is None:
+                    self._entry_block_counts[market]['RSI_20_HISTORY_INVALID']+=1
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'RSI_20_HISTORY_INVALID',trade_age_sec=trade_age)
+                    continue
+                # First-cross qualification uses the MAIN Wilder RSI20, not
+                # any display signal line or horizontal RSI30 guideline.
+                # A symbol already <=30 on its previous CLOSED bar must
+                # never become a new BUY merely because RSI remains <=30.
+                prior_closed_rsi=mt.rsi20(completed_closes)
+                if prior_closed_rsi is None:
+                    self._prechecked.pop(entry,None)
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'RSI_FIRST_CROSS_HISTORY_UNVERIFIED',rsi,trade_age,
+                        ma_details={'prior_closed_rsi20':None})
+                    continue
+                if prior_closed_rsi<=mt.RSI_ARM:
+                    self._prechecked.pop(entry,None)
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'RSI_ALREADY_BELOW_30_ON_PREVIOUS_CLOSE',rsi,trade_age,
+                        ma_details={'prior_closed_rsi20':round(prior_closed_rsi,4),
+                                    'current_forming_rsi20':round(rsi,4)})
+                    continue
+                if check:
+                    # Store precheck even when no 0D quote exists.
+                    self._prechecked[entry]=rsi
+                    if rsi<=30:
+                        self._record_entry_block(market,code,frame,barid,
+                            'RSI30_PRECHECK_PASSED_NOT_AN_ORDER',rsi,trade_age)
+                # v099: the RSI 35 watch is preparation, not a requirement
+                # that RSI had ALREADY reached 30 during the earlier -22s
+                # precheck. A valid first 30 downward cross may occur for the
+                # first time inside the -12s submit window. Keep previous
+                # CLOSED RSI>30, fresh trade, real book and latch unchanged.
+                if submit and rsi>30:
+                    self._entry_block_counts[market]['RSI_ABOVE_30']+=1
+                    continue
+                if submit and entry not in self._ordered:
+                    # Financial execution gates remain independent from RSI.
+                    # Missing/zero depth is reported; never invented.
+                    q=self._quote(market,code)
+                    if q is None:
+                        self._entry_block_counts[market]['FRESH_BOOK_MISSING_AT_SUBMIT']+=1
+                        self._record_entry_block(market,code,frame,barid,
+                            'FRESH_BOOK_MISSING_AT_SUBMIT',rsi,trade_age)
+                        continue
+                    due[code].append((frame,rsi,barid,q))
+        # Do NOT expire RSI35 observation on the first -12s attempt: the
+        # native quote may recover before -7s and should then be retried.
+        # _evaluation_window_passed seals the bar only after the final gate.
+        for code,signals in due.items():
+            # Broker/ledger duplicate checks and a durable filled-stop ban are
+            # mandatory before an entry can consume parent-strategy cash.
+            if (self.journal.stop_reentry_blocked(market,code,now) or
+                self.standalone_wallet.stop_reentry_blocked(market,code,now)):
+                self._entry_block_counts[market]['STOP_REENTRY_LOCK']+=1
+                for frame,rsi_value,barid,_ in signals:
+                    self._record_entry_block(market,code,frame,barid,
+                        'STOP_REENTRY_LOCK',rsi_value)
+                for frame,_,barid,_ in signals:
+                    self._ordered.add((market,code,frame,barid))
+                continue
+            chosen=mt.choose_frame([x[0] for x in signals])
+            if chosen is None:continue
+            frame,rsi,barid,q=next(x for x in signals if x[0]==chosen)
+            # Recheck the actual decision second and raw source freshness;
+            # a slow research/SQLite cycle must never create a late order.
+            fresh_now=self._decision_clock()
+            finish=dt.datetime.fromisoformat(barid)
+            if not mt.preclose_due(fresh_now,finish,frame,market):
+                self._entry_block_counts[market]['ONE_SECOND_DECISION_DEADLINE_MISSED']+=1
+                self._record_entry_block(market,code,frame,barid,
+                    'ONE_SECOND_DECISION_DEADLINE_MISSED',rsi)
                 continue
             verified=self._quote(market,code)
             if verified is None:
-                self._record_entry_block(market,code,frame,closed_at.isoformat(),
-                    'CLOSED_RSI_FRESH_BOOK_OR_TRADE_MISSING',
-                    signal["rsi20_closed"])
-                continue  # retry real quote within this same ten-second gate
-            # Do not consume the candle's single entry opportunity BEFORE
-            # asking the original wallet. A PAPER no-fill may safely retry
-            # with a subsequent genuine fresh 0B/0D during the same 10s.
-            # The position's bar_key is the CURRENT entry candle END; the
-            # confirmed signal belongs to the immediately prior candle.
-            barid=finish.isoformat()
-            name=str(candidates[code][1]) if isinstance(
-                candidates[code],(tuple,list)) else code
+                self._entry_block_counts[market]['QUOTE_OR_BOOK_STALE_BEFORE_ORDER']+=1
+                self._record_entry_block(market,code,frame,barid,
+                    'QUOTE_OR_BOOK_STALE_BEFORE_ORDER',rsi)
+                continue
+            q=verified
+            self._ordered.add((market,code,frame,barid))
+            latch=self.journal.latch(market,code,frame)
+            if not latch.offer(barid,rsi):
+                self._entry_block_counts[market]['SIGNAL_LATCH_NOT_ARMED']+=1
+                self._record_entry_block(market,code,frame,barid,
+                    'SIGNAL_LATCH_NOT_ARMED',rsi)
+                continue
+            self.journal.save_latch(market,code,frame,latch)
+            assigned='trend'
+            name=str(candidates[code][1]) if isinstance(candidates[code],(tuple,list)) else code
             disposition="NO_FILL"
             result=None
-            unsafe=False
+            unsafe_result=False
             try:
-                p,disposition=self.standalone_wallet.buy(
-                    market,frame,code,name,verified["ask"],
-                    verified["ask_size"],at,barid,signal["rsi20_closed"])
+                p,disposition=self.standalone_wallet.buy(market,frame,code,name,
+                        q["ask"],q["ask_size"],now,barid,rsi)
                 if p is not None:
-                    self._positions[(market,"trend",frame,code)]=p
-                    result=p
+                    self._positions[(market,assigned,frame,code)]=p;result=p
             except Exception as exc:
                 disposition="UNSAFE:"+type(exc).__name__
-                unsafe=True
+                unsafe_result=True
                 self._last_fetch_error[market]=disposition
-            if str(disposition).startswith(("BROKER:","UNSAFE:")):
-                unsafe=True
-            # A real broker outcome that cannot be reconciled must NEVER be
-            # resubmitted. PAPER nonfills can recheck genuine new market
-            # liquidity before the exact ten-second deadline.
-            if result is not None or unsafe or self.rt.live_enabled(market):
-                self._ordered.add(key)
+            if str(disposition).startswith(('BROKER:', 'UNSAFE:')):
+                unsafe_result=True
             if result is None:
                 self._entry_block_counts[market][str(disposition)[:80]]+=1
-                self._record_entry_block(market,code,frame,closed_at.isoformat(),
-                    str(disposition)[:80],signal["rsi20_closed"])
-            mode=(("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
-                   else "PAPER") if result else
-                  ("UNSAFE" if unsafe else "VIRTUAL"))
-            self.journal.event(
-                "MT107:CLOSED:"+market+":"+code+":"+frame+":"+
-                closed_at.isoformat(),market,"trend",frame,code,mode,
-                "MARKET_TREND_RSI20_CONFIRMED_CLOSE_FIRST10_"+str(disposition),
-                price=verified["ask"],
-                rsi20_closed=signal["rsi20_closed"],
-                payload={"signal_closed_at":closed_at.isoformat(),
-                         "entry_bar_end":barid,
-                         "rsi20_basis":"COMPLETED_CANDLE_CLOSE",
-                         "rsi20_last10":signal["last_10_rsi20"],
-                         "buy_window":"NEXT_BAR_OPEN_0_TO_10_SECONDS",
-                         "verified_book":True,
-                         "execution_mode":mode})
-            if result is None and not unsafe:
+                self._record_entry_block(market,code,frame,barid,str(disposition)[:80],rsi)
+            # ACTUAL is reserved for broker-confirmed fills, PAPER for
+            # simulated fills, and VIRTUAL for missed / unfilled signals.
+            signal_mode=("ACTUAL" if result.__dict__.get("execution_mode")=="LIVE"
+                         else "PAPER") if result else ("UNSAFE" if unsafe_result else "VIRTUAL")
+            self.journal.event("MT54:SIG:"+market+":"+code+":"+frame+":"+barid,
+                market,assigned,frame,code,signal_mode,
+                disposition,price=q["ask"],rsi20_live=rsi,
+                payload={"selected_frame":frame,"score":self.scores.get(market),
+                         "execution_mode":signal_mode})
+            if not result and not unsafe_result:
+                # Only a confirmed unfilled entry is a counterfactual trade.
+                # Unknown broker outcomes must never become invented VIRTUALs.
                 try:
-                    v=mt.TrendPosition(
-                        market,"trend",frame,code,at,verified["ask"],1,barid)
-                    vkey=(market,"trend",frame,code,barid)
-                    self._virtual[vkey]=v
-                    self.journal.save_virtual(
-                        json.dumps(vkey,ensure_ascii=False),v)
-                except (ValueError,TypeError):
-                    pass
+                    v=mt.TrendPosition(market,assigned,frame,code,now,q["ask"],1,barid)
+                    key=(market,assigned,frame,code,barid)
+                    self._virtual[key]=v
+                    self.journal.save_virtual(json.dumps(key,ensure_ascii=False),v)
+                except (ValueError,TypeError):pass
 
     def _process_holds(self,market,now):
         for key,p in list(self._positions.items()):
