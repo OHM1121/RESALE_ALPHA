@@ -423,7 +423,7 @@ def _process_v067_exits(self,book,now):
     began=time.monotonic()
     with self.lock,self.connect() as c:
         _table(c)
-        rows=c.execute("""SELECT p.id FROM positions p
+        rows=c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
             JOIN ma_v067_positions s ON s.position_id=p.id
             WHERE p.market=? AND p.status='OPEN' ORDER BY p.id""",
             (symbol,)).fetchall()
@@ -435,7 +435,10 @@ def _process_v067_exits(self,book,now):
                 # BOTH profit targets; consume at most two confirmed stages.
                 # Protect against a slow SQLite operation aging that book.
                 if depth<=0 or time.monotonic()-began>2.5:break
-                p=c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
+                # First stage uses the already-authoritative initial SQL
+                # row. Only after the first confirmed SELL do we re-read
+                # the now-changed position and sidecar for stage 2.
+                p=item if attempt==0 else c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
                     JOIN ma_v067_positions s ON s.position_id=p.id
                     WHERE p.id=? AND p.market=? AND p.status='OPEN' AND p.qty!='0'""",
                     (item['id'],symbol)).fetchone()
