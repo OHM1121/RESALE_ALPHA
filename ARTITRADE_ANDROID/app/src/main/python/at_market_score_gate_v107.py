@@ -7,9 +7,22 @@ All previously owned positions and all SELL methods remain unchanged.
 from __future__ import annotations
 import math
 from pathlib import Path
+from execution_entry_plans_v107 import record_plan
 
 _INSTALLED=False
 _NEGATIVE_ONLY="MARKET_SCORE_NEGATIVE_BLOCK_NEW_REFERENCE_BAR_BUY"
+
+def _observe(root,market,strategy,frame,symbol,reference,reason,
+             candidate_target=None,extra=None):
+    if root is None or not frame or not symbol or not reference:return
+    try:
+        record_plan(root,market,strategy,frame,symbol,reference,
+                    reason=reason,candidate_target=candidate_target,
+                    phase="PREBUY_NATIVE_VERIFIED_ATTEMPT",
+                    extra=extra)
+    except Exception:
+        # Audit failure never places, alters, or denies an order.
+        pass
 
 def score_evidence(root,market):
     if market not in ("stock","coin"):raise ValueError("unknown market")
@@ -46,6 +59,16 @@ def install():
         root=getattr(self.store,"root",None)
         if root is not None and score_evidence(root,"stock")["negative"]:
             return None
+        try:
+            pending=self._pending(c,tf)
+            if pending is not None:
+                raw=dict(pending)
+                _observe(root,"stock","at",tf,raw.get("code"),
+                         raw.get("signal_id") or str(at),
+                         "ORIGINAL_STOCK_AT_LEGACY_SIGNAL_PENDING",
+                         extra={"original_pending":raw,"no_fill_inferred":True})
+        except Exception:
+            pass
         return native_legacy_stock(self,c,tf,minute,at)
 
     def d19_stock(self,c,row,when,venue,observed_trade_price,
@@ -53,6 +76,16 @@ def install():
         root=getattr(self.store,"root",None)
         if root is not None and score_evidence(root,"stock")["negative"]:
             return False,_NEGATIVE_ONLY
+        try:
+            data=dict(row)
+            _observe(root,"stock","at",data.get("tf"),data.get("code"),
+                     data.get("signal_id") or data.get("ref_ts") or str(when),
+                     "ORIGINAL_D19_AT_REFERENCE_BAR_VERIFIED_TRADE",
+                     candidate_target=data.get("target"),
+                     extra={"candidate":{str(k):str(v)[:200] for k,v in data.items()},
+                            "verified_venue":str(venue),"no_fill_inferred":True})
+        except Exception:
+            pass
         return native_d19_stock(self,c,row,when,venue,
                                 observed_trade_price,observed_trade_qty)
 
@@ -69,6 +102,25 @@ def install():
                 root=path.parent.parent.parent
                 if score_evidence(root,"coin")["negative"]:
                     return 0
+                try:
+                    data=dict(order)
+                    candidate=c.execute(
+                        "SELECT * FROM candidates WHERE tf=? AND market=? AND ref_at=? LIMIT 1",
+                        (data.get("tf"),data.get("market"),
+                         data.get("ref_at"))).fetchone()
+                    facts=dict(candidate) if candidate is not None else {}
+                    _observe(root,"coin","general",data.get("tf"),
+                             data.get("market"),data.get("ref_at") or str(seen),
+                             str(facts.get("reason") or
+                                 "ORIGINAL_UPBIT_REFERENCE_BAR_PENDING_ORDER"),
+                             candidate_target=facts.get("target"),
+                             extra={"original_order":{str(k):str(v)[:200]
+                                                    for k,v in data.items()},
+                                    "candidate":{str(k):str(v)[:300]
+                                                 for k,v in facts.items()},
+                                    "no_fill_inferred":True})
+                except Exception:
+                    pass
         return native_coin_base(self,c,order,book,seen,amount_available)
 
     d_engine.PaperEngine._buy_if_touch=legacy_stock
