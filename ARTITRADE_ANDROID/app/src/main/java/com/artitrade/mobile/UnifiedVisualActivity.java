@@ -2779,6 +2779,26 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderHome(){
         Stats selected=stats(market,strategy);
+        if("stock".equals(market)&&"close".equals(strategy)){
+            JSONObject diagnostic=ledger(market,strategy).optJSONObject("cw_runtime_diagnostic_v087");
+            if(diagnostic!=null){
+                String last=diagnostic.optString("last_scan","미기록");
+                int requested=diagnostic.optInt("requested_shared_codes",0);
+                int subscribed=diagnostic.optInt("subscribed_shared_codes",0);
+                String reason=diagnostic.optString("last_error","").trim();
+                String description="종가베팅 원본 스캔 "+last+
+                    " · 공통시세 구독 "+subscribed+"/"+requested+
+                    " · "+diagnostic.optString("status","확인 중");
+                if(!reason.isEmpty())description+=" · 오류: "+reason;
+                if(diagnostic.has("not_subscribed_count")
+                    && diagnostic.optInt("not_subscribed_count",0)>0)
+                    description+=" · 시세 미구독 "+diagnostic.optInt("not_subscribed_count",0)+"종목";
+                TextView note=text(description,11);
+                note.setTextColor(PremiumUi.MUTED);
+                note.setMaxLines(3);
+                content.addView(note,new LinearLayout.LayoutParams(-1,-2));
+            }
+        }
         if("stock".equals(market)&&"gmo".equals(strategy)&&
            selected.positions.length()+selected.executions.length()+selected.research.length()==0){
             JSONObject diag=ledger(market,strategy).optJSONObject("load_diagnostic");
