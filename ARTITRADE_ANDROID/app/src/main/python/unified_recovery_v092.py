@@ -92,10 +92,14 @@ def plan_scenario(*, process_running=True, market_open=True,
         return end("POLICY_MISSING","원본 정책/목표 기준 확인 불가",
                    ("VERIFY_ORIGINAL_BUY_EXECUTION",
                     "PROVEN_POLICY_MIGRATION_ONLY"))
-    if not exit_proof:
+    if has_holding and not exit_proof:
         return end("NO_FRESH_EXIT_EVIDENCE","현재 유효한 매도 시세·호가 증거 없음",
                    ("PRIORITIZE_HELD_LIVE_QUOTE","REST_ONLY_FOR_CANDLES",
                     "DO_NOT_FILL_FROM_LAST_DISPLAY_PRICE"))
+    if not has_holding and not entry_proof:
+        return end("WAIT_ENTRY_SOURCE","신규 진입을 증명할 실시간 자료 확인 전",
+                   ("RESTORE_COMPLETED_REFERENCE_BARS","WAIT_NEW_ORIGINAL_ENTRY_SIGNAL"),
+                   sell="NO_HOLDING")
     # Held risk management must not be disabled only because a new-entry
     # reference frame or 1m bar is missing. Native strategies requiring
     # indicator bars may still wait for those specific signal bars.
@@ -212,6 +216,8 @@ class RecoveryObserver:
         self._last_states={}
         self._last_report={}
         self._stopped=False
+        self._last_ws={"stock":None,"coin":None}
+        self._return_until={"stock":0.0,"coin":0.0}
 
     def stock_tick(self,tick):
         if not isinstance(tick,(tuple,list)) or len(tick)<9:return
@@ -312,9 +318,7 @@ class RecoveryObserver:
             subscribed=subscribed,exit_proof=exit_fresh,
             entry_proof=entry_fresh,reference_ready=reference_ready,
             minute_ready=reference_ready,has_holding=bool(hold),
-            recovering=bool(self.gap_seconds is not None and
-                            self.gap_seconds>=30 and now_mono-
-                            getattr(self,"_first_recovered_at",now_mono)<30),
+            recovering=now_mono<=self._return_until.get(market,0.0),
         )
         status.update(strategy=strategy,market=market,label=LABELS[market+"/"+strategy],
                       held_symbols=len(hold),live_quote_observed=any_fresh,
@@ -331,6 +335,15 @@ class RecoveryObserver:
         src=original.get("stock") or {}
         stock_connected=bool(src.get("connected",False) and stock is not None)
         coin_connected=bool(coin and getattr(coin,"_ws_connected",False))
+        # A live socket transition, not a remembered display price, arms
+        # bounded 45s recovery for the next genuine per-symbol quote.
+        now_mono=time.monotonic()
+        for which,online in (("stock",stock_connected),("coin",coin_connected)):
+            before=self._last_ws.get(which)
+            if online and (before is False or (before is None and
+                    self.gap_seconds is not None and self.gap_seconds>=30)):
+                self._return_until[which]=now_mono+45
+            self._last_ws[which]=online
         stock_ref=False;coin_ref=False
         try:stock_ref=bool(stock.preload_gate.snapshot().get("ready"))
         except Exception:pass
