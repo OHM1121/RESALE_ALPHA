@@ -22,6 +22,10 @@ on:
       - ARTITRADE_ANDROID/app/src/main/python/fresh_epoch_reset_v106.py
       - ARTITRADE_ANDROID/ui_tests/test_v108_mandatory_first_epoch.py
       - ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py
+      - ARTITRADE_ANDROID/app/src/main/python/stock_manual_v086.py
+      - ARTITRADE_ANDROID/app/src/main/python/legacy_ma_exit_watch_v094.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LegacyLedgerMigration.java
+      - ARTITRADE_ANDROID/ui_tests/test_v106_fresh_paper_epoch.py
       - ARTITRADE_ANDROID/ui_tests/test_v108_native_ma_trend_entry_paths.py
   workflow_dispatch:
 permissions:
