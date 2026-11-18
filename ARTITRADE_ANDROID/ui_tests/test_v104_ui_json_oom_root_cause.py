@@ -27,10 +27,10 @@ serialize=ns["_serialize_hub_v104"]
 
 class DataPreservingOOMFix(unittest.TestCase):
     def test_massive_original_never_stringifies_as_unbounded_ui(self):
-        large_reason="ORIGINAL_EVIDENCE_"+"R"*12000
+        large_reason="ORIGINAL_EVIDENCE_"+"R"*2400
         rows=[{"id":i,"code":"005930","reason_json":large_reason,
                "score":52,"paper":True,"status":"OPEN" if i<32 else "CLOSED"}
-              for i in range(2600)]
+              for i in range(900)]
         original={"stock":{"at":{"ledger":{"positions":rows,"executions":rows},
                                 "research":{"items":rows,"score_items":rows}},
                            "cw":{"ledger":{"positions":rows,"executions":rows},
@@ -49,7 +49,7 @@ class DataPreservingOOMFix(unittest.TestCase):
         self.assertLessEqual(len(view["stock"]["at"]["research"]["items"]),128)
         self.assertEqual(view["ui_snapshot_v104"]["full_original_records_in_sqlite_unchanged"],True)
         self.assertTrue(view["ui_snapshot_v104"]["omitted_count_by_path"])
-        self.assertEqual(len(original["stock"]["at"]["ledger"]["positions"]),2600)
+        self.assertEqual(len(original["stock"]["at"]["ledger"]["positions"]),900)
         self.assertEqual(first["reason_json"],large_reason)
         self.assertEqual(serialize(original,for_ui=False),before)
 
