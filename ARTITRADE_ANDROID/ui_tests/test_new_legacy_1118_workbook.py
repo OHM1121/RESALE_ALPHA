@@ -127,6 +127,69 @@ class WorkbookNovember18(unittest.TestCase):
                              NOW+dt.timedelta(hours=23))["status"],"WATCHING")
             self.assertEqual(_mark_rsi_watch(holder,"coin",k,row,31,
                              NOW+dt.timedelta(hours=24))["status"],"EXPIRED")
+    def test_stock_and_coin_buy_sidecars_include_native_verified_sell_intents(self):
+        import sqlite3
+        import json
+        import reference_1118_runtime as ref
+        with sqlite3.connect(":memory:") as c:
+            c.row_factory=sqlite3.Row
+            stock=dict(id=7,tf="30m",entry_price=100,
+                entry_qty=100,qty=100,ref_low=90,ref_high=95,code="005930")
+            self.assertTrue(ref._mark(c,stock,"stock"))
+            x=ref._read(c,7)
+            self.assertEqual(x["sell_intents"][0]["quantity"],30.)
+            self.assertEqual(x["sell_intents"][1]["quantity"],35.)
+            self.assertEqual(x["stop"],85.)
+            self.assertTrue(all(x["state"]=="ARMED" for x in x["sell_intents"]))
+            c.execute("CREATE TABLE candidates(tf TEXT,market TEXT,ref_at TEXT,features TEXT)")
+            c.execute("INSERT INTO candidates VALUES(?,?,?,?)",
+                      ("60m","KRW-TST","2026-11-18T11:00",
+                       json.dumps({"low":90,"high":95})))
+            coin=dict(id=11,tf="60m",market="KRW-TST",ref_at="2026-11-18T11:00",
+                      entry=100,qty0="200",qty="200",
+                      hold_until="2026-12-01T11:00:00+09:00")
+            self.assertTrue(ref._mark(c,coin,"coin"))
+            y=ref._read(c,11)
+            self.assertEqual(y["sell_intents"][0]["quantity"],60.)
+            self.assertEqual(y["sell_intents"][1]["quantity"],70.)
+            self.assertEqual(y["deadline"],coin["hold_until"])
+            self.assertEqual(y["stop"],85.)
+    def test_stock_exit_refuses_to_advance_without_real_sqlite_sell_execution(self):
+        import sqlite3
+        import reference_1118_runtime as ref
+        with sqlite3.connect(":memory:") as c:
+            c.row_factory=sqlite3.Row
+            c.execute("""CREATE TABLE executions(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,position_id INTEGER,
+                side TEXT,event_key TEXT,qty INTEGER,price INTEGER)""")
+            row=dict(id=71,code="005930",tf="5m",
+                     entry_ts="20261118090000",entry_price=100,
+                     entry_qty=100,qty=100,ref_low=90,ref_high=95)
+            self.assertTrue(ref._mark(c,row,"stock"))
+            class FakeStore:
+                root="unused" # score reader would normally have native root
+            class Owner:
+                store=FakeStore()
+                def _sell(self,conn,p,at,qty,price,reason,event_key=None):
+                    conn.execute("INSERT INTO executions(position_id,side,event_key,qty,price) VALUES(?,?,?,?,?)",
+                                 (p["id"],"SELL",event_key,qty,price))
+                    new=dict(p);new["qty"]-=qty
+                    return new
+            owner=Owner()
+            origin=ref._market_score
+            ref._market_score=lambda *a:10.
+            try:
+                executed=ref._act(owner,c,row,{"close":102}, "20261118090001")
+                self.assertEqual(executed["qty"],70)
+                t=ref._read(c,71)
+                self.assertEqual(t["stage"],1)
+                self.assertEqual(t["stage1_filled"],30)
+                executed=ref._act(owner,c,executed,{"close":105}, "20261118090002")
+                self.assertEqual(executed["qty"],35)
+                self.assertEqual(ref._read(c,71)["stage"],2)
+            finally:
+                ref._market_score=origin
+
     def test_workbook_runtime_activation_after_old_policy(self):
         src=(Path(__file__).resolve().parents[1]/
              "app/src/main/python/android_runtime_v078.py").read_text()
