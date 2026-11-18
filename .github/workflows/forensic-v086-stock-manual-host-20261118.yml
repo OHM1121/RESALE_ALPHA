@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: '6c00c87ee2f431b15b3029144539173cc215374f'
+          ref: 'c811bbd404eb0393333204dfdb28180633d758b3'
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
       - run: python3 ARTITRADE_ANDROID/ui_tests/forensic_v086_stock_manual_core.py
