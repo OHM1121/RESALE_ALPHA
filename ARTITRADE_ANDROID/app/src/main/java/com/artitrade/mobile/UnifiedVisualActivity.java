@@ -2844,6 +2844,13 @@ public final class UnifiedVisualActivity extends Activity {
         }
         java.util.List<IntegratedHolding> held=integratedHoldings();
         boolean complete=knownR==totalScopes&&knownU==totalScopes;
+        boolean anyError=false;
+        for(String marketName:new String[]{"stock","coin"}){
+            for(String[] sourceDef:strategyList(marketName)){
+                if(stats(marketName,sourceDef[0]).sourceError)anyError=true;
+            }
+        }
+        String incompleteText=anyError?"원장 조회 오류":"원장 확인 중";
         LinearLayout hero=card();
         hero.setPadding(dp(15),dp(10),dp(15),dp(10));
         TextView info=text("전략 8개 · 주식 5 / 코인 3 · 보유 "+held.size()+"종목",12);
@@ -2852,7 +2859,7 @@ public final class UnifiedVisualActivity extends Activity {
         totalTitle.setTextColor(PremiumUi.MUTED);
         totalTitle.setPadding(0,dp(6),0,dp(2));hero.addView(totalTitle);
         double aggregate=realized+unrealized;
-        TextView total=text(complete?WonFormat.signed(aggregate):"일부 원장 미수신",27);
+        TextView total=text(complete?WonFormat.signed(aggregate):incompleteText,27);
         total.setTypeface(null,Typeface.BOLD);
         autoSingle(total,16,27);
         if(complete)paintProfit(total,aggregate);
@@ -2899,7 +2906,7 @@ public final class UnifiedVisualActivity extends Activity {
                 tile.addView(heading);
                 LinearLayout figures=new LinearLayout(this);
                 figures.setGravity(Gravity.CENTER_VERTICAL);
-                TextView current=text(finite(v.total)?WonFormat.signed(v.total):"손익 미수신",20);
+                TextView current=text(finite(v.total)?WonFormat.signed(v.total):(v.sourceError?"원장 조회 오류":"원장 확인 중"),20);
                 current.setTypeface(null,Typeface.BOLD);
                 autoSingle(current,12,20);
                 if(finite(v.total))paintProfit(current,v.total);
@@ -2915,7 +2922,7 @@ public final class UnifiedVisualActivity extends Activity {
                     "실현 "+(finite(v.realized)?WonFormat.signed(v.realized):"—"));
                 tile.addView(chart,new LinearLayout.LayoutParams(-1,dp(108)));
                 tile.setContentDescription(scopeTitle(m,s)+" · 손익 "+
-                    (finite(v.total)?WonFormat.signed(v.total):"미수신")+
+                    (finite(v.total)?WonFormat.signed(v.total):(v.sourceError?"원장 조회 오류":"원장 확인 중"))+
                     " · 탭하면 해당 전략 열기");
                 final String chosenMarket=m,chosenStrategy=s;
                 tile.setOnClickListener(view->{
