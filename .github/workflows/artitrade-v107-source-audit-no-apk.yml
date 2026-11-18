@@ -44,5 +44,32 @@ jobs:
               hits=[(i+1,s.strip()[:210]) for i,s in enumerate(lines) if re.search(r'(market.score|market_score|_buy_if_touch|_buy_limit_depth|buy_reason|buy_target|first_target|INSERT INTO (positions|executions)|def .*(buy|entry|target))',s,re.I)]
               for line,s in hits[:85]:print(" HIT",line,s)
           PY
+      - name: Inspect original return contracts and score guard integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(data))
+          cases={'d_engine.py':[('PaperEngine','_buy_if_touch')],
+                 'd_v19_portfolio.py':[('D19PaperEngine','_buy_limit_depth')],
+                 'd_upbit.py':[('CoinLedger','_buy')]}
+          for file,members in cases.items():
+              source=z.read(file).decode('utf8').splitlines()
+              tree=ast.parse('\n'.join(source))
+              for cls,method in members:
+                  for n in ast.walk(tree):
+                      if isinstance(n,ast.ClassDef) and n.name==cls:
+                          for fn in n.body:
+                              if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)) and fn.name==method:
+                                  print('CONTRACT',file,cls,method,fn.lineno,fn.end_lineno)
+                                  for sub in ast.walk(fn):
+                                      if isinstance(sub,ast.Return):
+                                          print('RETURN',sub.lineno,source[sub.lineno-1].strip()[:250])
+                                  for i in range(fn.lineno-1,min(fn.end_lineno,fn.lineno+40)):
+                                      print('SOURCE',i+1,source[i][:210])
+          PY
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
