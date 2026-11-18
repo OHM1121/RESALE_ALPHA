@@ -227,6 +227,27 @@ public final class UnifiedVisualActivity extends Activity {
     private String pendingCombinedResearchScope;
     private String pendingScopedErrorScope;
     private static final long REFRESH_MS=3500L;
+    private static final long FAST_QUOTE_REPAINT_MS=900L;
+    private static final String FAST_QUOTE_PREF="artitrade_fast_quote_v089";
+    private static final class QuoteBinding {
+        final String market,code;
+        final JSONObject row;
+        final TextView value,profit;
+        final boolean integrated;
+        QuoteBinding(String market,String code,JSONObject row,TextView value,
+                     TextView profit,boolean integrated){
+            this.market=market;this.code=code;this.row=row;
+            this.value=value;this.profit=profit;this.integrated=integrated;
+        }
+    }
+    private final java.util.List<QuoteBinding> visibleQuotes=new java.util.ArrayList<>();
+    private final Runnable fastQuoteRepaint=new Runnable(){
+        @Override public void run(){
+            if(uiDestroyed)return;
+            paintCurrentQuoteValues();
+            main.postDelayed(this,FAST_QUOTE_REPAINT_MS);
+        }
+    };
 
     private final Runnable periodic=new Runnable(){
         @Override public void run(){
@@ -2324,7 +2345,9 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void render(){
-        if(content==null)return;content.removeAllViews();updateHeader();
+        if(content==null)return;
+        visibleQuotes.clear(); // detach old price TextViews after a render or turn
+        content.removeAllViews();updateHeader();
         if(integratedMode){
             if("positions".equals(page))renderIntegratedPositions();
             else renderIntegratedHome();
@@ -2802,6 +2825,7 @@ public final class UnifiedVisualActivity extends Activity {
                 (finite(rate)?" ("+signedPct(rate)+")":""),14);
             if(finite(pnl))paintProfit(result,pnl);
             tile.addView(result);
+            bindFastQuoteView(holding.scopeMarket,p,prices,result,true);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
             lp.setMargins(0,0,0,dp(6));
             content.addView(tile,lp);
@@ -3279,6 +3303,101 @@ public final class UnifiedVisualActivity extends Activity {
             return "마지막 저장 평가가 · 실시간 시세 아님 · 키움 0B/REST 갱신 중";
         return "키움 개별 종목 0B·공식 현재가 조회 대기 · 원장 가격 별도 보존";
     }
+    private void bindFastQuoteView(String market,JSONObject row,TextView value,
+                                   TextView profit,boolean integrated){
+        if(row==null||value==null)return;
+        String code=row.optString("code",row.optString("symbol","")).trim();
+        if("stock".equals(market)&&code.startsWith("A")&&code.length()==7)
+            code=code.substring(1);
+        if("stock".equals(market)&&!code.matches("[0-9]{6}"))return;
+        if("coin".equals(market)&&!code.startsWith("KRW-"))return;
+        visibleQuotes.add(new QuoteBinding(market,code,row,value,profit,integrated));
+    }
+
+    /** Paint already received broker/WS observations without rebuilding the
+     * large strategy/SQLite dashboard or requesting any exchange REST data.
+     * This runs only for visible position cards and never touches an order.
+     */
+    private void paintCurrentQuoteValues(){
+        if(!preloadScreenReady||visibleQuotes.isEmpty())return;
+        try{
+            android.content.SharedPreferences pref=getSharedPreferences(
+                FAST_QUOTE_PREF,MODE_PRIVATE);
+            long published=pref.getLong("updated_at_ms",0L);
+            long now=System.currentTimeMillis();
+            if(published<=0L||now-published>18_000L||published>now+1500L)
+                return; // disconnected publisher: never paint old data as LIVE
+            JSONObject plane=new JSONObject(pref.getString("snapshot","{}"));
+            if(!"ARTITRADE_FAST_QUOTE_V089".equals(plane.optString("schema","")))
+                return;
+            for(QuoteBinding item:visibleQuotes){
+                JSONObject section=plane.optJSONObject(item.market);
+                JSONObject quotes=section==null?null:section.optJSONObject("quotes");
+                JSONObject q=quotes==null?null:quotes.optJSONObject(item.code);
+                if(q==null)continue;
+                double price=usefulNumber(q,"price");
+                if(!finite(price)||price<=0)continue;
+                String state=q.optString("status","");
+                String src=q.optString("source","");
+                long seen=q.optLong("received_at_ms",0L);
+                long expiry=q.optLong("expires_ms",0L);
+                boolean verified="stock".equals(item.market)
+                    ?("FRESH".equals(state)&&expiry>=now)
+                    :("WS_FRESH".equals(state)&&seen>0L&&
+                        now>=seen&&now-seen<=8000L);
+                boolean officialRest="stock".equals(item.market)
+                    &&"REST_FRESH".equals(state);
+                String kind=verified?"실시간":officialRest?"REST":"마지막 수신";
+                String clock=seen>0L&&seen<=now?
+                    Long.toString((now-seen)/1000L)+"초 전":"시각 미확인";
+                try{
+                    if("stock".equals(item.market)){
+                        item.row.put("stock_quote_checked_v066",true);
+                        item.row.put("stock_quote_status",state);
+                        item.row.put("stock_quote_display_price",price);
+                        item.row.put("stock_quote_expires_ms",expiry);
+                        item.row.put("stock_quote_source",src);
+                    }else{
+                        // UI-only JSONObject, NEVER original SQLite position.
+                        item.row.put("last_price",price);
+                        item.row.put("current_price",price);
+                    }
+                }catch(org.json.JSONException ignored){}
+                if(item.integrated){
+                    item.value.setText("매수가 "+formatMaybePrice(item.row,
+                        "entry_price","entry","avg_buy_price")+
+                        "    "+kind+" "+WonFormat.price(price)+
+                        "    수량 "+formatMaybeNumber(item.row,
+                        "qty","quantity","holding_qty"));
+                }else{
+                    item.value.setText(WonFormat.price(price));
+                    View parent=(View)item.value.getParent();
+                    if(parent instanceof LinearLayout&&
+                        ((LinearLayout)parent).getChildCount()>0){
+                        View key=((LinearLayout)parent).getChildAt(0);
+                        if(key instanceof TextView)
+                            ((TextView)key).setText(verified?"실시간 현재가":
+                                officialRest?"REST 현재가":"최근 수신가");
+                    }
+                }
+                item.value.setContentDescription(item.code+" "+kind+" 가격 "+
+                    WonFormat.price(price)+" · "+src+" · "+clock+
+                    " · 표시 전용 · 매매 체결 근거 아님");
+                if(item.profit!=null){
+                    double pnl=tradePnL(item.row,"positions");
+                    double rate=tradeReturnPct(item.row,"positions",pnl);
+                    item.profit.setText((item.integrated?"평가손익 ":"")+
+                        (finite(pnl)?WonFormat.signed(pnl):"—")+
+                        (finite(rate)?" ("+signedPct(rate)+")":""));
+                    if(finite(pnl))paintProfit(item.profit,pnl);
+                }
+            }
+        }catch(Exception e){
+            // A malformed view snapshot must not crash the broker or launcher.
+            // The immutable original ledger remains displayed until next tick.
+        }
+    }
+
     private String displayPositionMark(JSONObject r){
         double n=positionMark(r);
         return finite(n)&&n>0?WonFormat.price(n):"가격 조회 중";
@@ -3350,7 +3469,7 @@ public final class UnifiedVisualActivity extends Activity {
     /** Two-level cards: a 10sp key followed by a 16sp value, not dense
      * label/value sentences spread across the entire panel.
      */
-    private void tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
+    private TextView tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
         LinearLayout tile=new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(9),dp(5),dp(7),dp(5));
@@ -3371,6 +3490,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(54),1);
         if(row.getChildCount()>0)cell.setMargins(dp(5),0,0,0);
         row.addView(tile,cell);
+        return amount;
     }
     private TextView tradeStage(String value,int backgroundColor,int foreground){
         TextView chip=text(value,16);
@@ -3690,8 +3810,9 @@ public final class UnifiedVisualActivity extends Activity {
                 String quoteStatus=r.optString("stock_quote_status","");
                 String quoteLabel=isStockPosition(r)&&"LAST_LEDGER".equals(quoteStatus)
                     ?"저장 평가가":"현재가";
-                tradeMetricTile(figures,quoteLabel,
+                TextView fastPrice=tradeMetricTile(figures,quoteLabel,
                     finite(current)&&current>0?WonFormat.price(current):"가격 조회 중",true);
+                bindFastQuoteView(market,r,fastPrice,net,false);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
                 tradeMetricTile(figures,"1차 목표",formatMaybePrice(r,"first_target","target","target_price"),false);
             }else if("pending".equals(kind)){
@@ -7427,6 +7548,8 @@ public final class UnifiedVisualActivity extends Activity {
         ensureBackgroundServiceOnResume();
         main.removeCallbacks(periodic);
         main.postDelayed(periodic,REFRESH_MS);
+        main.removeCallbacks(fastQuoteRepaint);
+        main.postDelayed(fastQuoteRepaint,120L);
         if(drawerOverlay!=null){
             main.removeCallbacks(drawerProgressTicker);
             main.post(drawerProgressTicker);
@@ -7436,6 +7559,7 @@ public final class UnifiedVisualActivity extends Activity {
         markUiVisible(false);
         persistNavigation();
         main.removeCallbacks(periodic);
+        main.removeCallbacks(fastQuoteRepaint);
         main.removeCallbacks(drawerProgressTicker);
         super.onPause();
     }
