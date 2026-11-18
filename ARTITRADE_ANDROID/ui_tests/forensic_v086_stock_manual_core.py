@@ -16,6 +16,9 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
                     '_new_tick','_desired_subscriptions','_register_subscriptions',
                     '_run_ws','_refresh_universe_if_due','_pinned_stocks'},
       'at_close_bridge.py':None,
+      'at_close_engine.py':None,
+      'at_close_store.py':None,
+      'at_close_runner.py':None,
       'd_close.py':None,
       'close_betting_engine.py':None,
       'cw_runtime.py':None,
@@ -29,14 +32,14 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
         src=z.read(file).decode('utf-8')
         lines=src.splitlines()
         print('SOURCE_FILE',file,len(lines),flush=True)
-        if file in ('at_close_bridge.py','d_close.py','close_betting_engine.py','cw_runtime.py'):
-            for n,line in enumerate(lines[:260],1):print('CLOSEFULL',file,n,line,flush=True)
+        if file in ('at_close_engine.py','at_close_store.py','at_close_runner.py'):
+            for n,line in enumerate(lines[:125],1):print('CLOSEFULL',file,n,line,flush=True)
         tree=ast.parse(src)
         for node in ast.walk(tree):
             if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
                 parent='';
                 if methods is None:
-                    if any(q in node.name.lower() for q in ('sell','close','exit','manual','pinned','broker','stock')):
+                    if any(q in node.name.lower() for q in ('sell','close','exit','manual','pinned','broker','stock','fill','order','wallet','connect','persist','position','snapshot')):
                         pass
                     else:continue
                 elif node.name not in methods:continue
