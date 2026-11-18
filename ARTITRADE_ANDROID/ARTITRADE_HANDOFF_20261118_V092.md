@@ -230,3 +230,15 @@
 PR: https://github.com/OHM1121/RESALE_ALPHA/pull/48
 서명·빌드 검증: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44254864596 (최종 상태·릴리스 자산은 실제 확인 후 기재/보고).
 인수인계 시 이 절의 '필요한 자료 → 얻는 방법 → 확보 후 수행' 정책을 계속 유지할 것.
+
+
+### 11.1 검증된 APK 릴리스 및 ZIP 재추출 순서
+
+- 발행 리포트(성공): https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44254864596
+- 출시 ZIP95 테스트 APK: https://github.com/OHM1121/RESALE_ALPHA/releases/tag/ARTITRADE-v0.9.3-ZIP95-20261118
+- 직접 APK: https://github.com/OHM1121/RESALE_ALPHA/releases/download/ARTITRADE-v0.9.3-ZIP95-20261118/ARTITRADE_UNIFIED_v0.9.3_ZIP95_20261118.apk
+- APK 30,393,465바이트, SHA-256 59f53fcc613fa878038f76c138f9a30cf9267c78b8209a259fcf38219e00095b
+- 패키지 com.artitrade.unified.s21dex, versionCode 119, versionName 0.9.3-ZIP95-ANALYSIS-READY, 기존 원본 서명 SHA-256 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
+- 기존 v0.9.2와 같은 앱을 **삭제하지 않고 덮어 설치**. 앱에서 통합 오류이력 추출 → 폴더 선택 → 생성된 모든 95MB 이하 PART ZIP + 작은 ANALYSIS_READY.json 가운데 JSON부터 진단에 이용.
+- 검증: GitHub Actions 전체 완료, 새 ZIP95/독립 JSON, 기존 손상 없는 SQLite 분할 복원 및 원본 전략 67개 단위시험 통과, 서명과 APK 패키지 검증 통과. 정상 휴대전화의 실제 PAPER 거래 체결을 시험한 것으로 오인 금지.
+- **ZIP 원본 분석에 필요한 다음 구체 행동:** 새 버전 APK에서 통합 오류이력을 다시 추출하고 작은 ANALYSIS_READY.json을 먼저 분석에 제공. 원본 BUY/SELL 시간대는 SHA 검증된 모든 PART ZIP을 사용해 조사. 외부 ChatGPT ClientError 발생 시에도 별도 JSON 텍스트 내용으로 초기 장애 진단 후 ZIP 분석 환경을 복구할 것.
