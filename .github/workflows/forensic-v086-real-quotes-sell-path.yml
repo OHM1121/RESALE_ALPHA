@@ -1,0 +1,22 @@
+name: ARTITRADE v086 forensic original EXE vs Android real-time exit
+on:
+  push:
+    branches: [fix-artitrade-v086-live-quotes-exits-export-20261118]
+    paths:
+      - '.github/workflows/forensic-v086-real-quotes-sell-path.yml'
+      - 'ARTITRADE_ANDROID/ui_tests/forensic_v086_core.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Unpack unmodified EXE core and show precise market-data / exit dispatcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ARTITRADE_ANDROID/ui_tests/forensic_v086_core.py
