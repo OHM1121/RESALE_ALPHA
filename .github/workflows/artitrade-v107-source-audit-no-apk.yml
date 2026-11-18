@@ -4,6 +4,11 @@ on:
     branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
     paths:
       - .github/workflows/artitrade-v107-source-audit-no-apk.yml
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_closed_entry_v107.py
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py
+      - ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py
+      - ARTITRADE_ANDROID/ui_tests/test_v107_closed_rsi_and_exports.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -71,5 +76,13 @@ jobs:
                                   for i in range(fn.lineno-1,min(fn.end_lineno,fn.lineno+40)):
                                       print('SOURCE',i+1,source[i][:210])
           PY
+      - name: Compile updated source without building Android APK
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/market_trend_closed_entry_v107.py ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py
+      - name: Run v107 completed RSI and lossless ZIP tests
+        shell: bash
+        run: |
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v107_closed_rsi_and_exports.py' -v
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
