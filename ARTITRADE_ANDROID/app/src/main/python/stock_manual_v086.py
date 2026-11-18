@@ -366,9 +366,16 @@ def manual_stock_trend(rt,request):
     if Decimal(str(pos.qty))!=Decimal(str(request['expected_qty'])):
         raise ValueError('STOCK_TREND_QTY_CHANGED_RECONFIRM')
     book=verified_stock_bid(rt,request['code'])
-    sold,result=co.standalone_wallet.sell(pos,book['bid'],dt.datetime.now(KST),
-        reason,bid_size=book['bid_qty'],manual_fraction=float(_pct(request)/100),
-        verified_manual_bid_qty=book['bid_qty'])
+    now=dt.datetime.now(KST)
+    fraction=float(_pct(request)/Decimal(100))
+    target=int(pos.qty) if fraction>=.999 else max(1,int(round(float(pos.qty)*fraction)))
+    allocation=book['depth'].available_sell(request['code'],'KRX',now,book['bid'],target)
+    if allocation<=0 or not book['depth'].reserve_sell(
+            request['code'],'KRX',now,book['bid'],allocation):
+        raise ValueError('STOCK_TREND_VERIFIED_BID_DEPTH_MISSING')
+    sold,result=co.standalone_wallet.sell(pos,book['bid'],now,
+        reason,bid_size=allocation,manual_fraction=fraction,
+        verified_manual_bid_qty=allocation)
     if not sold:raise ValueError('STOCK_TREND_MANUAL_SELL_'+str(result))
     with co.standalone_wallet._connect('stock') as c:
         proof=c.execute("""SELECT qty,price FROM executions WHERE position_id=?
