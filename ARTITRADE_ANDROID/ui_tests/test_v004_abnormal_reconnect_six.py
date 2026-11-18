@@ -173,7 +173,18 @@ class SixAbnormal(unittest.TestCase):
         p,rows,plan=self._rows(w)
         self.assertLess(float(rows[-1]['qty']),plan['qty0']*.3)
         self.assertEqual(plan['stage'],0)
-        # New broker proof with a larger bid -> finish TP1 and perform TP2.
+        # Simulate the app stopping after a persisted partial TP execution.
+        # The next engine must read existing SQLite progress, not re-buy or
+        # replay already sold quantity.
+        before_count=len(rows)
+        before_qty=float(p['qty'])
+        w=CoinLedger(self.root/'coin'/'base')
+        recovered,existing,existing_plan=self._rows(w)
+        self.assertEqual(len(existing),before_count)
+        self.assertEqual(float(recovered['qty']),before_qty)
+        self.assertEqual(existing_plan['stage'],0)
+        self.assertEqual(len([e for e in existing if e['side']=='BUY']),1)
+        # New verified order book with deeper liquidity completes the rest.
         self._coin_book(w,4,130,131,bid_size=10000000)
         p,rows,plan=self._rows(w)
         self.assertEqual(plan['stage'],2)
