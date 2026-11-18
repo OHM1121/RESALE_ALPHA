@@ -200,6 +200,18 @@ final class StrategyRuntimeBridge {
         }
     }
 
+    /** UI-only market-score lane. Does not take the full SQLite snapshot lock
+     * or provide event scores to trading decisions or fill-history evidence. */
+    JSONObject scoreSnapshotV005(){
+        PyObject current=module;
+        if(current==null||!started)return new JSONObject();
+        try{return parse(current.callAttr("score_snapshot_v005"));}
+        catch(Throwable e){
+            crashes.add("market_score_view_v005",e);
+            return new JSONObject();
+        }
+    }
+
     /** Android connectivity hint. Original market subscriptions and prices
      * continue to require their own authenticated exchange evidence. */
     void reportNetworkV092(boolean validated){
