@@ -319,7 +319,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                  '원본 SHA 및 분할계획 계산')
         for record in all_records.values():
             check_cancel()
-            if bundle_kind=="errors":
+            if bundle_kind in ("errors","research"):
                 # Plan by real level-1 compressed bytes, not uncompressed DB
                 # page count. 300MB of compressed evidence must be ONE ZIP,
                 # regardless of how many GB its live WAL snapshots occupy.
@@ -349,10 +349,9 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                          '파트 '+str(i)+'/'+str(len(pieces)))
                 name=f"{prefix}_PART_{i:03d}_OF_{len(pieces):03d}.zip"
                 intermediate=stage/name
-                compression=(zipfile.ZIP_DEFLATED if bundle_kind=="errors"
-                             else zipfile.ZIP_STORED)
+                compression=zipfile.ZIP_DEFLATED
                 with zipfile.ZipFile(intermediate,"w",compression=compression,
-                                     compresslevel=1 if bundle_kind=="errors" else None,
+                                     compresslevel=1,
                                      allowZip64=True) as z:
                     z.writestr("analysis/bundle_index.json",encoded)
                     # Every ZIP has a no-dependency, read-only restorer.
