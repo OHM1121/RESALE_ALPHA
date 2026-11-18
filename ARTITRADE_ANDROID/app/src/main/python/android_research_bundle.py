@@ -70,23 +70,30 @@ def _put_plan_item(pieces,capacity,used,record,size):
 
 
 
-def _deflated_bytes(source: Path, offset: int, size: int) -> int:
-    """Measure actual raw DEFLATE bytes without holding sensitive DB in RAM."""
+def _deflated_bytes(source: Path, offset: int, size: int,
+                    check_cancel=None) -> int:
+    """Estimate exactly the same raw DEFLATE level as the final error ZIP.
+
+    Streaming and cancellable: large coin WAL snapshots are never materialized
+    in memory. The caller keeps a 4MB per-ZIP allowance for ZIP/index headers.
+    """
     import zlib
-    obj=zlib.compressobj(level=6,method=zlib.DEFLATED,wbits=-15)
+    obj=zlib.compressobj(level=1,method=zlib.DEFLATED,wbits=-15)
     total=0
     with source.open("rb") as stream:
         stream.seek(offset)
         remaining=size
         while remaining:
+            if check_cancel:check_cancel()
             data=stream.read(min(1024*1024,remaining))
             if not data:raise IOError("Snapshot changed during compression planning")
             remaining-=len(data)
             total+=len(obj.compress(data))
+    if check_cancel:check_cancel()
     return total+len(obj.flush())
 
 
-def _put_compressed_error_item(pieces,used,capacity,record,source,limit):
+def _put_compressed_error_item(pieces,used,capacity,record,source,limit,check_cancel=None):
     """Pack independently decodable ZIP pieces by measured compressed bytes.
 
     This avoids splitting a 2GB highly-compressible database into unnecessary
@@ -99,7 +106,7 @@ def _put_compressed_error_item(pieces,used,capacity,record,source,limit):
     index=0
     while offset<size or (size==0 and index==0):
         amount=min(raw_chunk,size-offset) if size else 0
-        predicted=_deflated_bytes(source,offset,amount)
+        predicted=_deflated_bytes(source,offset,amount,check_cancel)
         # Header+descriptor+entry central-dir overhead is covered by reserve.
         if predicted>capacity:
             raise ValueError("Compressed fragment exceeds part capacity")
@@ -172,8 +179,13 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
     if len(originals)>MAX_FILES:raise ValueError("Too many original research files")
     total=sum(p.stat().st_size for p in originals)
     if total>MAX_EXPANDED:raise ValueError("Research source exceeds 16GiB safety cap")
-    if shutil.disk_usage(folder).free < total*2+MIN_FREE:
-        raise OSError("Insufficient temporary storage for verified research export")
+    # All source snapshots must fit; DEFLATE output may occupy only a fraction
+    # of raw SQLite bytes. The old 2x-raw preflight falsely rejected large
+    # COIN/ALL exports even when their compressed archives fit on the phone.
+    # Actual ZIP streaming still fails closed if available space runs out.
+    if shutil.disk_usage(folder).free < total+MIN_FREE:
+        raise OSError("EXPORT_SNAPSHOT_SPACE: need at least "+
+                      str(total+MIN_FREE)+" free bytes for original snapshots")
 
     prefix=("ARTITRADE_"+scope.upper()+
             ("_ERROR_HISTORY_" if bundle_kind=="errors" else "_RESEARCH_")+
@@ -269,12 +281,16 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                  '원본 SHA 및 분할계획 계산')
         for record in all_records.values():
             check_cancel()
-            # The old error exporter DEFLATE-compressed EVERY source merely
-            # to predict ZIP sizes, then compressed a second time to write.
-            # Conservatively reserve uncompressed bytes instead. A DEFLATED
-            # ZIP can only be slightly larger (headers + max expansion already
-            # covered by the reserved per-part metadata margin).
-            _put_plan_item(pieces,capacity,used,record,record["size"])
+            if bundle_kind=="errors":
+                # Plan by real level-1 compressed bytes, not uncompressed DB
+                # page count. 300MB of compressed evidence must be ONE ZIP,
+                # regardless of how many GB its live WAL snapshots occupy.
+                # Cancellation is checked on each 1 MiB planning block.
+                _put_compressed_error_item(pieces,used,capacity,record,
+                                           staged/record["path"],max_part_bytes,
+                                           check_cancel)
+            else:
+                _put_plan_item(pieces,capacity,used,record,record["size"])
         for record in all_records.values():
             record.pop("serial",None)
         index={"schema":SCHEMA,"scope":scope,"bundle_kind":bundle_kind,
@@ -308,7 +324,8 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                                         fragment["size"],output,check_cancel)
                 size=intermediate.stat().st_size
                 if size>max_part_bytes:
-                    raise ValueError("Research part exceeds declared byte limit")
+                    raise ValueError("ERROR_ZIP_OVER_500MB: actual ZIP exceeded "+
+                                     str(max_part_bytes)+" bytes; no partial export")
                 with zipfile.ZipFile(intermediate,"r") as verify:
                     # testzip() blocks until a whole multi-hundred-MB ZIP is
                     # reread. Stream verification with per-MiB cancel checks.
