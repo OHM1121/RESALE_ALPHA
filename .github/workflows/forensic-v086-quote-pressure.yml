@@ -1,0 +1,67 @@
+name: Forensic v086 quote queue and API pressure (read-only)
+on:
+  push:
+    branches:
+      - audit-artitrade-v086-queue-api-20261118
+    paths:
+      - .github/workflows/forensic-v086-quote-pressure.yml
+permissions:
+  contents: read
+jobs:
+  inspect-archived-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect original 82-module source without credentials or writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast,base64,io,re,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              assert z.testzip() is None
+              names=z.namelist()
+              print('ARCHIVE_MODULE_COUNT',len(names), flush=True)
+              core=[n for n in names if n.endswith('.py')]
+              print('MODULES',','.join(core),flush=True)
+              focused=('d_live.py','d_upbit.py','d_v19_portfolio.py','android_live_bridge.py')
+              regex=re.compile(r'\b(?:asyncio\.Queue|queue\.Queue|put_nowait|get_nowait|_new_tick|_enqueue_ws_event|_consume|_reader|_dispatch|_ws\b|_last_ws|_desired_subscriptions|_pinned_stocks|candidate_forward|target_hit|_forward|_subscribe|_resubscribe|429|rate.limit|semaphore|websocket|3\.0\b|time\.monotonic\(\)|recv_age|tick_age|last_trade)\b',re.I)
+              for name in focused:
+                  if name not in names:continue
+                  source=z.read(name).decode('utf8')
+                  ls=source.splitlines()
+                  hits=[i for i,line in enumerate(ls) if regex.search(line)]
+                  print('\nFILE',name,'LINES',len(ls),'MATCHES',len(hits),flush=True)
+                  root_ast=ast.parse(source)
+                  functions=[]
+                  for node in ast.walk(root_ast):
+                      if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                          functions.append((node.lineno,node.end_lineno,node.name))
+                  print('INTERESTING_FUNCTIONS', [(a,b,n) for a,b,n in functions if re.search(r'(?i)tick|queue|ws|stream|subscri|request|poll|rate|forward|stale|trade|recv|price',n)][:160],flush=True)
+                  merged=set()
+                  for i in hits:
+                      for j in range(max(0,i-2),min(len(ls),i+4)):merged.add(j)
+                  printed=0
+                  for j in sorted(merged):
+                      if printed>=240:
+                          print('CUT_AFTER',printed,'LINES')
+                          break
+                      print(f'{j+1:5d}: {ls[j][:220]}')
+                      printed+=1
+              # Identify independent candidate-tracking network paths.
+              print('\nTRACKING_NETWORK_CALL_SITE_SUMMARY')
+              for name in core:
+                  if name in focused:continue
+                  ls=z.read(name).decode('utf8').splitlines()
+                  matches=[(i+1,s[:170]) for i,s in enumerate(ls)
+                      if ('candidate_forward' in s or 'target_hit' in s or 'post_exit' in s
+                          or 'rate_limit' in s or 'api.post(' in s
+                          or 'requests.get(' in s or '429' in s)]
+                  if matches:print(name,matches[:25])
+          PY
