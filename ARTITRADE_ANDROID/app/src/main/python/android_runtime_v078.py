@@ -1801,6 +1801,34 @@ def hub_records_ui_v104():
     return runtime.hub_records(for_ui=True)
 
 
+def score_snapshot_v005():
+    """Fast read-only score lane for Android market screen, no heavy ledger.
+
+    Market-score SQL event timestamps and all position/execution SQL remain
+    authoritative. This is an independent display snapshot, not a trade signal
+    or an alternative market-score database.
+    """
+    rt=getattr(_core,'_RUNTIME',None)
+    if rt is None or not getattr(rt,'started',False):
+        return json.dumps({'schema':'ARTITRADE_MARKET_SCORE_PLANE_V005',
+            'generated_at_ms':int(time.time()*1000),
+            'stock':{'score':None,'stale':True,'status':'시장점수 엔진 시작 대기'},
+            'coin':{'score':None,'stale':True,'status':'시장점수 엔진 시작 대기'}},
+            ensure_ascii=False)
+    try:
+        from market_research_v033 import compact_snapshot
+        payload=compact_snapshot(rt.root)
+        return json.dumps(payload,ensure_ascii=False,separators=(',',':'))
+    except Exception as exc:
+        return json.dumps({'schema':'ARTITRADE_MARKET_SCORE_PLANE_V005',
+            'generated_at_ms':int(time.time()*1000),
+            'stock':{'score':None,'stale':True,
+                     'status':'시장점수 수집기 오류: '+type(exc).__name__},
+            'coin':{'score':None,'stale':True,
+                    'status':'시장점수 수집기 오류: '+type(exc).__name__}},
+            ensure_ascii=False)
+
+
 def _hub_records_v078(self,for_ui=False):
     # Start/revive genuine market-score collection independently of the
     # potentially heavy original wallet snapshot. A newly reset PAPER ledger
