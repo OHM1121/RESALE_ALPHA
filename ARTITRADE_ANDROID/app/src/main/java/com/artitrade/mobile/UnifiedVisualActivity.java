@@ -878,13 +878,13 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        // The installed APK is the source of truth after an in-place update.
-        String version="0.7.44";
+        // Show the installed version only; no market, mode, or feature suffix.
+        String version="";
         try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}
-        if(version==null||version.isEmpty())version="버전 확인 중";
+        if(version==null||version.isEmpty())return "버전 확인 중";
         int dash=version.indexOf('-');
         if(dash>0)version=version.substring(0,dash);
-        return "v"+version+" · "+(integratedMode?"통합":("stock".equals(market)?"주식":"코인"));
+        return "v"+version;
     }
 
     private void showShell(){
