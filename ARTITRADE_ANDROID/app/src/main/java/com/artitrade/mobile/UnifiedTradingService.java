@@ -10,6 +10,9 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.net.wifi.WifiManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.net.Network;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -208,6 +211,25 @@ public final class UnifiedTradingService extends Service {
             // Keep service process alive in diagnostic mode rather than crashing launcher.
             try{ensureChannel();startForeground(NOTIFY_ID,notification("엔진 시작 오류 · 앱 오류 탭 확인"));}catch(Throwable ignored){}
             return START_STICKY;
+        }
+    }
+
+    /** Read-only Android network capability probe. Broker-specific WS/REG and
+     * authentic quotes remain the separate execution authority. */
+    private Boolean validatedInternetV092(){
+        try{
+            ConnectivityManager cm=(ConnectivityManager)
+                getSystemService(Context.CONNECTIVITY_SERVICE);
+            if(cm==null)return null;
+            Network active=cm.getActiveNetwork();
+            if(active==null)return false;
+            NetworkCapabilities caps=cm.getNetworkCapabilities(active);
+            return caps!=null &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+        }catch(SecurityException ex){
+            crashes.add("recovery_network_capabilities",ex);
+            return null;
         }
     }
 
@@ -581,6 +603,16 @@ public final class UnifiedTradingService extends Service {
                     try{Thread.sleep(2500L);}
                     catch(InterruptedException e){Thread.currentThread().interrupt();break;}
                     continue;
+                }
+                // Distinguish actual Android internet loss from a healthy
+                // network with only one broker WebSocket/subscription down.
+                // Pure local observation; never requests an API or arms orders.
+                Boolean validated=validatedInternetV092();
+                if(validated!=null){
+                    getSharedPreferences("artitrade_recovery_network_v092",MODE_PRIVATE)
+                        .edit().putBoolean("validated_internet",validated)
+                        .putLong("observed_at",System.currentTimeMillis()).apply();
+                    strategy.reportNetworkV092(validated);
                 }
                 JSONObject p=strategy.snapshot();
                 try{p.put("operation",strategy.operationSnapshot());}catch(Throwable ignored){}

@@ -1,0 +1,160 @@
+name: ARTITRADE v0.9.3 safe ZIP95 source tests and signed APK
+on:
+  push:
+    branches: [fix-artitrade-v092-unified-recovery-scenarios-ui-20261118]
+    paths: ['.github/workflows/artitrade-v101-v092-signer-scope-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-v101-zip95-v092-existing-signer
+  cancel-in-progress: false
+jobs:
+  verify-build-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      CI: 'true'
+      ARTIFACT: 'ARTITRADE_UNIFIED_v0.9.3_ZIP95_20261118'
+      TAG: 'ARTITRADE-v0.9.3-ZIP95-20261118'
+      SOURCE: '89ed0f8277f4f525c6af45ec220dfe56d3838cc5'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '89ed0f8277f4f525c6af45ec220dfe56d3838cc5'
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Restore exact existing app signing key
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Assert signed-update identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          test -s "$HOME/.android/debug.keystore"
+          fp="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "COMPUTED_SIGNER_SHA256=$fp"
+          test "$fp" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+      - name: Apply v092 and v093 original-82-module network patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v093_strategy_priority_metadata.py
+      - name: Set monotonically increased versionCode 119
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/build.gradle')
+          s=p.read_text('utf8')
+          old="versionCode 99\n            versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'"
+          new="versionCode 119\n            versionName '0.9.3-ZIP95-ANALYSIS-READY'"
+          assert s.count(old)==1
+          assert "applicationId 'com.artitrade.unified.s21dex'" in s
+          p.write_text(s.replace(old,new),encoding='utf8')
+          PY
+      - name: Verify original Python core and install test requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,io,zipfile,hashlib
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          p=root/'assets/strategy_v070'
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          bridge=(root/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text('utf8')
+          assert 'CORE_SHA256="'+hashlib.sha256(data).hexdigest()+'"' in bridge
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              assert len(z.namelist())==82 and z.testzip() is None
+              z.extractall('/tmp/artitrade-v101-native')
+          PY
+      - name: ZIP95, JSON, CRC, SQLite and existing strategy regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v101-native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          for pattern in \
+            test_v101_zip95_analysis_ready.py \
+            test_v088_error_exports_and_source_integrity.py \
+            test_v088_export_zip_full_500mb_coin_monotonic.py \
+            test_v090_rotation_lock_zip_restore.py \
+            test_v082_error_export_cancellation.py \
+            test_v100_manual_denial_and_targets.py \
+            test_v100_d19_native_manual_exit.py \
+            test_v091_d19_original_at_reconnect_and_portrait.py \
+            test_v096_manual_result_lifecycle.py \
+            test_v092_scenarios_8_wallets.py \
+            test_v086_stock_manual_all.py; do
+            echo "TESTING $pattern"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
+          done
+      - name: Assemble originally signed ARM64 Samsung APK
+        working-directory: ARTITRADE_ANDROID
+        shell: bash
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Prove package, version, ABI, certificate and digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
+            grep -F "package: name='com.artitrade.unified.s21dex' versionCode='119' versionName='0.9.3-ZIP95-ANALYSIS-READY'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" >/tmp/v101_cert.txt
+          grep -F '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/v101_cert.txt
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
+          cp "$apk" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
+          printf 'source=%s\npackage=com.artitrade.unified.s21dex\nversionCode=119\nversionName=0.9.3-ZIP95-ANALYSIS-READY\nzip_max_part_bytes=95000000\nanalysis_json=true\nreal_market_paper_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.compatibility.txt"
+      - name: Upload signed APK and verification files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_v101_signed_apk
+          path: |
+            ARTITRADE_UNIFIED_v0.9.3_ZIP95_20261118.apk
+            ARTITRADE_UNIFIED_v0.9.3_ZIP95_20261118.sha256
+            ARTITRADE_UNIFIED_v0.9.3_ZIP95_20261118.compatibility.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish verified signed APK as prerelease
+        shell: bash
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          set -euo pipefail
+          sha256sum -c "$ARTIFACT.sha256"
+          cat >/tmp/v101_notes.txt <<'NOTES'
+          ARTITRADE v0.9.3 ZIP95: original-signer package update; do NOT uninstall.
+          Stock/coin research and error exports now produce individually valid
+          ZIP pieces <=95,000,000 bytes, all with SHA-256 and bundle indexes.
+          A separate <=2MB ANALYSIS_READY.json with crash/SQLite table summary
+          and ZIP digests is saved beside them for direct non-Python inspection.
+          Full original SQLite/WAL-safe snapshots remain in ZIP parts.
+          Manual PAPER denial code and D19 first/second target audit also included.
+          Trade entry/exit thresholds, original broker execution and wallets unchanged.
+          ChatGPT's external ClientError execution-service fault cannot be
+          prevented by Android code; JSON is a fallback inspection route.
+          Existing strategy tests and package-signature checks passed in CI,
+          not an assertion of actual phone PAPER fills.
+          NOTES
+          gh release create "$TAG" \
+            "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.compatibility.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE" \
+            --title "ARTITRADE v0.9.3 ZIP95 verified APK" \
+            --notes-file /tmp/v101_notes.txt --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,assets \
+            --jq '{tagName: .tagName, assets: [.assets[].name]}'

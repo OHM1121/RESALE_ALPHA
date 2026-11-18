@@ -200,6 +200,15 @@ final class StrategyRuntimeBridge {
         }
     }
 
+    /** Android connectivity hint. Original market subscriptions and prices
+     * continue to require their own authenticated exchange evidence. */
+    void reportNetworkV092(boolean validated){
+        PyObject current=module;
+        if(current==null||!started)return;
+        try{current.callAttr("set_network_v092",validated);}
+        catch(Throwable e){crashes.add("v092_network_status",e);}
+    }
+
     synchronized JSONObject hubRecords(){
         if(module==null)return new JSONObject();
         try{return parse(module.callAttr("hub_records"));}

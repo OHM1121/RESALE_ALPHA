@@ -2393,6 +2393,22 @@ _install_stock_at_catchup_v086()
 from stock_at_policy_reconcile_v091 import install as _install_at_policy_v091
 _install_at_policy_v091()
 
+# One recovery plan shared by five stock and three coin strategy ledgers.
+# It monitors genuine 0B/Upbit authenticated events, prioritizes held-stock
+# paper decision queue traffic and records recovery evidence. It NEVER
+# substitutes REST/current display prices for an original strategy SELL,
+# creates an off-line historical fill or calls a second broker REST API.
+from unified_recovery_v092 import install as _install_unified_recovery_v092
+_install_unified_recovery_v092(_core)
+
+# Only Android knows whether the current active network is validated.
+# This has no ability to make an order or authorize stale 0B/0D.
+def set_network_v092(validated):
+    rt=getattr(_core,"_RUNTIME",None)
+    observer=getattr(rt,"_v092_recovery",None) if rt is not None else None
+    if observer is not None:observer.set_android_network(bool(validated))
+    return True
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

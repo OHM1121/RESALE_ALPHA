@@ -1,0 +1,38 @@
+name: V092 inspect original 8 strategies resume/candle/quote routes
+on:
+  push:
+    branches: [fix-artitrade-v092-unified-recovery-scenarios-ui-20261118]
+    paths: [.github/workflows/forensic-v092-8-strategy-io.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,zipfile,io,ast,re
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for f in ('d_upbit.py','d_live.py','android_live_bridge.py','at_close_bridge.py','stock_ma_engine.py','d_gmo_runtime.py','d_storage.py'):
+              if f not in z.namelist():continue
+              lines=z.read(f).decode().splitlines()
+              print('FILE',f,'SIZE',len(lines))
+              for i,s in enumerate(lines):
+                if (re.match(r'^    (async )?def (run|_ws|_v084_accept_tick|_v083_consume_ticks|_ws_event_worker|_historical_backfill_loop|_start_market_workers|_scan_current|_coin_run|_stock_run|start|_sell|process_live_minute|_refresh_tracked_codes|_new_tick)\\b',s)
+                    or (f=='d_live.py' and re.match(r'^    def __init__',s))):
+                  print('M',f,i+1,s.strip())
+              ranges={
+                'd_upbit.py':[(2750,2820),(3080,3125),(3215,3250),(3640,3735),(3790,3830),(4038,4067)],
+                'd_live.py':[(321,432),(790,820)],
+                'android_live_bridge.py':[(1,150)],
+                'at_close_bridge.py':[(1,75)],
+                'stock_ma_engine.py':[(1,100)],
+              }
+              for a,e in ranges.get(f,[]):
+                for i in range(a-1,min(e,len(lines))):print('F',f,i+1,lines[i][:310])
+          PY
