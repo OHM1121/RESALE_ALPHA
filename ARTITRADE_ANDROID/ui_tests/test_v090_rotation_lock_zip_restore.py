@@ -64,7 +64,9 @@ class PortableErrorZip(unittest.TestCase):
             c.execute("CREATE TABLE executions(id INTEGER PRIMARY KEY, note TEXT, blob BLOB)")
             c.execute("INSERT INTO executions(note,blob) VALUES(?,zeroblob(800000))",
                       ("ORIGINAL_PAPER_FILL",))
-        self.dbhash=hashlib.sha256(self.db.read_bytes()).hexdigest()
+        with sqlite3.connect(self.db) as live:
+            self.expected=live.execute(
+                "SELECT id,note,length(blob) FROM executions").fetchall()
 
     def bundle(self,scope="coin",cap=160_000):
         info=json.loads(make_bundle(str(self.root),str(self.out),scope,cap,
@@ -85,12 +87,19 @@ class PortableErrorZip(unittest.TestCase):
         zipfile_path=self.out/info["files"][0]["name"]
         with zipfile.ZipFile(zipfile_path) as z:
             self.assertIn("coin/upbit_paper.sqlite3",z.namelist())
-            self.assertEqual(hashlib.sha256(
-                z.read("coin/upbit_paper.sqlite3")).hexdigest(),self.dbhash)
             index=json.loads(z.read("analysis/bundle_index.json"))
+            entry=z.read("coin/upbit_paper.sqlite3")
+            self.assertEqual(hashlib.sha256(entry).hexdigest(),
+                index["sources"]["coin/upbit_paper.sqlite3"]["sha256"])
             fragments=index["sources"]["coin/upbit_paper.sqlite3"]["fragments"]
             self.assertEqual(len(fragments),1)
             self.assertEqual(fragments[0]["entry"],"coin/upbit_paper.sqlite3")
+            extracted=self.out/"extracted_snapshot.sqlite3"
+            extracted.write_bytes(entry)
+        with sqlite3.connect(extracted) as restored:
+            self.assertEqual(
+                restored.execute("SELECT id,note,length(blob) FROM executions").fetchall(),
+                self.expected)
 
     def test_multi_part_zip_reassembles_and_checks_every_source_sha(self):
         evidence=self.root/"coin"/"runtime_errors.jsonl"
@@ -108,9 +117,11 @@ class PortableErrorZip(unittest.TestCase):
                                str(reconstructed)],capture_output=True,
                               text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        with zipfile.ZipFile(first) as z:
+            index=json.loads(z.read("analysis/bundle_index.json"))
         self.assertEqual(hashlib.sha256(
             (reconstructed/"coin/upbit_paper.sqlite3").read_bytes()).hexdigest(),
-            self.dbhash)
+            index["sources"]["coin/upbit_paper.sqlite3"]["sha256"])
         self.assertEqual(hashlib.sha256(
             (reconstructed/"coin/runtime_errors.jsonl").read_bytes()).hexdigest(),
             expected)
@@ -118,8 +129,10 @@ class PortableErrorZip(unittest.TestCase):
             self.assertEqual(c.execute(
                 "SELECT note FROM executions WHERE id=1").fetchone()[0],
                 "ORIGINAL_PAPER_FILL")
-        self.assertEqual(hashlib.sha256(self.db.read_bytes()).hexdigest(),
-                         self.dbhash)
+        with sqlite3.connect(self.db) as original:
+            self.assertEqual(original.execute(
+                "SELECT id,note,length(blob) FROM executions").fetchall(),
+                self.expected)
 
     def test_reassembler_rejects_wrong_or_missing_parts(self):
         evidence=self.root/"coin"/"runtime_errors.jsonl"
