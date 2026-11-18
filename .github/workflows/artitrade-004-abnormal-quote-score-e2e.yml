@@ -60,7 +60,7 @@ jobs:
             test_v033_market_research.py \
             test_v038_market_live_ui.py \
             test_v043_market_trend.py \
-            test_v054_runtime.py \
+            # v054 legacy preclose RSI35 BUY fixture retired by NEW LEGACY(11.18) RSI20+BB
             test_v086_stock_manual_all.py \
             test_v106_fresh_paper_epoch.py \
             test_v108_mandatory_first_epoch.py; do
