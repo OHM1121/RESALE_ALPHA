@@ -1802,6 +1802,14 @@ def hub_records_ui_v104():
 
 
 def _hub_records_v078(self,for_ui=False):
+    # Start/revive genuine market-score collection independently of the
+    # potentially heavy original wallet snapshot. A newly reset PAPER ledger
+    # has zero score rows; never require old PC cache to bootstrap scoring.
+    try:
+        from market_research_v033 import ensure_worker
+        ensure_worker(self.root)
+    except Exception as score_boot_error:
+        self._err('market_score_worker_start_v1118',score_boot_error)
     _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
     try:
