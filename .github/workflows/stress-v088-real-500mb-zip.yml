@@ -1,0 +1,66 @@
+name: V088 stress actual 500MB ZIP boundary and lossless restore
+on:
+  push:
+    branches: [fix-artitrade-v088-error-zip-500mb-coin-progress-20261118]
+    paths: [.github/workflows/stress-v088-real-500mb-zip.yml]
+permissions: {contents: read}
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: 520MB incompressible coin log compressed and exactly reconstructed
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python"
+          python3 - <<'PY'
+          import hashlib,io,json,os,sqlite3,tempfile,zipfile,time
+          from pathlib import Path
+          from android_research_bundle import make_bundle
+          LIMIT=500_000_000
+          SIZE=520_000_000
+          with tempfile.TemporaryDirectory(prefix='artitrade_zip_real_500mb_') as td:
+              base=Path(td);root=base/'root';output=base/'output'
+              folder=root/'coin/base';folder.mkdir(parents=True)
+              output.mkdir()
+              original=folder/'original_coin_debug.jsonl'
+              h=hashlib.sha256()
+              started=time.monotonic()
+              with original.open('wb') as out:
+                  remaining=SIZE
+                  while remaining:
+                      block=os.urandom(min(1024*1024,remaining))
+                      out.write(block);h.update(block);remaining-=len(block)
+              with sqlite3.connect(folder/'upbit_paper.sqlite3') as c:
+                  c.execute('PRAGMA journal_mode=WAL')
+                  c.execute('CREATE TABLE executions(id INTEGER)')
+                  c.execute('INSERT INTO executions VALUES(1)')
+              result=json.loads(make_bundle(root,output,'coin',LIMIT,bundle_kind='errors'))
+              parts=result['files']
+              print('SOURCE_BYTES',SIZE,'ZIP_PARTS',len(parts),
+                    'ZIP_BYTES',[p['bytes'] for p in parts],
+                    'DURATION_SEC',int(time.monotonic()-started),flush=True)
+              assert len(parts)==2,parts
+              assert parts[0]['bytes']>480_000_000,parts
+              assert all(0<p['bytes']<=LIMIT for p in parts)
+              with zipfile.ZipFile(output/parts[0]['name']) as z:
+                  index=json.loads(z.read('analysis/bundle_index.json'))
+              source=index['sources']['coin/base/original_coin_debug.jsonl']
+              check=hashlib.sha256();restored=0
+              for fragment in sorted(source['fragments'],key=lambda x:x['offset']):
+                  with zipfile.ZipFile(output/parts[fragment['part']-1]['name']) as z:
+                      assert z.testzip() is None
+                      with z.open(fragment['entry']) as stream:
+                          while True:
+                              data=stream.read(1024*1024)
+                              if not data:break
+                              check.update(data);restored+=len(data)
+              assert restored==SIZE
+              assert check.hexdigest()==h.hexdigest()==source['sha256']
+              print('V088_REAL_500MB_BOUNDARY_COIN_REASSEMBLY_PASS',flush=True)
+          PY
