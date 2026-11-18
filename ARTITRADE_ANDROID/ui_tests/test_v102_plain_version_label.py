@@ -17,7 +17,7 @@ class OnlyVersionLabel(unittest.TestCase):
         self.assertNotIn('stock".equals(market)',body)
         self.assertIn("version=getPackageManager().getPackageInfo(getPackageName(),0).versionName",body)
     def test_release_version_name_is_strict_numeric(self):
-        release="0.0.1"
+        release="0.0.2"
         self.assertRegex(release,r"^\d+\.\d+\.\d+$")
         self.assertNotRegex(release,r"[- ]")
 
