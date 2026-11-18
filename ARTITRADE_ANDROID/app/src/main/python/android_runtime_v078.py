@@ -2399,7 +2399,7 @@ _install_at_policy_v091()
 # substitutes REST/current display prices for an original strategy SELL,
 # creates an off-line historical fill or calls a second broker REST API.
 from unified_recovery_v092 import install as _install_unified_recovery_v092
-_install_unified_recovery_v092()
+_install_unified_recovery_v092(_core)
 
 # Re-export the stable Android bridge API.
 start = _core.start
