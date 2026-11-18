@@ -373,9 +373,21 @@ def manual_stock_trend(rt,request):
     if allocation<=0 or not book['depth'].reserve_sell(
             request['code'],'KRX',now,book['bid'],allocation):
         raise ValueError('STOCK_TREND_VERIFIED_BID_DEPTH_MISSING')
-    sold,result=co.standalone_wallet.sell(pos,book['bid'],now,
-        reason,bid_size=allocation,manual_fraction=fraction,
-        verified_manual_bid_qty=allocation)
+    # Use the original MT54 order lock and recheck the authoritative
+    # persisted position AFTER network IO, before calling the only
+    # native order/ledger owner. Never rely only on a UI/in-memory qty.
+    with co.standalone_wallet.order_lock:
+        with co.standalone_wallet._connect('stock') as c:
+            current=c.execute("""SELECT qty,execution_mode FROM positions
+                WHERE id=? AND symbol=? AND status='TREND_OPEN'""",
+                (request['position_id'],request['code'])).fetchone()
+            if (current is None or current['execution_mode']!='PAPER'
+                or Decimal(str(current['qty']))!=
+                   Decimal(str(request['expected_qty']))):
+                raise ValueError('STOCK_TREND_POSITION_CHANGED_RECONFIRM')
+        sold,result=co.standalone_wallet.sell(pos,book['bid'],now,
+            reason,bid_size=allocation,manual_fraction=fraction,
+            verified_manual_bid_qty=allocation)
     if not sold:raise ValueError('STOCK_TREND_MANUAL_SELL_'+str(result))
     with co.standalone_wallet._connect('stock') as c:
         proof=c.execute("""SELECT qty,price FROM executions WHERE position_id=?
