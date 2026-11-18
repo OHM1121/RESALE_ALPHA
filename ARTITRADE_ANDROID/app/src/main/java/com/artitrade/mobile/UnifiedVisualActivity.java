@@ -2508,8 +2508,14 @@ public final class UnifiedVisualActivity extends Activity {
             String symbol=row.optString("code","종목 미확인");
             panel.addView(text(symbol+" · "+tfLabel(timeFrameOf(row)),17));
             double rsi=row.optDouble("rsi20_live",Double.NaN);
-            panel.addView(text("관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
-                " · 현재가 "+formatMaybeMoney(row,"price"),13));
+            String rsiText="관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
+                " · 현재가 ";
+            TextView priceView=text(rsiText+formatMaybeMoney(row,"price"),13);
+            panel.addView(priceView);
+            TextView observed=text("RSI 관측과 매매판단은 별개 · WS 시세 확인 중",10);
+            observed.setTextColor(PremiumUi.MUTED);
+            panel.addView(observed);
+            bindFastVisiblePrice(row,market,priceView,observed,rsiText,"");
             panel.addView(text("진입 재무장 "+(row.optBoolean("armed",false)?"완료":"대기")+
                 " · RSI30 관측 "+(row.optBoolean("touched_30",false)?"있음":"없음")+
                 "",11));
