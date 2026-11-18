@@ -273,8 +273,14 @@ public final class UnifiedTradingService extends Service {
             crashes.add("pc_ledger_migration_reply",new IllegalStateException(result.toString()));
     }
     private void launchWithMigration(){
-        LegacyLedgerMigration importer=new LegacyLedgerMigration(this,crashes);
-        JSONObject migration=importer.importIfReady();
+        // The user's definitive fresh-only epoch has ZERO legacy PAPER
+        // holdings to import. Do NOT instantiate the old PC ZIP importer,
+        // even for a missing checkpoint. A missing/invalid marker is fatal.
+        JSONObject migration=FreshEpochGateV106.migrationGate(this);
+        if(migration==null){
+            saveMigrationResult(new JSONObject());
+            return;
+        }
         String epochState=migration.optString("status","");
         if("FRESH_EPOCH_BLOCKED".equals(epochState)){
             saveMigrationResult(migration);
