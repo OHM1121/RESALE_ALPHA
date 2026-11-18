@@ -386,6 +386,21 @@ public final class UnifiedTradingService extends Service {
                 catch(Throwable ignored){}
             }finally{
                 manualSellOutstanding.decrementAndGet();
+                // A successful native PAPER SELL updates the authoritative SQLite
+                // immediately, but dashboards read a separately published view
+                // snapshot. Make the next low-priority read-only publication due
+                // NOW, without changing orders, executions, or the user's DB.
+                // This must run after the manual worker releases its priority gate.
+                if(result.optBoolean("ok",false)&&running.get()
+                        &&strategy!=null&&strategy.isStarted()){
+                    uiRecordLastStartedMs=0L;
+                    try{
+                        scheduleUiRecordsIfDue(new LocalHubClient(this));
+                    }catch(Throwable refreshError){
+                        try{crashes.add("manual_sell_view_refresh",refreshError);}
+                        catch(Throwable ignored){}
+                    }
+                }
             }
         }
     }
