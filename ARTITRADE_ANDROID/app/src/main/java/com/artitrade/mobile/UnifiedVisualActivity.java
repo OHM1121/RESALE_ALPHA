@@ -1338,8 +1338,12 @@ public final class UnifiedVisualActivity extends Activity {
 
         drawerPublishProgress=addProgressBlock(tools,"휴대전화 원장 전송",
             sync,Color.rgb(0,196,164));
-        drawerImportProgress=addProgressBlock(tools,"PC 원장 승계",
-            importProgress,Color.rgb(77,124,254));
+        // The first-boot clean epoch unconditionally discards all prior
+        // PAPER histories. Old PC ledger migration is permanently disabled.
+        drawerImportProgress=null;
+        TextView freshSource=text("원장 정책: 새 PAPER만 유지 · 과거 PC 승계 차단",11);
+        freshSource.setTextColor(PremiumUi.MUTED);
+        tools.addView(freshSource);
         // Detailed counts, source DB names, network codes, thread/preload timing
         // and per-strategy raw verification stay in the diagnostic store.
         // Never put them in the user-facing MSERVER drawer.
@@ -1361,11 +1365,7 @@ public final class UnifiedVisualActivity extends Activity {
         Button pairing=button("연결 토큰",false,this::pair);
         pairing.setTextSize(12);
         secondActions.addView(pairing,new LinearLayout.LayoutParams(0,dp(41),1));
-        Button verify=button("PC 승계 재검증",false,this::requestPcMigrationApply);
-        verify.setTextSize(12);
-        LinearLayout.LayoutParams verifyLp=new LinearLayout.LayoutParams(0,dp(41),1);
-        verifyLp.setMargins(dp(6),0,0,0);
-        secondActions.addView(verify,verifyLp);
+
         LinearLayout.LayoutParams secondLp=new LinearLayout.LayoutParams(-1,dp(43));
         secondLp.setMargins(0,dp(5),0,0);
         tools.addView(secondActions,secondLp);
