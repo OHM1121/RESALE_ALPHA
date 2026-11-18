@@ -7098,10 +7098,89 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(12),0,0);content.addView(ctrl,cp);
     }
 
+    private void showMserverBackupRecord(String selected){
+        String market="주식".equals(selected)?"stock":"coin";
+        new Thread(()->{
+            try{
+                JSONObject latest=DailyRecoveryV003.latest(this,market);
+                if(!latest.optBoolean("exists",false)){
+                    main.post(()->new AlertDialog.Builder(this)
+                        .setTitle("MSERVER 원장 백업")
+                        .setMessage("검증 완료된 저장본이 없음. 거래 원장은 변경하지 않았습니다.")
+                        .setPositiveButton("확인",null).show());
+                    return;
+                }
+                String date=latest.optString("date");
+                String hash=latest.optString("sha256");
+                long bytes=latest.optLong("bytes");
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("MSERVER 최신 원장 · "+selected)
+                    .setMessage("저장일 "+date+"\n크기 "+bytes+"바이트\nSHA256 "+
+                        (hash.length()>=16?hash.substring(0,16):hash)+
+                        "…\n복구 시점은 이 백업 생성 시각까지입니다.")
+                    .setNegativeButton("닫기",null)
+                    .setPositiveButton("백업 무결성 검증",(dlg,w)->
+                        verifyLatestDailyBackupInQuarantine(market))
+                    .show());
+            }catch(Throwable error){
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("MSERVER 백업 조회 실패")
+                    .setMessage("MSERVER 업데이트·연결 또는 저장본을 확인하십시오. "+
+                        error.getClass().getSimpleName())
+                    .setPositiveButton("확인",null).show());
+            }
+        },"artitrade-check-mserver-backup-"+market).start();
+    }
+
+    private void verifyLatestDailyBackupInQuarantine(String market){
+        new Thread(()->{
+            try{
+                JSONObject result=DailyRecoveryV003.downloadAndVerify(this,market);
+                String report="저장일 "+result.optString("date")+
+                    "\n검증 파일 "+result.optInt("files")+
+                    "개\nZIP SHA256 검증 완료"+
+                    "\n현재 원장은 변경하지 않았습니다.";
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("복구본 다운로드 · 검증 완료")
+                    .setMessage(report).setPositiveButton("확인",null).show());
+            }catch(Throwable ex){
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("복구본 검증 실패 · 원장 유지")
+                    .setMessage(ex.getClass().getSimpleName()+": "+
+                        String.valueOf(ex.getMessage()))
+                    .setPositiveButton("확인",null).show());
+            }
+        },"artitrade-readonly-backup-recovery").start();
+    }
+
     private void renderMore(){
         TextView h=text("도구",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
         LinearLayout c=card();c.addView(text("키움 · 업비트 API",13));Button api=button("직접 API 키 설정",true,this::apiSettings);LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(42));ap.setMargins(0,dp(8),0,0);c.addView(api,ap);content.addView(c);
         LinearLayout p=card();p.addView(text("MSERVER(모바일 서버) · 토큰 등록 후 연결을 검사할 수 있음",13));Button pair=button("토큰 등록 · 연결 확인",true,this::pair);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(42));pp.setMargins(0,dp(8),0,0);p.addView(pair,pp);LinearLayout.LayoutParams pc=new LinearLayout.LayoutParams(-1,-2);pc.setMargins(0,dp(8),0,0);content.addView(p,pc);
+        LinearLayout daily=card();
+        daily.addView(text("MSERVER 원장 백업",15));
+        android.content.SharedPreferences dailyStatus=getSharedPreferences(
+            "artitrade_daily_backup_v003",MODE_PRIVATE);
+        for(String[] item:new String[][]{{"stock","주식 · 20:10"},{"coin","코인 · 11:30"}}){
+            String key=item[0],last=dailyStatus.getString("done_date_"+key,"");
+            String state=dailyStatus.getString("stage_"+key,"");
+            String display=item[1]+"  "+(last.isEmpty()?"저장본 미확인":last)+
+                (state.isEmpty()?"":" · "+state);
+            TextView stateLabel=text(display,12);
+            stateLabel.setPadding(0,dp(5),0,0);
+            daily.addView(stateLabel);
+        }
+        Button checkDaily=button("최근 저장본 확인·검증",true,()->{
+            new AlertDialog.Builder(this).setTitle("MSERVER 저장본")
+                .setItems(new String[]{"주식","코인"},(dialog,w)->
+                    showMserverBackupRecord(w==0?"주식":"코인"))
+                .setNegativeButton("취소",null).show();
+        });
+        LinearLayout.LayoutParams checkLp=new LinearLayout.LayoutParams(-1,dp(42));
+        checkLp.setMargins(0,dp(9),0,0);
+        daily.addView(checkDaily,checkLp);
+        content.addView(daily);
+
         LinearLayout b=card();
         b.addView(text("화면 꺼짐 · 자동매매 서비스 상태",15));
         android.content.SharedPreferences health=getSharedPreferences(
