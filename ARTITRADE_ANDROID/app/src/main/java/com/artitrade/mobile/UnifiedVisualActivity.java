@@ -4611,6 +4611,8 @@ public final class UnifiedVisualActivity extends Activity {
         if(worker==null||!worker.isAlive()){
             if(pendingScopedErrorScope!=null){
                 pendingScopedErrorScope=null;
+                getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE)
+                    .edit().remove("errors").apply();
                 exportStage("errors","CANCELLED","폴더 선택 취소 요청",0,
                     "파일 선택 화면에서 뒤로 가기를 눌러 닫을 수 있습니다.",false,false);
             }else{
@@ -4655,6 +4657,9 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         pendingScopedErrorScope=scope;
+        // Persist SAF picker scope across screen rotation and process restore.
+        getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE).edit()
+            .putString("errors",scope).commit();
         exportStage("errors","SELECT_DIR","오류 ZIP 저장 폴더 선택",0,
             "원본 주식·코인 오류자료를 파일당 500MB 이하로 분할",true,false);
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -4674,6 +4679,8 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         pendingCombinedResearchScope=scope;
+        getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE).edit()
+            .putString("research",scope).commit();
         exportStage("research","SELECT_DIR","저장 폴더 선택",0,
             "선택한 폴더에 검증된 연구 ZIP 파트 저장",true,false);
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -4848,7 +4855,7 @@ public final class UnifiedVisualActivity extends Activity {
                 checkScopedErrorCancel();
                 JSONObject info=new JSONObject(raw);
                 if(!info.optBoolean("ok")||info.optInt("parts")<=0)
-                    throw new IOException("분할 리서치 생성 검증 실패");
+                    throw new IOException("오류이력 ZIP 생성 검증 실패 · 범위="+scope);
                 Uri parent=DocumentsContract.buildDocumentUriUsingTree(
                     tree,DocumentsContract.getTreeDocumentId(tree));
                 JSONArray parts=info.getJSONArray("files");
@@ -4965,6 +4972,10 @@ public final class UnifiedVisualActivity extends Activity {
         if(requestCode==REQUEST_EXPORT_SCOPED_ERRORS){
             String scope=pendingScopedErrorScope;
             pendingScopedErrorScope=null;
+            android.content.SharedPreferences picker=getSharedPreferences(
+                "artitrade_picker_scope_v088",MODE_PRIVATE);
+            if(scope==null||scope.isEmpty())scope=picker.getString("errors",null);
+            picker.edit().remove("errors").apply();
             if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
                 exportScopedErrorToFolder(data.getData(),scope);
             else exportStage("errors","CANCELLED","오류 ZIP 추출 취소",0,
@@ -4974,6 +4985,10 @@ public final class UnifiedVisualActivity extends Activity {
         if(requestCode==REQUEST_EXPORT_COMBINED_RESEARCH){
             String scope=pendingCombinedResearchScope;
             pendingCombinedResearchScope=null;
+            android.content.SharedPreferences picker=getSharedPreferences(
+                "artitrade_picker_scope_v088",MODE_PRIVATE);
+            if(scope==null||scope.isEmpty())scope=picker.getString("research",null);
+            picker.edit().remove("research").apply();
             if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
                 exportCombinedResearchToFolder(data.getData(),scope);
             else exportStage("research","CANCELLED","연구 ZIP 추출 취소",0,
