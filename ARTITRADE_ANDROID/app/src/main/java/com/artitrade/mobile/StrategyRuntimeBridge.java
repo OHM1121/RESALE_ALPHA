@@ -209,6 +209,13 @@ final class StrategyRuntimeBridge {
         catch(Throwable e){crashes.add("v092_network_status",e);}
     }
 
+    /** Compact read-only Android display, generated in Python before JSON crosses the bridge. */
+    synchronized JSONObject hubRecordsUi(){
+        if(module==null)return new JSONObject();
+        try{return parse(module.callAttr("hub_records_ui"));}
+        catch(Throwable e){crashes.add("python_hub_records_ui_v104",e);return new JSONObject();}
+    }
+
     synchronized JSONObject hubRecords(){
         if(module==null)return new JSONObject();
         try{return parse(module.callAttr("hub_records"));}

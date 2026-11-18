@@ -1744,13 +1744,72 @@ def _merge_gmo_pc_evidence(live,original):
     return merged
 
 
-def _hub_records_v078(self):
+
+def _ui_view_only_v104(tree, array_cap=128, string_cap=1024):
+    """A screen-only view; NEVER used for trading or as the source DB backup.
+
+    Original SQLite/WAL and research/log history remain full and immutable.
+    Cap Python objects BEFORE serializing for the Java 256MB heap.
+    """
+    omitted={}
+    def copy(node, path=(), depth=0):
+        if depth>24:
+            return None
+        if isinstance(node,dict):
+            return {key:copy(value,path+(str(key),),depth+1)
+                    for key,value in node.items()}
+        if isinstance(node,list):
+            label=path[-1] if path else ''
+            limit=(512 if label=='positions' else
+                   300 if label in ('executions','pending','wallets','accounts')
+                   else array_cap)
+            if len(node)>limit:
+                omitted['/'.join(path)]=len(node)-limit
+            return [copy(item,path+(str(i),),depth+1)
+                    for i,item in enumerate(node[:limit])]
+        if isinstance(node,str) and len(node)>string_cap:
+            # A hidden view string is NOT a stored strategy/execution value.
+            omitted['/'.join(path)]=len(node)-string_cap
+            return node[:string_cap]+' [UI_VIEW_TRUNCATED_ORIGINAL_IN_SQLITE]'
+        return node
+    view=copy(tree)
+    view['ui_snapshot_v104']={
+        'source':'READ_ONLY_DISPLAY_WINDOW_NOT_EXPORT',
+        'omitted_count_by_path':omitted,
+        'full_original_records_in_sqlite_unchanged':True}
+    return view
+
+
+def _serialize_hub_v104(payload,for_ui=False):
+    if not for_ui:
+        return json.dumps(payload,ensure_ascii=False,default=str)
+    view=_ui_view_only_v104(payload)
+    serialized=json.dumps(view,ensure_ascii=False,default=str,separators=(',',':'))
+    if len(serialized)>5_000_000:
+        view=_ui_view_only_v104(payload,array_cap=32,string_cap=256)
+        serialized=json.dumps(view,ensure_ascii=False,default=str,separators=(',',':'))
+    if len(serialized)>5_000_000:
+        # Fail this read-only UI refresh closed, never create fake executions.
+        raise ValueError('UI_VIEW_MEMORY_BUDGET_EXCEEDED_ORIGINAL_SQLITE_PRESERVED')
+    return serialized
+
+
+def hub_records_ui_v104():
+    runtime=getattr(_core,'_RUNTIME',None)
+    if runtime is None or not getattr(runtime,'started',False):
+        return '{}'
+    return runtime.hub_records(for_ui=True)
+
+
+def _hub_records_v078(self,for_ui=False):
     _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
     try:
         out=json.loads(raw) if isinstance(raw,str) else raw
     except Exception:
-        return raw
+        # Never bypass the bounded display serializer on malformed source.
+        # The full original remains available to the non-UI hub_records path.
+        return '{}' if for_ui else raw
     # Read-only forensic summaries use a separate asynchronous reader;
     # the original GMO/CW strategy, broker and wallet databases are NOT modified.
     # Existing full error ZIP already contains the original source SQLite.
@@ -1926,7 +1985,7 @@ def _hub_records_v078(self):
                     out['market_research']=offer_records(self.root,out)
                 except Exception as score_error:
                     self._err('market_research_v033',score_error)
-                return json.dumps(out,ensure_ascii=False,default=str)
+                return _serialize_hub_v104(out,for_ui)
             # Do not report an empty GMO screen as a successful PC ledger load.
             # Read-only source-file diagnostics distinguish absent data from
             # a strategy engine which has not initialized its account state.
@@ -1980,7 +2039,7 @@ def _hub_records_v078(self):
         out['market_research']={
             'stock':{'score':None,'status':'시장점수 처리 오류'},
             'coin':{'score':None,'status':'시장점수 처리 오류'}}
-    return json.dumps(out,ensure_ascii=False,default=str)
+    return _serialize_hub_v104(out,for_ui)
 
 def _stock_at_ledger_v19(self):
     out=_ORIG_STOCK_AT_LEDGER(self)
@@ -2414,6 +2473,7 @@ start = _core.start
 stop = _core.stop
 snapshot = _core.snapshot
 hub_records = _core.hub_records
+hub_records_ui = hub_records_ui_v104
 # This APK has ONLY real-quote simulated fills and shadow/PAPER research.
 # Its original LIVE switch is a broker-order adapter, never the user-facing
 # "실거래" simulated-wallet label. A future real-account APK is separate.

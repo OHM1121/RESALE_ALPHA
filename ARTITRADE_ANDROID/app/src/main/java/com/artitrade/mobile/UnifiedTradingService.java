@@ -259,13 +259,20 @@ public final class UnifiedTradingService extends Service {
         JSONObject started=strategy.start();
         if(!started.optBoolean("ok",true))
             crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
-        JSONObject records=strategy.hubRecords();
+        JSONObject records=strategy.hubRecordsUi();
         // Make verified source ledgers available to the initial dashboard
         // without waiting for the MSERVER monitor's separate network request.
         if(records!=null&&records.length()>0){
-            getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE).edit()
-                .putString("records",records.toString())
-                .putLong("updated_at",System.currentTimeMillis()).apply();
+            // Never write a giant source history JSON string into XML prefs.
+            // Trading, all SQLite history and the full PC archive remain untouched.
+            try{
+                LargeRecordStoreV087.write(this,records.toString());
+                getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE)
+                    .edit().remove("records").putString("storage","file-v087")
+                    .putLong("updated_at",System.currentTimeMillis()).apply();
+            }catch(java.io.IOException viewError){
+                crashes.add("ui_initial_bounded_snapshot_v104",viewError);
+            }
         }
         String state=migration.optString("status","");
         JSONObject audit=new JSONObject();
@@ -274,7 +281,7 @@ public final class UnifiedTradingService extends Service {
             // strategy snapshots. No tick or market order is synthesized here.
             for(int attempt=0;attempt<3&&records.length()==0;attempt++){
                 try{Thread.sleep(500L);}catch(InterruptedException ie){Thread.currentThread().interrupt();break;}
-                records=strategy.hubRecords();
+                records=strategy.hubRecordsUi();
             }
             audit=strategy.ledgerAudit(migration.optJSONObject("manifest"));
         }
@@ -482,7 +489,9 @@ public final class UnifiedTradingService extends Service {
             try{
                 if(!running.get()||!strategy.isStarted()
                     ||manualSellOutstanding.get()>0)return;
-                JSONObject localRecords=strategy.hubRecords();
+                // The original complete data is still present in every SQLite DB;
+                // only a display window is serialized for the 256MB Java heap.
+                JSONObject localRecords=strategy.hubRecordsUi();
                 if(!running.get())return;
                 String serialized=localRecords.toString();
                 // Atomic file is a VIEW, never the broker/order authority.
@@ -499,7 +508,10 @@ public final class UnifiedTradingService extends Service {
                 if(running.get()&&PcLiveSyncPolicy.shouldPublish(
                     enabled,publishOneShot,completed,lastHubPublish)){
                     publishOneShot=false;
-                    publishPhoneLedgers(hub,localRecords);
+                    // Never publish a truncated UI window as a complete PC ledger.
+                    // Existing full source buckets remain the sync authority.
+                    JSONObject originalForSync=strategy.hubRecords();
+                    publishPhoneLedgers(hub,originalForSync);
                     lastHubPublish=completed;
                 }
             }catch(Throwable error){
