@@ -164,6 +164,11 @@ public final class UnifiedTradingService extends Service {
             }
             if(intent!=null&&APPLY_PC_MIGRATION.equals(intent.getAction())&&running.get()){
                 new Thread(()->{
+                    if(FreshEpochGateV106.hasMarker(this)){
+                        crashes.add("fresh_epoch_pc_import_blocked",
+                            new IllegalStateException("NO_OLD_PC_LEDGER_IN_FRESH_EPOCH"));
+                        return;
+                    }
                     if(liveOrdersArmed()){
                         getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
                             .putString("result",new JSONObject().toString()).apply();
