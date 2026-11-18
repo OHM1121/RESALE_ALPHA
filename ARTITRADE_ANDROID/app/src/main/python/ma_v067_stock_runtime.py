@@ -255,6 +255,37 @@ def _exit_policy(self,c,p,bid,now,book,previous):
             second_sold=CASE WHEN ? THEN 1 ELSE second_sold END
             WHERE id=?""",
             (int(first_confirmed),int(second_confirmed),p['id']))
+    # A phone/network reconnect can deliver its first valid KRX 0B+0D when
+    # price is ALREADY above both configured profit steps. Native on_tick()
+    # previously evaluated only one step and then waited for another 0B,
+    # which may never arrive on a quiet symbol. Advance exactly ONE more
+    # step using this SAME still-fresh exchange bid, but only after a
+    # verified SELL row and with the original 0D reservation budget.
+    # All other exits (hard stop, trail, forced) keep their native priority.
+    first_reasons=('MA_V065_UP_FIRST_10PCT',
+                   'MA_V065_FIRST_30_AT_REVERSAL_HIGH')
+    if reason in first_reasons and first_confirmed:
+        current=c.execute("""SELECT * FROM positions
+            WHERE id=? AND status='OPEN' AND qty>0""",(p['id'],)).fetchone()
+        if current is not None:
+            # Permit one target-2 evaluation, no recursive stage-3 or
+            # second unrelated new entry on the same exchange event.
+            state_now=_read_state(c,p['id'])[1]
+            if state_now is not None:
+                if kind=='REVERSAL_BEAR':
+                    _,next_qty,next_reason=policy.bear_exit(
+                        state_now,bid,current['entry'],current['qty'],
+                        current['qty0'],now)
+                else:
+                    _,next_qty,next_reason=policy.up_exit(
+                        state_now,bid,current['entry'],current['qty'],
+                        current['qty0'],now)
+                if next_reason in ('MA_V065_SECOND_HALF_REMAINING',
+                                   'MA_V065_UP_SECOND_HALF_REMAINING') and next_qty>0:
+                    # The nested call re-reads native 0D capacity and
+                    # authoritative position+execution state. It cannot
+                    # enter a third stage because only FIRST reasons recurse.
+                    _exit_policy(self,c,current,bid,now,book,previous)
 
 
 def _topup_partial_stock(self,tick,shared_book):
