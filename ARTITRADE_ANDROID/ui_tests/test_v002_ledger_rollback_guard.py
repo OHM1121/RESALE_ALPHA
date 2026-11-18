@@ -132,6 +132,20 @@ class AntiRollbackEightWallets(unittest.TestCase):
         with self.assertRaisesRegex(RollbackBlocked,"CHECKPOINT_INVALID_OR_REPLACED"):
             verify_and_checkpoint(self.root,require_existing=True)
 
+    def test_android_after_commit_never_auto_resets_on_preparing_or_missing_marker(self):
+        android=Path(__file__).resolve().parents[1]/"app/src/main/java/com/artitrade/mobile"
+        gate=(android/"FreshEpochGateV106.java").read_text("utf8")
+        service=(android/"UnifiedTradingService.java").read_text("utf8")
+        visual=(android/"UnifiedVisualActivity.java").read_text("utf8")
+        self.assertIn("COMMITTED_EPOCH_MARKER_REWOUND_TO_PREPARING_NO_RESET",gate)
+        self.assertIn("COMMITTED_EPOCH_MARKER_MISSING_NO_REINITIALIZE",gate)
+        self.assertIn('"artitrade_ledger_guard_v002"',gate)
+        self.assertLess(service.index("LedgerAntiRollbackV002.verify(this);"),
+                        service.index("JSONObject started=strategy.start();"))
+        self.assertIn("PAPER_LEDGER_ROLLBACK_RUNTIME_BLOCKED",service)
+        self.assertNotIn("checkPendingPCArchive",service)
+        self.assertIn("원장 무결성 오류 · 매매 중단",visual)
+
     def test_guard_never_alters_live_or_original_trade_rows(self):
         db=self.root/DBS[0]
         with sqlite3.connect(db) as c:
