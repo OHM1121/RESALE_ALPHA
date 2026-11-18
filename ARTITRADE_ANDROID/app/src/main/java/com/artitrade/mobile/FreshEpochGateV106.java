@@ -32,7 +32,19 @@ final class FreshEpochGateV106 {
      * is not a legacy-position migration and cannot be skipped.
      */
     static boolean mandatoryFreshStartPending(Context c)throws Exception{
+        // A lost marker after a previous COMMITTED epoch must NEVER initiate
+        // another destructive "first launch" reset. The independent prefs
+        // checkpoint survives replacement of the stock/coin SQLite root.
+        String prior=c.getSharedPreferences(CHECKPOINT,Context.MODE_PRIVATE)
+            .getString("applied_epoch_id","");
         JSONObject saved=read(c);
+        if(!prior.isEmpty()&&saved==null)
+            throw new IllegalStateException(
+                "OLD_EPOCH_MARKER_MISSING_KEEP_NEW_LEDGER_AND_BLOCK");
+        if(!prior.isEmpty()&&saved!=null&&
+                !prior.equals(saved.optString("epoch_id")))
+            throw new IllegalStateException(
+                "OLD_EPOCH_MARKER_REPLACED_KEEP_NEW_LEDGER_AND_BLOCK");
         return saved==null||!"COMMITTED".equals(saved.optString("state"));
     }
 
@@ -61,8 +73,13 @@ final class FreshEpochGateV106 {
     }
 
     static JSONObject migrationGate(Context c){
-        if(!hasMarker(c))return null;
         try{
+            // Recheck the independent witness here too: a background Service
+            // can start without the Activity's cold-launch validation.
+            if(mandatoryFreshStartPending(c))
+                return new JSONObject().put("ok",false)
+                    .put("status","FRESH_EPOCH_BLOCKED")
+                    .put("reason","MISSING_OR_INCOMPLETE_EPOCH");
             JSONObject marker=read(c);
             if(marker==null)throw new IllegalStateException("MISSING");
             String state=marker.optString("state","");
