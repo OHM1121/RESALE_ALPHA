@@ -1,0 +1,76 @@
+name: ARTITRADE v085 PAPER exit provenance and PnL parity (no orders)
+on:
+  push:
+    branches: [ fix-artitrade-v085-exit-pnl-audit-20261118 ]
+    paths:
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v085_exit_pnl_parity.py'
+      - '.github/workflows/verify-v085-exit-pnl.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Restore unchanged 82-module PAPER engine for temporary SQLite tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          packed=base64.b64decode(''.join((root/'assets/strategy_v070'/f'part_{n:02d}.txt').read_text('ascii') for n in range(22)))
+          with zipfile.ZipFile(io.BytesIO(packed)) as z:
+              assert len(z.namelist())==82 and z.testzip() is None
+              z.extractall('/tmp/artitrade-v085-core')
+          print('CORE_SHA256',hashlib.sha256(packed).hexdigest())
+          PY
+      - name: Read-only native SELL source path inventory (no credentials or live orders)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          root=Path('/tmp/artitrade-v085-core')
+          targets={
+            'd_upbit.py':('CoinLedger',('manual_sell','_sell','snapshot')), 
+            'coin_ma_engine.py':('MACoinLedger',('manual_sell','_sell','snapshot','process_book')),
+            'stock_ma_engine.py':('StockMAService',('_sell','_exit','on_tick','snapshot')),
+            'd_live.py':('LivePaperRunner',('_tick_job_loop','watched_codes','_both_watched_codes','_new_tick')),
+          }
+          for file,(cls_name,names) in targets.items():
+              p=root/file
+              if not p.is_file():continue
+              src=p.read_text(encoding='utf-8')
+              tree=ast.parse(src)
+              owner=next((n for n in tree.body if isinstance(n,ast.ClassDef) and n.name==cls_name),None)
+              if owner is None:
+                  print('CLASS_MISSING',file,cls_name)
+                  continue
+              for method in owner.body:
+                  if isinstance(method,(ast.FunctionDef,ast.AsyncFunctionDef)) and method.name in names:
+                      lines=src.splitlines()
+                      window=lines[method.lineno-1:min(method.end_lineno,method.lineno+85)]
+                      print('=== NATIVE',file,cls_name+'.'+method.name,method.lineno,'===')
+                      print('\n'.join(f'{method.lineno+i:4d}: {x}' for i,x in enumerate(window)))
+          PY
+      - name: Original MA verified SELL and paper manual regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v085-core"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v084_native_coin_manual.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v091_ma_three_stage_real_ledger.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_legacy_ma_exit.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_verified_exits_ma.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v085_exit_pnl_parity.py' -v
