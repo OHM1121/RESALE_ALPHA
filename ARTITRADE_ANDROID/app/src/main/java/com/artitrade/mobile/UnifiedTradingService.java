@@ -256,6 +256,23 @@ public final class UnifiedTradingService extends Service {
     private void launchWithMigration(){
         LegacyLedgerMigration importer=new LegacyLedgerMigration(this,crashes);
         JSONObject migration=importer.importIfReady();
+        String epochState=migration.optString("status","");
+        if("FRESH_EPOCH_BLOCKED".equals(epochState)){
+            saveMigrationResult(migration);
+            // An interrupted/deformed reset must NEVER start source engines,
+            // resubscribe quotes or import any old PC archive.
+            return;
+        }
+        if("FRESH_EPOCH_NO_PC_IMPORT".equals(epochState)){
+            try{FreshEpochGateV106.clearDerivedCachesIfNeeded(this);}
+            catch(Exception staleCache){
+                crashes.add("fresh_epoch_display_cache_guard",staleCache);
+                saveMigrationResult(new JSONObject()
+                    .put("ok",false).put("status","FRESH_EPOCH_BLOCKED")
+                    .put("reason","STALE_CACHE_NOT_CLEARED_NO_TRADING_START"));
+                return;
+            }
+        }
         JSONObject started=strategy.start();
         if(!started.optBoolean("ok",true))
             crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
