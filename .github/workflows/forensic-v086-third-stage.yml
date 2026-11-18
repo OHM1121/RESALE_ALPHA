@@ -1,0 +1,27 @@
+name: Read-only original three-leg profit and loss after reconnect
+on:
+  push:
+    branches: [audit-artitrade-v086-queue-api-20261118]
+    paths: ['.github/workflows/forensic-v086-third-stage.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for f,ranges in [('d_engine.py',[(930,975),(1030,1080),(1112,1236)]),
+                               ('at_close_engine.py',[(200,249)])]:
+              ls=z.read(f).decode().splitlines()
+              for a,b in ranges:
+                print('===',f,a,b)
+                for i in range(a-1,min(b,len(ls))):print(i+1,ls[i])
+          PY
