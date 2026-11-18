@@ -59,9 +59,8 @@ class NativeOrderRetry(unittest.TestCase):
         ma=src("ma_v067_stock_runtime.py")
         trend=src("market_trend_runtime_v043.py")
         self.assertIn("original_tick(self,data,book)",ma)
-        self.assertIn("shared_book.available(code,'KRX',now,limit,desired)",
-                      src("ma_v067_stock_runtime.py") if False else
-                      "shared_book.available(code,'KRX',now,limit,desired)")
+        self.assertIn("executed=service.on_tick(decision_tick,runner.engine.book)",ma)
+        self.assertIn("return original_tick(self,data,book)",ma)
         self.assertIn("verified=self._quote(market,code)",trend)
         self.assertIn("self.standalone_wallet.buy(",trend)
 
