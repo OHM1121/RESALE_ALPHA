@@ -107,12 +107,27 @@ def _put_compressed_error_item(pieces,used,capacity,record,source,limit,check_ca
     while offset<size or (size==0 and index==0):
         amount=min(raw_chunk,size-offset) if size else 0
         predicted=_deflated_bytes(source,offset,amount,check_cancel)
+        # Maximize the current ZIP before creating another. With fixed
+        # 100MB raw chunks an incompressible 520MB source used to produce
+        # a 400MB first ZIP and a tiny second ZIP, wasting 96MB of capacity.
+        room=capacity-used[-1]
+        if (predicted>room and used[-1]>0 and
+            room>=max(8192,capacity//200) and amount>16_384):
+            trial=min(amount-1,int(amount*room/max(1,predicted)*.997))
+            for _ in range(6):
+                if trial<16_384:break
+                trial_size=_deflated_bytes(source,offset,trial,check_cancel)
+                if trial_size<=room:
+                    amount=trial
+                    predicted=trial_size
+                    break
+                trial=int(trial*room/max(1,trial_size)*.995)
         # Header+descriptor+entry central-dir overhead is covered by reserve.
         if predicted>capacity:
             raise ValueError("Compressed fragment exceeds part capacity")
         if used[-1]+predicted>capacity:
             pieces.append([]);used.append(0)
-        entry=(record["path"] if size<=raw_chunk else
+        entry=(record["path"] if offset==0 and amount==size else
                f'fragments/{record["serial"]:05d}/{index:05d}.bin')
         fragment={"part":len(pieces),"entry":entry,"offset":offset,
                   "size":amount}
