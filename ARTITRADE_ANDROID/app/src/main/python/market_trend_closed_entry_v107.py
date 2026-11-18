@@ -50,13 +50,42 @@ def verified_closed_rows(rows, open_at, market, frame):
     if len(ordered) < 30:
         return []
     last = ordered[-1]["end"]
-    if market == "coin" and last != open_at:
-        return []
-    if market == "stock":
-        # KRX previous session is allowed at the next regular opening,
-        # but a stale weekend/holiday cache is NOT sufficient proof.
-        if last != open_at and (open_at-last).total_seconds() > 4*86400:
+    if market == "coin":
+        if last != open_at:
             return []
+        from market_trend_v043 import FRAME_SECS
+        width = FRAME_SECS.get(frame)
+        if width is None or any(
+            abs((ordered[i]["end"]-ordered[i-1]["end"]).total_seconds()-width)>0.001
+            for i in range(len(ordered)-29,len(ordered))
+        ):
+            return []  # no forged RSI across absent Upbit candles
+    elif market == "stock" and last != open_at:
+        # The previous actual KRX session close is the immediately preceding
+        # candle only at today's verified exchange opening. Never use a
+        # stale 5m RSI from yesterday after intraday source interruptions.
+        from market_trend_v043 import _krx_day
+        from krx_session_v041 import SPECIAL_SESSIONS, START, END
+        opening = SPECIAL_SESSIONS.get(open_at.date().isoformat(),
+                                       (START,END))[0]
+        today_open = open_at.replace(hour=opening//60,
+                                     minute=opening%60,second=0,microsecond=0)
+        if open_at != today_open:
+            return []
+        prior = open_at.date()-dt.timedelta(days=1)
+        for _ in range(15):
+            if _krx_day(prior):break
+            prior-=dt.timedelta(days=1)
+        else:
+            return []
+        closing = SPECIAL_SESSIONS.get(prior.isoformat(),(START,END))[1]
+        expected = open_at.replace(year=prior.year,month=prior.month,day=prior.day,
+                                   hour=closing//60,minute=closing%60,
+                                   second=0,microsecond=0)
+        if last != expected:
+            return []
+    elif market != "stock":
+        return []
     if any(not isinstance(x.get("close"), (int,float)) or
            not math.isfinite(float(x["close"])) or x["close"] <= 0
            for x in ordered[-30:]):
