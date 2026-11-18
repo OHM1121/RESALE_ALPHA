@@ -1890,53 +1890,6 @@ public final class UnifiedVisualActivity extends Activity {
     private boolean meaningfulRecord(JSONObject value){
         return value!=null&&meaningfulTree(value);
     }
-    private boolean recoveryCandidate(JSONObject nested,String recordKey){
-        if(nested==null||nested.length()==0)return true;
-        if("stockAtResearch".equals(recordKey)){
-            JSONArray items=nested.optJSONArray("items");
-            if(items!=null&&items.length()>0)return false;
-            String status=nested.optString("load_status","");
-            return !("OK".equals(status)&&nested.optLong("source_total",0L)==0L);
-        }
-        if("stockAtLedger".equals(recordKey)){
-            JSONObject diagnostic=nested.optJSONObject("load_diagnostic");
-            String stage=diagnostic==null?"":diagnostic.optString("stage","");
-            return "PC_SOURCE_NOT_PRESENT".equals(stage)||
-                "ENGINE_NOT_READY".equals(stage);
-        }
-        return false;
-    }
-    private boolean missingNestedBucket(JSONObject local,String recordKey){
-        if(local==null)return true;
-        if("stockAtLedger".equals(recordKey)||"stockAtResearch".equals(recordKey)){
-            for(String nested:new String[]{"ma","gmo"}){
-                String field="stockAtLedger".equals(recordKey)&&"ma".equals(nested)
-                    ?"ma_subledger":nested;
-                if(recoveryCandidate(local.optJSONObject(field),recordKey))return true;
-            }
-        }
-        return false;
-    }
-    /** Supplement genuinely missing or failed nested buckets, but
-     * never overwrite a complete phone trading ledger with old PC data.
-     */
-    private JSONObject mergeMissingNested(JSONObject local,JSONObject remote,String recordKey){
-        if(!meaningfulRecord(local))return remote;
-        if(!meaningfulRecord(remote)||!missingNestedBucket(local,recordKey))return local;
-        String[] keys="stockAtLedger".equals(recordKey)
-            ?new String[]{"ma_subledger","gmo"}:new String[]{"ma","gmo"};
-        try{
-            JSONObject merged=new JSONObject(local.toString());
-            for(String nested:keys){
-                JSONObject source=remote.optJSONObject(nested);
-                if(recoveryCandidate(merged.optJSONObject(nested),recordKey)
-                    &&meaningfulRecord(source))merged.put(nested,source);
-            }
-            return merged;
-        }catch(Exception ignored){return local;}
-    }
-
-
     private JSONObject localRecord(String key){return localRecord(copyCache(),key);}
     private JSONObject localRecord(JSONObject snapshot,String key){
         JSONObject all=snapshot.optJSONObject("local_records");if(all==null)return new JSONObject();
@@ -1959,17 +1912,12 @@ public final class UnifiedVisualActivity extends Activity {
 
     private JSONObject record(String key){return record(copyCache(),key);}
     private JSONObject record(JSONObject snapshot,String key){
-        JSONObject local=localRecord(snapshot,key);
-        JSONObject p=snapshot.optJSONObject("records");
-        JSONObject remote=null;
-        if(p!=null){
-            JSONObject envelope=p.optJSONObject(key);
-            remote=envelope==null?null:envelope.optJSONObject("data");
-        }
-        if(meaningfulRecord(local))
-            return mergeMissingNested(local,remote,key);
-        if(meaningfulRecord(remote))return remote;
-        return local==null?new JSONObject():local;
+        // Fresh-only native phone ledger. Remote PC/UI records are never
+        // promoted to the source of current holdings, P&L or fill evidence.
+        // MSERVER is a separately verified, read-only DISASTER BACKUP, not
+        // a live ledger gap filler. 0 executions in an initialized wallet
+        // is a legitimate zero balance, never a reason to import old rows.
+        return localRecord(snapshot,key);
     }
 
     private JSONObject ledger(String m,String s){return ledger(copyCache(),m,s);}
