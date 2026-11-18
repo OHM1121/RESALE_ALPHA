@@ -3879,15 +3879,23 @@ public final class UnifiedVisualActivity extends Activity {
         }
         boolean ok=result.optBoolean("ok",false);
         boolean awaitingFill=ok&&state.startsWith("PENDING");
-        String title=!ok?"강제매도 실패":awaitingFill?"강제매도 접수":"강제매도 체결 확인";
+        boolean partial=ok&&state.startsWith("PARTIAL");
+        String title=!ok?"강제매도 실패":awaitingFill?"강제매도 접수":
+            partial?"강제매도 부분체결":"강제매도 체결 확인";
         String detail;
         if(!ok){
             detail="원인: "+result.optString("error","UNKNOWN")+
                 "\n상세: "+result.optString("detail",result.optString("message",""))+
                 "\n요청 ID: "+requestId;
         }else if(awaitingFill){
-            detail="매도 의도 접수 완료. 실제 KRX 체결가 및 잔량 조건이 충족되어야 원장에 체결됩니다."+
+            detail="매도 의도만 접수되었습니다. 체결 근거가 아직 기록되지 않아 실현손익에 반영하지 않습니다."+
                 "\n주문 ID: "+result.optString("order_id","미기록")+
+                "\n요청 ID: "+requestId;
+        }else if(partial){
+            detail="가상계좌 원장에 확인된 수량만 부분매도 기록되었습니다."+
+                "\n체결수량: "+result.optString("qty","조회 필요")+
+                "\n체결가격: "+result.optString("price","조회 필요")+
+                "\n미체결 수량은 원장과 대조 후 확인하십시오. 이 요청 ID로 자동 재주문하지 않습니다."+
                 "\n요청 ID: "+requestId;
         }else{
             detail="가상계좌 원장에 매도 체결이 기록되었습니다."+
