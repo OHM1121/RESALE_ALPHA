@@ -80,7 +80,7 @@ final class DailyRecoveryV003 {
                 collected+=part.length;
             }
             output.flush();output.getFD().sync();
-        }catch(Throwable error){
+        }catch(Exception error){
             temp.delete();
             throw error;
         }
