@@ -160,6 +160,13 @@ def exit_signal(state,observed_bid,now,market_score=None):
     if kind=="reference":
         if p<=float(t.get("stop",0)):
             return "NL1118_REFERENCE_HARD_STOP",1.0
+        expiry=t.get("deadline")
+        if expiry:
+            try:
+                end=dt.datetime.fromisoformat(str(expiry))
+                if end.tzinfo is not None and now>=end:
+                    return "NL1118_REFERENCE_HOLD_EXPIRY",1.0
+            except (ValueError,TypeError):pass
         score=valid_num(market_score)
         if (t.get("score_positive_at_buy") is True and
             score is not None and score<=-10.0):
