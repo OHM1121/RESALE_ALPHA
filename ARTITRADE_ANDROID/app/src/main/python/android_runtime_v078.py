@@ -2414,7 +2414,40 @@ def price_snapshot_v089():
         if runtime is None or not getattr(runtime,'started',False):
             return json.dumps({'ready':False,'stock':{'quotes':{}},
                                'coin':{'quotes':{}},'revision':''})
-        stock=live_quote_snapshot(getattr(runtime,'stock_runner',None))
+        sr=getattr(runtime,'stock_runner',None)
+        stock=live_quote_snapshot(sr)
+        # Pending/candidate UI can reuse only already-subscribed, truly
+        # received 0B prints. No extra REG slots or research REST calls.
+        if sr is not None and getattr(sr,'_v066_quote_lock',None) is not None:
+            try:
+                from stock_quote_truth_v066 import _choose_for_code,KST
+                with sr._v066_quote_lock:
+                    by_venue=dict(getattr(sr,'_v066_quote_by_venue',{}) or {})
+                held=dict(stock.get('quotes') or {})
+                codes=sorted({k[0] for k in by_venue
+                              if isinstance(k,tuple) and len(k)==2})[:220]
+                now_stock=_dt.datetime.now(KST)
+                connected=bool(getattr(sr,'_confirmed_ws_session',False))
+                for code in codes:
+                    if code in held:continue
+                    valid,last=_choose_for_code(by_venue,code,now_stock,connected)
+                    price=valid or last
+                    if price is None:continue
+                    held[code]={
+                        'price':price['price'],
+                        'status':'FRESH' if valid else 'LAST_0B',
+                        'source':'KIWOOM_REAL_0B' if valid else 'KIWOOM_LAST_0B',
+                        'venue':price['venue'],
+                        'exchange_at':price['exchange_at'],
+                        'received_at':price['received_at'],
+                        'expires_ms':price['expires_ms'] if valid else 0}
+                stock['quotes']=held
+                stock['revision']='|'.join(
+                    str(k)+':'+str(v.get('price'))+':'+
+                    str(v.get('status'))+':'+str(v.get('received_at',''))
+                    for k,v in sorted(held.items()))
+            except (AttributeError,TypeError,ValueError,RuntimeError):
+                pass
         cr=getattr(runtime,'coin_runner',None)
         now_epoch_ms=int(time.time()*1000)
         now_mono=time.monotonic()
