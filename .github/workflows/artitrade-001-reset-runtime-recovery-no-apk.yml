@@ -1,0 +1,76 @@
+name: ARTITRADE 0.0.1 post-reset 8-strategy baseline recovery - NO APK
+on:
+  push:
+    branches: [fix-artitrade-001-post-reset-engine-recovery-20261118]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restore-original-trading-logic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Exact latest pre-reset native trend logic and built-in EXE unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse ARTITRADE-v0.9.5-20261118
+          git diff --exit-code ARTITRADE-v0.9.5-20261118 HEAD -- \
+            ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py \
+            ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py \
+            ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java \
+            ARTITRADE_ANDROID/app/src/main/assets/strategy_v070
+          echo 'EXACT_V095_NATIVE_EXECUTION_AND_ORIGINAL_EXE_ASSET_UNCHANGED'
+      - name: Check repaired source syntax and original EXE bundle integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            ARTITRADE_ANDROID/app/src/main/python/market_research_v033.py \
+            ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py \
+            ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py \
+            ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          python3 - <<'PY'
+          import ast,base64,hashlib,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          combined=''.join((root/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text('ascii')
+                           for i in range(22))
+          payload=base64.b64decode(combined)
+          fingerprint=hashlib.sha256(payload).hexdigest()
+          bridge=(root/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text()
+          assert 'CORE_SHA256="'+fingerprint+'"' in bridge
+          with zipfile.ZipFile(io.BytesIO(payload)) as z:
+              assert z.testzip() is None
+              for name in z.namelist():
+                  if name.endswith('.py'):
+                      ast.parse(z.read(name).decode('utf-8'),filename=name)
+          print('NATIVE_8_STRATEGY_BUNDLE_INTEGRITY_OK',fingerprint)
+          PY
+      - name: No-ledger recovery, score worker and old native candidate/BUY/SELL tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          for suite in \
+            test_v001_reset_runtime_recovery.py \
+            test_v033_market_research.py \
+            test_v043_market_trend.py \
+            test_v054_runtime.py \
+            test_v106_fresh_paper_epoch.py
+          do
+            echo ">>> $suite"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$suite" -v
+          done
+      - name: Source-only guard, never build APK, invoke broker or delete device ledger
+        shell: bash
+        run: |
+          test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
+          echo 'ARTITRADE_001_RESET_RECOVERY_SOURCE_TESTS_OK_NO_APK_NO_BROKER'
