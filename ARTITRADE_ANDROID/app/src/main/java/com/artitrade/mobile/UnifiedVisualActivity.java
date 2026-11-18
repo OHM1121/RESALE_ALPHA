@@ -641,6 +641,7 @@ public final class UnifiedVisualActivity extends Activity {
         java.util.HashSet<String> validPages=new java.util.HashSet<>(
             java.util.Arrays.asList("home","positions","pending","executions",
                 "research","analysis","operation","scores","errors","policyHistory","market","more"));
+        if("research".equals(page))page="analysis"; // removed UI tab, keep raw export and AI data
         if(!validPages.contains(page))page="home";
     }
 
@@ -1005,8 +1006,6 @@ public final class UnifiedVisualActivity extends Activity {
             bottom.addView(bottomNavItem("pending","◌","매수대기"),
                 new LinearLayout.LayoutParams(0,dp(46),1));
             bottom.addView(bottomNavItem("executions","↔","체결이력"),
-                new LinearLayout.LayoutParams(0,dp(46),1));
-            bottom.addView(bottomNavItem("research","◎","연구자료"),
                 new LinearLayout.LayoutParams(0,dp(46),1));
             bottom.addView(bottomNavItem("analysis","◇","AI분석"),
                 new LinearLayout.LayoutParams(0,dp(46),1));
@@ -2488,7 +2487,7 @@ public final class UnifiedVisualActivity extends Activity {
         }
         else if("executions".equals(page))renderList("체결 이력",stats(market,strategy).executions,"executions");
         else if("operation".equals(page))renderOperation();
-        else if("research".equals(page))renderResearch();
+        else if("research".equals(page))renderAiAnalysis(); // legacy navigation fallback
         else if("analysis".equals(page))renderAiAnalysis();
         else if("scores".equals(page))renderScores();
         else if("errors".equals(page))renderHome(); // no error history table
