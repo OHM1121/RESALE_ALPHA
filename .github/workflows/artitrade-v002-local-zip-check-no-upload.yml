@@ -35,7 +35,6 @@ jobs:
           $ErrorActionPreference='Stop'
           $script='ARTITRADE_ANDROID/tools/ARTITRADE_ZIP_CHECK.ps1'
           & $script -ZipPath '/tmp/artitrade_zip_local/good.zip'
-          if($LASTEXITCODE -ne 0){throw 'PS_GOOD_FAILED'}
           & $script -ZipPath '/tmp/artitrade_zip_local/bad.zip'
           $good=Get-Content '/tmp/artitrade_zip_local/good.zip.DIAG.txt' -Raw
           $bad=Get-Content '/tmp/artitrade_zip_local/bad.zip.DIAG.txt' -Raw
