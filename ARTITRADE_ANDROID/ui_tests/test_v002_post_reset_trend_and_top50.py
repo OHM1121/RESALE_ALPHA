@@ -56,7 +56,7 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
             co.rt=SimpleNamespace(root=root,coin_runner=SimpleNamespace(preload_gate=None))
             co.lock=threading.RLock()
             co.stop_event=threading.Event()
-            co._quotes={"coin":{"KRW-TEST":(130.0,time.monotonic())},"stock":{}}
+            co._quotes={"coin":{"KRW-TEST":(120.0,time.monotonic())},"stock":{}}
             co._candidates={"coin":{"KRW-TEST":("CRYPTO","TEST")},"stock":{}}
             co._history={("coin","KRW-TEST","30m"):bars}
             co._decision_clock=lambda:now
