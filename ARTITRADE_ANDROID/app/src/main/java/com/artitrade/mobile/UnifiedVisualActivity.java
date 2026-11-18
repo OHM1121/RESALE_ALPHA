@@ -2437,7 +2437,25 @@ public final class UnifiedVisualActivity extends Activity {
     private void render(){
         if(content==null)return;
         livePriceBindings.clear();
-        content.removeAllViews();updateHeader();
+        content.removeAllViews();
+        // A stale local snapshot must never look like the CURRENT ledger
+        // after anti-rollback has stopped trading. No apparent old holdings,
+        // false P&L or manual exit button may be displayed as executable.
+        String ledgerBlock=getSharedPreferences("artitrade_ledger_guard_v002",
+            MODE_PRIVATE).getString("blocked_reason","");
+        if(!ledgerBlock.isEmpty()){
+            TextView warning=text("원장 무결성 오류 · 매매 중단",19);
+            warning.setTextColor(Color.rgb(255,145,155));
+            warning.setPadding(dp(10),dp(20),dp(10),dp(8));
+            content.addView(warning);
+            TextView detail=text("체결기록이 이전 상태로 변경되었을 수 있어 "+
+                "원장 복원과 전략 실행을 차단했습니다. 기존 기록을 자동 덮어쓰지 않습니다.",13);
+            detail.setTextColor(PremiumUi.MUTED);
+            detail.setPadding(dp(10),0,dp(10),dp(12));
+            content.addView(detail);
+            return;
+        }
+        updateHeader();
         if(integratedMode){
             if("positions".equals(page))renderIntegratedPositions();
             else renderIntegratedHome();
