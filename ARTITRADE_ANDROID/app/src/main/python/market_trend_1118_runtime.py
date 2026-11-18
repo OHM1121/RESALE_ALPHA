@@ -182,11 +182,11 @@ def _entry_window(self,market,now):
             if not (now<dt.datetime.fromisoformat(old["expires_at"])):continue
             choices.append((frame,rsi,condition,old))
         if choices:
-            # Each symbol may fill at most one timeframe on a single
-            # genuinely observed trade; original wallet owns deduplication.
+            # Bind the original pair of genuinely observed exchange prints
+            # to THIS symbol. Never let a later loop symbol substitute them.
             choices.sort(key=lambda x:mt.PRIORITY[x[0]],reverse=True)
-            ordered[code]=(choices[0],verified)
-    for code,(signal,quote) in ordered.items():
+            ordered[code]=(choices[0],verified,previous,trade)
+    for code,(signal,quote,previous,trade) in ordered.items():
         frame,rsi,boll,watch=signal
         if self.stop_event.is_set():return
         at=self._decision_clock()
