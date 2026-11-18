@@ -1,0 +1,54 @@
+name: ARTITRADE v105 original-core read-only root-cause diagnostics
+on:
+  push:
+    branches: [fix-artitrade-v095-errors-20261118]
+    paths:
+      - .github/workflows/artitrade-v105-root-diagnostics.yml
+      - ARTITRADE_ANDROID/app/src/main/python/stock_manual_v086.py
+      - ARTITRADE_ANDROID/ui_tests/test_v105_manual_rest_bid.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Inspect original EXE read-only Kiwoom adapter and CW source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile,re
+          from pathlib import Path
+          base=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          source=base64.b64decode(''.join((base/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(source)) as z:
+            print('ORIGINAL_FILES',len(z.namelist()))
+            for name in ('d_live.py','at_close_bridge.py','d_upbit.py'):
+              if name not in z.namelist():
+                print('MISSING',name);continue
+              data=z.read(name).decode('utf8');lines=data.splitlines()
+              print('--- FILE',name,'LINES',len(lines),'---')
+              found=[]
+              for i,line in enumerate(lines):
+                if re.search(r'ReadOnlyMarketAPI|실주문 및 계좌|def post\(|def latest_krx_trade|def latest_trade\(|class LivePaperRunner|def _rest_bid|def shared_pinned|def snapshot_state|0B|0D|CLOSE',line):
+                  found.append(i)
+              print('MARKERS',[(i+1,lines[i].strip()[:140]) for i in found[:65]])
+              for node in ast.parse(data).body:
+                if isinstance(node,ast.ClassDef) and node.name=='ReadOnlyMarketAPI':
+                  print('READONLY_CLASS',node.lineno,node.end_lineno)
+                  print('\n'.join(str(i+1)+': '+lines[i] for i in range(node.lineno-1,min(node.end_lineno,len(lines),node.lineno+150))))
+              for i,line in enumerate(lines):
+                if '실주문 및 계좌' in line:
+                  print('REAL_ACCOUNT_BLOCK',i+1,'|',' | '.join(lines[max(0,i-3):min(len(lines),i+4)]))
+          PY
+      - name: Existing v094 safety / memory regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v104_ui_json_oom_root_cause.py -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v100_manual_denial_and_targets.py -v
