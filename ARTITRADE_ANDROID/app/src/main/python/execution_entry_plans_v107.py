@@ -9,6 +9,7 @@ import datetime as dt
 import json
 from pathlib import Path
 import sqlite3
+import threading
 
 NAME="execution_entry_plans_v107.sqlite3"
 SCHEMA="ARTITRADE_ENTRY_EVIDENCE_V107"
@@ -16,7 +17,8 @@ _VALID_MARKETS=("stock","coin")
 _VALID_STRATEGIES={
     "stock":("at","ma","close","gmo","trend"),
     "coin":("general","ma","trend")}
-_READY=False
+_SEEN=set()
+_SEEN_LOCK=threading.Lock()
 
 def _clean(v,max_len=1000):
     if v is None:return None
@@ -46,6 +48,10 @@ def record_plan(root,market,strategy,frame,symbol,reference,*,reason,
     base=Path(root).resolve()
     if not base.is_dir():return False
     path=base/NAME
+    key=(str(base),market,strategy,str(frame),str(symbol),str(reference),
+         str(phase),str(reason),str(candidate_target),str(exit_target))
+    with _SEEN_LOCK:
+        if key in _SEEN:return True
     now=dt.datetime.now(dt.timezone.utc).isoformat()
     payload=json.dumps(extra if isinstance(extra,dict) else {},
                        ensure_ascii=False,sort_keys=True,default=str)[:16000]
@@ -80,6 +86,9 @@ def record_plan(root,market,strategy,frame,symbol,reference,*,reason,
                _clean(phase),_clean(reason),_clean(candidate_target),
                _clean(exit_target),_clean(target_source),
                _clean(explanation),payload,now,now))
+    with _SEEN_LOCK:
+        _SEEN.add(key)
+        if len(_SEEN)>25000:_SEEN.clear()
     return True
 
 def capture_candidate(root,market,strategy,reference,candidate,
