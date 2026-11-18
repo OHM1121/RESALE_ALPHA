@@ -2579,9 +2579,10 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject watch=local==null?null:local.optJSONObject("market_trend_watch");
         JSONArray pending=watch==null?null:watch.optJSONArray(market);
         if(pending==null)pending=stats(market,"trend").pending;
-        TextView title=text("마켓트렌드 · RSI(20) ≤ 35 매수대기",20);
+        TextView title=text("마켓트렌드 · 진행봉 RSI 사전관측 (매수후보 아님)",17);
         title.setTypeface(null,Typeface.BOLD);
         content.addView(title);
+        content.addView(text("정식 매수후보: 최근 10개 확정봉 최초 RSI(20)<30 · 다음 봉 개시 후 10초 이내 실제 호가로만 매수",11));
         JSONObject trendDiag=local==null?null:local.optJSONObject("market_trend_status");
         JSONObject marketDiag=trendDiag==null?null:trendDiag.optJSONObject(market);
         if(pending.length()==0){
@@ -2595,7 +2596,7 @@ public final class UnifiedVisualActivity extends Activity {
             String symbol=row.optString("code","종목 미확인");
             panel.addView(text(symbol+" · "+tfLabel(timeFrameOf(row)),17));
             double rsi=row.optDouble("rsi20_live",Double.NaN);
-            String rsiText="관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
+            String rsiText="진행봉 관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
                 " · 현재가 ";
             TextView priceView=text(rsiText+formatMaybeMoney(row,"price"),13);
             panel.addView(priceView);
