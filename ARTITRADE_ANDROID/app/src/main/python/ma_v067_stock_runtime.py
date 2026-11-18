@@ -267,7 +267,11 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     if reason in first_reasons and first_confirmed:
         current=c.execute("""SELECT * FROM positions
             WHERE id=? AND status='OPEN' AND qty>0""",(p['id'],)).fetchone()
-        if current is not None:
+        if current is not None and all(k in current.keys() for k in (
+                'id','entry','qty','qty0')):
+            # The native SELL journal is already durable in this SQL
+            # transaction. A malformed/incomplete reopened row must not
+            # throw away that valid first execution through a retry.
             # Permit one target-2 evaluation, no recursive stage-3 or
             # second unrelated new entry on the same exchange event.
             state_now=_read_state(c,p['id'])[1]
