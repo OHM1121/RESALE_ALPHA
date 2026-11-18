@@ -685,7 +685,7 @@ public final class UnifiedVisualActivity extends Activity {
         TextView sub=text("S21+ PHONE MAIN · NATIVE SAFEBOOT",12);sub.setTextColor(Color.rgb(139,164,194));sub.setPadding(0,dp(8),0,dp(18));p.addView(sub);
         startupProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
         startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(5);
-        p.addView(startupProgress,new LinearLayout.LayoutParams(dp(320),dp(10)));
+        p.addView(startupProgress,new LinearLayout.LayoutParams(dp(Math.min(320,Math.max(180,getResources().getConfiguration().screenWidthDp-76))),dp(10)));
         startupStage=text("원장 · 전략별 요약 · 화면 자료를 준비 중",12);
         startupStage.setTextColor(Color.rgb(116,143,178));
         startupStage.setPadding(0,dp(14),0,0);p.addView(startupStage);
@@ -6851,6 +6851,32 @@ public final class UnifiedVisualActivity extends Activity {
         return TradeExplanation.side(raw);
     }
     /** Keep event/reference time separate from the actual broker/PAPER fill. */
+    /** The event key denotes a scheduled candle END, never future market data. */
+    private boolean rsiCandleEndIsFuture(Object rawValue){
+        if(rawValue==null||rawValue==JSONObject.NULL)return false;
+        String raw=String.valueOf(rawValue).trim();
+        try{return OffsetDateTime.parse(raw).toInstant().isAfter(Instant.now());}
+        catch(java.time.format.DateTimeParseException ignored){}
+        try{
+            java.time.LocalDateTime end=java.time.LocalDateTime.parse(raw);
+            return end.atZone(ZoneId.of("Asia/Seoul")).toInstant().isAfter(Instant.now());
+        }catch(java.time.format.DateTimeParseException ignored){}
+        try{
+            if(raw.matches("[0-9]{14}")){
+                java.time.LocalDateTime end=java.time.LocalDateTime.parse(raw,
+                    DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+                return end.atZone(ZoneId.of("Asia/Seoul")).toInstant().isAfter(Instant.now());
+            }
+            if(raw.matches("[0-9]{8}")){
+                java.time.LocalDate day=java.time.LocalDate.parse(raw,
+                    DateTimeFormatter.BASIC_ISO_DATE);
+                return day.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant()
+                    .isAfter(Instant.now());
+            }
+        }catch(java.time.format.DateTimeParseException ignored){}
+        return false;
+    }
+
     private String referenceTimelineOf(JSONObject row,String originStrategy){
         if("gmo".equals(originStrategy)){
             Object day=firstValue(row,"gmo_d_day","gmo_event_date",
@@ -6864,7 +6890,16 @@ public final class UnifiedVisualActivity extends Activity {
         }
         if("trend".equals(originStrategy)){
             Object bar=firstValue(row,"bar_key","signal_bar_end");
-            return "RSI 판정봉  "+(bar==null?"미기록":researchMoment(bar));
+            if(bar==null)return "RSI 판정 대상봉  미기록";
+            // bar_key is the scheduled candle END, not future market evidence.
+            String end=researchMoment(bar);
+            if(rsiCandleEndIsFuture(bar)){
+                Object observed=firstValue(row,"observed_at","signal_at",
+                    "decision_at","entry_at","buy_at","created_at","ts","at");
+                return "RSI 실시간 관측  "+(observed==null?"시각 미기록":researchMoment(observed))
+                    +"  ·  판정 대상봉 마감예정  "+end;
+            }
+            return "RSI 판정 대상봉 마감  "+end;
         }
         String maKind=row.optString("ma_v061_kind","");
         if("TURNPOINT".equals(maKind)||"DOWN_BEAR".equals(maKind)){
