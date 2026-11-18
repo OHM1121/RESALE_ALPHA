@@ -221,7 +221,7 @@ def reset(root, *, confirmation, engine_stopped=False,
                 base.rmdir()
     remaining, _ = _scan(path)
     if remaining:
-        raise ResetBlocked("HISTORICAL_FILES_REMAIN_RESET_INCOMPLETE")
+        raise ResetBlocked("HISTORICAL_FILES_REMAIN_RESET_INCOMPLETE:" + ",".join(name for name, _ in remaining[:8]))
     record.update(state="COMMITTED", completed_at_utc=dt.datetime.now(
         dt.timezone.utc).isoformat(timespec="seconds"),
         removed_files=len(candidates),
