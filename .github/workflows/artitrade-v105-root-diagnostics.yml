@@ -68,6 +68,7 @@ jobs:
               assert "('kt10000'" not in live
               assert "if (api_id,path) not in allowed:raise RuntimeError" in live
               assert z.testzip() is None and len(z.namelist())==82
+              z.extractall('/tmp/artitrade-v105-original-core')
           print('V105_READONLY_QUOTE_WHITELIST_PASS')
           PY
       - name: Existing v094 safety / memory regression
@@ -75,4 +76,4 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v104_ui_json_oom_root_cause.py -v
-          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v100_manual_denial_and_targets.py -v
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v105-original-core:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p test_v100_manual_denial_and_targets.py -v
