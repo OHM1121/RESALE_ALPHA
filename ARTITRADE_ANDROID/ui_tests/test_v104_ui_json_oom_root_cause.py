@@ -34,7 +34,7 @@ class DataPreservingOOMFix(unittest.TestCase):
         original={"stock":{"at":{"ledger":{"positions":rows,"executions":rows},
                                 "research":{"items":rows,"score_items":rows}},
                            "cw":{"ledger":{"positions":rows,"executions":rows},
-                                 "research":{"items":rows}}}},
+                                 "research":{"items":rows}}},
                   "coin":{"general":{"ledger":{"positions":rows},
                                      "research":{"items":rows}}}}
         first=original["stock"]["at"]["ledger"]["positions"][0]
