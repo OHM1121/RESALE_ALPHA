@@ -138,7 +138,6 @@ class FreshEpochV106(unittest.TestCase):
 
     def test_java_gates_auto_import_and_clears_derived_only(self):
         java = (JAVA / "FreshEpochGateV106.java").read_text()
-        legacy = (JAVA / "LegacyLedgerMigration.java").read_text()
         svc = (JAVA / "UnifiedTradingService.java").read_text()
         self.assertIn("NO_PC_IMPORT", java)
         self.assertIn("FRESH_EPOCH_BLOCKED", java)
@@ -148,9 +147,10 @@ class FreshEpochV106(unittest.TestCase):
         self.assertIn("LargeRecordStoreV087.store(c).delete()", java)
         self.assertNotIn('"unified_runtime"', java)
         self.assertNotIn('"unified_operation_v074"', java)
-        self.assertIn("FreshEpochGateV106.migrationGate(context)", legacy)
-        self.assertLess(legacy.index("FreshEpochGateV106.migrationGate(context)"),
-                        legacy.index("repairLegacyClosePath();"))
+        self.assertIn("FreshEpochGateV106.migrationGate(this)", svc)
+        self.assertNotIn("new LegacyLedgerMigration(this,crashes)", svc)
+        self.assertNotIn("importer.finishRuntimeVerification", svc)
+        self.assertFalse((JAVA / "LegacyLedgerMigration.java").exists())
         self.assertLess(svc.index("FreshEpochGateV106.clearDerivedCachesIfNeeded(this);"),
                         svc.index("JSONObject started=strategy.start();"))
         self.assertIn("if(FreshEpochGateV106.hasMarker(this))return;", svc)
