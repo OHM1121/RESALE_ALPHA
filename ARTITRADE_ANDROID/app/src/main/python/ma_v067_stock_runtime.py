@@ -571,14 +571,29 @@ def _up_worker(runner):
                               (now.isoformat(),frame,code,signal,'QUALIFIED',
                                json.dumps(features,ensure_ascii=False)))
                 service._refresh_watched()
-                seen.add(key)
                 _record_v076_stock_ma(code,frame,finish.isoformat(),
                     'UP_CANDIDATE_REGISTERED_NATIVE_FILL_UNVERIFIED',
                     {'trade_price':str(decision_tick[4]),'ask':int(ask),
                      'ma120_delta':checked.get('ma_120_delta'),
                      'seconds_to_close':round(fresh_remain,3)})
-                # Same native KRX 0D/FOK wallet executes on this true print.
-                service.on_tick(decision_tick,runner.engine.book)
+                # The original v067 marked this candle DONE before asking the
+                # verified native wallet to buy. If the first 0B/0D attempt
+                # returned 0 (e.g. trade>limit, missing executable depth),
+                # the candidate appeared forever as PENDING and NO further
+                # valid tick could retry before the entry deadline.
+                # Mark done ONLY on a confirmed original SQLite BUY. No
+                # altered trade/ask, invented fill, or strategy rule change.
+                executed=service.on_tick(decision_tick,runner.engine.book)
+                if executed and int(executed)>0:
+                    seen.add(key)
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_NATIVE_REAL_PAPER_BUY_CONFIRMED',
+                        {'fill_count':int(executed),'ask':int(ask)})
+                else:
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_NATIVE_BUY_NOT_FILLED_RETRY_UNTIL_WINDOW_END',
+                        {'trade_price':str(decision_tick[4]),'ask':int(ask),
+                         'limit':int(ask),'no_synthetic_fill':True})
         except Exception as exc:
             try:
                 _record_v076_stock_ma(
