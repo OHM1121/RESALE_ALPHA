@@ -1512,6 +1512,16 @@ public final class UnifiedVisualActivity extends Activity {
                     packet.put("local_records",localRecords);
                     packet.put("local_records_at",lp.getLong("updated_at",0L));
                 }catch(Exception e){packet.put("local_records",new JSONObject());}
+                try{
+                    android.content.SharedPreferences scorePrefs=getSharedPreferences(
+                        "artitrade_market_score_v005",MODE_PRIVATE);
+                    packet.put("market_score_plane_v005",
+                        new JSONObject(scorePrefs.getString("snapshot","{}")));
+                    packet.put("market_score_plane_v005_at",
+                        scorePrefs.getLong("written_at_ms",0L));
+                }catch(Exception ignored){
+                    packet.put("market_score_plane_v005",new JSONObject());
+                }
                 // Fresh PAPER epoch never reads old remote PC buckets back
                 // into the new UI. Only local phone execution ledgers are
                 // authoritative; MServer is an outgoing sync/status source.
@@ -2699,6 +2709,27 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject research=local==null?null:local.optJSONObject("market_research");
         JSONObject stock=research==null?null:research.optJSONObject("stock");
         JSONObject coin=research==null?null:research.optJSONObject("coin");
+        // Screen-only independent score route. Real execution history still
+        // joins the ORIGINAL market_research_v033.sqlite3 score_events ledger.
+        JSONObject scorePlane=uiSnapshot.packet.optJSONObject("market_score_plane_v005");
+        if(scorePlane!=null&&"ARTITRADE_MARKET_SCORE_PLANE_V005".equals(
+                scorePlane.optString("schema",""))){
+            long written=uiSnapshot.packet.optLong("market_score_plane_v005_at",0L);
+            long age=System.currentTimeMillis()-written;
+            if(written>0L&&age>=-3000L&&age<=25000L){
+                stock=scorePlane.optJSONObject("stock");
+                coin=scorePlane.optJSONObject("coin");
+            }else{
+                stock=new JSONObject();
+                coin=new JSONObject();
+                try{
+                    stock.put("status","주식 시장점수 전달 지연 · 상태 확인 중");
+                    stock.put("stale",true);
+                    coin.put("status","코인 시장점수 전달 지연 · 상태 확인 중");
+                    coin.put("stale",true);
+                }catch(Exception ignored){}
+            }
+        }
         boolean wide=getResources().getConfiguration().screenWidthDp>=720;
         LinearLayout panels=new LinearLayout(this);
         panels.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
