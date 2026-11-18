@@ -2457,6 +2457,11 @@ _install_at_policy_v091()
 from at_market_score_gate_v107 import install as _install_reference_score_gate_v107
 _install_reference_score_gate_v107()
 
+# v107: observe original qualifying BUY candidates/targets for all 8
+# strategy wallets. This never makes an order or modifies any SELL policy.
+from entry_plan_hooks_v107 import install as _install_entry_plan_hooks_v107
+_install_entry_plan_hooks_v107(_core)
+
 # One recovery plan shared by five stock and three coin strategy ledgers.
 # It monitors genuine 0B/Upbit authenticated events, prioritizes held-stock
 # paper decision queue traffic and records recovery evidence. It NEVER
