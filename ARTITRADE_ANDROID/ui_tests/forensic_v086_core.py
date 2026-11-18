@@ -9,7 +9,7 @@ with zipfile.ZipFile(io.BytesIO(blob)) as z:
     print('ORIGINAL_MODULES',len(names))
     for file in ('d_live.py','stock_ma_engine.py','d_upbit.py','coin_ma_engine.py',
                  'd_gmo_runtime.py','at_close_bridge.py','android_live_bridge.py',
-                 'd_engine.py','d_stock_v19.py','d_coin.py','d_gmo.py'):
+                 'd_engine.py','d_storage.py','d_stock_v19.py','d_coin.py','d_gmo.py'):
         if file not in names:continue
         raw=z.read(file)
         src=raw.decode()
@@ -23,6 +23,11 @@ with zipfile.ZipFile(io.BytesIO(blob)) as z:
                     print('FUNCTION',node.name,node.lineno,node.end_lineno)
             elif isinstance(node,ast.ClassDef):
                 print('CLASS',node.name,node.lineno)
+                if file=='d_storage.py' and node.name=='DStore':
+                    for method in node.body:
+                        if isinstance(method,ast.FunctionDef) and method.name in ('__init__','connect','_init','_setup','_schema'):
+                            for lineno in range(method.lineno-1,min(method.end_lineno,method.lineno+80)):
+                                print(f'INTERNAL_DSTORE {lineno+1:4d}: {lines[lineno]}')
                 methods=[n for n in node.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]
                 for n in methods:
                     if any(k in n.name.lower() for k in ('sell','exit','tick','book','ws','watch','subscr','snapshot','quote','order','match','run','feed','send','recv','manual')):
