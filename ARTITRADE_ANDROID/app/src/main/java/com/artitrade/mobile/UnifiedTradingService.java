@@ -15,6 +15,11 @@ import android.net.NetworkCapabilities;
 import android.net.Network;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import android.util.Base64;
+import com.chaquo.python.Python;
+
+import java.io.File;
+import java.io.RandomAccessFile;
 
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
@@ -62,10 +67,15 @@ public final class UnifiedTradingService extends Service {
     private volatile boolean antiRollbackReady=false;
     private volatile long lastAntiRollbackCheckMs=0L;
     private static final long ANTI_ROLLBACK_CHECK_MS=30_000L;
+    private static final long DAILY_STABILIZE_MS=90_000L;
+    private static final long DAILY_RETRY_MS=5*60_000L;
+    private final AtomicBoolean dailyBackupRunning=new AtomicBoolean(false);
+    private volatile long serviceBootAtMs=System.currentTimeMillis();
 
     @Override public void onCreate(){
         super.onCreate();
         SERVICE_INSTANCE_ACTIVE=true;
+        serviceBootAtMs=System.currentTimeMillis();
         ProcessHealthV087.install(this);
         crashes=new RuntimeCrashStore(this);
         strategy=new StrategyRuntimeBridge(this);
@@ -679,6 +689,7 @@ public final class UnifiedTradingService extends Service {
                 NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
                 if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
                 scheduleUiRecordsIfDue(hub);
+                scheduleDailyBackupIfReady(hub);
                 ProcessHealthV087.sample(this,"service_heartbeat",0L,0L,false);
                 if(stockEpoch<=0||coinEpoch<=0)
                     disarmUnverifiedMarkets("LEASE_UNCONFIRMED");
@@ -787,6 +798,164 @@ public final class UnifiedTradingService extends Service {
             .putInt("total",total).putInt("failed",failed).putInt("percent",percent)
             .putLong("started_at",started).putLong("updated_at",System.currentTimeMillis())
             .putBoolean("complete","COMPLETE".equals(stage)&&failed==0).apply();
+    }
+
+    /**
+     * Daily 20:10 KST on verified KRX trading days, 11:30 KST every coin day.
+     * After power-off/reboot, a missed due window remains pending until
+     * 90s of stable native engine and monotonic SQLite start-up validation.
+     * One market per low-priority worker, never on the order/feed thread.
+     */
+    private void scheduleDailyBackupIfReady(LocalHubClient hub){
+        long now=System.currentTimeMillis();
+        if(!running.get()||!antiRollbackReady||!lastMserverAuthOk||
+            strategy==null||!strategy.isStarted()||
+            manualSellOutstanding.get()>0||
+            now-serviceBootAtMs<DAILY_STABILIZE_MS||
+            dailyBackupRunning.get())return;
+        android.content.SharedPreferences sp=getSharedPreferences(
+            "artitrade_daily_backup_v003",MODE_PRIVATE);
+        for(String market:new String[]{"stock","coin"}){
+            if(now-sp.getLong("attempt_at_"+market,0L)<DAILY_RETRY_MS)
+                continue;
+            if(!dailyBackupRunning.compareAndSet(false,true))return;
+            final String current=market;
+            // Reserve attempt before worker launch to prevent a duplicate.
+            sp.edit().putLong("attempt_at_"+market,now).apply();
+            Thread worker=new Thread(()->{
+                try{runDailyBackup(hub,current);}
+                catch(Throwable failure){
+                    crashes.add("daily_backup_"+current,failure);
+                    sp.edit().putString("stage_"+current,"FAILED")
+                      .putString("error_"+current,
+                        failure.getClass().getSimpleName()+":"+
+                        String.valueOf(failure.getMessage())).apply();
+                }finally{dailyBackupRunning.set(false);}
+            },"artitrade-daily-"+market+"-wal-safe");
+            worker.setDaemon(true);
+            worker.setPriority(Thread.MIN_PRIORITY+1);
+            worker.start();
+            return;
+        }
+    }
+
+    private static String sha256Daily(byte[] raw){
+        try{
+            byte[] h=MessageDigest.getInstance("SHA-256").digest(raw);
+            StringBuilder out=new StringBuilder(64);
+            for(byte b:h)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+            return out.toString();
+        }catch(Exception e){throw new IllegalStateException("DAILY_SHA_INVALID",e);}
+    }
+
+    private void runDailyBackup(LocalHubClient hub,String market)throws Exception{
+        android.content.SharedPreferences sp=getSharedPreferences(
+            "artitrade_daily_backup_v003",MODE_PRIVATE);
+        String last=sp.getString("done_date_"+market,"");
+        String status=Python.getInstance().getModule(
+            "android_daily_paper_backup_v003").callAttr("due_json",market,last)
+            .toString();
+        JSONObject due=new JSONObject(status);
+        if(!due.optBoolean("ok",false))
+            throw new IllegalStateException("DAILY_TRADING_CALENDAR:"+
+                due.optString("error",""));
+        if(!due.optBoolean("due",false))return;
+        String date=due.getString("date");
+        String epoch=FreshEpochGateV106.read(this).getString("epoch_id");
+        // The server is an ADDITIONAL private-application backup sink.
+        // It must never provide a record to normal active trading UI.
+        JSONObject server=hub.dailyLatest(market,epoch);
+        if(!server.optBoolean("ok",false))
+            throw new IllegalStateException("MSERVER_DAILY_ENDPOINT_UNAVAILABLE:"+
+                server.optString("error",""));
+        if(server.optBoolean("exists",false) &&
+            date.equals(server.optString("date"))){
+            sp.edit().putString("done_date_"+market,date)
+                .putString("stage_"+market,"VERIFIED_SERVER_PRESENT")
+                .putString("sha256_"+market,server.optString("sha256"))
+                .putLong("saved_at_"+market,System.currentTimeMillis())
+                .remove("error_"+market).commit();
+            return;
+        }
+        // Before reading any row, enforce the independent epoch/wallet guard.
+        LedgerAntiRollbackV002.verify(this);
+        JSONObject plan=new JSONObject(Python.getInstance()
+            .getModule("android_daily_paper_backup_v003")
+            .callAttr("prepare",
+                new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070").getAbsolutePath(),
+                getCacheDir().getAbsolutePath(),market,date).toString());
+        if(!plan.optBoolean("ok",false))
+            throw new IllegalStateException("DAILY_NATIVE_BACKUP_FAILED:"+
+                plan.optString("error",""));
+        if(!epoch.equals(plan.optString("epoch_id"))||
+           !market.equals(plan.optString("market"))||
+           !date.equals(plan.optString("date")))
+            throw new SecurityException("DAILY_BACKUP_WRONG_EPOCH_OR_SCOPE");
+        File allowed=new File(getCacheDir(),"artitrade_daily_v003").getCanonicalFile();
+        File zip=new File(plan.getString("path")).getCanonicalFile();
+        if(!allowed.equals(zip.getParentFile())||!zip.isFile()||
+           zip.length()!=plan.getLong("bytes"))
+            throw new SecurityException("DAILY_BACKUP_INVALID_LOCAL_FILE");
+        long size=zip.length();
+        String hash=plan.getString("sha256");
+        if(!hash.matches("[0-9a-f]{64}"))
+            throw new IllegalStateException("DAILY_BACKUP_HASH_INVALID");
+        final int chunk=DailyBackupStoreV003.CHUNK_BYTES;
+        int chunks=(int)((size+chunk-1)/chunk);
+        String session="d"+date.replace("-","")+"_"+market+"_"+hash.substring(0,24);
+        JSONObject begin=hub.dailyBegin(market,date,epoch,session,size,hash,chunks);
+        if(!begin.optBoolean("ok",false))
+            throw new IllegalStateException("DAILY_SERVER_BEGIN:"+
+                begin.optString("error",""));
+        if(!begin.optBoolean("committed",false)){
+            int received=begin.optInt("received",0);
+            if(received<0||received>chunks)
+                throw new IllegalStateException("DAILY_SERVER_INVALID_RESUME_OFFSET");
+            sp.edit().putString("stage_"+market,"UPLOADING").apply();
+            try(RandomAccessFile input=new RandomAccessFile(zip,"r")){
+                input.seek((long)received*chunk);
+                for(int i=received;i<chunks;i++){
+                    if(!running.get()||manualSellOutstanding.get()>0||
+                        !antiRollbackReady)
+                        throw new IllegalStateException("DAILY_ENGINE_UNSTABLE_STOP_UPLOAD");
+                    int want=(int)Math.min((long)chunk,size-(long)i*chunk);
+                    byte[] data=new byte[want];
+                    input.readFully(data);
+                    JSONObject ack=hub.dailyChunk(market,date,session,i,
+                        Base64.encodeToString(data,Base64.NO_WRAP),
+                        sha256Daily(data));
+                    if(!ack.optBoolean("ok",false)||
+                       ack.optInt("received",-1)<i+1)
+                        throw new IllegalStateException("DAILY_CHUNK_ACK_FAILURE:"+
+                            ack.optString("error",""));
+                    if(i%8==0)sp.edit().putInt("progress_"+market,
+                        (int)(100L*(i+1)/chunks)).apply();
+                }
+            }
+        }
+        JSONObject committed=hub.dailyCommit(market,date,session);
+        if(!committed.optBoolean("ok",false)||
+           !hash.equalsIgnoreCase(committed.optString("sha256",""))||
+           committed.optLong("bytes",-1)!=size)
+            throw new IllegalStateException("DAILY_SERVER_COMMIT_UNVERIFIED:"+
+                committed.optString("error",""));
+        JSONObject latest=hub.dailyLatest(market,epoch);
+        if(!latest.optBoolean("ok",false)||
+            !date.equals(latest.optString("date"))||
+            !hash.equalsIgnoreCase(latest.optString("sha256")))
+            throw new IllegalStateException("DAILY_SERVER_READBACK_MISMATCH");
+        // Commit the completed date only AFTER MSERVER readback is verified.
+        if(!sp.edit().putString("done_date_"+market,date)
+            .putString("stage_"+market,"VERIFIED")
+            .putString("sha256_"+market,hash)
+            .putLong("saved_at_"+market,System.currentTimeMillis())
+            .putInt("progress_"+market,100).remove("error_"+market).commit())
+            throw new IllegalStateException("DAILY_LOCAL_ACK_NOT_DURABLE");
+        // The server retains the complete snapshot; remove only this
+        // temporary working copy, never the actual source trading SQLite.
+        if(!zip.delete()&&zip.exists())
+            crashes.add("daily_cache_cleanup_"+market,
+                new IllegalStateException("DAILY_CACHE_ZIP_RETAINED"));
     }
 
     private String recordHash(JSONObject data){
