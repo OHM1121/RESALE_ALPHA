@@ -48,6 +48,8 @@ public final class UnifiedTradingService extends Service {
     private volatile long lastAutomaticMigrationAt=0L;
     private Thread monitor;
     private Thread preloadObserver;
+    private Thread fastQuotePublisher;
+    private static final String FAST_QUOTE_PREF="artitrade_fast_quote_v089";
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private long stockEpoch=0,coinEpoch=0;
@@ -195,6 +197,11 @@ public final class UnifiedTradingService extends Service {
                     "artitrade-v081-preload-observer");preloadObserver.start();
                 monitor=new Thread(this::monitorLoop,"artitrade-v070-monitor");
                 monitor.start();
+                fastQuotePublisher=new Thread(this::fastQuoteLoop,
+                    "artitrade-v089-display-only-prices");
+                fastQuotePublisher.setDaemon(true);
+                fastQuotePublisher.setPriority(Thread.MIN_PRIORITY+1);
+                fastQuotePublisher.start();
             }
             return START_STICKY;
         }catch(Throwable e){
@@ -484,6 +491,54 @@ public final class UnifiedTradingService extends Service {
         worker.setDaemon(true);
         worker.setPriority(Thread.MIN_PRIORITY+1);
         worker.start();
+    }
+
+    /** 0.9s quote-only DISPLAY heartbeat while the Activity is visible.
+      *
+      * Existing 0B/Upbit WS caches are read in Python. No new API request,
+      * second subscription, SQL query, trading mode change or simulated
+      * execution. The synchronized bridge gives manual sells precedence.
+      */
+    private void fastQuoteLoop(){
+        String lastRevision="";
+        long lastPublish=0L,lastFault=0L;
+        while(running.get()){
+            long nap=900L;
+            try{
+                long now=System.currentTimeMillis();
+                android.content.SharedPreferences v=getSharedPreferences(
+                    "artitrade_ui_visibility_v087",MODE_PRIVATE);
+                boolean visible=v.getBoolean("foreground",false)
+                    &&now-v.getLong("at_ms",0L)<13_000L;
+                if(!visible){
+                    nap=4000L;
+                }else if(manualSellOutstanding.get()>0||migrationRestarting.get()||
+                    strategy==null||!strategy.isStarted()){
+                    nap=1600L;
+                }else{
+                    JSONObject quote=strategy.quoteSnapshot();
+                    if("ARTITRADE_FAST_QUOTE_V089".equals(
+                            quote.optString("schema",""))){
+                        String revision=quote.optString("revision","");
+                        if(!revision.equals(lastRevision)||now-lastPublish>=3800L){
+                            getSharedPreferences(FAST_QUOTE_PREF,MODE_PRIVATE).edit()
+                                .putString("snapshot",quote.toString())
+                                .putLong("updated_at_ms",now).apply();
+                            lastRevision=revision;
+                            lastPublish=now;
+                        }
+                    }
+                }
+            }catch(Throwable e){
+                long now=System.currentTimeMillis();
+                if(now-lastFault>60_000L){
+                    lastFault=now;
+                    crashes.add("v089_display_quote_loop",e);
+                }
+            }
+            try{Thread.sleep(nap);}
+            catch(InterruptedException e){Thread.currentThread().interrupt();break;}
+        }
     }
 
     private void monitorLoop(){
@@ -841,6 +896,7 @@ public final class UnifiedTradingService extends Service {
         try{if(strategy!=null)strategy.stop();}catch(Throwable e){if(crashes!=null)crashes.add("service_stop_strategy",e);}
         if(monitor!=null)monitor.interrupt();
         if(preloadObserver!=null)preloadObserver.interrupt();
+        if(fastQuotePublisher!=null)fastQuotePublisher.interrupt();
         getSharedPreferences("artitrade_preload_v081",MODE_PRIVATE).edit()
             .putString("stage","STOPPED").putBoolean("complete",false).apply();
         if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();
