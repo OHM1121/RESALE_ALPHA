@@ -87,29 +87,60 @@ def _copy_checked(source: Path, target: Path, check_cancel=None) -> None:
             raise ValueError("GMO account-state positions malformed; export cancelled")
 
 
-def _db_snapshot(source: Path, target: Path, check_cancel=None) -> dict:
+def _db_snapshot(source: Path, target: Path, check_cancel=None,
+                 on_progress=None) -> dict:
+    """Bounded, cancellable SQLite online backup of the ORIGINAL WAL-aware DB.
+
+    A busy source used to leave sqlite3.backup() retrying forever while the UI
+    displayed 18%.  Only an intermediate file is opened writable.  Fail with
+    a specific diagnostic rather than silently returning an incomplete book.
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        target.unlink()
-    # Read-only URI prevents creating a new empty DB when the source moved.
     uri=source.resolve().as_uri()+"?mode=ro"
-    for attempt in range(4):
+    failure=None
+    for attempt in range(2):
+        if check_cancel:check_cancel()
+        if target.exists():target.unlink()
+        began=time.monotonic()
+        progressed=began
+        previous_remaining=None
+        def step(status,remaining,total):
+            nonlocal progressed,previous_remaining
+            if check_cancel:check_cancel()
+            now=time.monotonic()
+            if previous_remaining is None or remaining<previous_remaining:
+                progressed=now
+            previous_remaining=remaining
+            if on_progress:
+                on_progress(max(0,total-remaining),max(1,total),int(status))
+            if now-began>180 or now-progressed>30:
+                raise TimeoutError(
+                    "SQLITE_BACKUP_STALLED: "+source.name+
+                    " status="+str(status)+" remaining="+str(remaining)+
+                    "/"+str(total)+" stalled_sec="+str(round(now-progressed,1)))
         try:
-            with closing(sqlite3.connect(uri, uri=True, timeout=15)) as read, \
-                 closing(sqlite3.connect(str(target), timeout=15)) as write:
-                read.execute("PRAGMA busy_timeout=15000")
-                if check_cancel:check_cancel()
-                read.backup(write, pages=256, sleep=0.03,
-                            progress=(lambda status,remaining,total: check_cancel())
-                            if check_cancel else None)
+            with closing(sqlite3.connect(uri,uri=True,timeout=3)) as read, \
+                 closing(sqlite3.connect(str(target),timeout=3)) as write:
+                read.execute("PRAGMA busy_timeout=3000")
+                write.execute("PRAGMA busy_timeout=3000")
+                # A non-null progress handler permits cancellation and a
+                # bounded no-advance watchdog even for busy WAL writers.
+                read.backup(write,pages=256,sleep=0.1,progress=step)
                 if check_cancel:check_cancel()
                 write.commit()
+            failure=None
             break
-        except (sqlite3.OperationalError, PermissionError):
-            if attempt==3:
-                raise
-            time.sleep(0.25 * (attempt+1))
-    with closing(sqlite3.connect(target.resolve().as_uri()+"?mode=ro", uri=True)) as check:
+        except (sqlite3.OperationalError,PermissionError,TimeoutError) as error:
+            failure=error
+            if check_cancel:check_cancel()
+            if attempt==0:time.sleep(.35)
+    if failure is not None:
+        if target.exists():target.unlink()
+        raise RuntimeError("SQLITE_BACKUP_UNAVAILABLE_SOURCE_UNCHANGED: "+
+                           source.name+": "+str(failure)) from failure
+    if on_progress:on_progress(1,1,101)
+    with closing(sqlite3.connect(target.resolve().as_uri()+"?mode=ro", uri=True,
+                                 timeout=3)) as check:
         if check_cancel:check_cancel()
         integrity=check.execute("PRAGMA quick_check").fetchone()
         if not integrity or integrity[0] != "ok":

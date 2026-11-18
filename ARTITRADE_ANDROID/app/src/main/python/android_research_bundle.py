@@ -197,7 +197,22 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                      '원본 SQLite/WAL 스냅샷',serial,len(originals),rel)
             target=staged/rel
             if original.suffix.lower() in (".sqlite3",".sqlite",".db"):
-                tables=_db_snapshot(original,target,check_cancel=check_cancel)
+                # sqlite3.backup may need many WAL-safe page batches while the
+                # exchange is writing. Show real copied pages, and surface
+                # bounded BUSY/LOCKED failure instead of an infinite 18%.
+                last_page_report=[0.0]
+                def report_page(copied,pages,status):
+                    moment=time.monotonic()
+                    if moment-last_page_report[0]<.7 and copied<pages:return
+                    last_page_report[0]=moment
+                    percent=10+int(45*(serial+min(1.0,copied/max(1,pages)))/
+                                   max(1,len(originals)))
+                    announce(percent,"원본 SQLite/WAL 스냅샷",
+                             serial,len(originals),
+                             rel+" · "+str(copied)+"/"+str(pages)+
+                             " 페이지 · SQLite 상태 "+str(status))
+                tables=_db_snapshot(original,target,check_cancel=check_cancel,
+                                    on_progress=report_page)
                 kind="sqlite"
             else:
                 _copy_checked(original,target,check_cancel=check_cancel)

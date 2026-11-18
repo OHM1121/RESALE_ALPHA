@@ -414,13 +414,13 @@ def _process_v067_exits(self,book,now):
     if not isinstance(book,dict):return
     symbol=str(book.get('market') or '')
     trade=_recent_trade(self,symbol,now)
-    # A genuine <=3-second bid and depth can satisfy profit-taking even when
-    # the independent trade ticker is late. Forced MA exits still need a print.
+    # Same authentic Upbit bid/depth as before: no synthetic sale on reconnect.
     try:
         bid=dec(book['bid']);bid_qty=dec(book['bid_size'])
         if bid<=0 or bid_qty<=0:return
         if abs(now.timestamp()-float(book['timestamp'])/1000)>3:return
     except (TypeError,KeyError,ValueError):return
+    began=time.monotonic()
     with self.lock,self.connect() as c:
         _table(c)
         rows=c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
@@ -429,63 +429,85 @@ def _process_v067_exits(self,book,now):
             (symbol,)).fetchall()
         if not rows:return
         depth=qty_floor(bid_qty*Decimal('.5'))
-        for p in rows:
-            qty=dec(p['qty'])
-            if qty<=0:continue
-            try:state=json.loads(p['state_json'] or '{}')
-            except (TypeError,ValueError):continue
-            closes=_prior_verified_closes(p['tf'],symbol,now)
-            forced=(policy.forced_ma_exit(closes,trade)
-                    if trade is not None else '')
-            if trade is not None and not forced and _second_followup(p['tf'],symbol,state,p['entry'],trade,now):
-                forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
-            if p['kind']=='REVERSAL_UP':
-                updated,want,reason=policy.up_exit(
-                    state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
-            else:
-                updated,want,reason=policy.bear_exit(
-                    state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
-            if updated!=state:
+        for item in rows:
+            for attempt in range(2):
+                # A single genuine post-reconnect order book may be above
+                # BOTH profit targets; consume at most two confirmed stages.
+                # Protect against a slow SQLite operation aging that book.
+                if depth<=0 or time.monotonic()-began>2.5:break
+                # First stage uses the already-authoritative initial SQL
+                # row. Only after the first confirmed SELL do we re-read
+                # the now-changed position and sidecar for stage 2.
+                p=item if attempt==0 else c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
+                    JOIN ma_v067_positions s ON s.position_id=p.id
+                    WHERE p.id=? AND p.market=? AND p.status='OPEN' AND p.qty!='0'""",
+                    (item['id'],symbol)).fetchone()
+                # An incomplete stage-2 reread must not raise inside the
+                # first SELL's original transaction or imply another fill.
+                if p is None or any(k not in p.keys() for k in (
+                        'id','qty','qty0','entry','tf','kind','state_json')):break
+                qty=dec(p['qty'])
+                if qty<=0:break
+                try:state=json.loads(p['state_json'] or '{}')
+                except (TypeError,ValueError):break
+                closes=_prior_verified_closes(p['tf'],symbol,now)
+                forced=(policy.forced_ma_exit(closes,trade)
+                        if trade is not None else '')
+                if trade is not None and not forced and _second_followup(
+                        p['tf'],symbol,state,p['entry'],trade,now):
+                    forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
+                if p['kind']=='REVERSAL_UP':
+                    updated,want,reason=policy.up_exit(
+                        state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
+                else:
+                    updated,want,reason=policy.bear_exit(
+                        state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
+                if attempt==1 and reason not in (
+                        'MA_V065_SECOND_HALF_REMAINING',
+                        'MA_V065_UP_SECOND_HALF_REMAINING'):
+                    break
+                if updated!=state:
+                    c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
+                              (json.dumps(updated,ensure_ascii=False),now.isoformat(),p['id']))
+                desired=qty_floor(min(want,qty,depth))
+                if desired<=0 or not reason:break
+                key=('MA_V067:'+symbol+':'+str(p['id'])+':'+
+                     reason+':'+str(int(book['timestamp'])))
+                if not self._sell(c,p,desired,bid,now.isoformat(),reason,event_key=key):
+                    break
+                executed=c.execute("""SELECT qty,price FROM executions
+                    WHERE event_key=? AND side='SELL' AND position_id=?""",
+                    (key,p['id'])).fetchone()
+                if executed is None:break
+                actually=policy.number(executed['qty'])
+                if actually is None or actually<=0:break
+                px=executed['price']
+                if p['kind']=='REVERSAL_BEAR':
+                    applied=policy.apply_bear_fill(updated,reason,actually,now)
+                    applied=policy.mark_stage_completion(applied,p['qty0'],now,px)
+                else:
+                    applied=policy.apply_up_fill(updated,reason,actually,now,p['qty0'],px)
                 c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
-                          (json.dumps(updated,ensure_ascii=False),now.isoformat(),p['id']))
-            desired=qty_floor(min(want,qty,depth))
-            if desired<=0 or not reason:continue
-            key='MA_V067:'+symbol+':'+str(p['id'])+':'+reason+':'+str(int(book['timestamp']))
-            # Calling native _sell uses real broker/PAPER verification inside
-            # the original live SQL proxy and records its filled quantity.
-            if not self._sell(c,p,desired,bid,now.isoformat(),reason,event_key=key):
-                continue
-            executed=c.execute("""SELECT qty,price FROM executions
-                WHERE event_key=? AND side='SELL' AND position_id=?""",
-                (key,p['id'])).fetchone()
-            if executed is None:continue
-            actually=policy.number(executed['qty'])
-            px=executed['price']
-            if p['kind']=='REVERSAL_BEAR':
-                applied=policy.apply_bear_fill(updated,reason,actually,now)
-                applied=policy.mark_stage_completion(applied,p['qty0'],now,px)
-            else:
-                applied=policy.apply_up_fill(updated,reason,actually,now,p['qty0'],px)
-            c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
-                      (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
-            # Original CoinLedger._sell increments first_sold_qty only for
-            # legacy reason text containing '1차 목표'. v067 uses immutable
-            # MA_V065_* reason IDs, so its native position first-stage ledger
-            # used to remain zero despite a confirmed actual PAPER SELL.
-            # Reconcile ONLY from the exact execution read above.
-            if reason in ('MA_V065_UP_FIRST_10PCT',
-                          'MA_V065_FIRST_30_AT_REVERSAL_HIGH'):
-                first_goal=(policy.up_stage_quantities(applied,p['qty0'])[0]
-                            if p['kind']=='REVERSAL_UP'
-                            else (policy.number(p['qty0']) or Decimal(0))*policy.FIRST_FRACTION)
-                confirmed=policy.number(applied.get('first_sold')) or Decimal(0)
-                existing=(policy.number(p['first_sold_qty']) or Decimal(0)
-                          if 'first_sold_qty' in p.keys() else Decimal(0))
-                verified=min(first_goal,confirmed)
-                if verified>existing:
-                    c.execute('UPDATE positions SET first_sold_qty=? WHERE id=?',
-                              (str(verified),p['id']))
-            depth=max(Decimal(0),depth-actually)
+                          (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
+                # Reconcile original first-stage field strictly from the
+                # matching native SELL execution (V067 IDs are non-Korean).
+                first_reason=reason in ('MA_V065_UP_FIRST_10PCT',
+                    'MA_V065_FIRST_30_AT_REVERSAL_HIGH')
+                if first_reason:
+                    first_goal=(policy.up_stage_quantities(applied,p['qty0'])[0]
+                                if p['kind']=='REVERSAL_UP'
+                                else (policy.number(p['qty0']) or Decimal(0))*policy.FIRST_FRACTION)
+                    confirmed=policy.number(applied.get('first_sold')) or Decimal(0)
+                    existing=(policy.number(p['first_sold_qty']) or Decimal(0)
+                              if 'first_sold_qty' in p.keys() else Decimal(0))
+                    verified=min(first_goal,confirmed)
+                    if verified>existing:
+                        c.execute('UPDATE positions SET first_sold_qty=? WHERE id=?',
+                                  (str(verified),p['id']))
+                depth=max(Decimal(0),depth-actually)
+                # Only a FULLY booked first stage may immediately arm second.
+                # Otherwise await a new authentic orderbook with enough depth.
+                if not first_reason or confirmed<first_goal:break
 
 
 def install():

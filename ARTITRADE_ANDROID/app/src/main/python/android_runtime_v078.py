@@ -228,6 +228,15 @@ def _phone_runtime_snapshot(self):
             'rsi_history':warm,
             'both_feeds_available':bool(coin_trade and
                 (not stock_session or not stock_keys or stock_ws))}
+        # Publish tiny authentic held-stock 0B/official REST prices in the
+        # 2.5-second heartbeat. The slow 6.5-17-second full SQLite view
+        # cannot be the only route for prices or the trading executor.
+        try:
+            from stock_quote_truth_v066 import live_quote_snapshot
+            snapshot['stock_quote_live_v086']=live_quote_snapshot(runner)
+        except (AttributeError,ValueError,RuntimeError,TypeError) as quote_error:
+            snapshot['stock_quote_live_v086']={'quotes':{},'revision':'',
+                'error':type(quote_error).__name__}
         return json.dumps(snapshot, ensure_ascii=False, default=str)
     except Exception:
         return raw
@@ -2346,6 +2355,12 @@ def ledger_audit(manifest_json):
     except Exception as exc:
         return json.dumps({'ok':False,'message':type(exc).__name__+': '+str(exc)[:240],
             'files_checked':0},ensure_ascii=False)
+
+# v086: permit exact 3LEG31 stock AT stage1+stage2 catch-up from one
+# post-disconnect genuine KRX 0B, with native same-SQLite SELL evidence.
+# No replay of stale OHLCV and no new real brokerage permission.
+from stock_at_catchup_v086 import install as _install_stock_at_catchup_v086
+_install_stock_at_catchup_v086()
 
 # Re-export the stable Android bridge API.
 start = _core.start
