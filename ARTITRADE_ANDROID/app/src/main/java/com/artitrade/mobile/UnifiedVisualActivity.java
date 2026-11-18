@@ -1631,8 +1631,9 @@ public final class UnifiedVisualActivity extends Activity {
                 ?prepareHistories(preparedTotals):previous.histories;
             Map<String,RealizedTrend.Series> trends=recordChanged
                 ?prepareTrends(preparedTotals):previous.trends;
-            Map<String,ResearchScoreGrid> researchGrids=recordChanged
-                ?prepareResearchGrids(preparedTotals):previous.researchGrids;
+            // Research UI removed v107: do not build thousands of orphaned
+            // score-grid rows. Raw SQLite and AI-analysis sources remain intact.
+            Map<String,ResearchScoreGrid> researchGrids=java.util.Collections.emptyMap();
             int rows=recordChanged?countPreparedRows(preparedTotals):previous.preloadRows;
             long preloadMs=android.os.SystemClock.elapsedRealtime()-preloadStart;
             uiSnapshot=new UiSnapshot(packet,preparedTotals,preparedFrames,histories,
@@ -1725,7 +1726,9 @@ public final class UnifiedVisualActivity extends Activity {
             String[] parts=source.getKey().split("/");
             if(parts.length!=2)continue;
             String m=parts[0],s=parts[1];Stats st=source.getValue();
-            for(String kind:new String[]{"positions","pending","executions","research"}){
+            // Dedicated research page was removed; avoid allocating copies of
+            // research arrays on every ledger refresh. AI uses source JSON.
+            for(String kind:new String[]{"positions","pending","executions"}){
                 JSONArray data="positions".equals(kind)?st.positions:
                     "pending".equals(kind)?st.pending:
                     "executions".equals(kind)?st.executions:st.research;
