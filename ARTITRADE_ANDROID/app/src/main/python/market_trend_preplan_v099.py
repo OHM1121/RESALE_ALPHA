@@ -493,11 +493,24 @@ def install():
     native_attach=native.Coordinator.attach_history
 
     def start(self):
-        # v107: prohibit the legacy forming-RSI fast entry workers entirely.
-        # Native Coordinator alone evaluates VERIFIED CLOSED RSI first-cross
-        # and calls the original wallet during the following candle's 0..10s.
-        # Existing position/SELL monitoring remains in native_start().
-        return native_start(self)
+        if not hasattr(self,"_mt99_preplans"):
+            self._mt99_preplans=PreparedCoinTrend(self)
+        if not hasattr(self,"_mt081_stock_preplans"):
+            self._mt081_stock_preplans=PreparedStockTrend(self)
+        result=native_start(self)
+        # Read-only watch plans are independent; neither pre-reserves cash
+        # nor places a real broker order. Native MT54 remains fill owner.
+        for worker_name,planner in (
+            ("ARTITRADE_MT99_COIN_35_PREPLAN_FAST",self._mt99_preplans),
+            ("ARTITRADE_MT081_STOCK_35_PREPLAN_FAST",self._mt081_stock_preplans)):
+            old=getattr(planner,"_worker",None)
+            if old is not None and old.is_alive():continue
+            worker=threading.Thread(target=planner._loop,
+                                     daemon=True,name=worker_name)
+            planner._worker=worker
+            worker.start()
+            self.threads.append(worker)
+        return result
 
     def attach_history(self,raw):
         out=native_attach(self,raw)
