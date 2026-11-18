@@ -12,6 +12,8 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py'
       - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
       - 'ARTITRADE_ANDROID/ui_tests/test_v086_live_quotes_stages_export.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v086_at_native_catchup.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/stock_at_catchup_v086.py'
   workflow_dispatch:
 permissions: {contents: read}
 jobs:
@@ -43,6 +45,7 @@ jobs:
           set -euo pipefail
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v086:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_live_quotes_stages_export.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_at_native_catchup.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v091_ma_three_stage_real_ledger.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v084_native_coin_manual.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_legacy_ma_exit.py' -v
