@@ -3807,6 +3807,15 @@ public final class UnifiedVisualActivity extends Activity {
                 panel.addView(origin,new LinearLayout.LayoutParams(-1,-2));
                 bindFastVisiblePrice(r,isStockPosition(r)?"stock":"coin",
                     fastAmount,origin,"","");
+            }else if("pending".equals(kind)){
+                TextView watched=text("미매수 관측 현재가 조회 중",12);
+                watched.setTextColor(PremiumUi.TEXT);
+                TextView observed=text("실시간 체결 미수신 · 목표 도달과 매수 체결은 별개",10);
+                observed.setTextColor(PremiumUi.MUTED);
+                panel.addView(watched);
+                panel.addView(observed);
+                bindFastVisiblePrice(r,market,watched,observed,
+                    "미매수 관측 현재가 ","");
             }
             // A diverging geometric bar is an exact two-value comparison.
             // It does not pretend the app knows the intervening price path.
