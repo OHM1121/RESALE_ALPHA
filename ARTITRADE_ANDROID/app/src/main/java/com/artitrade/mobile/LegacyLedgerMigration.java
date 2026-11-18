@@ -651,6 +651,18 @@ final class LegacyLedgerMigration {
 
     JSONObject importIfReady(){
         try{
+            // Fresh PAPER epoch is authoritative over every historical PC ZIP.
+            // Check BEFORE CLOSE path repair, local import checkpoints and HTTP.
+            JSONObject epochGate=FreshEpochGateV106.migrationGate(context);
+            if(epochGate!=null){
+                String state=epochGate.optString("status","");
+                progress("FRESH_EPOCH_BLOCKED".equals(state)?"BLOCKED":"COMPLETE",
+                    "FRESH_EPOCH_BLOCKED".equals(state)?
+                    "초기화 중단 상태 · 엔진 및 과거 PC 원장 유입 차단":
+                    "새 PAPER 원장 시작 · 과거 PC ZIP 재승계 금지",
+                    1,1,"FRESH_EPOCH_NO_PC_IMPORT".equals(state),state);
+                return epochGate;
+            }
             progress("CHECK","MSERVER 승계자료 확인",0,1,false,"");
             String imported=prefs().getString("imported_sha256","");
             JSONObject previous=storedManifest();
