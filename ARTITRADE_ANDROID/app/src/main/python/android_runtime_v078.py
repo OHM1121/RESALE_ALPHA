@@ -2345,10 +2345,10 @@ _install_ma_v062_packet(_core)
 from stock_quote_truth_v066 import install as _install_stock_quote_truth_v066
 _install_stock_quote_truth_v066(_core)
 
-# v094 SELL-ONLY monitoring for historical v061/v062 MA BUY positions.
-# Preserve each old SQLite wallet, original exit rules and live-order guards.
-from legacy_ma_exit_watch_v094 import install as _install_legacy_ma_exit_v094
-_install_legacy_ma_exit_v094(_core)
+# Fresh PAPER-only successor: no v061/v062 historical MA positions
+# survive the first mandatory epoch reset. The old historical-only SELL
+# watcher MUST NOT patch the current MA feed/order methods anymore.
+# Active MA v067 native BUY/SELL policy modules remain unchanged.
 
 # v094: finish incomplete initial slot funding ONLY from verified first
 # execution +2 true exchange ticks, using same original public-quote owner.
