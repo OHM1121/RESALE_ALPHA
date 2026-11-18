@@ -653,6 +653,50 @@ public final class UnifiedVisualActivity extends Activity {
             .apply();
     }
 
+    /**
+     * System rotation lock is enforced by fullUser in the Manifest.
+     * When auto-rotate is enabled, retain THIS Activity during 0/90/180/270
+     * degree turns: never restart the broker, kill its preload worker, discard
+     * a selected SAF directory or interrupt a 500MB WAL/ZIP export.
+     */
+    @Override public void onConfigurationChanged(android.content.res.Configuration config){
+        super.onConfigurationChanged(config);
+        if(uiDestroyed||root==null)return;
+        try{
+            if(!preloadScreenReady){
+                // Do not replace the startup view, reset the clock, or spawn
+                // another background preload. Re-measure only its progress bar.
+                if(startupProgress!=null){
+                    android.view.ViewGroup.LayoutParams lp=startupProgress.getLayoutParams();
+                    if(lp!=null){
+                        lp.width=dp(Math.min(320,Math.max(140,config.screenWidthDp-76)));
+                        startupProgress.setLayoutParams(lp);
+                    }
+                }
+                root.requestLayout();
+                return;
+            }
+            // Recreating/editing the view during user input or an active
+            // background export can lose a draft or its progress dialog.
+            // Keep the actual View and simply let Android resize it.
+            if(fullExportRunning.get()||drawerOverlay!=null||
+                "operation".equals(page)||"policyHistory".equals(page)){
+                root.requestLayout();
+                return;
+            }
+            // Recompose wide/narrow presentation from the existing immutable
+            // in-memory snapshot. No SQLite reload and no new feed subscription.
+            showShell();
+        }catch(Throwable rotationError){
+            try{new RuntimeCrashStore(this).add(
+                "rotation_config_resize_recovered",rotationError);}
+            catch(Throwable ignored){}
+            // Failure to recompose a card must not terminate the app or
+            // stop the foreground engine.
+            try{root.requestLayout();}catch(Throwable ignored){}
+        }
+    }
+
     @Override protected void onSaveInstanceState(Bundle state){
         // The loading cover remains loading across 90/180/270 degree rotation.
         // A previous, valid warm UI continues to restore immediately.

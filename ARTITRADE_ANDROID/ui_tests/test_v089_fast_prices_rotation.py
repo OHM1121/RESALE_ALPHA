@@ -24,7 +24,8 @@ class SafePreloadRotation(unittest.TestCase):
         self.assertIn('return saved.getBoolean("v089_preload_ready",true)',JAVA)
         self.assertIn('state.putBoolean("v089_preload_ready",preloadScreenReady)',JAVA)
         self.assertIn('if(state!=null&&!state.getBoolean("v089_preload_ready",true))',JAVA)
-        self.assertIn('screenOrientation="fullSensor"',MANIFEST)
+        self.assertIn('screenOrientation="fullUser"',MANIFEST)
+        self.assertIn('configChanges="orientation|screenSize',MANIFEST)
 
 class ReadOnlyQuoteLane(unittest.TestCase):
     def test_uses_only_cached_websocket_observations(self):

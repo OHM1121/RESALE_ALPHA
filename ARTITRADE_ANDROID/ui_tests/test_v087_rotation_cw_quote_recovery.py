@@ -19,9 +19,15 @@ class PortraitAndReverseLandscape(unittest.TestCase):
         root=ET.fromstring(MANIFEST)
         a=root.find('application/activity')
         android='{http://schemas.android.com/apk/res/android}'
-        self.assertEqual(a.attrib[android+'screenOrientation'],'fullSensor')
-        self.assertNotIn(android+'configChanges',a.attrib,
-            'activity must recreate views after physical rotation')
+        # fullUser honours Android's device auto-rotate LOCK. fullSensor
+        # wrongly forces rotation even when the user disabled auto-rotate.
+        self.assertEqual(a.attrib[android+'screenOrientation'],'fullUser')
+        changes=a.attrib.get(android+'configChanges','').split('|')
+        for name in ('orientation','screenSize','smallestScreenSize','density'):
+            self.assertIn(name,changes)
+        # Rotation must NOT recreate the Activity or kill the pending export.
+        self.assertIn('onConfigurationChanged(',JAVA)
+        self.assertIn('fullExportRunning.get()',JAVA)
         self.assertIn('restoreNavigation(state);',JAVA)
         self.assertIn('showShell();',JAVA)
 
