@@ -61,9 +61,7 @@ class ReadOnlyQuoteLane(unittest.TestCase):
             self.assertNotIn(forbidden,body)
         self.assertIn('_v086_last_trade_by_code',body)
         self.assertIn('live_quote_snapshot',body)
-        self.assertIn('trade_timestamp', (Path(__file__).resolve().parents[1]/
-            'app/src/main/python/android_runtime_v078.py').read_text()
-            if False else body)
+        self.assertIn('trade timestamp',body)
 
     def test_separate_from_original_ledger_snapshots_and_original_orders(self):
         self.assertIn('priceOnlyPublisher=new Thread(this::priceOnlyLoop',SERVICE)
