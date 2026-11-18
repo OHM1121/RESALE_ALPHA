@@ -167,6 +167,41 @@ def _rest_positive_price(value):
     return p if p>0 else None
 
 
+def _held_rest_display_codes(runner):
+    """Read-only actual holdings. Research watchlists never consume REST slots."""
+    held=set()
+    def collect(items):
+        for item in items or ():
+            code=_stock_code(item.get('code') if isinstance(item,dict) else item)
+            if code:held.add(code)
+    try:collect(getattr(runner,'_paper_interest_held',()) or ())
+    except (AttributeError,ValueError,TypeError):pass
+    try:
+        with runner.store.connect() as c:
+            collect([r[0] for r in c.execute(
+                "SELECT DISTINCT code FROM positions WHERE status='OPEN' AND qty>0")])
+    except Exception:pass
+    try:collect(runner.ma.pinned_stocks())
+    except Exception:pass
+    try:collect(runner.gmo.holding_codes())
+    except Exception:pass
+    try:
+        from at_close_bridge import close_runner
+        close=close_runner()
+        if close is not None:collect(close.store.open_positions('CLOSE'))
+    except Exception:pass
+    try:
+        import android_live_bridge as core
+        runtime=getattr(core,'_RUNTIME',None)
+        trend=getattr(runtime,'market_trend',None)
+        if trend is not None:
+            with trend.lock:
+                collect([p.symbol for p in trend._positions.values()
+                         if p.market=='stock' and p.qty>0])
+    except Exception:pass
+    return held
+
+
 def _rest_quote_loop(runner):
     """Display-only prefetch: restore held symbols BEFORE first UI poll.
 
@@ -181,11 +216,9 @@ def _rest_quote_loop(runner):
         if time.monotonic()-last_pin_scan>2.0:
             last_pin_scan=time.monotonic()
             try:
-                pinned=runner._pinned_stocks()
-                if isinstance(pinned,dict):
-                    with lock:
-                        runner._v073_current_pins={
-                            code for code in pinned if _stock_code(code)}
+                held=_held_rest_display_codes(runner)
+                with lock:
+                    runner._v073_current_pins=held
             except (AttributeError,TypeError,RuntimeError,ValueError):
                 pass
         with lock:
@@ -231,7 +264,7 @@ def _rest_quote_loop(runner):
         except Exception as exc:
             with lock:
                 runner._v072_rest_errors[code]=type(exc).__name__+': '+str(exc)[:100]
-        runner.stop_event.wait(.3)
+        runner.stop_event.wait(2.0)
 
 
 def _ensure_rest_lookup_started(runner):

@@ -1,0 +1,40 @@
+name: V087 focused CW integration and staged exit audit
+on:
+  push:
+    branches: [fix-artitrade-v087-orientation-cw-rsi-feed-catchup-20261118]
+    paths: ['.github/workflows/forensic-v087-cw-integration.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,io,ast,re,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for f in ('android_live_bridge.py','d_live.py','d_engine.py','at_close_runner.py','at_close_bridge.py'):
+                  src=z.read(f).decode()
+                  lines=src.splitlines()
+                  print('FILE',f,'LEN',len(lines))
+                  rx=re.compile(r'at_close|close_runner|close_engine|AT_CLOSE_COMBINED|\.start\(|\.run\(|\.stop\(|_minute_exits_threeleg|threeleg|exit_first|exit_second|exit_stage|registered|shared_mode|_scan_once|_on_real',re.I)
+                  selected={i for i,l in enumerate(lines) if rx.search(l)}
+                  if f=='android_live_bridge.py':selected.update(range(len(lines)))
+                  if f=='at_close_runner.py':selected={i for i,l in enumerate(lines) if 'AtClose' in l or 'shared' in l.lower() or 'scan_busy' in l}
+                  if f=='d_engine.py':selected.update(range(580,min(850,len(lines))))
+                  for i in sorted(selected):
+                      print('HIT',f,i+1,lines[i][:220])
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          for f in ['java/com/artitrade/mobile/StrategyRuntimeBridge.java','java/com/artitrade/mobile/UnifiedTradingService.java','python/android_runtime_v078.py','python/stock_at_catchup_v086.py']:
+              lines=(root/f).read_text().splitlines()
+              rx=re.compile(r'AT_CLOSE|at_close|close_runner|android_live_bridge|_core\.Runtime|\.start\(|\.stop\(|_minute_exits_threeleg|_install_stock_at_catchup|_shared_mode|os\.environ',re.I)
+              matches=[i for i,l in enumerate(lines) if rx.search(l)]
+              print('APP',f,'LEN',len(lines),'HITS',len(matches))
+              for i in matches[:110]:print('APPHIT',f,i+1,lines[i][:230])
+          PY

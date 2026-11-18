@@ -1,0 +1,51 @@
+name: V087 diagnose close, recovery, RSI and orientation
+on:
+  push:
+    branches: [fix-artitrade-v087-orientation-cw-rsi-feed-catchup-20261118]
+    paths: ['.github/workflows/forensic-v087-five-issues.yml']
+permissions: {contents: read}
+jobs:
+  read-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Inspect original Windows-derived core and Android bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re,ast,base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          archive=root/'assets/strategy_v070'
+          raw=base64.b64decode(''.join((archive/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          files=['at_close_runner.py','at_close_engine.py','at_close_bridge.py','at_close_store.py','at_close_api.py','d_engine.py','d_candidate_history.py','d_upbit.py','d_live.py']
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for f in files:
+              if f not in z.namelist():continue
+              ls=z.read(f).decode().splitlines()
+              tree=ast.parse('\n'.join(ls))
+              methods=[(n.lineno,n.end_lineno,n.name) for n in ast.walk(tree) if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]
+              if f.startswith('at_close'):
+                print('FILE',f,'LINES',len(ls))
+                print('METHODS',methods[:100])
+                if f=='at_close_runner.py':spans=[(1,180),(180,355),(355,min(len(ls),600))]
+                elif f=='at_close_engine.py':spans=[(1,min(310,len(ls)))]
+                elif f=='at_close_bridge.py':spans=[(1,min(260,len(ls)))]
+                else:spans=[]
+                for a,b in spans:
+                  print('SPAN',f,a,b)
+                  for i in range(a-1,min(b,len(ls))):print('SRC',f,i+1,ls[i][:240])
+              else:
+                needles=r'catchup|catch_up|post.*gap|reconnect|on_reconnect|after.*gap|_minute_exits_threeleg|_new_tick|candidate_forward|first_target|second_target|third_target|future|bar_end|progress'
+                selected=[i for i,l in enumerate(ls) if re.search(needles,l,re.I)]
+                print('SCAN',f,'HITS',len(selected))
+                for i in selected[:110]:print('HIT',f,i+1,ls[i][:180])
+          for f in ['java/com/artitrade/mobile/UnifiedVisualActivity.java','python/android_runtime_v078.py','python/stock_at_catchup_v086.py','python/stock_priority_runtime_v093.py','python/market_trend_runtime_v043.py']:
+            ls=(root/f).read_text().splitlines()
+            needles=r'close|AT_CLOSE|onCreate|onConfigurationChanged|screenWidthDp|onResume|onDestroy|_end_clock|bar_key|RSI|last_fetch_error|close.*runner|market_trend'
+            selected=[i for i,l in enumerate(ls) if re.search(needles,l,re.I)]
+            print('ANDROID',f,'HITS',len(selected))
+            for i in selected[:130]:print('HIT',f,i+1,ls[i][:185])
+          PY
