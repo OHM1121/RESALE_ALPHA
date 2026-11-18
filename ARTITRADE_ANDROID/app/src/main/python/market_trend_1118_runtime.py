@@ -63,8 +63,10 @@ def _ready_market(co,market,now):
         if gate is not None and not gate.snapshot().get("ready",False):
             return False
     else:return False
-    # Preserve the original independent market score/manual-trend gate.
-    return co.mode(market)=="MARKET_TREND"
+    # RSI watch is market-quote driven independently of score: a crossing
+    # observed in ORIGINAL mode must survive 24h and may be bought later
+    # only when the normal verified MARKET_TREND mode allows it.
+    return True
 
 def _confirmed_recent(history,now,market,frame):
     if len(history)<21:return []
@@ -112,6 +114,11 @@ def _mark_rsi_watch(self,market,key,observed,rsi,now):
         return row
     # No new endless 24h period while RSI stays below 30. Re-arm only after
     # a new >30 observation resets the prior expired watch.
+    if observed["status"]=="BOUGHT" and rsi>30:
+        row={**observed,"status":"READY"}
+        self._nl1118_watches[key]=row
+        self._nl1118_watch_db.save(key,row)
+        return row
     if observed["status"]=="EXPIRED" and rsi>30:
         row={**observed,"status":"READY"}
         self._nl1118_watches[key]=row
@@ -152,8 +159,8 @@ def _entry_window(self,market,now):
             continue
         if time.monotonic()-stamp>(10 if market=="coin" else 3):
             continue
-        verified=self._quote(market,code)
-        if not verified:continue
+        # First RSI<=30 observation is allowed even when a valid book is
+        # briefly unavailable. Only BUY needs separately fresh 0D/depth.
         previous=self._nl1118_previous_trade.get((market,code))
         # Only one crossed price per genuinely new exchange print.
         # The previously observed print is separate from live order-book bid.
@@ -161,7 +168,6 @@ def _entry_window(self,market,now):
             continue
         self._nl1118_quote_stamps[(market,code)]=stamp
         self._nl1118_previous_trade[(market,code)]=trade
-        if verified.get("trade")!=trade:continue
         choices=[]
         for frame in TREND_FRAMES:
             k=(market,code,frame)
@@ -182,6 +188,9 @@ def _entry_window(self,market,now):
             if not (now<dt.datetime.fromisoformat(old["expires_at"])):continue
             choices.append((frame,rsi,condition,old))
         if choices:
+            verified=self._quote(market,code)
+            if verified is None or verified.get("trade")!=trade:
+                continue
             # Bind the original pair of genuinely observed exchange prints
             # to THIS symbol. Never let a later loop symbol substitute them.
             choices.sort(key=lambda x:mt.PRIORITY[x[0]],reverse=True)
@@ -189,6 +198,9 @@ def _entry_window(self,market,now):
     for code,(signal,quote,previous,trade) in ordered.items():
         frame,rsi,boll,watch=signal
         if self.stop_event.is_set():return
+        # Score/manual-trend switch gates NEW BUY only, never the durable
+        # RSI watch, nor any existing holding's mandatory SELL.
+        if self.mode(market)!="MARKET_TREND":continue
         at=self._decision_clock()
         if at.tzinfo is None:continue
         if at>=dt.datetime.fromisoformat(watch["expires_at"]):continue
