@@ -2444,6 +2444,11 @@ _install_unified_recovery_v092(_core)
 from market_trend_1118_runtime import install as _install_nl1118_trend
 _install_nl1118_trend()
 
+# The 11.18 workbook is the last reference-bar execution policy overlay.
+# Original verified quote/order owners remain intact.
+from reference_1118_runtime import install as _install_nl1118_reference
+_install_nl1118_reference()
+
 
 # Only Android knows whether the current active network is validated.
 # This has no ability to make an order or authorize stale 0B/0D.
