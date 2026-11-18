@@ -37,7 +37,6 @@ public final class UnifiedTradingService extends Service {
     static final String MANUAL_PAPER_SELL="com.artitrade.mobile.MANUAL_PAPER_SELL";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
     static final String SET_PC_SYNC="com.artitrade.mobile.SET_PC_LIVE_SYNC";
-    static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
     private static volatile boolean SERVICE_INSTANCE_ACTIVE=false;
@@ -48,9 +47,6 @@ public final class UnifiedTradingService extends Service {
     // Explicit PAPER exits take precedence over expensive read-only snapshots.
     private final AtomicInteger manualSellOutstanding=new AtomicInteger(0);
     private volatile long uiRecordLastStartedMs=0L;
-    private volatile long lastMigrationPoll=0L;
-    private volatile String lastAutomaticMigrationSha="";
-    private volatile long lastAutomaticMigrationAt=0L;
     private Thread monitor;
     private Thread preloadObserver;
     private Thread priceOnlyPublisher;
@@ -179,27 +175,8 @@ public final class UnifiedTradingService extends Service {
             if(intent!=null&&RESTART_FEEDS.equals(intent.getAction())){
                 new Thread(()->safeRestartStrategy(),"artitrade-v074-restart").start();
             }
-            if(intent!=null&&APPLY_PC_MIGRATION.equals(intent.getAction())&&running.get()){
-                new Thread(()->{
-                    if(FreshEpochGateV106.hasMarker(this)){
-                        crashes.add("fresh_epoch_pc_import_blocked",
-                            new IllegalStateException("NO_OLD_PC_LEDGER_IN_FRESH_EPOCH"));
-                        return;
-                    }
-                    if(liveOrdersArmed()){
-                        getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
-                            .putString("result",new JSONObject().toString()).apply();
-                        crashes.add("pc_migration_live_blocked",
-                            new IllegalStateException("LIVE_TRADING_ACTIVE: disable live orders before PC DB restore"));
-                        return;
-                    }
-                    safeRestartStrategy();
-                },"artitrade-pc-ledger-apply").start();
-            }
-            if(intent!=null&&START.equals(intent.getAction())&&running.get()){
-                new Thread(()->checkPendingPCArchive(new LocalHubClient(this)),
-                    "artitrade-pc-ledger-app-reopen").start();
-            }
+            // Legacy PC import/replay actions are permanently unsupported.
+            // A service restart must not try to rehydrate any prior PAPER ZIP.
             if(intent!=null&&APPLY_OPERATION.equals(intent.getAction())){
                 final String raw=intent.getStringExtra("settings");
                 if(raw!=null)getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).edit().putString("settings",raw).apply();
@@ -394,33 +371,6 @@ public final class UnifiedTradingService extends Service {
         }
     }
 
-    private void checkPendingPCArchive(LocalHubClient hub){
-        // Never revive 11/14 imported research or PC paper positions after reset.
-        if(FreshEpochGateV106.hasMarker(this))return;
-        if(!strategy.isStarted()||migrationRestarting.get())return;
-        long now=System.currentTimeMillis();
-        if(now-lastMigrationPoll<15000L)return;
-        lastMigrationPoll=now;
-        try{
-            String installed=getSharedPreferences("artitrade_pc_ledger_import_v1",MODE_PRIVATE)
-                .getString("imported_sha256","");
-            JSONObject st=hub.migrationStatus();
-            if(!st.optBoolean("ok",false)||!st.optBoolean("ready",false)
-                ||!st.optBoolean("archive_exists",false))return;
-            String sha=st.optString("archive_sha256","");
-            if(sha.isEmpty()||liveOrdersArmed())return;
-            // First import and later missing-only research supplements share the
-            // same restart path. Never overwrite a phone DB after first import.
-            long retryAfter=5L*60L*1000L;
-            if(sha.equalsIgnoreCase(lastAutomaticMigrationSha)&&
-               now-lastAutomaticMigrationAt<retryAfter)return;
-            lastAutomaticMigrationSha=sha;
-            lastAutomaticMigrationAt=now;
-            new Thread(this::safeRestartStrategy,
-                installed.isEmpty()?"artitrade-pc-ledger-auto-apply":
-                    "artitrade-pc-research-missing-only").start();
-        }catch(Throwable e){crashes.add("pc_ledger_auto_check",e);}
-    }
     private void applyManualPaperSell(String raw){
         JSONObject result=new JSONObject();
         String requestId="";
@@ -656,7 +606,6 @@ public final class UnifiedTradingService extends Service {
                 if(lastMserverAuthOk){
                     stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
                     coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
-                    checkPendingPCArchive(hub);
                 }else{
                     // A rejected/expired hub status is not proof of execution ownership.
                     stockEpoch=0;coinEpoch=0;
