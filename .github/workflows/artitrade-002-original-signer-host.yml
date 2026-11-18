@@ -60,10 +60,15 @@ jobs:
           p=Path("ARTITRADE_ANDROID/app/build.gradle")
           s=p.read_text("utf8")
           assert s.count("versionCode 124")==1
-          assert s.count("versionName '0.0.2'")==1
+          # The MSERVER hub flavor also legitimately uses versionName 0.0.2.
+          # Only the unified (phone) flavor is temporarily rewritten for
+          # the proven quote patch scripts; never touch the hub version.
+          assert s.count("versionName '0.0.2'")==2
           assert s.count("applicationId 'com.artitrade.unified.s21dex'")==1
-          s=s.replace("versionCode 124","versionCode 97").replace(
-              "versionName '0.0.2'","versionName '0.7.91-MA-STAGE-LEDGER'")
+          old="versionCode 124\n            versionName '0.0.2'"
+          new="versionCode 97\n            versionName '0.7.91-MA-STAGE-LEDGER'"
+          assert s.count(old)==1
+          s=s.replace(old,new,1)
           p.write_text(s,"utf8")
           PY
           python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
@@ -77,7 +82,7 @@ jobs:
           assert s.count("versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'")==1
           s=s.replace("versionCode 99","versionCode 124").replace(
               "versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'","versionName '0.0.2'")
-          assert s.count("versionCode 124")==1 and s.count("versionName '0.0.2'")==1
+          assert s.count("versionCode 124")==1 and s.count("versionName '0.0.2'")==2
           p.write_text(s,"utf8")
           PY
       - name: Source compilation and original embedded strategy SHA
