@@ -1,8 +1,10 @@
 """ARTITRADE v106: deliberately offline fresh PAPER-ledger epoch.
 
-Source-only preparation. Nothing imports or invokes this automatically.
-Must be called once, before Python/Java engines or sockets start, by a
-separately approved future app action. NEVER run on active phone SQLite/WAL.
+The mandatory new-version cold-start UI invokes reset_once_json() BEFORE
+any Python trading engine, exchange socket or Android service can start.
+The user has explicitly selected an entirely new PAPER epoch; ALL old PAPER
+holds, fills, research, error and backup artifacts within the private ledger
+are intentionally abandoned. No migration of old PAPER positions.
 Existing eight strategy modules, policies, credentials and capital settings
 are not edited. On success the marker blocks old PC-import archives.
 
@@ -29,7 +31,7 @@ SENSITIVE = ("secret", "credential", "token", "password", "apikey", "api_key",
 DATA_EXTS = (".sqlite3", ".sqlite", ".db", ".json", ".jsonl",
              ".csv", ".parquet", ".sqlite3-wal", ".sqlite3-shm",
              ".sqlite-wal", ".sqlite-shm", ".db-wal", ".db-shm",
-             ".db-journal", ".sqlite3-journal")
+             ".db-journal", ".sqlite3-journal", ".zip", ".bak")
 
 
 class ResetBlocked(RuntimeError):
@@ -235,3 +237,17 @@ def reset(root, *, confirmation, engine_stopped=False,
             "removed_files": record["removed_files"],
             "removed_bytes": record["removed_bytes"],
             "pc_auto_import_blocked": True}
+
+
+def reset_once_json(root):
+    """Cold-start Android entrypoint only, not a service startup callback.
+
+    Its caller must enforce no running service, no Python trading engine and
+    disarmed broker LIVE flags. The reset itself independently scans for real
+    broker-order provenance and protects every credential/operating setting.
+    """
+    result = reset(root, confirmation=CONFIRM,
+                   engine_stopped=True, live_orders_disarmed=True)
+    if result.get("status") not in ("COMMITTED", "ALREADY_COMMITTED"):
+        raise ResetBlocked("FRESH_PAPER_RESET_NOT_COMMITTED")
+    return json.dumps(result, ensure_ascii=False)
