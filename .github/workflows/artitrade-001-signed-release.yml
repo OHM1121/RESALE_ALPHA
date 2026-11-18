@@ -47,6 +47,7 @@ jobs:
           test "${{ steps.signing.outputs.cache-hit }}" = "true"
           test -s "$HOME/.android/debug.keystore"
           fp="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "COMPUTED_SIGNER_SHA256=$fp"
           test "$fp" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
       - name: Preserve v0.9.5 vendor-quote fixes without changing 0.0.1 UI or identity
         shell: bash
