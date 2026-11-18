@@ -128,7 +128,11 @@ class RecoveryPersistence(unittest.TestCase):
             runtime.stock_runner=stock
             runtime.coin_runner=coin
             runtime.market_trend=None
+            o.set_android_network(False)
             result=o.snapshot(runtime,{'stock':{'connected':False}})
+            self.assertEqual(result['scenario_by_strategy']['coin/ma']['scenario'],
+                             'NETWORK_OFFLINE')
+            self.assertFalse(result['android_validated_internet'])
             self.assertEqual(result['schema'],SCHEMA)
             self.assertEqual(len(result['scenario_by_strategy']),8)
             self.assertEqual(result['api_requests_added'],0)
@@ -155,5 +159,9 @@ class PortraitHeader(unittest.TestCase):
         self.assertIn('if(!wideHeader)',ui)
         self.assertIn('brandLine.addView(ver,',ui)
         self.assertIn('TextView ver=text("  ·  "+installedVersion,wideHeader?12:11);',ui)
+        service=(Path(__file__).resolve().parents[1]/
+           'app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java').read_text()
+        self.assertIn('validatedInternetV092()',service)
+        self.assertIn('strategy.reportNetworkV092(validated)',service)
 
 if __name__=='__main__':unittest.main()
