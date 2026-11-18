@@ -7359,26 +7359,6 @@ public final class UnifiedVisualActivity extends Activity {
         return "원장 게시 중 예외 발생 · 진단 코드 확인";
     }
 
-    private void requestPcMigrationApply(){
-        JSONObject live=copyCache().optJSONObject("live_orders");
-        if(live!=null&&(live.optBoolean("stock",false)||live.optBoolean("coin",false))){
-            new AlertDialog.Builder(this).setTitle("PC 원장 자동복원 차단")
-                .setMessage("실거래 주문이 켜져 있습니다. 주문이 완전히 종료되고 실거래를 OFF로 전환한 뒤 PC 원장을 검증하십시오. 실제 체결이 남은 기기의 자동 덮어쓰기는 별도로 차단됩니다.")
-                .setPositiveButton("확인",null).show();
-            return;
-        }
-        new AlertDialog.Builder(this).setTitle("기존 PC 원장 재적용 · 검증")
-            .setMessage("전략엔진을 안전하게 재시작하고 MSERVER의 PC 승계자료 또는 기기에 설치된 원장을 확인합니다. 매수·매도 주문 실행 기능을 새로 활성화하지 않습니다.")
-            .setNegativeButton("취소",null)
-            .setPositiveButton("원장 검증 시작",(d,w)->{
-                try{
-                    Intent intent=new Intent(this,UnifiedTradingService.class);
-                    intent.setAction(UnifiedTradingService.APPLY_PC_MIGRATION);
-                    if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    main.postDelayed(()->refresh(false),1500);
-                }catch(Throwable e){new RuntimeCrashStore(this).add("pc_migration_apply_ui",e);}
-            }).show();
-    }
     private void togglePcLiveSync(){
         boolean current=getSharedPreferences("artitrade_pc_live_sync_v1",
             MODE_PRIVATE).getBoolean("enabled",false);
