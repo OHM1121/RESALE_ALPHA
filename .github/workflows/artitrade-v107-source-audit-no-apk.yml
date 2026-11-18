@@ -17,6 +17,10 @@ on:
       - ARTITRADE_ANDROID/ui_tests/test_v107_entry_plan_epoch.py
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
       - ARTITRADE_ANDROID/app/src/main/python/android_ledger_backup.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FreshEpochGateV106.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+      - ARTITRADE_ANDROID/app/src/main/python/fresh_epoch_reset_v106.py
+      - ARTITRADE_ANDROID/ui_tests/test_v108_mandatory_first_epoch.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -178,5 +182,9 @@ jobs:
                       for i in range(node.lineno-1,min(node.end_lineno,node.lineno+195)):
                           print('NATIVE',filename,i+1,lines[i][:230])
           PY
+      - name: Prove unconditional cold fresh start, no legacy holdings/import, live guard
+        shell: bash
+        run: |
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v108_mandatory_first_epoch.py' -v
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
