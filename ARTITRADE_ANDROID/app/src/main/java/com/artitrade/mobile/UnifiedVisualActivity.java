@@ -2963,6 +2963,34 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderHome(){
         Stats selected=stats(market,strategy);
+        // The 8-strategy recovery planner is READ-ONLY. It reports which
+        // evidence path is active; it never labels a missed target a fill.
+        JSONObject rt=copyCache().optJSONObject("strategy_runtime");
+        JSONObject recovery=rt==null?null:rt.optJSONObject("recovery_scenarios_v092");
+        JSONObject rows=recovery==null?null:recovery.optJSONObject("scenario_by_strategy");
+        JSONObject decision=rows==null?null:rows.optJSONObject(market+"/"+strategy);
+        if(decision!=null){
+            String scenario=decision.optString("scenario","");
+            String caption;
+            switch(scenario){
+                case "LIVE_VERIFIED":caption="정상 실시간 평가";break;
+                case "RESTART_CATCH_UP":caption="연결 복구 · 원본 매도단계 재평가";break;
+                case "CANDLE_GAP_EXIT_FIRST":caption="기준봉/1분봉 복구 · 보유종목 매도 우선";break;
+                case "BROKER_FEED_DOWN":caption="실시간 연결 복구 대기";break;
+                case "HELD_NOT_SUBSCRIBED":caption="보유종목 재구독 필요";break;
+                case "NO_FRESH_EXIT_EVIDENCE":caption="유효한 매도 체결근거 대기";break;
+                case "MARKET_CLOSED":caption="장외 · 다음 실시간 시세 대기";break;
+                case "UNRESOLVED_EXECUTION":caption="미확정 체결 원장 대조";break;
+                case "POLICY_MISSING":caption="원본 매매 정책 확인 필요";break;
+                case "WAIT_ENTRY_SOURCE":caption="신규매수 실시간 근거 대기";break;
+                default:caption="매매복구 상태 확인 중";break;
+            }
+            TextView notice=text("매매복구 · "+caption+
+                " · 실제 매수/매도는 전략별 원장 체결 확인",11);
+            notice.setTextColor(Color.rgb(139,199,232));
+            notice.setMaxLines(2);
+            content.addView(notice,new LinearLayout.LayoutParams(-1,-2));
+        }
         if("stock".equals(market)&&"close".equals(strategy)){
             JSONObject diagnostic=ledger(market,strategy).optJSONObject("cw_runtime_diagnostic_v087");
             if(diagnostic!=null){
