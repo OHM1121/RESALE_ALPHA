@@ -139,6 +139,9 @@ class Coordinator:
         self._quotes={"stock":{},"coin":{}}
         self._history={}
         self._history_requests={}
+        # v108: last-close local read is bounded and never loops on a broker
+        # REST request inside the critical 10-second BUY decision window.
+        self._due_close_read_at={}
         # One diagnostic per source/bar/window, not every 200ms precheck poll.
         self._v078_missing_trade_seen=set()
         self._last_closed={}
@@ -512,6 +515,62 @@ class Coordinator:
                 self.stop_event.wait(.20 if market=="coin" else .35)
             self.stop_event.wait(2)
 
+    def _refresh_due_closed_local_v108(self,market,code,frame,begins):
+        """Fresh REAL completed bar lookup for the ten-second entry window.
+
+        Historical prefetch runs every 45s once it has 21 bars; without this
+        branch the latest just-closed bar was systematically absent for 5m,
+        30m, 60m and day signals during the exact 10s allowed BUY window.
+        Use only the existing KRX verified SQLite bars or native Upbit verified
+        completed-candle history. NEVER synthesize a price or query the live
+        broker REST API in the order callback.
+        """
+        key=(market,code,frame)
+        with self.lock:
+            cached=self._history.get(key,())
+            if len(cached)>=30 and cached[-1]["end"]>=begins:
+                return
+        stamp=(market,code,frame,begins.isoformat())
+        now=time.monotonic()
+        if now-self._due_close_read_at.get(stamp,-1e9)<1.6:
+            return
+        self._due_close_read_at[stamp]=now
+        try:
+            if market=="coin":
+                rows=self._native_coin_history(frame,code,dt.datetime.now(mt.KST))
+            else:
+                runner=self.rt.stock_runner
+                if runner is None:return
+                with runner.store.connect() as source:
+                    raw=source.execute("""SELECT ts,close,high,low FROM bars
+                      WHERE code=? AND frame=? ORDER BY ts DESC LIMIT 90""",
+                      (code,frame)).fetchall()
+                rows=[]
+                for bar in raw:
+                    end=_stock_bar_end(bar["ts"],frame)
+                    if end is None or end>begins:continue
+                    close=mt._finite(bar["close"])
+                    high=mt._finite(bar["high"])
+                    low=mt._finite(bar["low"])
+                    if (close is None or high is None or low is None or
+                        close<=0 or low>close or high<close):continue
+                    rows.append({"start":end-dt.timedelta(seconds=mt.FRAME_SECS[frame]),
+                                 "end":end,"close":close,"high":high,"low":low,
+                                 "source":"LOCAL_KRX_VERIFIED"})
+                rows=sorted(rows,key=lambda row:row["end"])[-90:]
+            if len(rows)<30:return
+            if rows[-1]["end"]>begins:return
+            # The final source must belong to this or the expected previous
+            # session; the closed-entry predicate makes the final decision.
+            with self.lock:
+                old=self._history.get(key,())
+                if not old or rows[-1]["end"]>old[-1]["end"]:
+                    self._history[key]=rows
+        except (AttributeError,KeyError,ValueError,TypeError,sqlite3.Error) as exc:
+            self._last_fetch_error[market]="CLOSED_LOCAL_SOURCE:"+type(exc).__name__
+        if len(self._due_close_read_at)>24000:
+            self._due_close_read_at.clear()
+
     def _closed_series(self,market,code,frame,bar_end):
         with self.lock:barrows=list(self._history.get((market,code,frame),[]))
         if len(barrows)<21:return []
@@ -739,11 +798,22 @@ class Coordinator:
         for frame in mt.FRAMES:
             finish=_end_clock(now,market,frame)
             if finish is None:continue
-            if market=="stock" and frame=="day":
-                opening=SPECIAL_SESSIONS.get(now.date().isoformat(),
-                                             (START,None))[0]
-                begins=now.replace(hour=opening//60,minute=opening%60,
-                                   second=0,microsecond=0)
+            if market=="stock":
+                # KRX 60m final candle can be 30 minutes long. Derive the
+                # start from the actual official trading session, not
+                # finish-3600 (which incorrectly opens it at 14:30).
+                from krx_session_v041 import END
+                opening,closing=SPECIAL_SESSIONS.get(
+                    now.date().isoformat(),(START,END))
+                first=now.replace(hour=opening//60,minute=opening%60,
+                                  second=0,microsecond=0)
+                if frame=="day":
+                    begins=first
+                else:
+                    elapsed=max(0,(now-first).total_seconds())
+                    steps=int(elapsed//mt.FRAME_SECS[frame])
+                    begins=first+dt.timedelta(
+                        seconds=steps*mt.FRAME_SECS[frame])
             else:
                 begins=finish-dt.timedelta(seconds=mt.FRAME_SECS[frame])
             if first_ten_seconds(now,begins):
@@ -751,6 +821,13 @@ class Coordinator:
         if not scheduled:return
         with self.lock:
             candidates=dict(self._candidates[market])
+        # The old 45s prefetch alone made the required 0..10s closed RSI
+        # impossible at most candle starts. Fast local verification is
+        # read-only, throttled and uses no made-up OHLC.
+        for code in candidates:
+            for frame,finish,begins in scheduled:
+                self._refresh_due_closed_local_v108(market,code,frame,begins)
+        with self.lock:
             histories={k:list(v) for k,v in self._history.items()
                        if k[0]==market and k[2] in {x[0] for x in scheduled}}
         # These are confirmed close observations. A candidate is not an
@@ -793,7 +870,9 @@ class Coordinator:
                     'CLOSED_RSI_FRESH_BOOK_OR_TRADE_MISSING',
                     signal["rsi20_closed"])
                 continue  # retry real quote within this same ten-second gate
-            self._ordered.add(key)
+            # Do not consume the candle's single entry opportunity BEFORE
+            # asking the original wallet. A PAPER no-fill may safely retry
+            # with a subsequent genuine fresh 0B/0D during the same 10s.
             # The position's bar_key is the CURRENT entry candle END; the
             # confirmed signal belongs to the immediately prior candle.
             barid=finish.isoformat()
@@ -815,6 +894,11 @@ class Coordinator:
                 self._last_fetch_error[market]=disposition
             if str(disposition).startswith(("BROKER:","UNSAFE:")):
                 unsafe=True
+            # A real broker outcome that cannot be reconciled must NEVER be
+            # resubmitted. PAPER nonfills can recheck genuine new market
+            # liquidity before the exact ten-second deadline.
+            if result is not None or unsafe or self.rt.live_enabled(market):
+                self._ordered.add(key)
             if result is None:
                 self._entry_block_counts[market][str(disposition)[:80]]+=1
                 self._record_entry_block(market,code,frame,closed_at.isoformat(),
