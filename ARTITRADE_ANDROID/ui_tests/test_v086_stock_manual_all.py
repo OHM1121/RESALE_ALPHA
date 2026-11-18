@@ -191,6 +191,34 @@ class NativeManualWallets(unittest.TestCase):
             self.assertEqual(c.execute("SELECT count(*) FROM executions WHERE side='SELL'").fetchone()[0],1)
             self.assertEqual(c.execute("SELECT status FROM positions WHERE id=?",(id,)).fetchone()[0],'CLOSED')
 
+    def test_gmo_original_intent_fill_and_uuid_idempotency(self):
+        from projectgmo.engine import Engine,Position
+        engine=Engine()
+        engine.positions[CODE]=Position(CODE,'fixture',100,100,100.0,'2026-11-17','SHORT',10000.0,stage='PROTECTED')
+        self.runner.gmo=SimpleNamespace(_lock=threading.RLock(),engine=engine,_persist=lambda force:None)
+        req=make_req('gmo',-1,qty=100)
+        result=manual.manual_stock_gmo(self.rt,req)
+        self.assertEqual((result['qty'],result['status']),(100,'FILLED'))
+        self.assertEqual((len(engine.fills),len(engine.positions)),(1,0))
+        cash=engine.cash
+        self.assertTrue(manual.manual_stock_gmo(self.rt,req)['already_executed'])
+        self.assertEqual((len(engine.fills),engine.cash),(1,cash))
+
+    def test_gmo_partial_book_consumes_only_bid_capacity_once(self):
+        from projectgmo.engine import Engine,Position
+        engine=Engine()
+        engine.positions[CODE]=Position(CODE,'fixture',100,100,100.0,'2026-11-17','SHORT',10000.0,stage='PROTECTED')
+        self.runner.gmo=SimpleNamespace(_lock=threading.RLock(),engine=engine,_persist=lambda force:None)
+        req=make_req('gmo',-1,qty=100)
+        with patch.object(manual,'verified_stock_bid',return_value=genuine_bid(qty=25)):
+            result=manual.manual_stock_gmo(self.rt,req)
+        self.assertEqual((result['qty'],result['status']),(25,'PARTIAL_PENDING'))
+        self.assertEqual(engine.positions[CODE].qty,75)
+        with patch.object(manual,'verified_stock_bid',side_effect=ValueError('SHOULD_NOT_REQUOTE')):
+            repeated=manual.manual_stock_gmo(self.rt,req)
+        self.assertTrue(repeated['already_executed'])
+        self.assertEqual(len(engine.fills),1)
+
     def test_stock_trend_original_sqlite_and_repeated_request(self):
         wallet=TrendWalletV054(self.rt)
         self.runner.engine=SimpleNamespace(book=None)
