@@ -547,12 +547,15 @@ def display_snapshot(market,snapshot,now=None,poll_error=None):
     limit=600 if market=="stock" else 900
     stale=(stamp is None or now-stamp>limit or now<stamp-30)
     output["stale"]=bool(stale)
-    if stale:
+    if stale or poll_error:
+        # A failed authoritative fetch INVALIDATES the last BUY permission
+        # immediately. A recently recorded historical score is NOT a fresh
+        # quote after a WS/REST outage; preserve history but fail closed.
         output["score"]=None
         output["active_band"]=None
-        output["status"]="현재 시황 수집 중" if not poll_error else str(poll_error)
-    elif poll_error:
-        output["status"]=str(poll_error)
+        output["stale"]=True
+        output["status"]=(str(poll_error) if poll_error else "현재 시황 수집 중")
+        output["poll_error"]=str(poll_error or "")
     return output
 
 
@@ -617,45 +620,82 @@ def _domestic_index_fallback(name):
     return None
 
 
+def _yahoo_current_index_change(name,symbol,now=None):
+    """Trade-session spot quote fallback (never use yesterday's close)."""
+    now=time.time() if now is None else float(now)
+    for host in ('query1.finance.yahoo.com','query2.finance.yahoo.com'):
+        try:
+            raw=_public_json('https://'+host+'/v8/finance/chart/'+quote(symbol,safe=''),
+                             {'interval':'5m','range':'1d'})
+            record=raw['chart']['result'][0]
+            meta=record.get('meta') or {}
+            stamp=finite(meta.get('regularMarketTime'))
+            if stamp is None:
+                stamps=record.get('timestamp') or []
+                stamp=finite(stamps[-1]) if stamps else None
+            current=finite(meta.get('regularMarketPrice'))
+            previous=finite(meta.get('previousClose') or meta.get('chartPreviousClose'))
+            if (stamp is None or current is None or previous is None or
+                current<=0 or previous<=0 or not -30<=now-stamp<=900):
+                continue
+            return round((current/previous-1)*100,4)
+        except (KeyError,IndexError,TypeError,ValueError):
+            continue
+        except Exception:
+            continue
+    return None
+
+
 def _fetch_stock():
-    changes={};history={};failed=[];naver_used=[]
+    changes={};history={};failed=[];naver_used=[];intraday_used=[]
     for name,symbol in _PUBLIC.items():
+        # During the regular KRX session, domestic scores must use a
+        # CURRENT index snapshot. Yahoo's 1d daily-close chart can return
+        # yesterday/previous trading day yet still return HTTP 200.
+        if name in ('KOSPI','KOSDAQ'):
+            value=_domestic_index_fallback(name)
+            if value is not None:
+                changes[name]=round(value,4)
+                naver_used.append(name)
+            else:
+                value=_yahoo_current_index_change(name,symbol)
+                if value is not None:
+                    changes[name]=round(value,4)
+                    intraday_used.append(name)
         prices=None
-        for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+        for host in ('query1.finance.yahoo.com','query2.finance.yahoo.com'):
             try:
                 result=_public_json(
-                    "https://"+host+"/v8/finance/chart/"+quote(symbol,safe=""),
-                    {"interval":"1d","range":"2mo"})
-                data=result["chart"]["result"][0]
+                    'https://'+host+'/v8/finance/chart/'+quote(symbol,safe=''),
+                    {'interval':'1d','range':'2mo'})
+                data=result['chart']['result'][0]
                 closes=[finite(v) for v in (
-                    data["indicators"]["quote"][0].get("close") or [])]
+                    data['indicators']['quote'][0].get('close') or [])]
                 prices=[v for v in closes if v is not None and v>0]
-                if len(prices)>=2:
-                    break
+                if len(prices)>=2:break
             except Exception:
                 prices=None
         if not prices or len(prices)<2:
-            # Fallback is only for the two mandatory domestic indices.
-            # Never manufacture index quotes from unrelated symbols.
-            backup=_domestic_index_fallback(name)
-            if backup is not None:
-                changes[name]=round(backup,4)
-                naver_used.append(name)
-                continue
-            failed.append(name)
+            if name not in changes:failed.append(name)
             continue
-        changes[name]=round((prices[-1]/prices[-2]-1)*100,4)
         history[name]=prices
-    kospi=history.get("KOSPI") or []
+        if name not in ('KOSPI','KOSDAQ'):
+            changes[name]=round((prices[-1]/prices[-2]-1)*100,4)
+        elif name not in changes:
+            # Avoid presenting historical KRX closes as a current score.
+            failed.append(name)
+    kospi=history.get('KOSPI') or []
     if len(kospi)>=6:
-        changes["KOSPI5"]=round((kospi[-1]/kospi[-6]-1)*100,4)
+        changes['KOSPI5']=round((kospi[-1]/kospi[-6]-1)*100,4)
     scored=stock_score(changes,{})
-    scored["source"]="Yahoo Finance public chart latest available daily closes"
-    scored["received"]=sorted(changes)
-    scored["naver_fallback"]=naver_used
-    scored["missing"]=failed
-    if scored["score"] is None:
-        scored["status"]="코스피·코스닥 지표 미수신 · 다음 조회 재시도"
+    scored['source']='Naver/KRX or timestamp-verified Yahoo intraday domestic; Yahoo latest available daily global indicators'
+    scored['received_at']=int(time.time())
+    scored['received']=sorted(changes)
+    scored['naver_fallback']=naver_used
+    scored['intraday_verified']=intraday_used
+    scored['missing']=failed
+    if scored['score'] is None:
+        scored['status']='현재 KOSPI/KOSDAQ 시세 미수신 · 다음 조회 재시도'
     return scored
 
 
@@ -689,14 +729,40 @@ def _upbit_tickers():
     return result
 
 
+def _fresh_upbit_tickers(tickers,now=None):
+    """Accept exchange-stamped snapshots only, never stale REST cache.
+
+    Upbit ticker/all includes a server-side timestamp (milliseconds) for
+    each KRW market. A successful HTTP 200 is not proof of fresh prices.
+    Filter paused pairs; enough independently timestamped KRW pairs must
+    remain before scoring or declaring the 24h quote market recovered.
+    """
+    now=time.time() if now is None else float(now)
+    fresh=[]
+    for row in tickers if isinstance(tickers,list) else []:
+        if not isinstance(row,dict):continue
+        stamp=finite(row.get('timestamp'))
+        if stamp is None:continue
+        age=now-stamp/1000.0
+        if -5.0<=age<=180.0:
+            fresh.append(row)
+    return fresh
+
+
 def _fetch_coin():
     try:
-        tickers=_upbit_tickers()
+        all_tickers=_upbit_tickers()
+        tickers=_fresh_upbit_tickers(all_tickers)
+        if len(tickers)<10:
+            raise RuntimeError('UPBIT_TICKER_EXCHANGE_TIMESTAMP_STALE')
         btc=_public_json("https://api.upbit.com/v1/candles/days",
                          {"market":"KRW-BTC","count":35})
         eth=_public_json("https://api.upbit.com/v1/candles/days",
                          {"market":"KRW-ETH","count":12})
         scored=coin_score(tickers,btc,eth)
+        scored['ticker_timestamp_verified']=True
+        scored['fresh_ticker_count']=len(tickers)
+        scored['received_at']=int(time.time())
     except Exception as exc:
         scored={"score":None,"coverage":0,"factors":[],
                 "status":"업비트 시세 확인 실패: "+type(exc).__name__}
@@ -805,8 +871,9 @@ class _MarketWorker:
                                         market,ledger.snapshot(market))
                                 continue
                         now=int(time.time())
-                        fresh=ledger.score_at(market,now,
-                            max_age_seconds=600 if market=="stock" else 180)
+                        fresh=(None if self._last_failure.get(market) else
+                            ledger.score_at(market,now,
+                                max_age_seconds=600 if market=="stock" else 180))
                         if fresh is None:
                             ledger.close_market(market)
                         else:
