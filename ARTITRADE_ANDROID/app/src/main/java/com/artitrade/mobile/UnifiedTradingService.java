@@ -48,6 +48,7 @@ public final class UnifiedTradingService extends Service {
     private volatile long lastAutomaticMigrationAt=0L;
     private Thread monitor;
     private Thread preloadObserver;
+    private Thread priceOnlyPublisher;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private long stockEpoch=0,coinEpoch=0;
@@ -195,6 +196,11 @@ public final class UnifiedTradingService extends Service {
                     "artitrade-v081-preload-observer");preloadObserver.start();
                 monitor=new Thread(this::monitorLoop,"artitrade-v070-monitor");
                 monitor.start();
+                priceOnlyPublisher=new Thread(this::priceOnlyLoop,
+                    "artitrade-v089-price-only-no-rest");
+                priceOnlyPublisher.setDaemon(true);
+                priceOnlyPublisher.setPriority(Thread.MIN_PRIORITY+1);
+                priceOnlyPublisher.start();
             }
             return START_STICKY;
         }catch(Throwable e){
@@ -484,6 +490,46 @@ public final class UnifiedTradingService extends Service {
         worker.setDaemon(true);
         worker.setPriority(Thread.MIN_PRIORITY+1);
         worker.start();
+    }
+
+    /**
+     * Price-plane heartbeat never makes a Kiwoom/Upbit request, constructs
+     * historical bars, scans SQLite or enters the full UI aggregation lane.
+     * UI refresh is independently rate-limited to avoid GIL/CPU contention.
+     */
+    private void priceOnlyLoop(){
+        String previous="";
+        while(running.get()){
+            long interval=1200L;
+            try{
+                android.content.SharedPreferences visibility=getSharedPreferences(
+                    "artitrade_ui_visibility_v087",MODE_PRIVATE);
+                long now=System.currentTimeMillis();
+                boolean foreground=visibility.getBoolean("foreground",false)
+                    &&now-visibility.getLong("at_ms",0L)<13_000L;
+                interval=foreground?1200L:3500L;
+                // Human-confirmed SELL and its ledger evidence take priority.
+                if(manualSellOutstanding.get()==0&&strategy!=null
+                    &&strategy.isStarted()){
+                    JSONObject snapshot=strategy.quoteSnapshotV089();
+                    String revision=snapshot.optString("revision","");
+                    if(snapshot.optBoolean("ready",false)
+                        &&!revision.isEmpty()&&!revision.equals(previous)){
+                        previous=revision;
+                        getSharedPreferences("artitrade_quote_plane_v089",MODE_PRIVATE)
+                            .edit().putString("snapshot",snapshot.toString())
+                            .putLong("written_at_ms",now).apply();
+                    }
+                }
+            }catch(Throwable err){
+                // Price display is best-effort; it must never stop trading.
+                previous="";
+            }
+            try{Thread.sleep(interval);}
+            catch(InterruptedException interrupted){
+                Thread.currentThread().interrupt();break;
+            }
+        }
     }
 
     private void monitorLoop(){
@@ -840,6 +886,7 @@ public final class UnifiedTradingService extends Service {
         running.set(false);
         try{if(strategy!=null)strategy.stop();}catch(Throwable e){if(crashes!=null)crashes.add("service_stop_strategy",e);}
         if(monitor!=null)monitor.interrupt();
+        if(priceOnlyPublisher!=null)priceOnlyPublisher.interrupt();
         if(preloadObserver!=null)preloadObserver.interrupt();
         getSharedPreferences("artitrade_preload_v081",MODE_PRIVATE).edit()
             .putString("stage","STOPPED").putBoolean("complete",false).apply();

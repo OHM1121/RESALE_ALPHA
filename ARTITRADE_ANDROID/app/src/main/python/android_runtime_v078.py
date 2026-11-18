@@ -2403,5 +2403,125 @@ def manual_paper_sell(request):
     from android_manual_paper_sell_v085 import perform
     return perform(request)
 
+# v089: UI-only fast price lane, in-memory genuine WS observations ONLY.
+# Does not issue an HTTP request, subscribe to a second socket, read SQLite,
+# modify a price/order decision or write any source/original journal.
+def price_snapshot_v089():
+    from stock_quote_truth_v066 import live_quote_snapshot
+    import datetime as _dt
+    try:
+        runtime=getattr(_core,'_RUNTIME',None)
+        if runtime is None or not getattr(runtime,'started',False):
+            return json.dumps({'ready':False,'stock':{'quotes':{}},
+                               'coin':{'quotes':{}},'revision':''})
+        sr=getattr(runtime,'stock_runner',None)
+        if sr is not None and getattr(sr,'_v066_quote_lock',None) is None:
+            # Hook the ONE original verified 0B observer as early as the
+            # price publisher starts; do not wait for a 6.5s SQLite snapshot.
+            try:
+                from stock_quote_truth_v066 import install_ui_quote_tap
+                install_ui_quote_tap(sr)
+            except (AttributeError,TypeError,ValueError,RuntimeError):
+                pass
+        stock=live_quote_snapshot(sr)
+        # Unlike a timestamp-only receipt, a disconnected WebSocket must
+        # never show its last print as continuously streaming LIVE.
+        try:
+            from at_close_bridge import broker_transport_snapshot
+            alive=bool(sr is not None and getattr(sr,'_confirmed_ws_session',False)
+                       and broker_transport_snapshot().get('state')=='connected')
+        except (ImportError,AttributeError,TypeError):
+            alive=False
+        if not alive:
+            for q in (stock.get('quotes') or {}).values():
+                if q.get('status')=='FRESH':
+                    q['status']='LAST_0B'
+                    q['expires_ms']=0
+            stock['revision']=stock.get('revision','')+'|SOCKET_DISCONNECTED'
+        # Pending/candidate UI can reuse only already-subscribed, truly
+        # received 0B prints. No extra REG slots or research REST calls.
+        if sr is not None and getattr(sr,'_v066_quote_lock',None) is not None:
+            try:
+                from stock_quote_truth_v066 import _choose_for_code,KST
+                with sr._v066_quote_lock:
+                    by_venue=dict(getattr(sr,'_v066_quote_by_venue',{}) or {})
+                held=dict(stock.get('quotes') or {})
+                codes=sorted({k[0] for k in by_venue
+                              if isinstance(k,tuple) and len(k)==2})[:220]
+                now_stock=_dt.datetime.now(KST)
+                connected=alive
+                for code in codes:
+                    if code in held:continue
+                    valid,last=_choose_for_code(by_venue,code,now_stock,connected)
+                    price=valid or last
+                    if price is None:continue
+                    held[code]={
+                        'price':price['price'],
+                        'status':'FRESH' if valid else 'LAST_0B',
+                        'source':'KIWOOM_REAL_0B' if valid else 'KIWOOM_LAST_0B',
+                        'venue':price['venue'],
+                        'exchange_at':price['exchange_at'],
+                        'received_at':price['received_at'],
+                        'expires_ms':price['expires_ms'] if valid else 0}
+                stock['quotes']=held
+                stock['revision']='|'.join(
+                    str(k)+':'+str(v.get('price'))+':'+
+                    str(v.get('status'))+':'+str(v.get('received_at',''))
+                    for k,v in sorted(held.items()))
+            except (AttributeError,TypeError,ValueError,RuntimeError):
+                pass
+        cr=getattr(runtime,'coin_runner',None)
+        now_epoch_ms=int(time.time()*1000)
+        now_mono=time.monotonic()
+        coin_quotes={}
+        if cr is not None:
+            # A 0B-equivalent Upbit trade timestamp is stored at WS receipt
+            # BEFORE the slower coin strategy callback is queued.
+            # No REST-derived latest_prices (which may be stale) are used.
+            try:
+                seen=dict(getattr(cr,'_v086_last_trade_by_code',{}) or {})
+            except RuntimeError:
+                seen={}
+            held=list(getattr(cr,'_held_codes',()) or ())
+            tracked=list(getattr(cr,'tracked',()) or ())
+            codes=list(dict.fromkeys(str(code) for code in held+tracked
+                                     if str(code).startswith('KRW-')))[:280]
+            socket=bool(getattr(cr,'_ws_connected',False) and
+                        0<=now_mono-float(getattr(cr,'_ws_last_frame',0) or 0)<=15.0)
+            for code in codes:
+                point=seen.get(code)
+                if not isinstance(point,(tuple,list)) or len(point)<2:continue
+                try:
+                    stamp=int(point[0])
+                    price=float(point[1])
+                    age_ms=now_epoch_ms-stamp
+                except (ValueError,TypeError,OverflowError):continue
+                if not (price>0 and -500<=age_ms<=3_600_000):continue
+                fresh=socket and age_ms<=10_000
+                coin_quotes[code]={
+                    'price':price,
+                    'status':'FRESH' if fresh else 'LAST_WS',
+                    'source':'UPBIT_VERIFIED_WS_TICKER',
+                    'exchange_ms':stamp,
+                    'expires_ms':stamp+10_000 if fresh else 0,
+                    'age_ms':max(0,age_ms)}
+        coin={'quotes':coin_quotes,'ws_reception_verified_only':True}
+        # Small stable signature. A status flip also changes the signature,
+        # but an unchanged quote does not create redundant XML writes.
+        token=json.dumps([stock.get('revision',''),
+                          [(k,v['price'],v['status'],v['exchange_ms'])
+                           for k,v in sorted(coin_quotes.items())]],
+                          ensure_ascii=True,separators=(',',':'))
+        return json.dumps({
+            'ready':True,'generated_ms':now_epoch_ms,
+            'stock':stock,'coin':coin,
+            'revision':hashlib.sha256(token.encode('ascii')).hexdigest(),
+            'ui_only':True,'fills_allowed':False},
+            ensure_ascii=False,separators=(',',':'))
+    except Exception as exc:
+        return json.dumps({'ready':False,'stock':{'quotes':{}},
+                           'coin':{'quotes':{}},
+                           'error':type(exc).__name__})
+
 # v045 explicit score-independent market trend entry selection.
 from market_trend_runtime_v043 import set_manual_mode as set_trend_manual

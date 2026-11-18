@@ -227,6 +227,92 @@ public final class UnifiedVisualActivity extends Activity {
     private String pendingCombinedResearchScope;
     private String pendingScopedErrorScope;
     private static final long REFRESH_MS=3500L;
+    // Bounded lightweight view update, never a second exchange/API subscription.
+    private static final long FAST_PRICE_VIEW_MS=900L;
+    private final java.util.ArrayList<LivePriceBinding> livePriceBindings=
+        new java.util.ArrayList<>();
+    private static final class LivePriceBinding{
+        final String market,code,prefix,suffix;
+        final TextView amount,status;
+        LivePriceBinding(String market,String code,TextView amount,
+                         TextView status,String prefix,String suffix){
+            this.market=market;this.code=code;this.amount=amount;
+            this.status=status;this.prefix=prefix;this.suffix=suffix;
+        }
+    }
+    private final Runnable fastPriceViewTicker=new Runnable(){
+        @Override public void run(){
+            if(uiDestroyed)return;
+            if(preloadScreenReady)refreshVisiblePriceViews();
+            main.postDelayed(this,FAST_PRICE_VIEW_MS);
+        }
+    };
+
+    private void bindFastVisiblePrice(JSONObject position,String scope,
+             TextView amount,TextView status,String prefix,String suffix){
+        if(position==null||amount==null||status==null)return;
+        String code=position.optString("code",
+            position.optString("symbol",position.optString("market",""))).trim();
+        if("stock".equals(scope)){
+            if(code.startsWith("A")&&code.length()==7)code=code.substring(1);
+            if(code.endsWith("_NX"))code=code.substring(0,code.length()-3);
+        }else if(!code.startsWith("KRW-"))return;
+        if(code.isEmpty())return;
+        livePriceBindings.add(new LivePriceBinding(scope,code,amount,status,
+            prefix==null?"":prefix,suffix==null?"":suffix));
+    }
+
+    /**
+     * Only adjusts displayed price text. Does not change the position JSON,
+     * any wallet, PnL accounting, buy/sell decision or historical price.
+     */
+    private void refreshVisiblePriceViews(){
+        if(livePriceBindings.isEmpty())return;
+        JSONObject packet;
+        try{
+            String raw=getSharedPreferences("artitrade_quote_plane_v089",
+                MODE_PRIVATE).getString("snapshot","{}");
+            packet=new JSONObject(raw);
+        }catch(Exception ignored){return;}
+        if(!packet.optBoolean("ready",false))return;
+        long now=System.currentTimeMillis();
+        for(LivePriceBinding item:livePriceBindings){
+            JSONObject marketPrices=packet.optJSONObject(item.market);
+            JSONObject quotes=marketPrices==null?null:marketPrices.optJSONObject("quotes");
+            JSONObject quote=quotes==null?null:quotes.optJSONObject(item.code);
+            if(quote==null){
+                item.amount.setText(item.prefix+"가격 조회 중"+item.suffix);
+                item.status.setText("실시간 수신 미확인 · 이전 원장 평가가는 최신가 아님");
+                continue;
+            }
+            double price=quote.optDouble("price",Double.NaN);
+            if(Double.isNaN(price)||Double.isInfinite(price)||price<=0)continue;
+            String state=quote.optString("status","LAST");
+            long expires=quote.optLong("expires_ms",0L);
+            boolean fresh="FRESH".equals(state)&&expires>now;
+            long tradeMs=quote.optLong("exchange_ms",0L);
+            String time=quote.optString("exchange_at","");
+            String source="stock".equals(item.market)?"키움":"업비트";
+            if(tradeMs>0){
+                long age=Math.max(0L,(now-tradeMs)/1000L);
+                time=age+"초 전 체결";
+            }else if(time.length()>=19){
+                time=time.substring(11,19)+" 체결";
+            }
+            String venue=quote.optString("venue","");
+            boolean officialRest="stock".equals(item.market)&&
+                quote.optString("source","").contains("REST");
+            String label=(fresh?"실시간 "+source+" WS":
+                officialRest?source+" 공식 REST 조회값(실시간 WS 아님)":
+                "마지막 "+source+" 시세(실시간 아님)");
+            if("stock".equals(item.market)&&!venue.isEmpty())
+                label+=" · "+venue;
+            item.amount.setText(item.prefix+WonFormat.price(price)+item.suffix);
+            item.status.setText(label+(time.isEmpty()?"":" · "+time)+
+                " · 화면용 가격 · 체결판단·원장 손익은 별도");
+        }
+    }
+
 
     private final Runnable periodic=new Runnable(){
         @Override public void run(){
@@ -286,8 +372,16 @@ public final class UnifiedVisualActivity extends Activity {
             root=new FrameLayout(this);
             root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
-            preloadStartedAt=android.os.SystemClock.elapsedRealtime();
-            preloadStartedWallMs=System.currentTimeMillis();
+            // Rotation while warming must preserve the SAME cold-start
+            // progress and deadline, not reinterpret a recreated Activity as
+            // evidence of a ready broker / UI snapshot.
+            preloadStartedAt=state!=null?
+                state.getLong("v089_preload_elapsed_at",
+                    android.os.SystemClock.elapsedRealtime()):
+                android.os.SystemClock.elapsedRealtime();
+            preloadStartedWallMs=state!=null?
+                state.getLong("v089_preload_wall_at",
+                    System.currentTimeMillis()):System.currentTimeMillis();
             recordUiEntry(state);
             if(shouldRestoreShellImmediately(state)){
                 // Re-creating the Activity is NOT evidence that the trading engine
@@ -296,9 +390,19 @@ public final class UnifiedVisualActivity extends Activity {
                 showShell();
             }else{
                 showBoot();
+                if(state!=null&&!state.getBoolean("v089_preload_ready",true)){
+                    if(startupProgress!=null)startupProgress.setProgress(
+                        Math.max(5,Math.min(98,state.getInt("v089_preload_pct",5))));
+                    if(startupStage!=null)startupStage.setText(
+                        state.getString("v089_preload_stage",
+                            "원장 · 전략별 시세 사전 준비 중"));
+                }
                 // Even if the local-hub request stalls, never trap the user in
                 // the full-screen boot view waiting for an I/O worker.
-                main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS);
+                long elapsed=Math.max(0L,
+                    android.os.SystemClock.elapsedRealtime()-preloadStartedAt);
+                main.postDelayed(this::preloadWatchdog,
+                    Math.max(200L,PRELOAD_WATCHDOG_MS-elapsed));
             }
             // Begin both original broker feeds before slow UI/hub aggregation.
             // START is idempotent and never re-arms live broker orders.
@@ -348,7 +452,9 @@ public final class UnifiedVisualActivity extends Activity {
         // After a genuine service/process stop, show cold-start progress again.
         // Foreground service heartbeat still bypasses repeated preload when
         // returning from sleep, another app, or Activity recreation.
-        return saved!=null||isRecentBackgroundHeartbeat();
+        if(saved!=null)
+            return saved.getBoolean("v089_preload_ready",true);
+        return isRecentBackgroundHeartbeat();
     }
 
     private void preloadWatchdog(){
@@ -548,6 +654,18 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     @Override protected void onSaveInstanceState(Bundle state){
+        // The loading cover remains loading across 90/180/270 degree rotation.
+        // A previous, valid warm UI continues to restore immediately.
+        state.putBoolean("v089_preload_ready",preloadScreenReady);
+        state.putLong("v089_preload_elapsed_at",preloadStartedAt);
+        state.putLong("v089_preload_wall_at",preloadStartedWallMs);
+        if(!preloadScreenReady){
+            state.putInt("v089_preload_pct",
+                startupProgress==null?5:startupProgress.getProgress());
+            state.putString("v089_preload_stage",
+                startupStage==null?"원장 · 전략별 시세 사전 준비 중":
+                startupStage.getText().toString());
+        }
         state.putString("market",market);
         state.putString("strategy",strategy);
         state.putString("page",page);
@@ -2293,7 +2411,9 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void render(){
-        if(content==null)return;content.removeAllViews();updateHeader();
+        if(content==null)return;
+        livePriceBindings.clear();
+        content.removeAllViews();updateHeader();
         if(integratedMode){
             if("positions".equals(page))renderIntegratedPositions();
             else renderIntegratedHome();
@@ -2398,8 +2518,14 @@ public final class UnifiedVisualActivity extends Activity {
             String symbol=row.optString("code","종목 미확인");
             panel.addView(text(symbol+" · "+tfLabel(timeFrameOf(row)),17));
             double rsi=row.optDouble("rsi20_live",Double.NaN);
-            panel.addView(text("관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
-                " · 현재가 "+formatMaybeMoney(row,"price"),13));
+            String rsiText="관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
+                " · 현재가 ";
+            TextView priceView=text(rsiText+formatMaybeMoney(row,"price"),13);
+            panel.addView(priceView);
+            TextView observed=text("RSI 관측과 매매판단은 별개 · WS 시세 확인 중",10);
+            observed.setTextColor(PremiumUi.MUTED);
+            panel.addView(observed);
+            bindFastVisiblePrice(row,market,priceView,observed,rsiText,"");
             panel.addView(text("진입 재무장 "+(row.optBoolean("armed",false)?"완료":"대기")+
                 " · RSI30 관측 "+(row.optBoolean("touched_30",false)?"있음":"없음")+
                 "",11));
@@ -2766,6 +2892,13 @@ public final class UnifiedVisualActivity extends Activity {
             prices.setTextColor(Color.rgb(168,193,219));
             prices.setMaxLines(2);
             tile.addView(prices);
+            TextView received=text("실시간 시세 수신 확인 중 · 화면 전용",10);
+            received.setTextColor(PremiumUi.MUTED);
+            tile.addView(received);
+            bindFastVisiblePrice(p,holding.scopeMarket,prices,received,
+                "매수가 "+formatMaybePrice(p,"entry_price","entry","avg_buy_price")+
+                "    현재가 ",
+                "    수량 "+formatMaybeNumber(p,"qty","quantity","holding_qty"));
             TextView result=text("평가손익 "+
                 (finite(pnl)?WonFormat.signed(pnl):"—")+
                 (finite(rate)?" ("+signedPct(rate)+")":""),14);
@@ -3319,7 +3452,7 @@ public final class UnifiedVisualActivity extends Activity {
     /** Two-level cards: a 10sp key followed by a 16sp value, not dense
      * label/value sentences spread across the entire panel.
      */
-    private void tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
+    private TextView tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
         LinearLayout tile=new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(9),dp(5),dp(7),dp(5));
@@ -3340,6 +3473,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(54),1);
         if(row.getChildCount()>0)cell.setMargins(dp(5),0,0,0);
         row.addView(tile,cell);
+        return amount;
     }
     private TextView tradeStage(String value,int backgroundColor,int foreground){
         TextView chip=text(value,16);
@@ -3651,6 +3785,7 @@ public final class UnifiedVisualActivity extends Activity {
             top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
             panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
 
+            TextView fastAmount=null;
             LinearLayout figures=new LinearLayout(this);
             figures.setOrientation(LinearLayout.HORIZONTAL);
             figures.setPadding(0,dp(7),0,dp(3));
@@ -3659,7 +3794,7 @@ public final class UnifiedVisualActivity extends Activity {
                 String quoteStatus=r.optString("stock_quote_status","");
                 String quoteLabel=isStockPosition(r)&&"LAST_LEDGER".equals(quoteStatus)
                     ?"저장 평가가":"현재가";
-                tradeMetricTile(figures,quoteLabel,
+                fastAmount=tradeMetricTile(figures,quoteLabel,
                     finite(current)&&current>0?WonFormat.price(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
                 tradeMetricTile(figures,"1차 목표",formatMaybePrice(r,"first_target","target","target_price"),false);
@@ -3681,6 +3816,23 @@ public final class UnifiedVisualActivity extends Activity {
                 tradeMetricTile(figures,"수수료",formatMaybeMoney(r,"fees","fee"),false);
             }
             panel.addView(figures,new LinearLayout.LayoutParams(-1,dp(64)));
+            if("positions".equals(kind)&&fastAmount!=null){
+                TextView origin=text("실시간 가격 재확인 중 · 원장 손익은 별도 갱신",10);
+                origin.setTextColor(PremiumUi.MUTED);
+                origin.setMaxLines(2);
+                panel.addView(origin,new LinearLayout.LayoutParams(-1,-2));
+                bindFastVisiblePrice(r,isStockPosition(r)?"stock":"coin",
+                    fastAmount,origin,"","");
+            }else if("pending".equals(kind)){
+                TextView watched=text("미매수 관측 현재가 조회 중",12);
+                watched.setTextColor(PremiumUi.TEXT);
+                TextView observed=text("실시간 체결 미수신 · 목표 도달과 매수 체결은 별개",10);
+                observed.setTextColor(PremiumUi.MUTED);
+                panel.addView(watched);
+                panel.addView(observed);
+                bindFastVisiblePrice(r,market,watched,observed,
+                    "미매수 관측 현재가 ","");
+            }
             // A diverging geometric bar is an exact two-value comparison.
             // It does not pretend the app knows the intervening price path.
             if(("positions".equals(kind)||isSell)&&finite(rate)){
@@ -7396,6 +7548,8 @@ public final class UnifiedVisualActivity extends Activity {
         ensureBackgroundServiceOnResume();
         main.removeCallbacks(periodic);
         main.postDelayed(periodic,REFRESH_MS);
+        main.removeCallbacks(fastPriceViewTicker);
+        main.post(fastPriceViewTicker);
         if(drawerOverlay!=null){
             main.removeCallbacks(drawerProgressTicker);
             main.post(drawerProgressTicker);
@@ -7405,6 +7559,7 @@ public final class UnifiedVisualActivity extends Activity {
         markUiVisible(false);
         persistNavigation();
         main.removeCallbacks(periodic);
+        main.removeCallbacks(fastPriceViewTicker);
         main.removeCallbacks(drawerProgressTicker);
         super.onPause();
     }

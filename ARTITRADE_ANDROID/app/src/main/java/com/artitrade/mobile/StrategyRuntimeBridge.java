@@ -29,7 +29,7 @@ final class StrategyRuntimeBridge {
     private static final String LIVE_BRIDGE_SHA256="e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e";
     private final Context context;
     private final RuntimeCrashStore crashes;
-    private PyObject module;
+    private volatile PyObject module;
     private PyObject operationModule;
     private volatile boolean started=false;
 
@@ -186,6 +186,20 @@ final class StrategyRuntimeBridge {
         try{return parse(module.callAttr("snapshot"));}
         catch(Throwable e){crashes.add("python_strategy_snapshot",e);return error("PYTHON_SNAPSHOT",e);}
     }
+    /** Independent UI cache read. Never takes the Python bridge order lock:
+      * a 6s SQLite aggregation cannot delay this timestamp-only snapshot.
+      * The original strategy's own GIL and broker locks remain authoritative.
+      */
+    JSONObject quoteSnapshotV089(){
+        PyObject current=module;
+        if(current==null||!started)return new JSONObject();
+        try{return parse(current.callAttr("price_snapshot_v089"));}
+        catch(Throwable ignored){
+            // Read-only price-plane failure is not a trading failure.
+            return new JSONObject();
+        }
+    }
+
     synchronized JSONObject hubRecords(){
         if(module==null)return new JSONObject();
         try{return parse(module.callAttr("hub_records"));}
