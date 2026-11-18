@@ -72,7 +72,7 @@ class DataPreservingOOMFix(unittest.TestCase):
         self.assertIn('MAX_UI_RECORD_BYTES=12_000_000L',VIEW_STORE)
         self.assertIn('UI_RECORD_PREVIOUS_OVERSIZE_REBUILD_REQUIRED',VIEW_STORE)
         self.assertIn('}else if(raw.length()>6_000_000){',ACTIVITY)
-        self.assertIn("return \"v\"+version;",ACTIVITY)
+        self.assertIn("return version.matches(",ACTIVITY)
 
     def test_view_does_not_alter_market_order_or_policy_routines(self):
         self.assertIn('hub_records_ui = hub_records_ui_v104',PY)

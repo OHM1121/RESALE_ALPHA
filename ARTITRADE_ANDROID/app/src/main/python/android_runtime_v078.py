@@ -1802,6 +1802,14 @@ def hub_records_ui_v104():
 
 
 def _hub_records_v078(self,for_ui=False):
+    # Start/revive genuine market-score collection independently of the
+    # potentially heavy original wallet snapshot. A newly reset PAPER ledger
+    # has zero score rows; never require old PC cache to bootstrap scoring.
+    try:
+        from market_research_v033 import ensure_worker
+        ensure_worker(self.root)
+    except Exception as score_boot_error:
+        self._err('market_score_worker_start_v1118',score_boot_error)
     _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
     try:
@@ -1845,10 +1853,15 @@ def _hub_records_v078(self,for_ui=False):
                     out.setdefault('coin',{}).setdefault('ma',{})['ledger']=_coin_full(self.coin_runner.ma_ledger)
             except Exception as exc:
                 self._err('coin_ma_history_v078',exc)
-        try:
-            _research_history(self,out)
-        except Exception as exc:
-            self._err('research_history_all_v078',exc)
+        # The dedicated Research screen is removed from v0.0.1. Its full
+        # historical SQLite joins/legacy score reconciliation must not run
+        # again on every 6.5s UI snapshot; full original ledger/AI export
+        # remains unchanged when a full (non-UI) snapshot is requested.
+        if not for_ui:
+            try:
+                _research_history(self,out)
+            except Exception as exc:
+                self._err('research_history_all_v078',exc)
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
@@ -1953,74 +1966,38 @@ def _hub_records_v078(self,for_ui=False):
             # Always prefer the original EXE's paper SELL-fill + 15-session
             # virtual-result research rules over a condensed dashboard's
             # 'high touched' status. Keep current live balances/positions.
-            try:
-                originals=_gmo_original_record(self.root)
-                if originals is not None:
-                    source_ledger,source_research=originals
-                    if source_research.get('load_status')=='OK':
-                        stock['research']['gmo']=source_research
-                        stock['ledger']['gmo']['actual_target']=source_research.get(
-                            'actual_summary') or {}
-                        stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
-            except Exception as original_error:
-                self._err('gmo_original_research_parity',original_error)
-        else:
-            # The same PC import already holds the GMO originals. Display their
-            # verified original state even if the live GMO service is not ready.
-            try:
-                restored=_gmo_original_record(self.root)
-                if restored is not None:
-                    source_ledger,source_research=restored
-                    stock=out.setdefault('stock',{}).setdefault('at',{})
-                    stock.setdefault('ledger',{})['gmo']=source_ledger
-                    stock.setdefault('research',{})['gmo']=source_research
-                else:
-                    pass
-            except Exception as gmo_exc:
-                self._err('gmo_original_record',gmo_exc)
-                restored=None
-            if restored is not None:
+            # GMO snapshot() and research_dashboard() already read the current
+            # original wallet. Running a second full PC-era SQLite/JSON
+            # reconciliation for the removed Research page would double the
+            # work and risk reintroducing old rows into the fresh UI.
+            if not for_ui:
                 try:
-                    from market_research_v033 import offer_records
-                    out['market_research']=offer_records(self.root,out)
-                except Exception as score_error:
-                    self._err('market_research_v033',score_error)
-                return _serialize_hub_v104(out,for_ui)
-            # Do not report an empty GMO screen as a successful PC ledger load.
-            # Read-only source-file diagnostics distinguish absent data from
-            # a strategy engine which has not initialized its account state.
-            gmo_root=Path(self.root)/'stock'
-            present=[name for name in ('PROJECTGMO_V1.0_research.sqlite3',
-                'PROJECTGMO_V1.0_account_state.json') if (gmo_root/name).is_file()]
+                    originals=_gmo_original_record(self.root)
+                    if originals is not None:
+                        source_ledger,source_research=originals
+                        if source_research.get('load_status')=='OK':
+                            stock['research']['gmo']=source_research
+                            stock['ledger']['gmo']['actual_target']=source_research.get(
+                                'actual_summary') or {}
+                            stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
+                except Exception as original_error:
+                    self._err('gmo_original_research_parity',original_error)
+        else:
+            # Fresh PAPER epoch has NO old PC GMO positions or prior scores.
+            # An uninitialized native GMO engine is genuinely not ready;
+            # querying old files for restoration here could revive stale
+            # 2026-11-14 history or double-load a previously deleted wallet.
             stock=out.setdefault('stock',{}).setdefault('at',{})
-            stock.setdefault('ledger',{}).setdefault('gmo',{})
-            stock['ledger']['gmo']['load_diagnostic']={
-                'stage':'ENGINE_NOT_READY' if present else 'PC_SOURCE_NOT_PRESENT',
-                'files_present':present,'files_expected':2,
-                'message':'GMO original file present but its runtime is not ready'
-                          if present else 'No GMO original files located in phone root'
-            }
-            research=stock.setdefault('research',{})
-            if not isinstance(research.get('gmo'),dict):
-                state=_research_source_audit(Path(self.root)/'stock'/
-                    'PROJECTGMO_V1.0_research.sqlite3','gmo_candidates',
-                    ('gmo_events','gmo_fills','gmo_position_history'))
-                research['gmo']={'items':[],'score_items':[],'bands':[],
-                    'origin':'IMPORTED_PC_AND_PHONE','load_status':'ENGINE_NOT_READY',
-                    'loaded_items':0,**state}
+            stock.setdefault('ledger',{})['gmo']={
+                'load_diagnostic':{'stage':'ENGINE_NOT_READY',
+                                   'message':'NATIVE_GMO_ENGINE_START_PENDING'}}
+            stock.setdefault('research',{})['gmo']={
+                'items':[],'load_status':'ENGINE_NOT_READY',
+                'source':'FRESH_NATIVE_GMO_ONLY'}
     except Exception as exc:
         self._err('hub_records_v078',exc)
-        try:
-            restored=_gmo_original_record(self.root)
-            if restored is not None:
-                original_ledger,original_research=restored
-                stock=out.setdefault('stock',{}).setdefault('at',{})
-                ledger=stock.setdefault('ledger',{})
-                ledger['gmo']=_merge_gmo_pc_evidence(
-                    ledger.get('gmo') or {},original_ledger)
-                stock.setdefault('research',{})['gmo']=original_research
-        except Exception as recovery_error:
-            self._err('hub_records_gmo_last_resort',recovery_error)
+        # Never read an old imported PC GMO database to fill holes in a
+        # failed current wallet snapshot; leave the error visible.
         try:
             # Passive, read-only worker. Network and SQLite work only on its
             # daemon thread; this hub snapshot/order thread only enqueues.
@@ -2345,10 +2322,10 @@ _install_ma_v062_packet(_core)
 from stock_quote_truth_v066 import install as _install_stock_quote_truth_v066
 _install_stock_quote_truth_v066(_core)
 
-# v094 SELL-ONLY monitoring for historical v061/v062 MA BUY positions.
-# Preserve each old SQLite wallet, original exit rules and live-order guards.
-from legacy_ma_exit_watch_v094 import install as _install_legacy_ma_exit_v094
-_install_legacy_ma_exit_v094(_core)
+# Fresh PAPER-only successor: no v061/v062 historical MA positions
+# survive the first mandatory epoch reset. The old historical-only SELL
+# watcher MUST NOT patch the current MA feed/order methods anymore.
+# Active MA v067 native BUY/SELL policy modules remain unchanged.
 
 # v094: finish incomplete initial slot funding ONLY from verified first
 # execution +2 true exchange ticks, using same original public-quote owner.
@@ -2452,6 +2429,16 @@ _install_stock_at_catchup_v086()
 from stock_at_policy_reconcile_v091 import install as _install_at_policy_v091
 _install_at_policy_v091()
 
+# v107: current signed score <0 forbids only NEW AT/coin-general
+# reference-bar buys. Existing positions and SELL callbacks stay untouched.
+from at_market_score_gate_v107 import install as _install_reference_score_gate_v107
+_install_reference_score_gate_v107()
+
+# v107: observe original qualifying BUY candidates/targets for all 8
+# strategy wallets. This never makes an order or modifies any SELL policy.
+from entry_plan_hooks_v107 import install as _install_entry_plan_hooks_v107
+_install_entry_plan_hooks_v107(_core)
+
 # One recovery plan shared by five stock and three coin strategy ledgers.
 # It monitors genuine 0B/Upbit authenticated events, prioritizes held-stock
 # paper decision queue traffic and records recovery evidence. It NEVER
@@ -2459,6 +2446,17 @@ _install_at_policy_v091()
 # creates an off-line historical fill or calls a second broker REST API.
 from unified_recovery_v092 import install as _install_unified_recovery_v092
 _install_unified_recovery_v092(_core)
+
+# Final workbook (NEW LEGACY 11.18): overrides obsolete RSI first-close
+# next-open entry, but leaves all original market quote/FOK wallet SELL safety.
+from market_trend_1118_runtime import install as _install_nl1118_trend
+_install_nl1118_trend()
+
+# The 11.18 workbook is the last reference-bar execution policy overlay.
+# Original verified quote/order owners remain intact.
+from reference_1118_runtime import install as _install_nl1118_reference
+_install_nl1118_reference()
+
 
 # Only Android knows whether the current active network is validated.
 # This has no ability to make an order or authorize stale 0B/0D.

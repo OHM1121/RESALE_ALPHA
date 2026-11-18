@@ -96,6 +96,34 @@ final class LocalHubClient {
         return post("/v1/migration/ack",new JSONObject().put("session",session).put("archive_sha256",archiveSha));
     }
 
+    JSONObject dailyBegin(String market,String date,String epoch,String session,
+                         long bytes,String sha,int chunks)throws Exception{
+        return post("/v1/daily/begin",new JSONObject()
+            .put("market",market).put("date",date)
+            .put("epoch_id",epoch).put("session",session)
+            .put("bytes",bytes).put("sha256",sha).put("chunks",chunks));
+    }
+    JSONObject dailyChunk(String market,String date,String session,int index,
+                         String b64,String sha)throws Exception{
+        return post("/v1/daily/chunk",new JSONObject()
+            .put("market",market).put("date",date).put("session",session)
+            .put("index",index).put("data_b64",b64).put("sha256",sha));
+    }
+    JSONObject dailyCommit(String market,String date,String session)throws Exception{
+        return post("/v1/daily/commit",new JSONObject()
+            .put("market",market).put("date",date).put("session",session));
+    }
+    JSONObject dailyLatest(String market,String epoch)throws Exception{
+        return request("/v1/daily/latest?market="+encode(market)+
+            "&epoch_id="+encode(epoch));
+    }
+    JSONObject dailyDownload(String market,String date,String epoch,int index)
+                            throws Exception{
+        return request("/v1/daily/chunk?market="+encode(market)+
+            "&date="+encode(date)+"&epoch_id="+encode(epoch)+
+            "&index="+index);
+    }
+
     JSONObject control(String market,String desired) throws Exception {
         if(!("stock".equals(market)||"coin".equals(market)))throw new IllegalArgumentException("Unsupported market");
         if(!("pc".equals(desired)||"phone".equals(desired)||"off".equals(desired)))throw new IllegalArgumentException("Unsupported device");

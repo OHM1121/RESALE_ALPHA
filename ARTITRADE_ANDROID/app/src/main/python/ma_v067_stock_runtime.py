@@ -101,13 +101,22 @@ def _join_new_positions(self,c,code):
             state['entry_at']=str(p['entry_at'])
             state['entry_bar_start']=str(f.get('ma_v067_bar_start') or '')
             if kind=='REVERSAL_UP':
+                one,two=policy.up_targets(p['entry'],p['tf'])
+                state['exit_intents']=[
+                    {'stage':1,'price':str(one),'fraction_of_original':'.30',
+                     'status':'PRESTAGED_PAPER_TARGET'},
+                    {'stage':2,'price':str(two),'fraction_of_original':'.35',
+                     'status':'PRESTAGED_PAPER_TARGET'}]
+                state['hard_stop']=str(policy.number(p['entry'])*Decimal('.85'))
+                state['policy_source']='NEW LEGACY(11.18).xlsx'
+            if kind=='REVERSAL_UP':
                 # Set physical stock-share stage targets before the first
                 # sell. 13 shares -> first ceil(1.3)=2, post-first 11 shares
                 # -> second ceil(5.5)=6. Never round a confirmed fill to
                 # fractional stock shares or reject its actual 2/6 prints.
                 initial=int(p['qty0'])
-                stock_first=max(1,min(initial,int(math.ceil(initial*.10))))
-                stock_second=(max(1,int(math.ceil((initial-stock_first)*.50)))
+                stock_first=max(1,min(initial,int(math.ceil(initial*.30))))
+                stock_second=(max(1,int(math.ceil(initial*.35)))
                               if initial>stock_first else 0)
                 state['rounded_first_goal']=str(stock_first)
                 state['rounded_second_goal']=str(stock_second)
@@ -119,7 +128,7 @@ def _join_new_positions(self,c,code):
             (p['id'],kind,p['tf'],code,json.dumps(state,ensure_ascii=False),at,at))
         first_target=(float(state['ref_high']) if kind=='REVERSAL_BEAR'
                       else float(policy.up_targets(p['entry'],p['tf'])[0]))
-        fraction=.30 if kind=='REVERSAL_BEAR' else .10
+        fraction=.30
         first=(int(state['rounded_first_goal']) if kind=='REVERSAL_UP'
                else max(1,int(math.ceil(int(p['qty0'])*fraction))))
         c.execute('UPDATE positions SET target=?,first_qty=? WHERE id=?',
@@ -205,8 +214,9 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     # Verified KRX 0D bid/depth can execute targets without a coincident 0B
     # print. The protective forming-MA signals must still have a fresh 0B.
     old=_slope_closes(self,p['code'],p['tf'],now) if trade is not None else []
-    forced=policy.forced_ma_exit(old,trade) if trade is not None else ''
-    if trade is not None and not forced and _second_followup_bar(self,p,now,trade):
+    forced=(policy.forced_ma_exit(old,trade) if trade is not None
+            and kind=='REVERSAL_BEAR' else '')
+    if kind=='REVERSAL_BEAR' and trade is not None and not forced and _second_followup_bar(self,p,now,trade):
         forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
     available=int(p['qty'])
     if available<=0:return
@@ -262,7 +272,7 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     # step using this SAME still-fresh exchange bid, but only after a
     # verified SELL row and with the original 0D reservation budget.
     # All other exits (hard stop, trail, forced) keep their native priority.
-    first_reasons=('MA_V065_UP_FIRST_10PCT',
+    first_reasons=('MA_V1118_UP_FIRST_30PCT',
                    'MA_V065_FIRST_30_AT_REVERSAL_HIGH')
     if reason in first_reasons and first_confirmed:
         current=c.execute("""SELECT * FROM positions
@@ -285,7 +295,7 @@ def _exit_policy(self,c,p,bid,now,book,previous):
                         state_now,bid,current['entry'],current['qty'],
                         current['qty0'],now)
                 if next_reason in ('MA_V065_SECOND_HALF_REMAINING',
-                                   'MA_V065_UP_SECOND_HALF_REMAINING') and next_qty>0:
+                                   'MA_V1118_UP_SECOND_35PCT') and next_qty>0:
                     # The nested call re-reads native 0D capacity and
                     # authoritative position+execution state. It cannot
                     # enter a third stage because only FIRST reasons recurse.
@@ -571,14 +581,29 @@ def _up_worker(runner):
                               (now.isoformat(),frame,code,signal,'QUALIFIED',
                                json.dumps(features,ensure_ascii=False)))
                 service._refresh_watched()
-                seen.add(key)
                 _record_v076_stock_ma(code,frame,finish.isoformat(),
                     'UP_CANDIDATE_REGISTERED_NATIVE_FILL_UNVERIFIED',
                     {'trade_price':str(decision_tick[4]),'ask':int(ask),
                      'ma120_delta':checked.get('ma_120_delta'),
                      'seconds_to_close':round(fresh_remain,3)})
-                # Same native KRX 0D/FOK wallet executes on this true print.
-                service.on_tick(decision_tick,runner.engine.book)
+                # The original v067 marked this candle DONE before asking the
+                # verified native wallet to buy. If the first 0B/0D attempt
+                # returned 0 (e.g. trade>limit, missing executable depth),
+                # the candidate appeared forever as PENDING and NO further
+                # valid tick could retry before the entry deadline.
+                # Mark done ONLY on a confirmed original SQLite BUY. No
+                # altered trade/ask, invented fill, or strategy rule change.
+                executed=service.on_tick(decision_tick,runner.engine.book)
+                if executed and int(executed)>0:
+                    seen.add(key)
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_NATIVE_REAL_PAPER_BUY_CONFIRMED',
+                        {'fill_count':int(executed),'ask':int(ask)})
+                else:
+                    _record_v076_stock_ma(code,frame,finish.isoformat(),
+                        'UP_NATIVE_BUY_NOT_FILLED_RETRY_UNTIL_WINDOW_END',
+                        {'trade_price':str(decision_tick[4]),'ask':int(ask),
+                         'limit':int(ask),'no_synthetic_fill':True})
         except Exception as exc:
             try:
                 _record_v076_stock_ma(

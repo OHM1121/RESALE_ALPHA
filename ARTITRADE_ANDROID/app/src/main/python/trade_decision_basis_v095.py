@@ -75,7 +75,7 @@ def _ma_entry(features,candidate_reason,frame,market):
         delta=_num(features.get('ma_v067_120_delta'))
         description=(bar+' MA 상승전환: 5·10·20·60 이동평균선 모두 120선 아래, '
              '직전 확정봉에는 미충족이던 네 단기선 기울기가 현재봉에서 처음 양수 전환. '
-             'MA120 변화량 +0.0099 이하, 봉 종료 10~2초 전 신호 승인')
+             'MA120 기울기 엄격한 음수, 봉 종료 10~2초 전 검증된 상승전환봉 진입')
         if delta is not None:
             description+='; 저장된 MA120 변화량 '+_price(delta)
             data['ma120_delta']=delta
@@ -110,6 +110,11 @@ def _ma_exit(reason,frame,pos,fill):
     price=_price(fill['price'])
     prefix=(FRAMES.get(frame,frame)+' MA · ')
     tags={
+        'MA_V1118_UP_FIRST_30PCT':'NEW LEGACY 11.18 1차 매도: 시간봉별 매수가 +2/3/3.5/4% 목표 도달, 최초 수량 30%',
+        'MA_V1118_UP_SECOND_35PCT':'NEW LEGACY 11.18 2차 매도: 첫 목표보다 +2/2/2.5/3% 상승, 최초 수량 35%',
+        'MA_V1118_UP_AFTER_SECOND_TRAIL':'NEW LEGACY 11.18 3차: 최고가 대비 시간봉별 -2.5/-3/-3/-4% 하락시 잔량 전량',
+        'MA_V1118_STOP_MINUS_15':'NEW LEGACY 11.18 손절: 실제 가격 매수가 -15% 도달, 전량매도',
+        'MA_V1118_HOLD_EXPIRY':'NEW LEGACY 11.18 보유기한 만료: 48/80/120/360시간 후 첫 유효 시세에서 전량',
         'MA_V065_UP_FIRST_10PCT':f'1차 매도: 실제 최우선 매수호가가 매수가 대비 +{frame_target} 목표에 도달, 최초 매수량 10% 청산',
         'MA_V065_UP_SECOND_HALF_REMAINING':'2차 매도: 1차 목표가에서 추가 목표 상승에 도달, 1차 매도 후 잔량의 50% 청산',
         'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR':'3차 전량매도: 2차 매도 후 주가가 1차 목표가 이하로 하락',
@@ -141,20 +146,29 @@ def _trend_entry(pos,fill,frame):
     rsi=_num(p.get('rsi20_live'))
     if rsi is None or not str(fill['reason'] or '').startswith('MARKET_TREND_RSI20_BUY'):
         return None,None,{}
-    # Original v043 coordinator requires prior COMPLETED-bar RSI20 > 30,
-    # first 30-downward forming-bar crossing, near-bar-end PRECHECK and
-    # fresh current ticker/ask. Source stores the executed numeric RSI20
-    # and the precise signal bar, but not numeric prior RSI: do NOT invent it.
-    reason=(FRAMES.get(frame,frame)+' 마켓트렌드: Wilder RSI(20) '
-           +_price(rsi)+'로 30 이하 최초 하향돌파 인정; '
-            '직전 확정봉 RSI(20)>30, 12초 사전확인 후 7초 전 재검증, '
-            '실제 체결 기록에 연결된 신호')
+    if str(p.get('entry_signal_policy') or '').startswith('NL1118_'):
+        # Workbook source. RSI watch lasted <=24h, Bollinger MID 20/1.5
+        # slope strictly (-20,+30) and genuine exchange ticker crossed MID.
+        reason=(FRAMES.get(frame,frame)+' 급락 전환봉: Wilder RSI(20) '
+                +_price(rsi)+' (30 이하 관측 후 최대 24시간 추적), '
+                '볼린저밴드(20,1.5) 중앙선 기울기 -20° 초과/+30° 미만, '
+                '실시간 가격 중앙선 도달에 따른 검증된 PAPER 매수')
+    else:
+        # Older already-owned positions retain their proven original evidence.
+        reason=(FRAMES.get(frame,frame)+' 마켓트렌드: Wilder RSI(20) '
+               +_price(rsi)+'로 30 이하; 기존 기록 기준의 매수')
     if p.get('bar_key'):reason+='; 신호봉 '+str(p['bar_key'])[:30]
     return reason,'ORIGINAL_MT54_RSI20_EXECUTION',{'rsi20_live':rsi}
 
 
 def _trend_exit(reason,pos,fill,frame):
     tags={
+       'MT1118_STOP_15PCT':'NEW LEGACY 11.18 손절: 매수가 대비 -15% 전량',
+       'MT1118_HOLD_DEADLINE':'NEW LEGACY 11.18 보유기한 100시간/8일/15일 만료 전량',
+       'NL1118_AFTER_FIRST_PLUS_1_STOP':'NEW LEGACY 11.18 첫 익절 뒤 매수가+1% 방어선까지 회귀, 잔량 전량',
+       'NL1118_AFTER_SECOND_FIRST_FLOOR':'NEW LEGACY 11.18 두번째 익절 뒤 첫 목표가까지 회귀, 잔량 전량',
+       'NL1118_AFTER_SECOND_TRAIL':'NEW LEGACY 11.18 두번째 익절 뒤 최고가 대비 -4/-5/-6% 추적청산',
+       'NL1118_PRE_FIRST_RETURN_TO_ENTRY':'NEW LEGACY 11.18 첫 목표가 미달 상태 매수가 상향 후 회귀 전량',
        'MT_TP1':'1차 매도: 1차 목표가 도달, 최초 매수량 30%',
        'MT_TP2':'2차 매도: 2차 목표가 도달, 최초 매수량 35%',
        'MT_TP3_TRAIL':'3차 잔량 전량매도: 2차 목표가 이하 회귀 또는 2차 이후 최고가 대비 4% 하락',

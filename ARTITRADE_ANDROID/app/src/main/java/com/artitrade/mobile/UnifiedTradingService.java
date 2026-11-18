@@ -15,6 +15,11 @@ import android.net.NetworkCapabilities;
 import android.net.Network;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import android.util.Base64;
+import com.chaquo.python.Python;
+
+import java.io.File;
+import java.io.RandomAccessFile;
 
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
@@ -37,18 +42,16 @@ public final class UnifiedTradingService extends Service {
     static final String MANUAL_PAPER_SELL="com.artitrade.mobile.MANUAL_PAPER_SELL";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
     static final String SET_PC_SYNC="com.artitrade.mobile.SET_PC_LIVE_SYNC";
-    static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
+    private static volatile boolean SERVICE_INSTANCE_ACTIVE=false;
+    static boolean isServiceActiveForFreshReset(){return SERVICE_INSTANCE_ACTIVE;}
     private final AtomicBoolean running=new AtomicBoolean(false);
     private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
     private final AtomicBoolean uiRecordCollecting=new AtomicBoolean(false);
     // Explicit PAPER exits take precedence over expensive read-only snapshots.
     private final AtomicInteger manualSellOutstanding=new AtomicInteger(0);
     private volatile long uiRecordLastStartedMs=0L;
-    private volatile long lastMigrationPoll=0L;
-    private volatile String lastAutomaticMigrationSha="";
-    private volatile long lastAutomaticMigrationAt=0L;
     private Thread monitor;
     private Thread preloadObserver;
     private Thread priceOnlyPublisher;
@@ -61,9 +64,18 @@ public final class UnifiedTradingService extends Service {
     private volatile long lastHubPublish=0L;
     private volatile boolean publishOneShot=false;
     private volatile boolean lastMserverAuthOk=false;
+    private volatile boolean antiRollbackReady=false;
+    private volatile long lastAntiRollbackCheckMs=0L;
+    private static final long ANTI_ROLLBACK_CHECK_MS=30_000L;
+    private static final long DAILY_STABILIZE_MS=90_000L;
+    private static final long DAILY_RETRY_MS=5*60_000L;
+    private final AtomicBoolean dailyBackupRunning=new AtomicBoolean(false);
+    private volatile long serviceBootAtMs=System.currentTimeMillis();
 
     @Override public void onCreate(){
         super.onCreate();
+        SERVICE_INSTANCE_ACTIVE=true;
+        serviceBootAtMs=System.currentTimeMillis();
         ProcessHealthV087.install(this);
         crashes=new RuntimeCrashStore(this);
         strategy=new StrategyRuntimeBridge(this);
@@ -89,6 +101,17 @@ public final class UnifiedTradingService extends Service {
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         try{
             if(intent!=null&&STOP.equals(intent.getAction())){
+                stopSafely();stopSelf();return START_NOT_STICKY;
+            }
+            // v108: the new package is a fresh PAPER-only epoch. Before the
+            // phone finishes one complete reset, forbid ANY strategy startup,
+            // automatic PC import or background daemon resurrection.
+            try{
+                if(FreshEpochGateV106.mandatoryFreshStartPending(this)){
+                    stopSafely();stopSelf();return START_NOT_STICKY;
+                }
+            }catch(Exception markerError){
+                crashes.add("mandatory_fresh_paper_epoch_gate",markerError);
                 stopSafely();stopSelf();return START_NOT_STICKY;
             }
             ensureChannel();
@@ -162,22 +185,8 @@ public final class UnifiedTradingService extends Service {
             if(intent!=null&&RESTART_FEEDS.equals(intent.getAction())){
                 new Thread(()->safeRestartStrategy(),"artitrade-v074-restart").start();
             }
-            if(intent!=null&&APPLY_PC_MIGRATION.equals(intent.getAction())&&running.get()){
-                new Thread(()->{
-                    if(liveOrdersArmed()){
-                        getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
-                            .putString("result",new JSONObject().toString()).apply();
-                        crashes.add("pc_migration_live_blocked",
-                            new IllegalStateException("LIVE_TRADING_ACTIVE: disable live orders before PC DB restore"));
-                        return;
-                    }
-                    safeRestartStrategy();
-                },"artitrade-pc-ledger-apply").start();
-            }
-            if(intent!=null&&START.equals(intent.getAction())&&running.get()){
-                new Thread(()->checkPendingPCArchive(new LocalHubClient(this)),
-                    "artitrade-pc-ledger-app-reopen").start();
-            }
+            // Legacy PC import/replay actions are permanently unsupported.
+            // A service restart must not try to rehydrate any prior PAPER ZIP.
             if(intent!=null&&APPLY_OPERATION.equals(intent.getAction())){
                 final String raw=intent.getStringExtra("settings");
                 if(raw!=null)getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).edit().putString("settings",raw).apply();
@@ -254,8 +263,50 @@ public final class UnifiedTradingService extends Service {
             crashes.add("pc_ledger_migration_reply",new IllegalStateException(result.toString()));
     }
     private void launchWithMigration(){
-        LegacyLedgerMigration importer=new LegacyLedgerMigration(this,crashes);
-        JSONObject migration=importer.importIfReady();
+        // The user's definitive fresh-only epoch has ZERO legacy PAPER
+        // holdings to import. Do NOT instantiate the old PC ZIP importer,
+        // even for a missing checkpoint. A missing/invalid marker is fatal.
+        JSONObject migration=FreshEpochGateV106.migrationGate(this);
+        if(migration==null){
+            saveMigrationResult(new JSONObject());
+            return;
+        }
+        String epochState=migration.optString("status","");
+        if("FRESH_EPOCH_BLOCKED".equals(epochState)){
+            saveMigrationResult(migration);
+            // An interrupted/deformed reset must NEVER start source engines,
+            // resubscribe quotes or import any old PC archive.
+            return;
+        }
+        if("FRESH_EPOCH_NO_PC_IMPORT".equals(epochState)){
+            try{FreshEpochGateV106.clearDerivedCachesIfNeeded(this);}
+            catch(Exception staleCache){
+                crashes.add("fresh_epoch_display_cache_guard",staleCache);
+                try{
+                    JSONObject blocked=new JSONObject();
+                    blocked.put("ok",false);
+                    blocked.put("status","FRESH_EPOCH_BLOCKED");
+                    blocked.put("reason","STALE_CACHE_NOT_CLEARED_NO_TRADING_START");
+                    saveMigrationResult(blocked);
+                }catch(Exception reportError){crashes.add("fresh_epoch_report",reportError);}
+                return;
+            }
+        }
+        // Verify the committed epoch against an independent durable
+        // high-water mark BEFORE opening any original exchange session.
+        // If the old 11/14 paper database has reappeared, no buy/sell engine
+        // may run and no automatic restore is attempted.
+        try{
+            LedgerAntiRollbackV002.verify(this);
+            antiRollbackReady=true;
+            lastAntiRollbackCheckMs=System.currentTimeMillis();
+        }catch(Throwable rollback){
+            LedgerAntiRollbackV002.block(this,rollback);
+            crashes.add("PAPER_LEDGER_ROLLBACK_START_BLOCKED",rollback);
+            stopSafely();
+            stopSelf();
+            return;
+        }
         JSONObject started=strategy.start();
         if(!started.optBoolean("ok",true))
             crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
@@ -274,19 +325,11 @@ public final class UnifiedTradingService extends Service {
                 crashes.add("ui_initial_bounded_snapshot_v104",viewError);
             }
         }
-        String state=migration.optString("status","");
-        JSONObject audit=new JSONObject();
-        if("FILES_INSTALLED".equals(state)||"LOCAL_FILES_PRESENT".equals(state)){
-            // Allow asynchronous EXE runner bootstrap to finish initializing the
-            // strategy snapshots. No tick or market order is synthesized here.
-            for(int attempt=0;attempt<3&&records.length()==0;attempt++){
-                try{Thread.sleep(500L);}catch(InterruptedException ie){Thread.currentThread().interrupt();break;}
-                records=strategy.hubRecordsUi();
-            }
-            audit=strategy.ledgerAudit(migration.optJSONObject("manifest"));
-        }
-        JSONObject verified=importer.finishRuntimeVerification(migration,started,records,audit);
-        saveMigrationResult(verified);
+        // A new fresh-only epoch has NO older PC rows to verify or inherit.
+        // Source ledgers come exclusively from the eight newly started wallets.
+        // The former importer's finishRuntimeVerification() intentionally
+        // cannot be called because all legacy migration is disabled.
+        saveMigrationResult(migration);
         applyPendingOperation();
     }
     private void safeStartStrategy(){
@@ -338,31 +381,6 @@ public final class UnifiedTradingService extends Service {
         }
     }
 
-    private void checkPendingPCArchive(LocalHubClient hub){
-        if(!strategy.isStarted()||migrationRestarting.get())return;
-        long now=System.currentTimeMillis();
-        if(now-lastMigrationPoll<15000L)return;
-        lastMigrationPoll=now;
-        try{
-            String installed=getSharedPreferences("artitrade_pc_ledger_import_v1",MODE_PRIVATE)
-                .getString("imported_sha256","");
-            JSONObject st=hub.migrationStatus();
-            if(!st.optBoolean("ok",false)||!st.optBoolean("ready",false)
-                ||!st.optBoolean("archive_exists",false))return;
-            String sha=st.optString("archive_sha256","");
-            if(sha.isEmpty()||liveOrdersArmed())return;
-            // First import and later missing-only research supplements share the
-            // same restart path. Never overwrite a phone DB after first import.
-            long retryAfter=5L*60L*1000L;
-            if(sha.equalsIgnoreCase(lastAutomaticMigrationSha)&&
-               now-lastAutomaticMigrationAt<retryAfter)return;
-            lastAutomaticMigrationSha=sha;
-            lastAutomaticMigrationAt=now;
-            new Thread(this::safeRestartStrategy,
-                installed.isEmpty()?"artitrade-pc-ledger-auto-apply":
-                    "artitrade-pc-research-missing-only").start();
-        }catch(Throwable e){crashes.add("pc_ledger_auto_check",e);}
-    }
     private void applyManualPaperSell(String raw){
         JSONObject result=new JSONObject();
         String requestId="";
@@ -570,6 +588,23 @@ public final class UnifiedTradingService extends Service {
         LocalHubClient hub=new LocalHubClient(this);
         RealtimeState live=new RealtimeState(this);
         while(running.get()){
+            // Outside quote/order threads: periodically catch a replaced
+            // or older SQLite/WAL snapshot even while the app remains open.
+            // Do not compete with a user-confirmed PAPER SELL worker.
+            if(antiRollbackReady&&manualSellOutstanding.get()==0&&
+                System.currentTimeMillis()-lastAntiRollbackCheckMs>=
+                    ANTI_ROLLBACK_CHECK_MS){
+                try{
+                    LedgerAntiRollbackV002.verify(this);
+                    lastAntiRollbackCheckMs=System.currentTimeMillis();
+                }catch(Throwable rollback){
+                    LedgerAntiRollbackV002.block(this,rollback);
+                    crashes.add("PAPER_LEDGER_ROLLBACK_RUNTIME_BLOCKED",rollback);
+                    stopSafely();
+                    stopSelf();
+                    return;
+                }
+            }
             try{
                 JSONObject hs=hub.status();
                 lastMserverAuthOk=hs.optBoolean("ok",false);
@@ -581,7 +616,6 @@ public final class UnifiedTradingService extends Service {
                 if(lastMserverAuthOk){
                     stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
                     coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
-                    checkPendingPCArchive(hub);
                 }else{
                     // A rejected/expired hub status is not proof of execution ownership.
                     stockEpoch=0;coinEpoch=0;
@@ -655,6 +689,7 @@ public final class UnifiedTradingService extends Service {
                 NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
                 if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
                 scheduleUiRecordsIfDue(hub);
+                scheduleDailyBackupIfReady(hub);
                 ProcessHealthV087.sample(this,"service_heartbeat",0L,0L,false);
                 if(stockEpoch<=0||coinEpoch<=0)
                     disarmUnverifiedMarkets("LEASE_UNCONFIRMED");
@@ -763,6 +798,164 @@ public final class UnifiedTradingService extends Service {
             .putInt("total",total).putInt("failed",failed).putInt("percent",percent)
             .putLong("started_at",started).putLong("updated_at",System.currentTimeMillis())
             .putBoolean("complete","COMPLETE".equals(stage)&&failed==0).apply();
+    }
+
+    /**
+     * Daily 20:10 KST on verified KRX trading days, 11:30 KST every coin day.
+     * After power-off/reboot, a missed due window remains pending until
+     * 90s of stable native engine and monotonic SQLite start-up validation.
+     * One market per low-priority worker, never on the order/feed thread.
+     */
+    private void scheduleDailyBackupIfReady(LocalHubClient hub){
+        long now=System.currentTimeMillis();
+        if(!running.get()||!antiRollbackReady||!lastMserverAuthOk||
+            strategy==null||!strategy.isStarted()||
+            manualSellOutstanding.get()>0||
+            now-serviceBootAtMs<DAILY_STABILIZE_MS||
+            dailyBackupRunning.get())return;
+        android.content.SharedPreferences sp=getSharedPreferences(
+            "artitrade_daily_backup_v003",MODE_PRIVATE);
+        for(String market:new String[]{"stock","coin"}){
+            if(now-sp.getLong("attempt_at_"+market,0L)<DAILY_RETRY_MS)
+                continue;
+            if(!dailyBackupRunning.compareAndSet(false,true))return;
+            final String current=market;
+            // Reserve attempt before worker launch to prevent a duplicate.
+            sp.edit().putLong("attempt_at_"+market,now).apply();
+            Thread worker=new Thread(()->{
+                try{runDailyBackup(hub,current);}
+                catch(Throwable failure){
+                    crashes.add("daily_backup_"+current,failure);
+                    sp.edit().putString("stage_"+current,"FAILED")
+                      .putString("error_"+current,
+                        failure.getClass().getSimpleName()+":"+
+                        String.valueOf(failure.getMessage())).apply();
+                }finally{dailyBackupRunning.set(false);}
+            },"artitrade-daily-"+market+"-wal-safe");
+            worker.setDaemon(true);
+            worker.setPriority(Thread.MIN_PRIORITY+1);
+            worker.start();
+            return;
+        }
+    }
+
+    private static String sha256Daily(byte[] raw){
+        try{
+            byte[] h=MessageDigest.getInstance("SHA-256").digest(raw);
+            StringBuilder out=new StringBuilder(64);
+            for(byte b:h)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+            return out.toString();
+        }catch(Exception e){throw new IllegalStateException("DAILY_SHA_INVALID",e);}
+    }
+
+    private void runDailyBackup(LocalHubClient hub,String market)throws Exception{
+        android.content.SharedPreferences sp=getSharedPreferences(
+            "artitrade_daily_backup_v003",MODE_PRIVATE);
+        String last=sp.getString("done_date_"+market,"");
+        String status=Python.getInstance().getModule(
+            "android_daily_paper_backup_v003").callAttr("due_json",market,last)
+            .toString();
+        JSONObject due=new JSONObject(status);
+        if(!due.optBoolean("ok",false))
+            throw new IllegalStateException("DAILY_TRADING_CALENDAR:"+
+                due.optString("error",""));
+        if(!due.optBoolean("due",false))return;
+        String date=due.getString("date");
+        String epoch=FreshEpochGateV106.read(this).getString("epoch_id");
+        // The server is an ADDITIONAL private-application backup sink.
+        // It must never provide a record to normal active trading UI.
+        JSONObject server=hub.dailyLatest(market,epoch);
+        if(!server.optBoolean("ok",false))
+            throw new IllegalStateException("MSERVER_DAILY_ENDPOINT_UNAVAILABLE:"+
+                server.optString("error",""));
+        if(server.optBoolean("exists",false) &&
+            date.equals(server.optString("date"))){
+            sp.edit().putString("done_date_"+market,date)
+                .putString("stage_"+market,"VERIFIED_SERVER_PRESENT")
+                .putString("sha256_"+market,server.optString("sha256"))
+                .putLong("saved_at_"+market,System.currentTimeMillis())
+                .remove("error_"+market).commit();
+            return;
+        }
+        // Before reading any row, enforce the independent epoch/wallet guard.
+        LedgerAntiRollbackV002.verify(this);
+        JSONObject plan=new JSONObject(Python.getInstance()
+            .getModule("android_daily_paper_backup_v003")
+            .callAttr("prepare",
+                new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070").getAbsolutePath(),
+                getCacheDir().getAbsolutePath(),market,date).toString());
+        if(!plan.optBoolean("ok",false))
+            throw new IllegalStateException("DAILY_NATIVE_BACKUP_FAILED:"+
+                plan.optString("error",""));
+        if(!epoch.equals(plan.optString("epoch_id"))||
+           !market.equals(plan.optString("market"))||
+           !date.equals(plan.optString("date")))
+            throw new SecurityException("DAILY_BACKUP_WRONG_EPOCH_OR_SCOPE");
+        File allowed=new File(getCacheDir(),"artitrade_daily_v003").getCanonicalFile();
+        File zip=new File(plan.getString("path")).getCanonicalFile();
+        if(!allowed.equals(zip.getParentFile())||!zip.isFile()||
+           zip.length()!=plan.getLong("bytes"))
+            throw new SecurityException("DAILY_BACKUP_INVALID_LOCAL_FILE");
+        long size=zip.length();
+        String hash=plan.getString("sha256");
+        if(!hash.matches("[0-9a-f]{64}"))
+            throw new IllegalStateException("DAILY_BACKUP_HASH_INVALID");
+        final int chunk=DailyBackupStoreV003.CHUNK_BYTES;
+        int chunks=(int)((size+chunk-1)/chunk);
+        String session="d"+date.replace("-","")+"_"+market+"_"+hash.substring(0,24);
+        JSONObject begin=hub.dailyBegin(market,date,epoch,session,size,hash,chunks);
+        if(!begin.optBoolean("ok",false))
+            throw new IllegalStateException("DAILY_SERVER_BEGIN:"+
+                begin.optString("error",""));
+        if(!begin.optBoolean("committed",false)){
+            int received=begin.optInt("received",0);
+            if(received<0||received>chunks)
+                throw new IllegalStateException("DAILY_SERVER_INVALID_RESUME_OFFSET");
+            sp.edit().putString("stage_"+market,"UPLOADING").apply();
+            try(RandomAccessFile input=new RandomAccessFile(zip,"r")){
+                input.seek((long)received*chunk);
+                for(int i=received;i<chunks;i++){
+                    if(!running.get()||manualSellOutstanding.get()>0||
+                        !antiRollbackReady)
+                        throw new IllegalStateException("DAILY_ENGINE_UNSTABLE_STOP_UPLOAD");
+                    int want=(int)Math.min((long)chunk,size-(long)i*chunk);
+                    byte[] data=new byte[want];
+                    input.readFully(data);
+                    JSONObject ack=hub.dailyChunk(market,date,session,i,
+                        Base64.encodeToString(data,Base64.NO_WRAP),
+                        sha256Daily(data));
+                    if(!ack.optBoolean("ok",false)||
+                       ack.optInt("received",-1)<i+1)
+                        throw new IllegalStateException("DAILY_CHUNK_ACK_FAILURE:"+
+                            ack.optString("error",""));
+                    if(i%8==0)sp.edit().putInt("progress_"+market,
+                        (int)(100L*(i+1)/chunks)).apply();
+                }
+            }
+        }
+        JSONObject committed=hub.dailyCommit(market,date,session);
+        if(!committed.optBoolean("ok",false)||
+           !hash.equalsIgnoreCase(committed.optString("sha256",""))||
+           committed.optLong("bytes",-1)!=size)
+            throw new IllegalStateException("DAILY_SERVER_COMMIT_UNVERIFIED:"+
+                committed.optString("error",""));
+        JSONObject latest=hub.dailyLatest(market,epoch);
+        if(!latest.optBoolean("ok",false)||
+            !date.equals(latest.optString("date"))||
+            !hash.equalsIgnoreCase(latest.optString("sha256")))
+            throw new IllegalStateException("DAILY_SERVER_READBACK_MISMATCH");
+        // Commit the completed date only AFTER MSERVER readback is verified.
+        if(!sp.edit().putString("done_date_"+market,date)
+            .putString("stage_"+market,"VERIFIED")
+            .putString("sha256_"+market,hash)
+            .putLong("saved_at_"+market,System.currentTimeMillis())
+            .putInt("progress_"+market,100).remove("error_"+market).commit())
+            throw new IllegalStateException("DAILY_LOCAL_ACK_NOT_DURABLE");
+        // The server retains the complete snapshot; remove only this
+        // temporary working copy, never the actual source trading SQLite.
+        if(!zip.delete()&&zip.exists())
+            crashes.add("daily_cache_cleanup_"+market,
+                new IllegalStateException("DAILY_CACHE_ZIP_RETAINED"));
     }
 
     private String recordHash(JSONObject data){
@@ -912,7 +1105,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.8")
+        return b.setContentTitle("ARTITRADE")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
@@ -920,7 +1113,7 @@ public final class UnifiedTradingService extends Service {
         if(Build.VERSION.SDK_INT>=26){
             NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
             if(nm!=null){
-                NotificationChannel c=new NotificationChannel(CHANNEL,"ARTITRADE S21+ 메인 엔진",NotificationManager.IMPORTANCE_LOW);
+                NotificationChannel c=new NotificationChannel(CHANNEL,"ARTITRADE",NotificationManager.IMPORTANCE_LOW);
                 c.setDescription("최신 EXE 전략·키움·업비트 실시간·실주문 엔진");
                 nm.createNotificationChannel(c);
             }
@@ -940,6 +1133,9 @@ public final class UnifiedTradingService extends Service {
             .putBoolean("service_running",false).putBoolean("wifi_lock",false)
             .putBoolean("cpu_lock",false).apply();
     }
-    @Override public void onDestroy(){stopSafely();super.onDestroy();}
+    @Override public void onDestroy(){
+        try{stopSafely();}
+        finally{SERVICE_INSTANCE_ACTIVE=false;super.onDestroy();}
+    }
     @Override public IBinder onBind(Intent intent){return null;}
 }

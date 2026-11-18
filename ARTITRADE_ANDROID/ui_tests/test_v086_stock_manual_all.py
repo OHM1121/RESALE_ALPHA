@@ -156,18 +156,21 @@ class NativeManualWallets(unittest.TestCase):
             self.assertEqual(c.execute("SELECT COUNT(*) FROM executions WHERE side='SELL'").fetchone()[0],1)
             self.assertEqual(c.execute("SELECT qty FROM positions WHERE id=11").fetchone()[0],50)
 
-    def test_historical_ma_v062_is_sold_in_original_historical_db(self):
+    def test_fresh_epoch_does_not_touch_historical_ma_v062(self):
+        # A full first-launch reset has deleted old MA epochs. Even if an
+        # obsolete file is manually injected, the current-only SELL owner
+        # must never treat those former holdings as new PAPER positions.
         new=self.root/'stock/MA_EPOCH_V067/STOCK_MA_ENGINE_V1/ma_paper.sqlite3'
         old=self.root/'stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3'
         self.seed_ma(old)
         self.runner.ma=SimpleNamespace(db=new,lock=threading.RLock())
         self.runner.ma._sell=StockMAService._sell.__get__(self.runner.ma)
         req=make_req('ma',11)
-        result=manual.manual_stock_ma(self.rt,req)
-        self.assertEqual(result['qty'],100)
+        with self.assertRaisesRegex(ValueError,'STOCK_MA_POSITION_NOT_OPEN'):
+            manual.manual_stock_ma(self.rt,req)
         with sqlite3.connect(old) as c:
-            self.assertEqual(c.execute("SELECT status FROM positions WHERE id=11").fetchone()[0],'CLOSED')
-        self.assertFalse(new.exists(),'new MA wallet must not be created by historic sale')
+            self.assertEqual(c.execute("SELECT status FROM positions WHERE id=11").fetchone()[0],'OPEN')
+        self.assertFalse(new.exists(),'historical file cannot create a current owner')
 
     def test_close_wallet_native_realized_and_uuid_proof(self):
         store=AtCloseStore(self.root/'stock'/'cw')

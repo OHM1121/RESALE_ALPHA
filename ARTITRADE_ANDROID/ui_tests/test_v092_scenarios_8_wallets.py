@@ -158,7 +158,7 @@ class PortraitHeader(unittest.TestCase):
         self.assertIn('String installedVersion=marketVersionLabel();',ui)
         self.assertIn('if(!wideHeader)',ui)
         self.assertIn('brandLine.addView(ver,',ui)
-        self.assertIn('TextView ver=text("  ·  "+installedVersion,wideHeader?12:11);',ui)
+        self.assertIn('TextView ver=text("  "+installedVersion,wideHeader?12:11);',ui)
         service=(Path(__file__).resolve().parents[1]/
            'app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java').read_text()
         self.assertIn('validatedInternetV092()',service)

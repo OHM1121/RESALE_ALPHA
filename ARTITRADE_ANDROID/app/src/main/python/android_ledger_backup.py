@@ -50,7 +50,13 @@ def _candidate(root: Path, file: Path) -> bool:
                           "POST_EXIT_HIGH_V053.sqlite3",
                           "execution_decisions_v074.sqlite3"):
         return True
-    if rel.as_posix()=="ANDROID_OPERATION_V074.json":
+    if rel.as_posix() in (
+        "ANDROID_OPERATION_V074.json",
+        "ARTITRADE_FRESH_EPOCH_V106.json",
+        "execution_entry_plans_v107.sqlite3",
+        "entry_failure_audit_v075.sqlite3",
+        "entry_failure_audit_v075.json",
+        "execution_evidence_v074.sqlite3"):
         return True
     parts = rel.parts
     if not parts or parts[0] not in ("stock", "coin"):
@@ -239,7 +245,7 @@ def _reports_from_json(raw):
 
 
 def make_backup(root_path: str, output_path: str, reports_json=None,
-                progress_path=None) -> str:
+                progress_path=None, market_scope=None) -> str:
     """Produce a private verified ZIP BEFORE selecting any Android SAF file."""
     progress=Path(progress_path).resolve() if progress_path else None
     def announce(percent,stage,done=0,total=0,detail=""):
@@ -258,7 +264,12 @@ def make_backup(root_path: str, output_path: str, reports_json=None,
     output=Path(output_path).resolve()
     if not root.is_dir() or not output.parent.is_dir():
         raise FileNotFoundError("Phone ledger root or cache directory unavailable")
-    sources=[p for p in root.rglob("*") if _candidate(root,p)]
+    if market_scope not in (None,"stock","coin"):
+        raise ValueError("INVALID_MARKET_SCOPE")
+    sources=[p for p in root.rglob("*") if _candidate(root,p)
+             and (market_scope is None or
+                  p.relative_to(root).parts[0] == market_scope or
+                  len(p.relative_to(root).parts)==1)]
     if not sources:
         raise ValueError("No persisted phone ledger files were found")
     if len(sources)>MAX_FILES:
@@ -277,7 +288,19 @@ def make_backup(root_path: str, output_path: str, reports_json=None,
     manifest={"schema":SCHEMA,"created_at_epoch_ms":int(time.time()*1000),
               "source":"ANDROID_PHONE_MAIN","strategy_files":{},"report_files":{},
               "sqlite_backup_mode":"sqlite3.Connection.backup",
-              "independent_db_snapshots":True,"file_count":len(sources)}
+              "independent_db_snapshots":True,
+              "market_scope":market_scope or "all",
+              "file_count":len(sources)}
+    if market_scope is not None:
+        try:
+            epoch_marker=json.loads((root/"ARTITRADE_FRESH_EPOCH_V106.json").read_text("utf8"))
+            if epoch_marker.get("state")!="COMMITTED":
+                raise ValueError("Epoch not committed")
+            manifest["epoch_id"]=str(epoch_marker["epoch_id"])
+            manifest["captured_at_utc"]=__import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc).isoformat()
+        except (OSError,ValueError,KeyError,TypeError) as e:
+            raise ValueError("DAILY_BACKUP_REQUIRES_COMMITTED_FRESH_EPOCH") from e
     try:
         with tempfile.TemporaryDirectory(prefix="artitrade_ledger_snapshot_",
                                          dir=str(output.parent)) as stage:
@@ -377,6 +400,11 @@ def validate_backup(archive_path: str) -> dict:
                                "phone_buy_evidence_v035.sqlite3",
                                "POST_EXIT_HIGH_V053.sqlite3",
                                "execution_decisions_v074.sqlite3",
+                               "execution_entry_plans_v107.sqlite3",
+                               "entry_failure_audit_v075.sqlite3",
+                               "entry_failure_audit_v075.json",
+                               "execution_evidence_v074.sqlite3",
+                               "ARTITRADE_FRESH_EPOCH_V106.json",
                                "ANDROID_OPERATION_V074.json")
                 if (not rel.startswith(("stock/","coin/")) and
                         rel not in root_journals) or ".." in Path(rel).parts:
@@ -391,7 +419,11 @@ def validate_backup(archive_path: str) -> dict:
                     count+=len(chunk)
             if count!=info.get("size") or digest.hexdigest()!=info.get("sha256"):
                 raise ValueError("Backup member size/SHA mismatch: "+rel)
-    return {"ok":True,"files":len(files),"reports":len(reports),"schema":SCHEMA}
+    return {"ok":True,"files":len(files),"reports":len(reports),
+            "schema":SCHEMA,"market_scope":manifest.get("market_scope","all"),
+            "epoch_id":manifest.get("epoch_id",""),
+            "sha256":_sha256(Path(archive_path)),
+            "bytes":Path(archive_path).stat().st_size}
 
 
 def validate_backup_json(archive_path: str) -> str:

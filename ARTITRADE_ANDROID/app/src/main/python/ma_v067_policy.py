@@ -39,7 +39,7 @@ UP_SUBMIT_BEFORE_CLOSE_SECONDS=10
 UP_SUBMIT_END_BEFORE_CLOSE_SECONDS=2
 MAX_UP_FILL_DELAY_SECONDS=15
 # Entry setup only. The protective forced-SELL rule is kept unchanged.
-MA120_DOWN_TOLERANCE=Decimal('0.0099')
+MA120_DOWN_TOLERANCE=Decimal('0')
 
 
 def number(x):
@@ -64,7 +64,7 @@ def ma120_down_for_entry(ma):
     """
     try:
         value=number(ma[120]['delta'])
-        return value is not None and value<=MA120_DOWN_TOLERANCE
+        return value is not None and value<MA120_DOWN_TOLERANCE
     except (KeyError,TypeError,AttributeError):
         return False
 
@@ -81,6 +81,8 @@ def bear_setup(closed_bars):
 
 def bear_reversal_completed(bars,frame):
     """Identify any large bear while established alignment remains satisfied."""
+    # 11/18: BEAR entries retired; old open SELL rows are retained safely.
+    return {'kind':None,'reason':'NL1118_BEAR_ENTRY_RETIRED'}
     if frame not in FRAMES or len(bars)<122:
         return {'kind':None,'reason':'REQUIRES_122_VERIFIED_BARS'}
     # v067 correction: the 120-down / four-below-down alignment need not
@@ -305,16 +307,17 @@ def mark_stage_completion(state,initial_qty,at,execution_price=None):
 # Case 2, the upward-forming reversal (REVERSAL_UP). These targets apply to
 # this case only; case 1 (REVERSAL_BEAR) remains entirely separate.
 UP_FIRST_TARGET_PCT={
-    '5m':Decimal('2'), '30m':Decimal('2.5'),
-    '60m':Decimal('3'), 'day':Decimal('5'),
+    '5m':Decimal('2'), '30m':Decimal('3'),
+    '60m':Decimal('3.5'), 'day':Decimal('4'),
 }
 UP_SECOND_EXTRA_PCT={
-    '5m':Decimal('2'), '30m':Decimal('2.5'),
-    '60m':Decimal('3'), 'day':Decimal('3'),
+    '5m':Decimal('2'), '30m':Decimal('2'),
+    '60m':Decimal('2.5'), 'day':Decimal('3'),
 }
-UP_FIRST_FRACTION=Decimal('.10')
+UP_FIRST_FRACTION=Decimal('.30')
 UP_SECOND_FRACTION_OF_REMAINDER=Decimal('.50')
-UP_TRAIL_FROM_SECOND=Decimal('.03')
+UP_TRAIL_FROM_SECOND={'5m':Decimal('.025'),'30m':Decimal('.03'),
+                      '60m':Decimal('.03'),'day':Decimal('.04')}
 UP_FIRST_TO_SECOND_HARD_STOP=Decimal('.01')
 
 
@@ -334,7 +337,7 @@ def up_targets(entry,frame):
 def initial_up_exit_state(frame):
     """No sale, no target touch, no synthetic execution at position opening."""
     if frame not in FRAMES:raise ValueError('unsupported timeframe')
-    return {'policy':'MA_V065_REVERSAL_UP','frame':frame,
+    return {'policy':'MA_V1118_REVERSAL_UP','frame':frame,
             'first_sold':'0','second_sold':'0',
             'first_completed_at':'','second_completed_at':'',
             'peak_after_second':'0','seen_above_entry':False}
@@ -373,7 +376,7 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
     sell. No brokerage order is sent by this pure function.
     """
     state=dict(state)
-    if state.get('policy')!='MA_V065_REVERSAL_UP':
+    if state.get('policy') not in ('MA_V1118_REVERSAL_UP','MA_V065_REVERSAL_UP'):
         return state,Decimal(0),''
     frame=state.get('frame')
     if frame not in FRAMES:
@@ -384,8 +387,16 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         or price<=0 or base<=0 or avail<0 or initial<=0
         or not isinstance(now,datetime) or now.tzinfo is None):
         return state,Decimal(0),''
-    if forced:
-        return _full(avail,forced,state)
+    # Workbook defines only -15% and holding expiry as unconditional
+    # MA stops; obsolete MA slope/second-followup forced exits retired.
+    if price<=base*Decimal('.85'):
+        return _full(avail,'MA_V1118_STOP_MINUS_15',state)
+    try:
+        start=datetime.fromisoformat(str(state.get('entry_at') or ''))
+        hold={'5m':48,'30m':80,'60m':120,'day':360}[frame]
+        if start.tzinfo is not None and now>=start+timedelta(hours=hold):
+            return _full(avail,'MA_V1118_HOLD_EXPIRY',state)
+    except (ValueError,TypeError,KeyError):pass
     first_target,second_target=up_targets(base,frame)
     first_goal,second_goal=up_stage_quantities(state,initial)
     first_sold=number(state.get('first_sold')) or Decimal(0)
@@ -399,7 +410,7 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         if state.get('seen_above_entry') and price<=base:
             return _full(avail,'MA_V065_UP_PRE_FIRST_ENTRY_RETURN',state)
         if price>=first_target:
-            return state,min(avail,first_goal-first_sold),'MA_V065_UP_FIRST_10PCT'
+            return state,min(avail,first_goal-first_sold),'MA_V1118_UP_FIRST_30PCT'
         return state,Decimal(0),''
 
     if second_sold<second_goal:
@@ -408,7 +419,7 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         if price<=base*(1+UP_FIRST_TO_SECOND_HARD_STOP):
             return _full(avail,'MA_V065_UP_AFTER_FIRST_ENTRY_PLUS_1',state)
         if price>=second_target:
-            return state,min(avail,second_goal-second_sold),'MA_V065_UP_SECOND_HALF_REMAINING'
+            return state,min(avail,second_goal-second_sold),'MA_V1118_UP_SECOND_35PCT'
         return state,Decimal(0),''
 
     # The SECOND stage must have actually filled 50% of the remaining
@@ -417,8 +428,8 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         return _full(avail,'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR',state)
     peak=max(number(state.get('peak_after_second')) or Decimal(0),price)
     state['peak_after_second']=str(peak)
-    if price<=peak*(1-UP_TRAIL_FROM_SECOND):
-        return _full(avail,'MA_V065_UP_PEAK_MINUS_3',state)
+    if price<=peak*(1-UP_TRAIL_FROM_SECOND[frame]):
+        return _full(avail,'MA_V1118_UP_AFTER_SECOND_TRAIL',state)
     return state,Decimal(0),''
 
 
@@ -431,14 +442,14 @@ def apply_up_fill(state,reason,quantity,filled_at,initial_qty,
     fresh order books. Never call on rejected/cancelled/ambiguous orders.
     """
     state=dict(state)
-    if state.get('policy')!='MA_V065_REVERSAL_UP':return state
+    if state.get('policy') not in ('MA_V1118_REVERSAL_UP','MA_V065_REVERSAL_UP'):return state
     q,n,price=map(number,(quantity,initial_qty,execution_price))
     if (any(x is None for x in (q,n,price))
         or q<=0 or n<=0 or price<=0
         or not isinstance(filled_at,datetime) or filled_at.tzinfo is None):
         return state
     first_goal,second_goal=up_stage_quantities(state,n)
-    if reason=='MA_V065_UP_FIRST_10PCT':
+    if reason=='MA_V1118_UP_FIRST_30PCT':
         was=number(state.get('first_sold')) or Decimal(0)
         # Wrong/duplicate sizes should not silently advance to stage 2.
         if was>=first_goal or q>first_goal-was:return state
@@ -446,7 +457,7 @@ def apply_up_fill(state,reason,quantity,filled_at,initial_qty,
         state['first_sold']=str(total)
         if total>=first_goal and not state.get('first_completed_at'):
             state['first_completed_at']=filled_at.isoformat()
-    elif reason=='MA_V065_UP_SECOND_HALF_REMAINING':
+    elif reason=='MA_V1118_UP_SECOND_35PCT':
         if (number(state.get('first_sold')) or Decimal(0))<first_goal:
             return state
         was=number(state.get('second_sold')) or Decimal(0)

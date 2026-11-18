@@ -11,13 +11,13 @@ class OnlyVersionLabel(unittest.TestCase):
         start=UI.index("    private String marketVersionLabel(){")
         end=UI.index("    private void showShell(){",start)
         body=UI[start:end]
-        self.assertIn('return "v"+version;',body)
+        self.assertIn('return version.matches("[0-9]+\\\\.[0-9]+\\\\.[0-9]+")',body)
         self.assertNotIn('+" · "+',body)
         self.assertNotIn('integratedMode?',body)
         self.assertNotIn('stock".equals(market)',body)
         self.assertIn("version=getPackageManager().getPackageInfo(getPackageName(),0).versionName",body)
     def test_release_version_name_is_strict_numeric(self):
-        release="0.9.3"
+        release="0.0.2"
         self.assertRegex(release,r"^\d+\.\d+\.\d+$")
         self.assertNotRegex(release,r"[- ]")
 
