@@ -193,5 +193,22 @@ jobs:
         run: |
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
           PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v108_native_ma_trend_entry_paths.py' -v
+      - name: Audit old LEGACY migration and MA watcher for complete reachability
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("ARTITRADE_ANDROID/app/src/main")
+          targets={"LegacyLedgerMigration":"*.java",
+                   "legacy_ma_exit_watch_v094":"*.py"}
+          for keyword,pattern in targets.items():
+              uses=[]
+              for path in root.rglob(pattern):
+                  if path.stem==keyword:continue
+                  for number,line in enumerate(path.read_text("utf-8").splitlines(),1):
+                      if keyword in line and not line.strip().startswith("#"):
+                          uses.append((str(path),number,line.strip()[:180]))
+              print("LEGACY_RUNTIME_REFERENCES",keyword,uses)
+          PY
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
