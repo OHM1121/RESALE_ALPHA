@@ -26,7 +26,10 @@ class MarketRegimeTests(unittest.TestCase):
         self.assertIsNone(result['score'])
         self.assertIn('거래 일정 확인 필요',result['status'])
         failure=m.display_snapshot('coin',old,now=1005,poll_error='업비트 오류')
-        self.assertFalse(failure['stale'])
+        # v0.0.4: a failed external fetch must immediately invalidate the
+        # cached positive score; history remains but no stale BUY permission.
+        self.assertTrue(failure['stale'])
+        self.assertIsNone(failure['score'])
         self.assertIn('업비트 오류',failure['status'])
 
     def test_score_band_cohort_moving_55_to_20(self):
