@@ -50,10 +50,11 @@ def install():
         now=time.monotonic()
         # Values not sourced from the original verified 0B fast tick, or
         # ordinary uninterrupted ticks, follow exact previous behavior.
-        recovery=(mode=='LIVE_KRX_0B_TRADE_TOUCH_PAPER_ESTIMATE'
-                  and single and current>0 and minute.get('code')==code
-                  and (code not in last or now-last[code]>GAP_SECONDS))
-        last[code]=now
+        authentic=(mode=='LIVE_KRX_0B_TRADE_TOUCH_PAPER_ESTIMATE'
+                   and single and current>0 and minute.get('code')==code)
+        recovery=(authentic and
+                  (code not in last or now-last[code]>GAP_SECONDS))
+        if authentic:last[code]=now
         if not recovery:return original_exit(self,c,p,minute,at)
         previous=getattr(self._execution_context,'v086_at_recovery_price',None)
         self._execution_context.v086_at_recovery_price=current
