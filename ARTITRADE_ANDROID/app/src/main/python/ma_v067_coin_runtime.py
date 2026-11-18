@@ -97,6 +97,15 @@ def _on_real_buy(self,c,p):
                if kind=='REVERSAL_BEAR' else policy.initial_up_exit_state(p['tf']))
         state['entry_at']=str(p['entry_at'])
         state['entry_bar_start']=str(features.get('ma_v067_bar_start') or '')
+        if kind=='REVERSAL_UP':
+            one,two=policy.up_targets(p['entry'],p['tf'])
+            state['exit_intents']=[
+                {'stage':1,'price':str(one),'fraction_of_original':'.30',
+                 'status':'PRESTAGED_PAPER_TARGET'},
+                {'stage':2,'price':str(two),'fraction_of_original':'.35',
+                 'status':'PRESTAGED_PAPER_TARGET'}]
+            state['hard_stop']=str(policy.number(p['entry'])*Decimal('.85'))
+            state['policy_source']='NEW LEGACY(11.18).xlsx'
         stamp=str(p['entry_at'])
         c.execute("""INSERT INTO ma_v067_positions(position_id,kind,frame,code,
             state_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)""",
@@ -104,7 +113,7 @@ def _on_real_buy(self,c,p):
              stamp,stamp))
         qty=policy.number(p['qty0'])
         target=policy.number(features['ma_v067_high']) if kind=='REVERSAL_BEAR' else policy.up_targets(p['entry'],p['tf'])[0]
-        first=Decimal('.30') if kind=='REVERSAL_BEAR' else Decimal('.10')
+        first=Decimal('.30')
         c.execute('UPDATE positions SET first_qty=?,target=? WHERE id=?',
                   (str(qty*first),str(target),p['id']))
     except (ValueError,TypeError,KeyError):pass
@@ -452,8 +461,9 @@ def _process_v067_exits(self,book,now):
                 except (TypeError,ValueError):break
                 closes=_prior_verified_closes(p['tf'],symbol,now)
                 forced=(policy.forced_ma_exit(closes,trade)
-                        if trade is not None else '')
-                if trade is not None and not forced and _second_followup(
+                        if trade is not None and p['kind']=='REVERSAL_BEAR'
+                        else '')
+                if p['kind']=='REVERSAL_BEAR' and trade is not None and not forced and _second_followup(
                         p['tf'],symbol,state,p['entry'],trade,now):
                     forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
                 if p['kind']=='REVERSAL_UP':
@@ -464,7 +474,7 @@ def _process_v067_exits(self,book,now):
                         state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
                 if attempt==1 and reason not in (
                         'MA_V065_SECOND_HALF_REMAINING',
-                        'MA_V065_UP_SECOND_HALF_REMAINING'):
+                        'MA_V1118_UP_SECOND_35PCT'):
                     break
                 if updated!=state:
                     c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
@@ -491,7 +501,7 @@ def _process_v067_exits(self,book,now):
                           (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
                 # Reconcile original first-stage field strictly from the
                 # matching native SELL execution (V067 IDs are non-Korean).
-                first_reason=reason in ('MA_V065_UP_FIRST_10PCT',
+                first_reason=reason in ('MA_V1118_UP_FIRST_30PCT',
                     'MA_V065_FIRST_30_AT_REVERSAL_HIGH')
                 if first_reason:
                     first_goal=(policy.up_stage_quantities(applied,p['qty0'])[0]
@@ -588,7 +598,7 @@ def install():
         # exact v065 policy or the v067 second-bar guard may pass.
         manual=(str(event_key or '').startswith('USER:') and
                 str(reason).startswith('사용자 가상 강제매도 '))
-        if row and not (str(reason).startswith(('MA_V065_','MA_V067_')) or manual):
+        if row and not (str(reason).startswith(('MA_V065_','MA_V067_','MA_V1118_')) or manual):
             return False
         return previous_sell(self,c,p,desired,price,at,reason,event_key=event_key)
     ma.MACoinLedger._sell=scoped_sell
