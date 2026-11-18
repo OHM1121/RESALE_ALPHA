@@ -113,5 +113,26 @@ jobs:
         run: |
           python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
           PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v107_at_negative_market_gate.py' -v
+      - name: Inspect original CLOSE BUY candidate entry hooks
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          p=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          raw=base64.b64decode("".join((p/("part_%02d.txt"%n)).read_text("ascii") for n in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(raw))
+          for name in z.namelist():
+              if "close" not in name.lower():continue
+              print("CLOSE_MODULE",name)
+              lines=z.read(name).decode("utf8").splitlines()
+              for i,line in enumerate(lines):
+                  if any(key in line for key in ("def ", "class ", "INSERT INTO", "buy(", "make_", "signal", "target")):
+                      print("CLOSE",i+1,line[:220])
+          for name in ("at_close_bridge.py",):
+              if name in z.namelist():
+                  for i,line in enumerate(z.read(name).decode("utf8").splitlines()):
+                      print("BRIDGE",i+1,line[:230])
+          PY
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
