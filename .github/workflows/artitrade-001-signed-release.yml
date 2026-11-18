@@ -1,0 +1,196 @@
+name: ARTITRADE 0.0.1 signed Samsung APK release
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-001-signed-release.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-001-only-signed-release
+  cancel-in-progress: false
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      CI: 'true'
+      ARTIFACT: ARTITRADE_0.0.1
+      TAG: ARTITRADE-0.0.1
+      SOURCE: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Require exact previously installed signer
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Verify signing identity before any compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          test -s "$HOME/.android/debug.keystore"
+          fp="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$fp" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+      - name: Preserve v0.9.5 vendor-quote fixes without changing 0.0.1 UI or identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The prior verified patch scripts expect old source Gradle metadata.
+          # Apply them on THIS ephemeral checkout only; restore 0.0.1 afterward.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("ARTITRADE_ANDROID/app/build.gradle")
+          s=p.read_text("utf8")
+          assert s.count("versionCode 123")==1
+          assert s.count("versionName '0.0.1'")==1
+          assert s.count("applicationId 'com.artitrade.unified.s21dex'")==1
+          s=s.replace("versionCode 123","versionCode 97").replace(
+              "versionName '0.0.1'","versionName '0.7.91-MA-STAGE-LEDGER'")
+          p.write_text(s,"utf8")
+          PY
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v093_strategy_priority_metadata.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v105_ka10004_readonly.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("ARTITRADE_ANDROID/app/build.gradle")
+          s=p.read_text("utf8")
+          assert s.count("versionCode 99")==1
+          assert s.count("versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'")==1
+          s=s.replace("versionCode 99","versionCode 123").replace(
+              "versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'","versionName '0.0.1'")
+          assert s.count("versionCode 123")==1 and s.count("versionName '0.0.1'")==1
+          p.write_text(s,"utf8")
+          PY
+      - name: Source compilation and original embedded strategy SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          python3 - <<'PY'
+          import ast,base64,hashlib,io,zipfile
+          from pathlib import Path
+          main=Path('ARTITRADE_ANDROID/app/src/main')
+          original=main/'assets/strategy_v070'
+          data=base64.b64decode(''.join((original/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          sha=hashlib.sha256(data).hexdigest()
+          bridge=(main/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text('utf8')
+          assert 'CORE_SHA256="'+sha+'"' in bridge
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              live=z.read('d_live.py').decode('utf8')
+              coin=z.read('d_upbit.py').decode('utf8')
+              assert "('ka10004','/api/dostk/mrkcond')" in live
+              assert 'async def _v092_read_login_ack(' in live
+              assert "depth_codes=sorted(code+'.15'" in coin
+              for name in z.namelist():
+                  if name.endswith('.py'):ast.parse(z.read(name).decode('utf8'),filename=name)
+              z.extractall('/tmp/artitrade-001-native')
+          print('EXACT_VENDOR_CORE_AND_VENDOR_QUOTE_PATCHES_PASS',sha)
+          PY
+      - name: Complete source-only eight-strategy, ledger, quote and UI regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-001-native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          for pattern in \
+            test_v001_fresh_performance_version.py \
+            test_v102_plain_version_label.py \
+            test_v104_ui_json_oom_root_cause.py \
+            test_v106_fresh_paper_epoch.py \
+            test_v108_mandatory_first_epoch.py \
+            test_v108_native_ma_trend_entry_paths.py \
+            test_v107_at_negative_market_gate.py \
+            test_v107_closed_rsi_and_exports.py \
+            test_v107_entry_plan_epoch.py \
+            test_v092_scenarios_8_wallets.py \
+            test_v095_trade_basis_ai.py \
+            test_v086_stock_manual_all.py \
+            test_v088_error_exports_and_source_integrity.py \
+            test_v088_export_zip_full_500mb_coin_monotonic.py \
+            test_v090_rotation_lock_zip_restore.py \
+            test_v082_error_export_cancellation.py \
+            test_v100_manual_denial_and_targets.py \
+            test_v100_d19_native_manual_exit.py \
+            test_v091_d19_original_at_reconnect_and_portrait.py \
+            test_v096_manual_result_lifecycle.py \
+            test_v105_manual_rest_bid.py \
+            test_v101_zip95_analysis_ready.py; do
+            echo "TESTING $pattern"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
+          done
+      - name: Build arm64 unified Android package with exact existing signer
+        working-directory: ARTITRADE_ANDROID
+        shell: bash
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Verify APK package, strict numeric version and unchanged certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk
+          test -s "$apk"
+          pkg="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep '^package: ')"
+          case "$pkg" in
+            *"name='com.artitrade.unified.s21dex' versionCode='123' versionName='0.0.1'"*) ;;
+            *) echo "INVALID_APK_PACKAGE_OR_NUMERIC_VERSION: $pkg" >&2; exit 1;;
+          esac
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > /tmp/artitrade_001_signer.txt
+          grep -iF '37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6' /tmp/artitrade_001_signer.txt
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
+          cp "$apk" "$ARTIFACT.apk"
+          sha256sum "$ARTIFACT.apk" > "$ARTIFACT.sha256"
+          printf 'versionName=0.0.1\nversionCode=123\npackage=com.artitrade.unified.s21dex\nsource=%s\nold_paper_reset=mandatory_once\nactual_samsung_fills_verified=false\n' "$SOURCE" > "$ARTIFACT.txt"
+      - name: Upload verified APK as GitHub Actions download
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_0_0_1_ORIGINAL_SIGNED_APK
+          path: |
+            ARTITRADE_0.0.1.apk
+            ARTITRADE_0.0.1.sha256
+            ARTITRADE_0.0.1.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish 0.0.1 signed APK release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha256sum -c "$ARTIFACT.sha256"
+          cat > /tmp/ARTITRADE_001_release_notes.md <<'NOTES'
+          ARTITRADE 0.0.1
+          - Numeric-only app version 0.0.1, Android versionCode 123 for updating existing installations, identical application ID and signer.
+          - On first start ALL prior PAPER stock+coin positions, executions and research are reset exactly once; API credentials, operating settings and external backups stay intact.
+          - Remove old PC ledger re-import and legacy MA holdings watcher.
+          - Remove repeated remote-PC history refill, old research UI computations and repeated identical RSI calculation.
+          - Preserve eight strategy engines, AI analysis, ZIP exports, original exchange quote evidence and portfolio exit policies.
+          - Fix stock MA attempted-nonfill recheck and MarketTrend confirmed RSI first-under30 next-open 10-second entry path.
+          - Source/offline CI and Android APK signer verified; a real Samsung broker/feed automatic BUY/SELL test is not claimed.
+          NOTES
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release tag already exists, refusing accidental replacement"; exit 1
+          fi
+          gh release create "$TAG" "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE" \
+            --title "ARTITRADE 0.0.1" \
+            --notes-file /tmp/ARTITRADE_001_release_notes.md --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,assets --jq '{tagName:.tagName,assets:[.assets[].name]}'
