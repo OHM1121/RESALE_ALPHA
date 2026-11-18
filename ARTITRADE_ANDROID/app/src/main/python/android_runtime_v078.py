@@ -1807,7 +1807,9 @@ def _hub_records_v078(self,for_ui=False):
     try:
         out=json.loads(raw) if isinstance(raw,str) else raw
     except Exception:
-        return raw
+        # Never bypass the bounded display serializer on malformed source.
+        # The full original remains available to the non-UI hub_records path.
+        return '{}' if for_ui else raw
     # Read-only forensic summaries use a separate asynchronous reader;
     # the original GMO/CW strategy, broker and wallet databases are NOT modified.
     # Existing full error ZIP already contains the original source SQLite.
