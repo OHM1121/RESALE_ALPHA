@@ -63,7 +63,7 @@ jobs:
           assert (end-t).total_seconds()==136.0
           assert end==dt.datetime(2026,11,18,15,0,tzinfo=mt.KST)
           assert not mt.preclose_due(t,end,'5m','coin')
-          assert "self.market=='stock' and not mt.preclose_due" in inspect.getsource(PreparedCoinTrend._candidate_decision)
+          assert 'if self.market=="stock" and not mt.preclose_due' in inspect.getsource(PreparedCoinTrend._candidate_decision)
           print('QUID_EVENT_20261118_145744_KST_BAR_END',end.isoformat())
           print('SECONDS_BEFORE_BAR_CLOSE',int((end-t).total_seconds()))
           print('NORMAL_PRECLOSE_WINDOW_ELIGIBLE',mt.preclose_due(t,end,'5m','coin'))
