@@ -50,7 +50,7 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             now = dt.datetime(2026,11,18,10,5,0,tzinfo=mt.KST)
             end = now.replace(minute=0,second=0,microsecond=0)
-            bars = [{"close":131.0-i,"end":end-dt.timedelta(minutes=(20-i)*30)}
+            bars = [{"close":120.0-0.05*i,"end":end-dt.timedelta(minutes=(20-i)*30)}
                     for i in range(21)]
             co=SimpleNamespace()
             co.rt=SimpleNamespace(root=root,coin_runner=SimpleNamespace(preload_gate=None))
@@ -65,7 +65,7 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
             co.journal=_Journal()
             co.standalone_wallet=_Wallet()
             co._quote=lambda market,code:{"trade":co._quotes[market][code][0],
-                                         "bid":109.0,"ask":110.0,
+                                         "bid":117.0,"ask":119.0,
                                          "ask_size":1000.0,"bid_size":1000.0}
             co._last_fetch_error={}
             with patch.object(nl,"_ready_market",return_value=True), \
@@ -75,7 +75,7 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
                 nl._entry_window(co,"coin",now)
                 self.assertEqual(len(co.standalone_wallet.buys),0)
                 self.assertEqual(len(co._nl1118_watches),1)
-                co._quotes["coin"]["KRW-TEST"]=(110.0,time.monotonic()+0.001)
+                co._quotes["coin"]["KRW-TEST"]=(118.0,time.monotonic()+0.001)
                 nl._entry_window(co,"coin",now)
             detail={
                 "watch":co._nl1118_watches,
@@ -83,16 +83,16 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
                 "previous":co._nl1118_previous_trade,
                 "last_error":co._last_fetch_error,
                 "bollinger":nl.bollinger(
-                    [r["close"] for r in bars][-20:]+[110.0]),
-                "cross":nl.actual_middle_touch(130.,110.,
-                    nl.bollinger([r["close"] for r in bars][-20:]+[110.0])["middle"]),
+                    [r["close"] for r in bars][-20:]+[118.0]),
+                "cross":nl.actual_middle_touch(120.,118.,
+                    nl.bollinger([r["close"] for r in bars][-20:]+[118.0])["middle"]),
                 "history_valid":len(nl._confirmed_recent(bars,now,"coin","30m")),
             }
             self.assertEqual(len(co.standalone_wallet.buys),1,
                              "native ORIGINAL mode must NOT veto RSI+BB; "+repr(detail))
             market,frame,code,price,qty,barid,rsi=co.standalone_wallet.buys[0]
             self.assertEqual((market,frame,code),("coin","30m","KRW-TEST"))
-            self.assertEqual(price,110.0)
+            self.assertEqual(price,119.0)
             self.assertEqual(rsi,25.0)
             self.assertEqual(len(co.journal.events),1)
             self.assertEqual(co._nl1118_watches[("coin","KRW-TEST","30m")]["status"],"BOUGHT")
