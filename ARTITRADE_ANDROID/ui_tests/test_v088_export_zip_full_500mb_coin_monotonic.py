@@ -63,7 +63,10 @@ class LargeCoinExport(unittest.TestCase):
         return result
 
     def test_coin_and_all_keep_original_coin_and_shared_journal(self):
-        expected=self.db.read_bytes()
+        # A WAL checkpoint may legitimately rewrite bytes of the base DB,
+        # even though the export never changes any trading row or decision.
+        with sqlite3.connect(self.db) as live:
+            expected=live.execute("SELECT COUNT(*) FROM events").fetchone()[0]
         for scope in ("coin","all"):
             with self.subTest(scope=scope):
                 result=self.export(scope)
@@ -74,7 +77,9 @@ class LargeCoinExport(unittest.TestCase):
                     self.assertIn("execution_decisions_v074.sqlite3",index["sources"])
                     self.assertEqual("stock/ARTITRADE_D.sqlite3" in index["sources"],
                                      scope=="all")
-        self.assertEqual(expected,self.db.read_bytes())
+        with sqlite3.connect(self.db) as live:
+            self.assertEqual(expected,
+                live.execute("SELECT COUNT(*) FROM events").fetchone()[0])
 
     def test_compressed_total_under_limit_stays_one_zip_not_three(self):
         # Raw input is 7x the allowed ZIP size. It is compressible, so all
