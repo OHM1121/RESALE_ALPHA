@@ -1,0 +1,33 @@
+name: V091 original D19 wallet schema for non-synthetic exit regression
+on:
+  push:
+    branches: [fix-artitrade-v091-stock-at-exit-root-cause-portrait-20261118]
+    paths: [.github/workflows/forensic-v091-d19-ledger-schema.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,zipfile,io,os,sys,sqlite3,tempfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:z.extractall('/tmp/v091-archived-82')
+          sys.path.insert(0,'/tmp/v091-archived-82')
+          from d_storage import DStore
+          from d_v19_portfolio import D19PaperEngine
+          with tempfile.TemporaryDirectory(prefix='v091-d19-schema-') as d:
+            store=DStore(Path(d));engine=D19PaperEngine(store)
+            with store.connect() as c:
+              for name in ('positions','executions','signals','v19_members','v19_accounts','v19_legacy_members','audit'):
+                print('SCHEMA',name,[tuple(x) for x in c.execute('PRAGMA table_info('+name+')')],flush=True)
+              print('WALLET',[dict(x) for x in c.execute('SELECT * FROM v19_accounts')])
+              print('METHODS',engine._buy_limit_depth.__func__ if hasattr(engine._buy_limit_depth,'__func__') else 'unknown')
+          PY
