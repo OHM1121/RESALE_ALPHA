@@ -1478,6 +1478,15 @@ public final class UnifiedVisualActivity extends Activity {
                         if(reusedLocalRecords){
                             localRecords=cachedLocalParsed;
                             meaningfulLocalRecords=cachedLocalMeaningful;
+                        }else if(raw.length()>6_000_000){
+                            // Legacy XML from older builds could exceed the Java heap.
+                            // Ignore only the stale display cache; source trading DB intact.
+                            localRecords=new JSONObject();
+                            meaningfulLocalRecords=false;
+                            cachedLocalRaw=null;
+                            cachedLocalFileVersion="";
+                            cachedLocalParsed=localRecords;
+                            cachedLocalMeaningful=false;
                         }else{
                             localRecords=new JSONObject(raw);
                             meaningfulLocalRecords=meaningfulTree(localRecords);
