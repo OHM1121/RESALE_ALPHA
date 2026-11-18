@@ -27,7 +27,13 @@ class V087Regression(unittest.TestCase):
         self.assertIn("MA_V067:",source)
         self.assertIn("if not self._sell(c,p,desired,bid",source)
         self.assertIn("if abs(now.timestamp()-float(book['timestamp'])/1000)>3:return",source)
-        self.assertIn("if executed is None:continue",source)
+        # v086: nested first/second profit attempt loop must STOP this
+        # position when no exact native SELL evidence was written.  The old
+        # "continue" would advance to a different position in a flat loop,
+        # but v086 must "break" before attempting an unverified stage 2.
+        self.assertIn("if executed is None:break",source)
+        self.assertIn("for attempt in range(2):",source)
+        self.assertIn("if not first_reason or confirmed<first_goal:break",source)
 
     def test_v067_sell_blocked_for_unverified_legacy_reasons(self):
         source=(PY/'ma_v067_coin_runtime.py').read_text()
