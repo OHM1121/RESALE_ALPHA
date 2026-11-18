@@ -391,8 +391,11 @@ class RecoveryObserver:
                 "order_executor":"ORIGINAL_STRATEGY_8_WALLETS_ONLY",
                 "api_requests_added":0,
                 "new_real_orders_enabled":False,
-                "held_first_queue_dropped_candidates":int(getattr(
-                    getattr(stock,"_tick_queue",None),"dropped_candidate_on_full",0))
+                "held_first_queue_dropped_candidates":(
+                    getattr(getattr(stock,"_tick_queue",None),
+                            "dropped_candidate_on_full",0)
+                    if type(getattr(getattr(stock,"_tick_queue",None),
+                                    "dropped_candidate_on_full",0)) is int else 0)
                 }
         self._save_if_due(result)
         return result
