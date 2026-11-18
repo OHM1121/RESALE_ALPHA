@@ -272,9 +272,13 @@ public final class UnifiedTradingService extends Service {
             try{FreshEpochGateV106.clearDerivedCachesIfNeeded(this);}
             catch(Exception staleCache){
                 crashes.add("fresh_epoch_display_cache_guard",staleCache);
-                saveMigrationResult(new JSONObject()
-                    .put("ok",false).put("status","FRESH_EPOCH_BLOCKED")
-                    .put("reason","STALE_CACHE_NOT_CLEARED_NO_TRADING_START"));
+                try{
+                    JSONObject blocked=new JSONObject();
+                    blocked.put("ok",false);
+                    blocked.put("status","FRESH_EPOCH_BLOCKED");
+                    blocked.put("reason","STALE_CACHE_NOT_CLEARED_NO_TRADING_START");
+                    saveMigrationResult(blocked);
+                }catch(Exception reportError){crashes.add("fresh_epoch_report",reportError);}
                 return;
             }
         }
