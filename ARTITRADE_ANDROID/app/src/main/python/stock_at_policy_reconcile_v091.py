@@ -107,6 +107,20 @@ def install():
 
     def initialized(self,store):
         original_init(self,store)
+        # All historic pre-v0.0.1 PAPER positions were deliberately erased.
+        # Never rescan or silently relabel the old D19/legacy holdings; new
+        # D19 BUY still gets 3LEG31 atomically in buy_with_original_threeleg.
+        try:
+            from pathlib import Path
+            import json
+            marker=Path(store.root)/"ARTITRADE_FRESH_EPOCH_V106.json"
+            if marker.is_file():
+                epoch=json.loads(marker.read_text("utf8"))
+                if epoch.get("state")=="COMMITTED":
+                    return
+        except Exception:
+            # An unreadable epoch cannot authorize a legacy repair.
+            return
         try:repair_open_v19_positions(store)
         except Exception as exc:
             # An inability to repair one old row must not reset the account.
