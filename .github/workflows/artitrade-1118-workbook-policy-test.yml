@@ -16,6 +16,8 @@ on:
       - ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py
       - ARTITRADE_ANDROID/app/src/main/python/market_research_v033.py
       - ARTITRADE_ANDROID/ui_tests/test_v1118_fresh_score_bootstrap.py
+      - ARTITRADE_ANDROID/ui_tests/test_v002_post_reset_trend_and_top50.py
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -99,6 +101,12 @@ jobs:
           assert d_upbit.CoinLedger._buy.__name__=='buy_coin'
           print('11_18_ENGINE_OVERLAYS_INSTALLED_NO_PAPER_BUY_OR_SELL')
           PY
+      - name: Prove 0.0.2 independent RSI+BB BUY works under native ORIGINAL mode and full TOP50
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="/tmp/artitrade_bundle_1118:$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_post_reset_trend_and_top50.py' -v
       - name: No app or broker binary produced
         run: |
           test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
