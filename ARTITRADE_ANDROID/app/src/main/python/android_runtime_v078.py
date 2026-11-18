@@ -771,10 +771,33 @@ def _close_full(self):
         'bought_count':bought,'open_count':len(positions),'closed_count':closed,'pending_count':len(pending),
         'actual_target_rate_pct':target['rate_pct'],'actual_target_evaluated':target['evaluated'],
         'actual_target_hit':target['hit'],'actual_target_miss':target['miss'],'actual_target_pending':target['pending']}}
+    # Explain a genuine empty CLOSE screen without fabricating candidates.
+    # Read-only AT shared feed coverage vs original CW scanner scope.
+    close_diag={}
+    close_runner=getattr(self,'close_runner',None)
+    if close_runner is not None:
+        try:
+            close_diag=dict(close_runner.snapshot_state() or {})
+            stock_runner=getattr(self,'stock_runner',None)
+            subscribed={str(x).replace('_NX','')
+                        for x in (getattr(stock_runner,'subscriptions',()) or ())}
+            requested=set(close_runner.shared_pinned())
+            missing=sorted(requested-subscribed)
+            close_diag['requested_shared_codes']=len(requested)
+            close_diag['subscribed_shared_codes']=len(requested&subscribed)
+            close_diag['not_subscribed_count']=len(missing)
+            close_diag['not_subscribed_sample']=missing[:12]
+            close_diag['actual_stock_subscriptions']=len(subscribed)
+            close_diag['research_rows_retained']=len(
+                self.close_store.recent_candidates(250))
+            close_diag['diagnostic_scope']='READ_ONLY_ORIGINAL_CW_NO_SYNTHETIC_SIGNALS'
+        except Exception as exc:
+            close_diag={'error':type(exc).__name__,'diagnostic_scope':'READ_ONLY'}
     return {'schema':'phone-v078','origin':'phone','accounts':wallets,'positions':positions,'pending':pending,'executions':executions,
         'performance_by_frame':performance,'actual_target':target,'realized_pnl':round(realized),'unrealized_pnl':round(unreal),
         'total_pnl':round(realized+unreal),'win_rate':win_rate,
-        'positions_count':len(positions),'pending_count':len(pending)}
+        'positions_count':len(positions),'pending_count':len(pending),
+        'cw_runtime_diagnostic_v087':close_diag}
 
 
 def _close_research(root):
