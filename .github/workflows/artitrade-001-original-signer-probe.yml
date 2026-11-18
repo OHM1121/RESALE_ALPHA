@@ -1,0 +1,31 @@
+name: ARTITRADE 0.0.1 original signer branch probe - no APK
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths:
+      - .github/workflows/artitrade-001-original-signer-probe.yml
+permissions:
+  contents: read
+jobs:
+  verify-original-upgrade-signing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: actions/cache/restore@v4
+        id: original
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Inspect certificate public fingerprint only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.original.outputs.cache-hit }}" = "true"
+          test -s "$HOME/.android/debug.keystore"
+          fingerprint="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "ORIGINAL_BRANCH_PUBLIC_SIGNER_SHA256=$fingerprint"
+          test "$fingerprint" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+          echo "ORIGINAL_KEY_VERIFIED_NO_APK"
