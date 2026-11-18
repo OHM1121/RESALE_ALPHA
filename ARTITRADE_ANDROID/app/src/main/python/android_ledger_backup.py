@@ -98,6 +98,11 @@ def _db_snapshot(source: Path, target: Path, check_cancel=None,
     target.parent.mkdir(parents=True, exist_ok=True)
     uri=source.resolve().as_uri()+"?mode=ro"
     failure=None
+    # A running WAL writer can cause SQLite backup to internally restart.
+    # Keep one denominator and a non-decreasing high-water UI counter even
+    # across retries. Only a fully verified output may report N/N.
+    visible_total=None
+    visible_done=0
     for attempt in range(2):
         if check_cancel:check_cancel()
         if target.exists():target.unlink()
@@ -105,15 +110,20 @@ def _db_snapshot(source: Path, target: Path, check_cancel=None,
         progressed=began
         previous_remaining=None
         def step(status,remaining,total):
-            nonlocal progressed,previous_remaining
+            nonlocal progressed,previous_remaining,visible_total,visible_done
             if check_cancel:check_cancel()
             now=time.monotonic()
             if previous_remaining is None or remaining<previous_remaining:
                 progressed=now
             previous_remaining=remaining
-            if on_progress:
-                on_progress(max(0,total-remaining),max(1,total),int(status))
-            if now-began>180 or now-progressed>30:
+            pages=max(1,int(total))
+            if visible_total is None:visible_total=pages
+            # Separate real SQLite status from the UI high-water mark. Some
+            # 0B-heavy WAL sources restart their page counter while writing.
+            scaled=int(visible_total*max(0,pages-remaining)/pages)
+            visible_done=max(visible_done,min(visible_total-1,scaled))
+            if on_progress:on_progress(visible_done,visible_total,int(status))
+            if now-began>900 or now-progressed>75:
                 raise TimeoutError(
                     "SQLITE_BACKUP_STALLED: "+source.name+
                     " status="+str(status)+" remaining="+str(remaining)+
@@ -122,12 +132,21 @@ def _db_snapshot(source: Path, target: Path, check_cancel=None,
             with closing(sqlite3.connect(uri,uri=True,timeout=3)) as read, \
                  closing(sqlite3.connect(str(target),timeout=3)) as write:
                 read.execute("PRAGMA busy_timeout=3000")
+                read.execute("PRAGMA query_only=ON")
                 write.execute("PRAGMA busy_timeout=3000")
-                # A non-null progress handler permits cancellation and a
-                # bounded no-advance watchdog even for busy WAL writers.
-                read.backup(write,pages=256,sleep=0.1,progress=step)
-                if check_cancel:check_cancel()
-                write.commit()
+                # Pin a stable read snapshot ONLY for WAL. WAL-mode writers
+                # continue committing; rollback-journal writes must not be
+                # blocked by a prolonged held reader.
+                mode=str(read.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+                if mode=="wal":
+                    read.execute("BEGIN")
+                    read.execute("SELECT count(*) FROM sqlite_master").fetchone()
+                try:
+                    read.backup(write,pages=256,sleep=0.1,progress=step)
+                    if check_cancel:check_cancel()
+                    write.commit()
+                finally:
+                    if mode=="wal":read.rollback()
             failure=None
             break
         except (sqlite3.OperationalError,PermissionError,TimeoutError) as error:
@@ -138,7 +157,6 @@ def _db_snapshot(source: Path, target: Path, check_cancel=None,
         if target.exists():target.unlink()
         raise RuntimeError("SQLITE_BACKUP_UNAVAILABLE_SOURCE_UNCHANGED: "+
                            source.name+": "+str(failure)) from failure
-    if on_progress:on_progress(1,1,101)
     with closing(sqlite3.connect(target.resolve().as_uri()+"?mode=ro", uri=True,
                                  timeout=3)) as check:
         if check_cancel:check_cancel()
@@ -152,6 +170,10 @@ def _db_snapshot(source: Path, target: Path, check_cancel=None,
             if check_cancel:check_cancel()
             escaped=name.replace('"','""')
             counts[name]=int(check.execute('SELECT COUNT(*) FROM "'+escaped+'"').fetchone()[0])
+    if check_cancel:check_cancel()
+    if on_progress:
+        complete=visible_total if visible_total is not None else 1
+        on_progress(complete,complete,101)
     return counts
 
 
