@@ -49,6 +49,8 @@ public final class UnifiedTradingService extends Service {
     private final AtomicBoolean running=new AtomicBoolean(false);
     private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
     private final AtomicBoolean uiRecordCollecting=new AtomicBoolean(false);
+    private final AtomicBoolean marketScoreCollectingV005=new AtomicBoolean(false);
+    private volatile long marketScoreLastStartedV005=0L;
     // Explicit PAPER exits take precedence over expensive read-only snapshots.
     private final AtomicInteger manualSellOutstanding=new AtomicInteger(0);
     private volatile long uiRecordLastStartedMs=0L;
@@ -490,6 +492,38 @@ public final class UnifiedTradingService extends Service {
      * run the expensive read-only display snapshot on one bounded worker.
      * On a hidden UI only the display refresh slows; executions do not.
      */
+    /** Independent small market-score snapshot for the market screen.
+     * Never changes score_events, fills, orders, credentials or wallets.
+     * This lane is not blocked by the old 5MB local_records screen view.
+     */
+    private void scheduleMarketScoreV005(){
+        if(!running.get()||strategy==null||!strategy.isStarted())return;
+        long now=System.currentTimeMillis();
+        if(now-marketScoreLastStartedV005<5000L)return;
+        if(!marketScoreCollectingV005.compareAndSet(false,true))return;
+        marketScoreLastStartedV005=now;
+        Thread worker=new Thread(()->{
+            try{
+                if(!running.get()||!strategy.isStarted())return;
+                JSONObject snapshot=strategy.scoreSnapshotV005();
+                if(!"ARTITRADE_MARKET_SCORE_PLANE_V005".equals(
+                        snapshot.optString("schema","")))return;
+                long received=System.currentTimeMillis();
+                getSharedPreferences("artitrade_market_score_v005",MODE_PRIVATE)
+                    .edit().putString("snapshot",snapshot.toString())
+                    .putLong("written_at_ms",received).apply();
+            }catch(Throwable err){
+                try{crashes.add("market_score_plane_v005",err);}
+                catch(Throwable ignored){}
+            }finally{
+                marketScoreCollectingV005.set(false);
+            }
+        },"artitrade-v005-score-plane");
+        worker.setDaemon(true);
+        worker.setPriority(Thread.MIN_PRIORITY+1);
+        worker.start();
+    }
+
     private void scheduleUiRecordsIfDue(LocalHubClient hub){
         if(!running.get()||strategy==null||!strategy.isStarted()
             ||manualSellOutstanding.get()>0)return;
@@ -688,6 +722,7 @@ public final class UnifiedTradingService extends Service {
                 String orders=(enabled!=null&&enabled.optBoolean("stock")?"S":"-")+(enabled!=null&&enabled.optBoolean("coin")?"C":"-");
                 NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
                 if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
+                scheduleMarketScoreV005();
                 scheduleUiRecordsIfDue(hub);
                 scheduleDailyBackupIfReady(hub);
                 ProcessHealthV087.sample(this,"service_heartbeat",0L,0L,false);
