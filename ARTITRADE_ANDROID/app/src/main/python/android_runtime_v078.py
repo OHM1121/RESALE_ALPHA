@@ -1845,10 +1845,15 @@ def _hub_records_v078(self,for_ui=False):
                     out.setdefault('coin',{}).setdefault('ma',{})['ledger']=_coin_full(self.coin_runner.ma_ledger)
             except Exception as exc:
                 self._err('coin_ma_history_v078',exc)
-        try:
-            _research_history(self,out)
-        except Exception as exc:
-            self._err('research_history_all_v078',exc)
+        # The dedicated Research screen is removed from v0.0.1. Its full
+        # historical SQLite joins/legacy score reconciliation must not run
+        # again on every 6.5s UI snapshot; full original ledger/AI export
+        # remains unchanged when a full (non-UI) snapshot is requested.
+        if not for_ui:
+            try:
+                _research_history(self,out)
+            except Exception as exc:
+                self._err('research_history_all_v078',exc)
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
@@ -1953,17 +1958,22 @@ def _hub_records_v078(self,for_ui=False):
             # Always prefer the original EXE's paper SELL-fill + 15-session
             # virtual-result research rules over a condensed dashboard's
             # 'high touched' status. Keep current live balances/positions.
-            try:
-                originals=_gmo_original_record(self.root)
-                if originals is not None:
-                    source_ledger,source_research=originals
-                    if source_research.get('load_status')=='OK':
-                        stock['research']['gmo']=source_research
-                        stock['ledger']['gmo']['actual_target']=source_research.get(
-                            'actual_summary') or {}
-                        stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
-            except Exception as original_error:
-                self._err('gmo_original_research_parity',original_error)
+            # GMO snapshot() and research_dashboard() already read the current
+            # original wallet. Running a second full PC-era SQLite/JSON
+            # reconciliation for the removed Research page would double the
+            # work and risk reintroducing old rows into the fresh UI.
+            if not for_ui:
+                try:
+                    originals=_gmo_original_record(self.root)
+                    if originals is not None:
+                        source_ledger,source_research=originals
+                        if source_research.get('load_status')=='OK':
+                            stock['research']['gmo']=source_research
+                            stock['ledger']['gmo']['actual_target']=source_research.get(
+                                'actual_summary') or {}
+                            stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
+                except Exception as original_error:
+                    self._err('gmo_original_research_parity',original_error)
         else:
             # The same PC import already holds the GMO originals. Display their
             # verified original state even if the live GMO service is not ready.
