@@ -218,6 +218,10 @@ class RecoveryObserver:
         self._stopped=False
         self._last_ws={"stock":None,"coin":None}
         self._return_until={"stock":0.0,"coin":0.0}
+        self.android_network=None
+
+    def set_android_network(self,validated):
+        with self._lock:self.android_network=bool(validated)
 
     def stock_tick(self,tick):
         if not isinstance(tick,(tuple,list)) or len(tick)<9:return
@@ -315,6 +319,7 @@ class RecoveryObserver:
         status=plan_scenario(
             process_running=runner is not None and not self._stopped,
             market_open=session_open,ws_connected=connected,
+            internet_ok=True if connected else self.android_network,
             subscribed=subscribed,exit_proof=exit_fresh,
             entry_proof=entry_fresh,reference_ready=reference_ready,
             minute_ready=reference_ready,has_holding=bool(hold),
@@ -386,6 +391,7 @@ class RecoveryObserver:
                 "process_restart_gap_seconds":self.gap_seconds,
                 "stock_ws_verified":stock_connected,
                 "coin_ws_verified":coin_connected,
+                "android_validated_internet":self.android_network,
                 "history_backfill_is_not_execution":True,
                 "current_quote_required_for_catch_up_execution":True,
                 "order_executor":"ORIGINAL_STRATEGY_8_WALLETS_ONLY",
