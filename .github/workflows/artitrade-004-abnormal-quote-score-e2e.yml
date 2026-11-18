@@ -6,6 +6,7 @@ on:
       - .github/workflows/artitrade-004-abnormal-quote-score-e2e.yml
       - ARTITRADE_ANDROID/app/src/main/python/**
       - ARTITRADE_ANDROID/ui_tests/test_v004_abnormal_reconnect_six.py
+      - ARTITRADE_ANDROID/ui_tests/test_v033_market_research.py
   workflow_dispatch:
 permissions:
   contents: read
