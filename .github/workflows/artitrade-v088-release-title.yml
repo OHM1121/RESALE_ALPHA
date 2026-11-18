@@ -1,0 +1,28 @@
+name: ARTITRADE v088 correct release title and verify published asset
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths: [.github/workflows/artitrade-v088-release-title.yml]
+permissions:
+  contents: write
+jobs:
+  verify-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Update the already published v088 release title, not the APK or source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='ARTITRADE-v0.8.8-20261118'
+          REPO="$GITHUB_REPOSITORY"
+          sha="$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq .targetCommitish)"
+          test "$sha" = '07c711ecf66cf11a651dc3b6abbfa237f4c9867f'
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' |
+            grep -Fx ARTITRADE_UNIFIED_v0.8.8_20261118.apk
+          gh release edit "$TAG" --repo "$REPO" --title 'ARTITRADE v0.8.8 (500MB 오류이력 ZIP·코인/통합 WAL 추출 개선)'
+          gh release view "$TAG" --repo "$REPO" --json tagName,name,assets --jq '{tag: .tagName,name,assets: [.assets[].name]}'
