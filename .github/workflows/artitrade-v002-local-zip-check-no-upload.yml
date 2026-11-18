@@ -1,0 +1,62 @@
+name: ARTITRADE Windows ZIP diagnostic tests - NO APK OR ZIP UPLOAD
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-v002-local-zip-check-no-upload.yml
+      - ARTITRADE_ANDROID/tools/ARTITRADE_ZIP_CHECK.ps1
+      - ARTITRADE_ANDROID/tools/ARTITRADE_ZIP_CHECK.cmd
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-zip-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Create synthetic valid and corrupt ZIPs, never actual user ZIPs
+        run: |
+          python3 - <<'PY'
+          import pathlib,zipfile
+          t=pathlib.Path('/tmp/artitrade_zip_local')
+          t.mkdir(exist_ok=True)
+          with zipfile.ZipFile(t/'good.zip','w',zipfile.ZIP_DEFLATED) as z:
+              z.writestr('analysis/bundle_index.json','{"schema":"ARTITRADE"}')
+              z.writestr('coin/base/paper.sqlite3',b'SQLite synthetic data'*100)
+          (t/'bad.zip').write_bytes(b'not-a-zip-corrupt-central-directory')
+          PY
+      - name: Validate PowerShell's ZIP streaming diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script='ARTITRADE_ANDROID/tools/ARTITRADE_ZIP_CHECK.ps1'
+          & $script -ZipPath '/tmp/artitrade_zip_local/good.zip'
+          if($LASTEXITCODE -ne 0){throw 'PS_GOOD_FAILED'}
+          & $script -ZipPath '/tmp/artitrade_zip_local/bad.zip'
+          $good=Get-Content '/tmp/artitrade_zip_local/good.zip.DIAG.txt' -Raw
+          $bad=Get-Content '/tmp/artitrade_zip_local/bad.zip.DIAG.txt' -Raw
+          if(-not $good.Contains('RESULT=ZIP_MEMBERS_READABLE_WITHIN_LOCAL_CHECK_LIMIT')){
+            throw 'GOOD_ZIP_UNEXPECTED_DIAGNOSTIC'
+          }
+          if(-not $bad.Contains('RESULT=ZIP_OPEN_OR_DIRECTORY_ERROR')){
+            throw 'BAD_ZIP_NOT_DETECTED'
+          }
+          if($good.Contains('SQLite synthetic data')){
+            throw 'ZIP_CONTENT_LEAK_IN_DIAG'
+          }
+          Write-Output 'ZIP_GOOD_AND_CORRUPT_DETECTED_NO_RAW_FILES_UPLOADED'
+      - name: Confirm original ZIPs remain unchanged
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,zipfile
+          t=pathlib.Path('/tmp/artitrade_zip_local')
+          with zipfile.ZipFile(t/'good.zip') as z:
+              assert len(z.namelist())==2
+          assert (t/'bad.zip').read_bytes()==b'not-a-zip-corrupt-central-directory'
+          PY
+          test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
