@@ -186,6 +186,15 @@ final class StrategyRuntimeBridge {
         try{return parse(module.callAttr("snapshot"));}
         catch(Throwable e){crashes.add("python_strategy_snapshot",e);return error("PYTHON_SNAPSHOT",e);}
     }
+    /** Price-only read: uses ONLY already delivered WS ticks/official cached
+      * quote evidence, never initializes a broker connection or loads SQLite.
+      * Called by a lower-priority service thread while the UI is visible.
+      */
+    synchronized JSONObject quoteSnapshot(){
+        if(!started||module==null)return new JSONObject();
+        try{return parse(module.callAttr("quote_snapshot_v089"));}
+        catch(Throwable ignored){return new JSONObject();}
+    }
     synchronized JSONObject hubRecords(){
         if(module==null)return new JSONObject();
         try{return parse(module.callAttr("hub_records"));}

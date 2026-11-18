@@ -1,0 +1,32 @@
+name: V089 inspect immutable original trade quote cache schemas
+on:
+  push:
+    branches: [fix-artitrade-v089-quote-plane-preload-rotation-20261118]
+    paths: [.github/workflows/forensic-v089-live-quote-shapes.yml]
+permissions: {contents: read}
+jobs:
+  examine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,zipfile,io,re
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for file in ('d_upbit.py','d_live.py','android_live_bridge.py','d_engine.py'):
+              ls=z.read(file).decode().splitlines()
+              pattern=re.compile(r'latest_prices|_last_ws_quote|_ws_last_frame|_ws_connected|last_ws_tick|current_price|last_trade|_new_tick|_last_price|\.latest_prices\b|_price_cache',re.I)
+              locations=[i for i,line in enumerate(ls) if pattern.search(line)]
+              print('FILE',file,'MATCHES',len(locations))
+              printed=set()
+              for i in locations[:120]:
+                for j in range(max(0,i-2),min(len(ls),i+4)):
+                  if j not in printed:
+                    print(file,j+1,ls[j][:210]);printed.add(j)
+          PY
