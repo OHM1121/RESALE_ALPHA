@@ -2401,6 +2401,14 @@ _install_at_policy_v091()
 from unified_recovery_v092 import install as _install_unified_recovery_v092
 _install_unified_recovery_v092(_core)
 
+# Only Android knows whether the current active network is validated.
+# This has no ability to make an order or authorize stale 0B/0D.
+def set_network_v092(validated):
+    rt=getattr(_core,"_RUNTIME",None)
+    observer=getattr(rt,"_v092_recovery",None) if rt is not None else None
+    if observer is not None:observer.set_android_network(bool(validated))
+    return True
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
