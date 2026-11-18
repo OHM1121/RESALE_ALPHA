@@ -257,3 +257,22 @@ PR: https://github.com/OHM1121/RESALE_ALPHA/pull/48
 6. 책임 범위: 기술적인 분석/코드 수정/재발방지 시험/명확한 증빙 제공에 대한 책임은 수행. 플랫폼 실행환경 복구·금전배상·구독료 환불 권한이 없으면 그 권한이 있다고 주장하지 말 것. 비동기 작업을 자동 완료한다고 약속하지 말 것.
 
 향후 인수인계 버전에서 이 절을 유지하며, 새로 확인된 제한/우회수단과 PR/CI/릴리스 증빙을 계속 갱신할 것.
+
+
+## 14. 2026.11.18 원본 ANALYSIS_READY.json 실제 읽기와 v0.9.4 OOM 대응
+
+- 업로드된 ARTITRADE_ALL_ERROR_HISTORY_20261118_160809_5d193d_ANALYSIS_READY.json (107,955 bytes)은 **Files 텍스트 경로에서 직접 열어 분석 성공**. 이전 90,947,994바이트 PART_001 파일도 Files raw_file materialize는 성공했으나 코드를 실행하는 /bin/true 명령 자체가 caas.internal.errors.ClientError로 실패. 이는 ZIP CRC/복잡도/파일 크기 문제로 증명되지 않으며 ChatGPT 도구호스트 내부 진단로그 없이는 실행환경 ClientError의 최종 인프라 원인 특정 불가. 앱의 Java OutOfMemoryError와 혼동 금지.
+- JSON에 8개 ZIP 파트, 40개 원본 소스파일, SQLite/JSON 총 3,291,157,900바이트 및 앱 Native runtime_faults 30건 확인. 자료에 로그가 존재하면 ZIP 내부를 읽지 않고도 부분적인 실제 코드 결함은 확인 가능.
+- 가장 구체적인 native 오류: UnifiedTradingService.scheduleUiRecordsIfDue의 JSONObject.toString()에서 75,497,480바이트 추가 할당 실패 (Java 힙 한도 256MiB), 기존 크기 제한 검사는 문자열 생성 이후. UnifiedVisualActivity.refresh에서 과대 JSON 파싱 중 OOM도 보고됨. 이 상태가 앱 강제 종료 및 시세/주문 판단 지연에 영향을 줄 수 있지만 개별 체결 인과관계를 원장 없이 단정 금지.
+- 실기기 기록에는 manual_paper_sell_rejected에서 D버전 계좌/주문 API 차단, FRESH_STOCK_TRADE_MISSING, FRESH_COIN_ORDERBOOK_MISSING, COIN_MANUAL_FILL_NOT_RECORDED이 서로 다른 시점의 버전에 걸쳐 보고됨. 임의로 시세 3초 안전조건 해제하거나 가상체결 생성 금지.
+- 이전 combined_error_export에는 upbit_paper.sqlite3 SQLITE_BACKUP_STALLED 두 건. 이번 8개 ZIP이 손상되었다는 증거가 아니므로 ZIP 분할/원장 보존을 유지.
+- 수정 PR #49: https://github.com/OHM1121/RESALE_ALPHA/pull/49
+- 실제 오류기록 근거 분석: https://github.com/OHM1121/RESALE_ALPHA/blob/fix-artitrade-v104-json-memory-original-data-20261118/ARTITRADE_ANDROID/FORENSIC_20261118_RUNTIME_MEMORY_AND_EXPORT.md
+- 배포 v0.9.4: https://github.com/OHM1121/RESALE_ALPHA/releases/tag/ARTITRADE-v0.9.4-20261118
+- GitHub Actions 성공: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44260046811
+- APK (원본 서명 SHA-256 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6, 패키지 com.artitrade.unified.s21dex, versionCode 121, 사용자 버전명 정확히 0.9.4): https://github.com/OHM1121/RESALE_ALPHA/releases/download/ARTITRADE-v0.9.4-20261118/ARTITRADE_UNIFIED_v0.9.4_20261118.apk
+- 근본적인 UI 메모리대책: 화면 갱신 전 Python 단계에서 read-only view 목록/문자열을 제한해 Java 전송. 첫 앱 시작 시 full hub_records JSON을 SharedPreferences XML에 통째로 저장하는 경로 삭제. 이전 대형 화면 캐시를 파싱 전에 거절. 원본 source SQLite/WAL, 연구이력 ZIP, 실제 전략 정책, 가상매매 체결행은 변경하지 않음. PC 전송 시 화면용 일부 데이터를 완전한 원장으로 위장하여 전송하지 말 것.
+- **실기기 설치 후 확인:** 기존 앱/DB 삭제 금지. 인스톨 업데이트 후 UI 새로고침 반복 시 Java heap/OOM/앱종료 여부를 관찰. PC 전송 기능 사용 중 OOM 발생 시 별도의 full sync 크기 검증/청크 스트리밍 과제가 필요. 모든 전략의 실제 진입·자동매도 실패 원인을 확정하려면 원본 SQLite 행의 오류시간 타임라인과 비교해야 하며, 현재 FILES 텍스트 분석은 메타/네이티브 오류자료임.
+- **시간 손실/보상에 대한 사용자 요청:** ChatGPT 도구호스트 ClientError와 반복적인 분석 약속은 서비스 장애와 불완전한 안내의 독립 항목으로 기록. 기술적 대응은 코드 수정/검증/실패 근거 공개로 수행하되 모델이 금전 환불을 직접 실행할 권한이 있다고 주장 금지. 환불·피해보상 심사는 OpenAI 고객지원으로 접수; 사용자 시간을 임의 금액으로 산정하거나 환불 보장 금지.
+
+이 절을 후속 개발·인수인계에서도 계속 보존하고 "오류 근거 → 필요한 자료 → 획득 경로 → 소스 패치 → CI/실기기 검증" 보고 형식을 유지할 것.
