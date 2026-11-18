@@ -273,11 +273,16 @@ class Coordinator:
         offer_records(self.rt.root,{})
 
     def _read_score(self,market):
-        from market_research_v033 import _WORKERS,_WORKERS_LOCK
-        with _WORKERS_LOCK:
-            worker=_WORKERS.get(str(Path(self.rt.root).resolve()))
-        if worker is None:return {"score":None,"stale":True,"status":"시장점수 준비 중"}
-        return worker.snapshot().get(market) or {"score":None,"stale":True}
+        # The market-score worker can die after a SQLite/HTTP fault. Recover
+        # on the INDEPENDENT 450ms coordinator loop, not only when the UI
+        # happens to request the multi-MB hub snapshot. No synthetic score.
+        try:
+            from market_research_v033 import ensure_worker
+            worker=ensure_worker(self.rt.root)
+            return worker.snapshot().get(market) or {"score":None,"stale":True}
+        except Exception as exc:
+            return {"score":None,"stale":True,
+                    "status":"시장점수 백그라운드 복구 중: "+type(exc).__name__}
 
     def _update_score(self,market):
         result=self._read_score(market)
@@ -992,12 +997,12 @@ class Coordinator:
                     if not sold and (status in ("LIVE_POSITION_BROKER_DISABLED",
                             "PAPER_POSITION_LIVE_MODE","POSITION_FILL_MODE_UNVERIFIED")
                             or str(status).startswith(('BROKER:', 'UNSAFE:'))):
-                        self._last_fetch_error[market]="SELL:"+status
-                    if sold:
+                        self._last_fetch_error[market]="SELL:"+status                    if sold:
                         # A reconnect/gap can place the first received genuine
                         # bid above both TP1 and TP2. Consume two CONFIRMED
                         # native wallet SELLs on that ONE fresh book, with
-                        # distinct reason keys and remaining visible depth.                        # Do not evaluate the third trailing stop on this book.
+                        # distinct reason keys and remaining visible depth.
+                        # Do not evaluate the third trailing stop on this book.
                         if (p.qty>0 and result[0]=="MT_TP1" and
                             getattr(p,'nl1118_policy',None) and
                             q["bid"]>=p.target2):
