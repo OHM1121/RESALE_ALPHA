@@ -144,7 +144,7 @@ class ScopedErrorExportTests(unittest.TestCase):
         self.assertIn('exportScopedErrorToFolder(data.getData(),scope)',ui)
         self.assertIn('REQUEST_EXPORT_SCOPED_ERRORS',ui)
         self.assertIn('"errors",\n                        nativeReport.toString()',ui)
-        self.assertIn('source.length()>500_000_000L',ui)
+        self.assertIn('source.length()>GPT_SAFE_ZIP_PART_BYTES',ui)
         self.assertIn('SHA-256',ui)
         self.assertIn('SYSTEM_PROCESS_EXIT_',(
             SRC/'app/src/main/java/com/artitrade/mobile/ProcessHealthV087.java').read_text())
