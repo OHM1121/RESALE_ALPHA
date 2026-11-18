@@ -7,6 +7,7 @@ allowed checkpoint operation is monotonic advancement after verified reads.
 """
 from __future__ import annotations
 import datetime as dt
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -104,7 +105,7 @@ def _measure(db,epoch_time):
     # that option ignores fresh committed WAL transactions.
     uri="file:"+quote(str(db),safe="/")+"?mode=ro"
     try:
-        with sqlite3.connect(uri,uri=True,timeout=1.0) as con:
+        with closing(sqlite3.connect(uri,uri=True,timeout=1.0)) as con:
             con.row_factory=sqlite3.Row
             con.execute("PRAGMA query_only=ON")
             table_names=[str(r[0]) for r in con.execute(
@@ -194,11 +195,13 @@ def verify_and_checkpoint(root,require_existing=False):
     old=prior["tables"] if prior else {}
     new=dict(old)
     tracked=0
+    present=set()
     sources=_sources(root)
     for rel,path in sorted(sources.items()):
         found=_measure(path,started)
         for table,current in found.items():
             key=rel+"#"+table
+            present.add(key)
             before=old.get(key)
             if before:
                 if (current["count"]<before["count"] or
@@ -215,10 +218,6 @@ def verify_and_checkpoint(root,require_existing=False):
                     raise RollbackBlocked("LEDGER_ORIGINAL_FILL_PREFIX_REPLACED")
             new[key]=current
             tracked+=1
-    present=set()
-    for rel,path in sorted(sources.items()):
-        for tab in _measure(path,started):
-            present.add(rel+"#"+tab)
     for key,prev in old.items():
         if prev.get("count",0)>0 and key not in present:
             raise RollbackBlocked("PREVIOUS_EXECUTION_DB_OR_TABLE_DISAPPEARED")
