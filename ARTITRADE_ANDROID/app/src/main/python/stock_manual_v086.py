@@ -234,19 +234,18 @@ def manual_stock_at(rt,request):
                 'paper_only':True}
 
 def _ma_databases(rt):
-    from legacy_ma_exit_watch_v094 import _old_stock_paths,_EXIT_LOCK
+    # Mandatory first-boot PAPER reset removes every historic v061/v062 MA
+    # wallet. The ONLY sellable MA owner is the current original v067 wallet.
     current=rt.stock_runner.ma
-    result=[(Path(current.db),current.lock,current)]
-    for path in _old_stock_paths(rt.root):
-        if path.is_file() and path!=Path(current.db):
-            result.append((path,_EXIT_LOCK,None))
-    return result
+    if current is None:
+        return []
+    return [(Path(current.db),current.lock,current)]
 
 def manual_stock_ma(rt,request):
     from stock_ma_engine import _connect,StockMAService
     reason=_reason(request)
-    # Search all original epochs, not just today's MA v067. UUID matching
-    # executions take precedence even after the original position has closed.
+    # New clean epoch only: scan current original v067 MA ledger for exact
+    # UUID and current position; no historical epoch fallback is allowed.
     matches=[]
     for path,lock,owner in _ma_databases(rt):
         if not path.is_file():continue
@@ -265,9 +264,9 @@ def manual_stock_ma(rt,request):
     if len(matches)>1:raise ValueError('STOCK_MA_AMBIGUOUS_EPOCH_OWNER')
     path,lock,owner=matches[0]
     book=verified_stock_bid(rt,request['code'])
-    class HistoricalOwner:
-        _sell=StockMAService._sell
-    actual_owner=owner if owner is not None else HistoricalOwner()
+    if owner is None:
+        raise ValueError("STOCK_MA_FRESH_EPOCH_OWNER_MISSING")
+    actual_owner=owner
     with lock,_connect(path) as c:
         prior=c.execute("""SELECT qty,price FROM executions WHERE
             position_id=? AND code=? AND reason=? AND side='SELL'""",
