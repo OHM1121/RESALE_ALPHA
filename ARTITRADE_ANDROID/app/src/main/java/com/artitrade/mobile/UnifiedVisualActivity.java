@@ -898,9 +898,8 @@ public final class UnifiedVisualActivity extends Activity {
         String version="";
         try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}
         if(version==null||version.isEmpty())return "버전 확인 중";
-        int dash=version.indexOf('-');
-        if(dash>0)version=version.substring(0,dash);
-        return "v"+version;
+        return version.matches("[0-9]+\\.[0-9]+\\.[0-9]+")
+            ?version:"버전 확인 중";
     }
 
     private void showShell(){
@@ -930,7 +929,7 @@ public final class UnifiedVisualActivity extends Activity {
             int split=installedVersion.indexOf(" · ");
             if(split>0)installedVersion=installedVersion.substring(0,split);
         }
-        TextView ver=text("  ·  "+installedVersion,wideHeader?12:11);
+        TextView ver=text("  "+installedVersion,wideHeader?12:11);
         ver.setTextColor(accent());
         ver.setSingleLine(true);
         ver.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -2530,7 +2529,6 @@ public final class UnifiedVisualActivity extends Activity {
         TextView title=text("마켓트렌드 · 진행봉 RSI 사전관측 (매수후보 아님)",17);
         title.setTypeface(null,Typeface.BOLD);
         content.addView(title);
-        content.addView(text("정식 매수후보: 최근 10개 확정봉 최초 RSI(20)<30 · 다음 봉 개시 후 10초 이내 실제 호가로만 매수",11));
         JSONObject trendDiag=local==null?null:local.optJSONObject("market_trend_status");
         JSONObject marketDiag=trendDiag==null?null:trendDiag.optJSONObject(market);
         if(pending.length()==0){
@@ -2548,7 +2546,7 @@ public final class UnifiedVisualActivity extends Activity {
                 " · 현재가 ";
             TextView priceView=text(rsiText+formatMaybeMoney(row,"price"),13);
             panel.addView(priceView);
-            TextView observed=text("RSI 관측과 매매판단은 별개 · WS 시세 확인 중",10);
+            TextView observed=text("시세 확인 중",10);
             observed.setTextColor(PremiumUi.MUTED);
             panel.addView(observed);
             bindFastVisiblePrice(row,market,priceView,observed,rsiText,"");
@@ -2960,8 +2958,7 @@ public final class UnifiedVisualActivity extends Activity {
                 case "WAIT_ENTRY_SOURCE":caption="신규매수 실시간 근거 대기";break;
                 default:caption="매매복구 상태 확인 중";break;
             }
-            TextView notice=text("매매복구 · "+caption+
-                " · 실제 매수/매도는 전략별 원장 체결 확인",11);
+            TextView notice=text(caption,11);
             notice.setTextColor(Color.rgb(139,199,232));
             notice.setMaxLines(2);
             content.addView(notice,new LinearLayout.LayoutParams(-1,-2));
@@ -6601,7 +6598,7 @@ public final class UnifiedVisualActivity extends Activity {
         sort.setTextSize(11);
         scoreHead.addView(sort,new LinearLayout.LayoutParams(dp(86),dp(37)));
         content.addView(scoreHead,new LinearLayout.LayoutParams(-1,dp(45)));
-        TextView sub=text("미선정 후보 포함 · 후보 당시 점수와 판정 상태 · 실제 계좌성과와 분리",13);sub.setTextColor(Color.rgb(135,160,190));sub.setPadding(0,dp(3),0,dp(9));content.addView(sub);
+
         LinearLayout k=card();LinearLayout kr=new LinearLayout(this);kr.setOrientation(LinearLayout.HORIZONTAL);
         addMini(kr,"후보",String.valueOf(items.length()));
         int hi=0,mid=0,low=0;for(int i=0;i<items.length();i++){JSONObject x=items.optJSONObject(i);double sc=x==null?Double.NaN:num(x,"score","diverse_11_score","gmo_score_at_signal");if(!finite(sc))continue;if(sc>=61)hi++;else if(sc>=41)mid++;else low++;}
@@ -6994,7 +6991,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void renderOperation(){
         operationFields.clear();
         TextView h=text(("stock".equals(market)?"주식":"코인")+" 통합 운용",24);h.setTypeface(null,Typeface.BOLD);content.addView(h);
-        TextView dsc=text("각 실제 계좌 단위로 운용시드와 최대 보유종목을 설정 · 기본 2,000,000원 / 4종목",13);dsc.setTextColor(Color.rgb(137,147,169));dsc.setPadding(0,dp(4),0,dp(2));content.addView(dsc);
+
         JSONObject settings=operationSettings();
 
         if("stock".equals(market)){
