@@ -48,10 +48,18 @@ def _coin_book(rt,code):
     with runner._lock:
         b=dict(runner.last_book.get(code) or {})
     # Prefer the identical upstream WS evidence used by automatic entries.
-    if b.get('market')==code and abs(time.time()-float(b.get('timestamp',0))/1000)<=3:
-        if _quant(b.get('bid',0))<=0 or _quant(b.get('bid_size',0))<=0:
-            raise ValueError('NO_COIN_BID_DEPTH')
-        return b
+    # An incomplete or malformed WS book is not executable depth. Previously
+    # it raised before the independently verified public-book fallback, so an
+    # explicitly confirmed PAPER exit could fail despite a live public quote.
+    # Do not convert a missing bid into a fill: try ONE fresh orderbook read.
+    try:
+        age=time.time()-float(b.get('timestamp',0))/1000
+        if b.get('market')==code and -.5<=age<=3.0:
+            _quant(b.get('bid',0))
+            _quant(b.get('bid_size',0))
+            return b
+    except (ValueError,TypeError,ArithmeticError,OverflowError):
+        pass
 
     # An existing holding may no longer be subscribed in the TOP50 WS feed.
     # A *user-confirmed* PAPER exit can read ONE fresh public Upbit orderbook
