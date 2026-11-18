@@ -138,8 +138,20 @@ def _market_trend_entry(core,native):
                          "bar_key":str(bar_key),"observed_at":str(at),
                          "target_unknown_no_invention":True,
                          "ask_market_observation":ask})
-        return original(self,market,frame,symbol,name,ask,ask_size,at,
+        result=original(self,market,frame,symbol,name,ask,ask_size,at,
                         bar_key,rsi20_live)
+        # Do not rename the native parameter or alter the original fill.
+        # Its value is now a confirmed CLOSED RSI, not a forming RSI.
+        try:
+            pos=result[0] if isinstance(result,tuple) else None
+            if pos is not None:
+                pos.__dict__["rsi20_closed_at_buy"]=float(rsi20_live)
+                pos.__dict__["rsi20_basis_at_buy"]="COMPLETED_CANDLE_CLOSE"
+                pos.__dict__["entry_signal_policy"]="MT107_FIRST_UNDER30_LAST10"
+                self.save_position(pos)
+        except Exception as exc:
+            ERRORS.append("RSI_PROVENANCE_SAVE_"+type(exc).__name__)
+        return result
     native.TrendWalletV054.buy=capture
 
 def install(core):
