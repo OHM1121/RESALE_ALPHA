@@ -1,0 +1,33 @@
+name: V088 error-history 500MB ZIP and coin/all WAL progress regression
+on:
+  push:
+    branches: [fix-artitrade-v088-error-zip-500mb-coin-progress-20261118]
+    paths:
+      - .github/workflows/verify-v088-error-coin-export-500mb.yml
+      - ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py
+      - ARTITRADE_ANDROID/app/src/main/python/android_ledger_backup.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+      - ARTITRADE_ANDROID/ui_tests/test_v088_export_zip_full_500mb_coin_monotonic.py
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Check Python syntax, original source invariants and all export regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v088_export_zip_full_500mb_coin_monotonic.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v088_error_exports_and_source_integrity.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v082_error_export_cancellation.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_android_ledger_backup.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_live_quotes_stages_export.py' -v
