@@ -228,6 +228,15 @@ def _phone_runtime_snapshot(self):
             'rsi_history':warm,
             'both_feeds_available':bool(coin_trade and
                 (not stock_session or not stock_keys or stock_ws))}
+        # Publish tiny authentic held-stock 0B/official REST prices in the
+        # 2.5-second heartbeat. The slow 6.5-17-second full SQLite view
+        # cannot be the only route for prices or the trading executor.
+        try:
+            from stock_quote_truth_v066 import live_quote_snapshot
+            snapshot['stock_quote_live_v086']=live_quote_snapshot(runner)
+        except (AttributeError,ValueError,RuntimeError,TypeError) as quote_error:
+            snapshot['stock_quote_live_v086']={'quotes':{},'revision':'',
+                'error':type(quote_error).__name__}
         return json.dumps(snapshot, ensure_ascii=False, default=str)
     except Exception:
         return raw
