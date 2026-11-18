@@ -142,6 +142,10 @@ class Coordinator:
         # v108: last-close local read is bounded and never loops on a broker
         # REST request inside the critical 10-second BUY decision window.
         self._due_close_read_at={}
+        # RSI20 across the same 10 closed bars must not be recalculated at
+        # 5Hz during one entry window. Cache by immutable source candles;
+        # changed broker evidence always invalidates the cached decision.
+        self._fresh_closed_signal_cache={}
         # One diagnostic per source/bar/window, not every 200ms precheck poll.
         self._v078_missing_trade_seen=set()
         self._last_closed={}
@@ -835,17 +839,29 @@ class Coordinator:
         qualified=collections.defaultdict(list)
         for code in candidates:
             for frame,finish,begins in scheduled:
-                rows=verified_closed_rows(
-                    histories.get((market,code,frame),()),begins,market,frame)
-                if not rows:
-                    continue
-                signal=first_closed_cross(
-                    [x["close"] for x in rows],mt.rsi20)
-                if signal is None:continue
-                closed_at=rows[-1]["end"]
+                history=histories.get((market,code,frame),())
+                if len(history)<30:continue
+                # Closed bars are immutable evidence: this signature also
+                # detects late Kiwoom/Upbit corrections at the same timestamp.
+                source_signature=tuple((x["end"],x["close"])
+                                       for x in history[-30:])
+                cache_key=(market,code,frame,begins.isoformat())
+                cached=self._fresh_closed_signal_cache.get(cache_key)
+                if cached is not None and cached[0]==source_signature:
+                    signal,closed_at=cached[1],cached[2]
+                else:
+                    rows=verified_closed_rows(history,begins,market,frame)
+                    signal=(first_closed_cross([x["close"] for x in rows],
+                                               mt.rsi20) if rows else None)
+                    closed_at=rows[-1]["end"] if rows else None
+                    self._fresh_closed_signal_cache[cache_key]=(
+                        source_signature,signal,closed_at)
+                if signal is None or closed_at is None:continue
                 key=(market,code,frame,closed_at.isoformat())
                 if key in self._ordered:continue
                 qualified[code].append((frame,finish,begins,closed_at,signal))
+        if len(self._fresh_closed_signal_cache)>12000:
+            self._fresh_closed_signal_cache.clear()
         for code,options in qualified.items():
             chosen=mt.choose_frame([x[0] for x in options])
             candidate=next((x for x in options if x[0]==chosen),None)
