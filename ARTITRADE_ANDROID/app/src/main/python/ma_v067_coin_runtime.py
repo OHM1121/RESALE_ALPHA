@@ -442,7 +442,10 @@ def _process_v067_exits(self,book,now):
                     JOIN ma_v067_positions s ON s.position_id=p.id
                     WHERE p.id=? AND p.market=? AND p.status='OPEN' AND p.qty!='0'""",
                     (item['id'],symbol)).fetchone()
-                if p is None:break
+                # An incomplete stage-2 reread must not raise inside the
+                # first SELL's original transaction or imply another fill.
+                if p is None or any(k not in p.keys() for k in (
+                        'id','qty','qty0','entry','tf','kind','state_json')):break
                 qty=dec(p['qty'])
                 if qty<=0:break
                 try:state=json.loads(p['state_json'] or '{}')
