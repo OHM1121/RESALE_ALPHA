@@ -22,6 +22,7 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
       'd_close.py':None,
       'close_betting_engine.py':None,
       'cw_runtime.py':None,
+      'projectgmo/engine.py':None,
       'd_gmo_runtime.py':{'_exit','paper_match','paper_match_krx_print_proxy',
                             'on_live_tick','on_book_message','on_priority_tick','fill','_order','mark_submitted','_persist','_manual_sell','_sell'},
       'market_trend_v043.py':{'sell','action'},
@@ -32,14 +33,14 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
         src=z.read(file).decode('utf-8')
         lines=src.splitlines()
         print('SOURCE_FILE',file,len(lines),flush=True)
-        if file in ('at_close_engine.py','at_close_store.py','at_close_runner.py'):
-            for n,line in enumerate(lines[:125],1):print('CLOSEFULL',file,n,line,flush=True)
+        if file in ('at_close_engine.py','at_close_store.py','at_close_runner.py','projectgmo/engine.py'):
+            for n,line in enumerate(lines[:65],1):print('CLOSEFULL',file,n,line,flush=True)
         tree=ast.parse(src)
         for node in ast.walk(tree):
             if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
                 parent='';
                 if methods is None:
-                    if any(q in node.name.lower() for q in ('sell','close','exit','manual','pinned','broker','stock','fill','order','wallet','connect','persist','position','snapshot')):
+                    if any(q in node.name.lower() for q in ('sell','close','exit','manual','pinned','broker','stock','fill','order','wallet','connect','persist','position','snapshot','cancel')):
                         pass
                     else:continue
                 elif node.name not in methods:continue
