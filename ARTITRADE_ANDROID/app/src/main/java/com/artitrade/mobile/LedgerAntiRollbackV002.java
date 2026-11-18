@@ -16,7 +16,7 @@ final class LedgerAntiRollbackV002 {
     private static final String PREFS="artitrade_ledger_guard_v002";
     private LedgerAntiRollbackV002(){}
 
-    static JSONObject verify(Context c)throws Exception{
+    static synchronized JSONObject verify(Context c)throws Exception{
         JSONObject epoch=FreshEpochGateV106.read(c);
         if(epoch==null||!"COMMITTED".equals(epoch.optString("state")))
             throw new IllegalStateException("PAPER_EPOCH_NOT_COMMITTED_NO_TRADING");
