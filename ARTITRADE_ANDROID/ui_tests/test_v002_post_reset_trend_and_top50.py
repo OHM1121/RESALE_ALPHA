@@ -77,8 +77,19 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
                 self.assertEqual(len(co._nl1118_watches),1)
                 co._quotes["coin"]["KRW-TEST"]=(110.0,time.monotonic()+0.001)
                 nl._entry_window(co,"coin",now)
+            detail={
+                "watch":co._nl1118_watches,
+                "quote_stamps":co._nl1118_quote_stamps,
+                "previous":co._nl1118_previous_trade,
+                "last_error":co._last_fetch_error,
+                "bollinger":nl.bollinger(
+                    [r["close"] for r in bars][-20:]+[110.0]),
+                "cross":nl.actual_middle_touch(130.,110.,
+                    nl.bollinger([r["close"] for r in bars][-20:]+[110.0])["middle"]),
+                "history_valid":len(nl._confirmed_recent(bars,now,"coin","30m")),
+            }
             self.assertEqual(len(co.standalone_wallet.buys),1,
-                             "the native ORIGINAL mode must NOT veto RSI+BB")
+                             "native ORIGINAL mode must NOT veto RSI+BB; "+repr(detail))
             market,frame,code,price,qty,barid,rsi=co.standalone_wallet.buys[0]
             self.assertEqual((market,frame,code),("coin","30m","KRW-TEST"))
             self.assertEqual(price,110.0)
