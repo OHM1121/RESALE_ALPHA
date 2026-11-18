@@ -21,6 +21,8 @@ on:
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
       - ARTITRADE_ANDROID/app/src/main/python/fresh_epoch_reset_v106.py
       - ARTITRADE_ANDROID/ui_tests/test_v108_mandatory_first_epoch.py
+      - ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py
+      - ARTITRADE_ANDROID/ui_tests/test_v108_native_ma_trend_entry_paths.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -186,5 +188,10 @@ jobs:
         shell: bash
         run: |
           PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v108_mandatory_first_epoch.py' -v
+      - name: Validate stock MA nonfill retry and trend confirmed-bar execution paths
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v108_native_ma_trend_entry_paths.py' -v
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
