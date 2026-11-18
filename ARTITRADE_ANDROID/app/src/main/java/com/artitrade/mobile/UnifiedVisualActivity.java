@@ -286,8 +286,16 @@ public final class UnifiedVisualActivity extends Activity {
             root=new FrameLayout(this);
             root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
-            preloadStartedAt=android.os.SystemClock.elapsedRealtime();
-            preloadStartedWallMs=System.currentTimeMillis();
+            // Rotation while warming must preserve the SAME cold-start
+            // progress and deadline, not reinterpret a recreated Activity as
+            // evidence of a ready broker / UI snapshot.
+            preloadStartedAt=state!=null?
+                state.getLong("v089_preload_elapsed_at",
+                    android.os.SystemClock.elapsedRealtime()):
+                android.os.SystemClock.elapsedRealtime();
+            preloadStartedWallMs=state!=null?
+                state.getLong("v089_preload_wall_at",
+                    System.currentTimeMillis()):System.currentTimeMillis();
             recordUiEntry(state);
             if(shouldRestoreShellImmediately(state)){
                 // Re-creating the Activity is NOT evidence that the trading engine
@@ -296,6 +304,13 @@ public final class UnifiedVisualActivity extends Activity {
                 showShell();
             }else{
                 showBoot();
+                if(state!=null&&!state.getBoolean("v089_preload_ready",true)){
+                    if(startupProgress!=null)startupProgress.setProgress(
+                        Math.max(5,Math.min(98,state.getInt("v089_preload_pct",5))));
+                    if(startupStage!=null)startupStage.setText(
+                        state.getString("v089_preload_stage",
+                            "원장 · 전략별 시세 사전 준비 중"));
+                }
                 // Even if the local-hub request stalls, never trap the user in
                 // the full-screen boot view waiting for an I/O worker.
                 main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS);
@@ -348,7 +363,9 @@ public final class UnifiedVisualActivity extends Activity {
         // After a genuine service/process stop, show cold-start progress again.
         // Foreground service heartbeat still bypasses repeated preload when
         // returning from sleep, another app, or Activity recreation.
-        return saved!=null||isRecentBackgroundHeartbeat();
+        if(saved!=null)
+            return saved.getBoolean("v089_preload_ready",true);
+        return isRecentBackgroundHeartbeat();
     }
 
     private void preloadWatchdog(){
@@ -548,6 +565,18 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     @Override protected void onSaveInstanceState(Bundle state){
+        // The loading cover remains loading across 90/180/270 degree rotation.
+        // A previous, valid warm UI continues to restore immediately.
+        state.putBoolean("v089_preload_ready",preloadScreenReady);
+        state.putLong("v089_preload_elapsed_at",preloadStartedAt);
+        state.putLong("v089_preload_wall_at",preloadStartedWallMs);
+        if(!preloadScreenReady){
+            state.putInt("v089_preload_pct",
+                startupProgress==null?5:startupProgress.getProgress());
+            state.putString("v089_preload_stage",
+                startupStage==null?"원장 · 전략별 시세 사전 준비 중":
+                startupStage.getText().toString());
+        }
         state.putString("market",market);
         state.putString("strategy",strategy);
         state.putString("page",page);
