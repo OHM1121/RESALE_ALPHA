@@ -44,6 +44,8 @@ jobs:
           set -euo pipefail
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_new_legacy_1118_workbook.py' -v
+      - name: Install the original EXE runtime's harmless import dependencies
+        run: python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
       - name: Unpack and introspect the EXACT bundled original trading engines
         shell: bash
         run: |
