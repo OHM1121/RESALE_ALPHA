@@ -1,0 +1,53 @@
+name: ARTITRADE 0.0.5 optional read-only public market-source probe
+on:
+  push:
+    branches: [fix-artitrade-005-score-feed-and-empty-wallet-20261119]
+    paths:
+      - .github/workflows/artitrade-005-public-source-readonly-probe.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-source-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Probe only original unauthenticated public market-factor endpoints
+        shell: bash
+        run: |
+          python3 -m pip install -q requests
+          python3 - <<'PY'
+          import time,requests
+          sources=[
+              ('NAVER_KOSPI','https://m.stock.naver.com/api/index/KOSPI/basic',None),
+              ('NAVER_KOSDAQ','https://m.stock.naver.com/api/index/KOSDAQ/basic',None),
+              ('UPBIT_TICKER_ALL','https://api.upbit.com/v1/ticker/all',{'quote_currencies':'KRW'}),
+              ('UPBIT_BTC_DAYS','https://api.upbit.com/v1/candles/days',{'market':'KRW-BTC','count':35}),
+              ('UPBIT_ETH_DAYS','https://api.upbit.com/v1/candles/days',{'market':'KRW-ETH','count':12}),
+          ]
+          for name,url,params in sources:
+              try:
+                  r=requests.get(url,params=params,timeout=8,
+                      headers={'User-Agent':'Mozilla/5.0 ARTITRADE read-only'})
+                  body=r.json()
+                  details={'status':r.status_code,'kind':type(body).__name__}
+                  if name.startswith('NAVER') and isinstance(body,dict):
+                      details['change_present']='fluctuationsRatio' in body or (
+                          isinstance(body.get('result'),dict) and
+                          'fluctuationsRatio' in body['result'])
+                  if name=='UPBIT_TICKER_ALL' and isinstance(body,list):
+                      rows=[v for v in body if isinstance(v,dict)]
+                      stamp=[v.get('timestamp') for v in rows if isinstance(v.get('timestamp'),(int,float))]
+                      fresh=sum(-5 <= time.time()-float(v)/1000 <= 180 for v in stamp)
+                      details.update(rows=len(rows),timestamp_count=len(stamp),fresh_180s=fresh)
+                  if name.endswith('_DAYS') and isinstance(body,list):
+                      details.update(rows=len(body))
+                  if isinstance(body,dict) and 'error' in body:details['error_type']=str(type(body['error']).__name__)
+                  print(name,details,flush=True)
+              except Exception as exc:
+                  print(name,{'probe_error':type(exc).__name__},flush=True)
+          print('PUBLIC_ENDPOINT_PROBE_ONLY_NO_BROKER_OR_ORDERS')
+          PY
