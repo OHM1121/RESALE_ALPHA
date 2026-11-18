@@ -1,0 +1,46 @@
+name: ARTITRADE v086 stock ALL manual native ledger regression
+on:
+  push:
+    branches: [fix-artitrade-v086-stock-manual-all-strategies-20261118]
+    paths:
+      - '.github/workflows/verify-v086-stock-manual-all.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/stock_manual_v086.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_manual_paper_sell_v085.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v086_stock_manual_all.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Native original EXE module parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          blob=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              z.extractall('/tmp/v086-original-core')
+          PY
+      - name: All-owner manual and existing original PAPER regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/v086-original-core:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_stock_manual_all.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v084_native_coin_manual.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_legacy_ma_exit.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v096_manual_result_lifecycle.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_live_quotes_stages_export.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_at_native_catchup.py' -v
