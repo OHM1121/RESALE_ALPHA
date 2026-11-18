@@ -253,6 +253,69 @@ def _ensure_rest_lookup_started(runner):
         runner._v072_rest_thread.start()
 
 
+def live_quote_snapshot(runner):
+    """Small read-only market-price plane separate from multi-MB SQLite UI.
+
+    0B/0D trading queues must never wait for a large dashboard or REST lookup.
+    Every quoted symbol is an existing held/pinned code.  Source/time remain
+    explicit: REST 35-second polling is NOT an exchange streaming trade.
+    """
+    if runner is None:return {'quotes':{},'revision':''}
+    lock=getattr(runner,'_v066_quote_lock',None)
+    if lock is None:return {'quotes':{},'revision':''}
+    with lock:
+        events=dict(getattr(runner,'_v066_quote_by_venue',{}) or {})
+        rest=dict(getattr(runner,'_v072_rest_quotes',{}) or {})
+        pins=set(getattr(runner,'_v073_current_pins',set()) or ())
+    now=dt.datetime.now(KST)
+    connected=bool(getattr(runner,'_confirmed_ws_session',False))
+    quotes={}
+    for code in sorted(pins)[:200]:
+        code=_stock_code(code)
+        if not code:continue
+        fresh,last=_choose_for_code(events,code,now,connected)
+        item=None
+        if fresh is not None:
+            item={'price':fresh['price'],'status':'FRESH',
+                  'source':'KIWOOM_REAL_0B',
+                  'venue':fresh['venue'],
+                  'exchange_at':fresh['exchange_at'],
+                  'received_at':fresh['received_at'],
+                  'expires_ms':fresh['expires_ms']}
+        else:
+            snapshot=rest.get(code)
+            rest_price=(_rest_positive_price(snapshot.get('price'))
+                        if isinstance(snapshot,dict) else None)
+            rest_at=(_aware(snapshot.get('received_at'))
+                     if isinstance(snapshot,dict) else None)
+            age=(now-rest_at).total_seconds() if rest_at else None
+            if rest_price is not None and age is not None and -.5<=age<=REST_DISPLAY_FRESH_SECONDS:
+                item={'price':rest_price,'status':'REST_FRESH',
+                      'source':'KIWOOM_REST_KA10001','venue':'',
+                      'exchange_at':'','received_at':snapshot['received_at'],
+                      'expires_ms':0}
+            elif last is not None:
+                item={'price':last['price'],'status':'LAST_0B',
+                      'source':'KIWOOM_REAL_0B_LAST','venue':last['venue'],
+                      'exchange_at':last['exchange_at'],
+                      'received_at':last['received_at'],'expires_ms':0}
+            elif rest_price is not None and age is not None and age>=0:
+                item={'price':rest_price,'status':'LAST_REST',
+                      'source':'KIWOOM_REST_KA10001_LAST','venue':'',
+                      'exchange_at':'','received_at':snapshot['received_at'],
+                      'expires_ms':0}
+        if item is not None:
+            quotes[code]=item
+    # Signature changes for a new REAL price, a REST refresh or a freshness
+    # status transition, not merely because the heartbeat timer advanced.
+    signature='|'.join(code+':'+str(v['price'])+':'+v['status']+':'+
+                       v['received_at'] for code,v in sorted(quotes.items()))
+    return {'quotes':quotes,'revision':signature,
+            'source':'ORIGINAL_KIWOOM_0B_OR_OFFICIAL_KA10001',
+            'updated_ms':int(now.timestamp()*1000),
+            'active_source_count':len(quotes)}
+
+
 def _purge_stale_fields(row):
     # Only the returned UI row changes; the original SQLite and broker
     # event history are untouched. Retain the last ledger valuation separately.
