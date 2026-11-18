@@ -1,5 +1,5 @@
 """Read exact bundled original EXE 82-module core without altering runtime or user data."""
-import ast,base64,io,zipfile
+import ast,base64,io,zipfile,hashlib
 from pathlib import Path
 p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
 blob=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
@@ -11,7 +11,9 @@ with zipfile.ZipFile(io.BytesIO(blob)) as z:
                  'd_gmo_runtime.py','at_close_bridge.py','android_live_bridge.py',
                  'd_engine.py','d_stock_v19.py','d_coin.py','d_gmo.py'):
         if file not in names:continue
-        src=z.read(file).decode()
+        raw=z.read(file)
+        src=raw.decode()
+        print('SOURCE_SHA256',file,hashlib.sha256(raw).hexdigest())
         lines=src.splitlines()
         tree=ast.parse(src)
         print('\nFILE',file,'LINES',len(lines))
@@ -27,13 +29,18 @@ with zipfile.ZipFile(io.BytesIO(blob)) as z:
                         print('METHOD',node.name+'.'+n.name,n.lineno,n.end_lineno)
                         if file in ('d_live.py','stock_ma_engine.py','d_upbit.py','coin_ma_engine.py',
                                     'd_gmo_runtime.py') and n.name in (
-                                  '_tick_job_loop','_new_tick','_pinned_stocks',
+                                  '_tick_job_loop','_gmo_priority_tick_job_loop','_new_tick','_pinned_stocks',
                                   '_ws','_run_ws','_sell','_exit','on_tick',
+                                  '_desired_subscriptions','_register_subscriptions',
+                                  '_v071_feed_worker','_v071_enqueue_feed',
                                   'process_book','_process_exits','manual_sell',
                                   '_ws_loop','_refresh_subscriptions','_dispatch',
                                   'paper_match','paper_match_krx_print_proxy',
+                                  '_minute_exits','_minute_exits_threeleg',
+                                  'process_realtime_tick','_refresh_watched',
                                   '_both_watched_codes','watched_codes',
-                                  '_on_book','_on_trade','_on_tick'):
+                                  '_on_book','_on_trade','_on_tick',
+                                  '_gmo_priority_tick_job_loop'):
                             show=lines[n.lineno-1:min(n.end_lineno,n.lineno+165)]
                             print('--- SOURCE '+node.name+'.'+n.name+' ---')
                             for idx,line in enumerate(show,n.lineno):print(f'{idx:4d}: {line}')
