@@ -14,6 +14,8 @@ on:
       - ARTITRADE_ANDROID/ui_tests/test_new_legacy_1118_workbook.py
       - ARTITRADE_ANDROID/ui_tests/test_new_legacy_1118_ai_basis.py
       - ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py
+      - ARTITRADE_ANDROID/app/src/main/python/market_research_v033.py
+      - ARTITRADE_ANDROID/ui_tests/test_v1118_fresh_score_bootstrap.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -40,7 +42,8 @@ jobs:
             ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py \
             ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py \
             ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py \
-            ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py
+            ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py \
+            ARTITRADE_ANDROID/app/src/main/python/market_research_v033.py
       - name: 11.18 workbook executable policy and persistence tests
         shell: bash
         run: |
@@ -53,6 +56,12 @@ jobs:
           set -euo pipefail
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_new_legacy_1118_ai_basis.py' -v
+      - name: Fresh-epoch market-score worker bootstrap and SQLite reinitialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v1118_fresh_score_bootstrap.py' -v
       - name: Install the original EXE runtime's harmless import dependencies
         run: python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
       - name: Unpack and introspect the EXACT bundled original trading engines
