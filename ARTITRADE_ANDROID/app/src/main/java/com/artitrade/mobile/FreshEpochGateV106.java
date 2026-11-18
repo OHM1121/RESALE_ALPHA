@@ -26,6 +26,16 @@ final class FreshEpochGateV106 {
 
     static boolean hasMarker(Context c){return marker(c).exists();}
 
+    /**
+     * This new source is a fresh-PAPER-epoch-only build. Before its very first
+     * strategy startup, ALL previous PAPER histories must be removed. This
+     * is not a legacy-position migration and cannot be skipped.
+     */
+    static boolean mandatoryFreshStartPending(Context c)throws Exception{
+        JSONObject saved=read(c);
+        return saved==null||!"COMMITTED".equals(saved.optString("state"));
+    }
+
     static JSONObject read(Context c) throws Exception{
         File f=marker(c);
         if(!f.isFile())return null;
