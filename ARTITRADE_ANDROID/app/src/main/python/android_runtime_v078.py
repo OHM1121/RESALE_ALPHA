@@ -2385,6 +2385,84 @@ def ledger_audit(manifest_json):
 from stock_at_catchup_v086 import install as _install_stock_at_catchup_v086
 _install_stock_at_catchup_v086()
 
+def quote_snapshot_v089():
+    """Fast VIEW-ONLY stock/coin price plane from existing WS memories.
+
+    No REST, no websocket subscription, no SQLite reads/writes, no trading
+    decision, no synthetic fill. REST-sourced coin marks are explicitly NOT
+    presented as verified WS trades. Keep this bounded and cheap so market
+    order / strategy worker synchronization retains priority.
+    """
+    rt=getattr(_core,'_RUNTIME',None)
+    now=time.monotonic()
+    wall=time.time()
+    stock={'quotes':{},'revision':''}
+    coin={'quotes':{},'revision':''}
+    if rt is not None:
+        try:
+            from stock_quote_truth_v066 import live_quote_snapshot
+            stock=live_quote_snapshot(getattr(rt,'stock_runner',None))
+        except Exception as exc:
+            stock={'quotes':{},'revision':'','error':type(exc).__name__}
+        try:
+            cr=getattr(rt,'coin_runner',None)
+            if cr is not None:
+                lock=getattr(cr,'_v084_tick_lock',None)
+                if lock is not None:
+                    with lock:
+                        delivered=dict(getattr(cr,'_v084_tick_delivered',{}) or {})
+                else:
+                    delivered=dict(getattr(cr,'_v084_tick_delivered',{}) or {})
+                prices=dict(getattr(cr,'latest_prices',{}) or {})
+                priorities=set(getattr(cr,'_held_codes',set()) or ())
+                priorities.update(getattr(cr,'tracked',set()) or ())
+                # Freshly delivered actual WS ticks are more important than
+                # non-held REST-only marks. Do not force 200+ network requests.
+                priorities.update(code for code,row in delivered.items()
+                    if isinstance(row,(tuple,list)) and len(row)>1 and
+                    0<=now-float(row[1])<15.0)
+                codes=[x for x in sorted(priorities)
+                    if isinstance(x,str) and x.startswith('KRW-') and x in prices]
+                if len(codes)<220:
+                    codes.extend(x for x in sorted(prices) if isinstance(x,str)
+                        and x.startswith('KRW-') and x not in priorities)
+                ws_connected=bool(getattr(cr,'_ws_connected',False) and
+                    float(getattr(cr,'_ws_last_frame',0) or 0)>0 and
+                    now-float(getattr(cr,'_ws_last_frame',0) or 0)<15.0)
+                out={}
+                for code in codes[:220]:
+                    try:
+                        px=float(prices[code])
+                        if not (math.isfinite(px) and px>0):continue
+                        row=delivered.get(code)
+                        age=now-float(row[1]) if isinstance(row,(tuple,list)) and len(row)>1 else None
+                        if age is not None and (age<0 or age>86400):age=None
+                        if age is not None and ws_connected and age<=8.0:
+                            status='WS_FRESH'
+                            source='UPBIT_WS_TRADE'
+                        elif age is not None:
+                            status='LAST_WS'
+                            source='UPBIT_WS_LAST_TRADE'
+                        else:
+                            status='REST_OR_STORED'
+                            source='UPBIT_REST_OR_PERSISTED_MARK_NOT_WS'
+                        out[code]={'price':px,'status':status,'source':source,
+                            'received_at_ms':int((wall-age)*1000) if age is not None else 0,
+                            'age_ms':int(age*1000) if age is not None else None}
+                    except (ValueError,TypeError,OverflowError,IndexError):
+                        continue
+                coin={'quotes':out,'ws_connected':ws_connected}
+        except Exception as exc:
+            coin={'quotes':{},'error':type(exc).__name__}
+    # Exclude the sample clock from the revision: an unchanged feed should
+    # not trigger a SharedPreferences disk write every 900 milliseconds.
+    fixed={'stock':stock.get('quotes',{}),'coin':coin.get('quotes',{})}
+    revision=hashlib.sha1(json.dumps(fixed,sort_keys=True,
+        ensure_ascii=False,default=str,separators=(',',':')).encode('utf8')).hexdigest()
+    return json.dumps({'schema':'ARTITRADE_FAST_QUOTE_V089','sampled_at_ms':int(wall*1000),
+        'revision':revision,'stock':stock,'coin':coin},
+        ensure_ascii=False,default=str,separators=(',',':'))
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
