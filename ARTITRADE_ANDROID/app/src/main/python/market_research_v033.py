@@ -12,6 +12,7 @@ import sqlite3
 import statistics
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 
@@ -647,43 +648,50 @@ def _yahoo_current_index_change(name,symbol,now=None):
 
 
 def _fetch_stock():
-    changes={};history={};failed=[];naver_used=[];intraday_used=[]
-    for name,symbol in _PUBLIC.items():
-        # During the regular KRX session, domestic scores must use a
-        # CURRENT index snapshot. Yahoo's 1d daily-close chart can return
-        # yesterday/previous trading day yet still return HTTP 200.
+    """Independent public indicator fetches. Never use stale domestic closes."""
+    def one_factor(item):
+        name,symbol=item
+        changes={};prices=None;miss=[];naver=[];intraday=[];errors=[]
         if name in ('KOSPI','KOSDAQ'):
-            value=_domestic_index_fallback(name)
-            if value is not None:
-                changes[name]=round(value,4)
-                naver_used.append(name)
+            val=_domestic_index_fallback(name)
+            if val is not None:
+                changes[name]=round(val,4);naver.append(name)
             else:
-                value=_yahoo_current_index_change(name,symbol)
-                if value is not None:
-                    changes[name]=round(value,4)
-                    intraday_used.append(name)
-        prices=None
+                val=_yahoo_current_index_change(name,symbol)
+                if val is not None:
+                    changes[name]=round(val,4);intraday.append(name)
         for host in ('query1.finance.yahoo.com','query2.finance.yahoo.com'):
             try:
-                result=_public_json(
+                raw=_public_json(
                     'https://'+host+'/v8/finance/chart/'+quote(symbol,safe=''),
                     {'interval':'1d','range':'2mo'})
-                data=result['chart']['result'][0]
-                closes=[finite(v) for v in (
-                    data['indicators']['quote'][0].get('close') or [])]
-                prices=[v for v in closes if v is not None and v>0]
-                if len(prices)>=2:break
-            except Exception:
-                prices=None
-        if not prices or len(prices)<2:
-            if name not in changes:failed.append(name)
-            continue
-        history[name]=prices
-        if name not in ('KOSPI','KOSDAQ'):
+                data=raw['chart']['result'][0]
+                vals=[finite(v) for v in
+                    (data['indicators']['quote'][0].get('close') or [])]
+                candidate=[v for v in vals if v is not None and v>0]
+                if len(candidate)>=2:
+                    prices=candidate;break
+            except Exception as exc:
+                errors.append(host+':'+type(exc).__name__)
+        if not prices:
+            if name not in changes:miss.append(name)
+        elif name not in ('KOSPI','KOSDAQ'):
             changes[name]=round((prices[-1]/prices[-2]-1)*100,4)
         elif name not in changes:
-            # Avoid presenting historical KRX closes as a current score.
-            failed.append(name)
+            miss.append(name)
+        return name,changes,prices,miss,naver,intraday,errors
+
+    changes={};history={};failed=[];naver_used=[];intraday_used=[];issues={}
+    # Public source timeouts are isolated; one blocked Yahoo endpoint should
+    # not make all other market factors wait serially for many minutes.
+    with ThreadPoolExecutor(max_workers=4,
+                            thread_name_prefix='artitrade-score-factor') as pool:
+        observed=list(pool.map(one_factor,tuple(_PUBLIC.items())))
+    for name,values,prices,miss,naver,intraday,errors in observed:
+        changes.update(values)
+        if prices:history[name]=prices
+        failed.extend(miss);naver_used.extend(naver);intraday_used.extend(intraday)
+        if errors and name in miss:issues[name]=';'.join(errors)[-190:]
     kospi=history.get('KOSPI') or []
     if len(kospi)>=6:
         changes['KOSPI5']=round((kospi[-1]/kospi[-6]-1)*100,4)
@@ -693,9 +701,11 @@ def _fetch_stock():
     scored['received']=sorted(changes)
     scored['naver_fallback']=naver_used
     scored['intraday_verified']=intraday_used
-    scored['missing']=failed
+    scored['missing']=sorted(set(failed))
+    scored['source_errors']=issues
     if scored['score'] is None:
-        scored['status']='현재 KOSPI/KOSDAQ 시세 미수신 · 다음 조회 재시도'
+        names=','.join(k for k in ('KOSPI','KOSDAQ') if k not in changes)
+        scored['status']='현재 KOSPI/KOSDAQ 시세 미수신 ('+names+') · 다음 조회 재시도'
     return scored
 
 
@@ -764,8 +774,12 @@ def _fetch_coin():
         scored['fresh_ticker_count']=len(tickers)
         scored['received_at']=int(time.time())
     except Exception as exc:
+        response=getattr(exc,'response',None)
+        code=getattr(response,'status_code',None)
+        reason=type(exc).__name__+((' HTTP '+str(code)) if code else '')
         scored={"score":None,"coverage":0,"factors":[],
-                "status":"업비트 시세 확인 실패: "+type(exc).__name__}
+                "status":"업비트 시세 확인 실패: "+reason,
+                "source_error":reason,"received_at":int(time.time())}
     scored["source"]="Upbit KRW public tickers and BTC/ETH daily candles"
     return scored
 
@@ -781,6 +795,7 @@ class _MarketWorker:
         self._last_failure={}
         self._stop=threading.Event()
         self._fetch_threads=[]
+        self._fetch_jobs={}
         self._thread=threading.Thread(target=self._loop,daemon=True,
             name="artitrade-market-ledger-v038")
         self._thread.start()
@@ -797,6 +812,15 @@ class _MarketWorker:
         """Used by deterministic regression tests; app daemon normally remains alive."""
         self._stop.set()
         self._thread.join(timeout=8)
+
+    def _start_fetch_thread(self,ledger,market,fetch):
+        # The market publisher may outlive a dead child fetch worker.
+        thread=threading.Thread(target=self._fetch_loop,
+            args=(ledger,market,fetch),daemon=True,
+            name="artitrade-"+market+"-market-score-v005")
+        self._fetch_jobs[market]=(fetch,thread)
+        self._fetch_threads.append(thread)
+        thread.start()
 
     def _fetch_loop(self,ledger,market,fetch):
         # Stock 3min, crypto 60sec even on weekends/holidays.
@@ -851,12 +875,12 @@ class _MarketWorker:
                     self._cache[market]=display_snapshot(
                         market,ledger.snapshot(market))
             for market,fetch in (("coin",_fetch_coin),("stock",_fetch_stock)):
-                thread=threading.Thread(target=self._fetch_loop,
-                    args=(ledger,market,fetch),daemon=True,
-                    name="artitrade-"+market+"-market-score-v038")
-                self._fetch_threads.append(thread)
-                thread.start()
+                self._start_fetch_thread(ledger,market,fetch)
             while not self._stop.is_set():
+                for market,(fetch,thread) in tuple(self._fetch_jobs.items()):
+                    if not thread.is_alive() and not self._stop.is_set():
+                        self._last_failure[market]="시장자료 수집 스레드 재연결 중"
+                        self._start_fetch_thread(ledger,market,fetch)
                 with self._cache_lock:
                     pending=self._pending
                 holdings=_extract_positions(pending or {})
@@ -921,6 +945,31 @@ def ensure_worker(root):
             worker=_MarketWorker(path)
             _WORKERS[path]=worker
     return worker
+
+
+def compact_snapshot(root):
+    """Lightweight UI-only score plane, never used for fill history.
+
+    Only score_events/score_at in SQLite own trade-time score attribution.
+    No position, performance sample, order or fake score is created here.
+    """
+    worker=ensure_worker(root)
+    snapshots=worker.snapshot()
+    keys=('score','asof','active_band','coverage','factors','bands',
+          'status','stale','market_open','poll_error','source',
+          'sample_count','source_error','missing','received',
+          'intraday_verified','naver_fallback','source_errors',
+          'fresh_ticker_count')
+    result={'schema':'ARTITRADE_MARKET_SCORE_PLANE_V005',
+            'generated_at_ms':int(time.time()*1000)}
+    for market in ('stock','coin'):
+        raw=snapshots.get(market) or {}
+        row={k:raw[k] for k in keys if k in raw}
+        if finite(row.get('score')) is None or row.get('stale',True):
+            row['score']=None
+            row['active_band']=None
+        result[market]=row
+    return result
 
 
 def offer_records(root,records):
