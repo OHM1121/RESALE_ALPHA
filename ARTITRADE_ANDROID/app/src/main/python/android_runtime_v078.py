@@ -2356,6 +2356,12 @@ def ledger_audit(manifest_json):
         return json.dumps({'ok':False,'message':type(exc).__name__+': '+str(exc)[:240],
             'files_checked':0},ensure_ascii=False)
 
+# v086: permit exact 3LEG31 stock AT stage1+stage2 catch-up from one
+# post-disconnect genuine KRX 0B, with native same-SQLite SELL evidence.
+# No replay of stale OHLCV and no new real brokerage permission.
+from stock_at_catchup_v086 import install as _install_stock_at_catchup_v086
+_install_stock_at_catchup_v086()
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
