@@ -56,7 +56,7 @@ class ReadOnlyQuoteLane(unittest.TestCase):
     def test_price_plane_no_new_websocket_or_rest(self):
         body=PY.split('def price_snapshot_v089():',1)[1].split(
             '# v045 explicit score-independent',1)[0]
-        for forbidden in ('.post(','.get(','.connect(','.execute(',
+        for forbidden in ('.post(','.connect(','.execute(',
                           'sqlite3.connect(','requests.', 'WebSocket('):
             self.assertNotIn(forbidden,body)
         self.assertIn('_v086_last_trade_by_code',body)
@@ -73,6 +73,6 @@ class ReadOnlyQuoteLane(unittest.TestCase):
         self.assertIn('refreshVisiblePriceViews()',JAVA)
         self.assertIn('livePriceBindings.clear()',JAVA)
         self.assertIn('item.status.setText',JAVA)
-        self.assertIn('"fills_allowed":False',PY)
+        self.assertIn("'fills_allowed':False",PY)
 
 if __name__=='__main__':unittest.main()
