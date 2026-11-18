@@ -1,0 +1,16 @@
+name: ARTITRADE v086 forensic stock PAPER manual owner and WS quote
+on:
+  push:
+    branches: [fix-artitrade-v086-stock-manual-all-strategies-20261118]
+    paths:
+      - 'ARTITRADE_ANDROID/ui_tests/forensic_v086_stock_manual_core.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  original:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python3 ARTITRADE_ANDROID/ui_tests/forensic_v086_stock_manual_core.py
