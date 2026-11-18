@@ -281,6 +281,7 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject quotes=marketPrices==null?null:marketPrices.optJSONObject("quotes");
             JSONObject quote=quotes==null?null:quotes.optJSONObject(item.code);
             if(quote==null){
+                item.amount.setText(item.prefix+"가격 조회 중"+item.suffix);
                 item.status.setText("실시간 수신 미확인 · 이전 원장 평가가는 최신가 아님");
                 continue;
             }
@@ -299,7 +300,10 @@ public final class UnifiedVisualActivity extends Activity {
                 time=time.substring(11,19)+" 체결";
             }
             String venue=quote.optString("venue","");
+            boolean officialRest="stock".equals(item.market)&&
+                quote.optString("source","").contains("REST");
             String label=(fresh?"실시간 "+source+" WS":
+                officialRest?source+" 공식 REST 조회값(실시간 WS 아님)":
                 "마지막 "+source+" 시세(실시간 아님)");
             if("stock".equals(item.market)&&!venue.isEmpty())
                 label+=" · "+venue;
