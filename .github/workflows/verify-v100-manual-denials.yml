@@ -7,6 +7,7 @@ on:
       - 'ARTITRADE_ANDROID/app/src/main/python/android_manual_paper_sell_v085.py'
       - 'ARTITRADE_ANDROID/app/src/main/python/stock_at_policy_reconcile_v091.py'
       - 'ARTITRADE_ANDROID/ui_tests/test_v100_manual_denial_and_targets.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v100_d19_native_manual_exit.py'
   workflow_dispatch:
 permissions: {contents: read}
 jobs:
@@ -38,6 +39,7 @@ jobs:
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v100-original-core:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v100_manual_denial_and_targets.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v100_d19_native_manual_exit.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v091_d19_original_at_reconnect_and_portrait.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_stock_manual_all.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_manual_0d_sell.py' -v
