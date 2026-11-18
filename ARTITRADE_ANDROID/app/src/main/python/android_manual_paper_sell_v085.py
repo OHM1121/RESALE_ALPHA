@@ -14,6 +14,7 @@ from decimal import Decimal
 from uuid import UUID
 import json
 import math
+import re
 import time
 from pathlib import Path
 
@@ -287,5 +288,13 @@ def perform(raw):
         return json.dumps({'ok':True,'market':market,'strategy':strategy,'code':code,
             'request_id':request_id,'status':status,**filled},
             ensure_ascii=False,default=str)
+    except ValueError as exc:
+        # Surface the native stock/coin order and ledger blocker instead of
+        # showing every verified no-fill as the generic "ValueError".
+        # Never turn an exception into an executed PAPER SELL receipt.
+        reason=str(exc).strip()
+        if re.fullmatch(r'[A-Z][A-Z0-9_]{3,95}',reason):
+            return _fail(reason,reason)
+        return _fail('INVALID_MANUAL_VALUE',reason)
     except Exception as exc:
         return _fail(type(exc).__name__,str(exc))
