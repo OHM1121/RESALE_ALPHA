@@ -1975,62 +1975,21 @@ def _hub_records_v078(self,for_ui=False):
                 except Exception as original_error:
                     self._err('gmo_original_research_parity',original_error)
         else:
-            # The same PC import already holds the GMO originals. Display their
-            # verified original state even if the live GMO service is not ready.
-            try:
-                restored=_gmo_original_record(self.root)
-                if restored is not None:
-                    source_ledger,source_research=restored
-                    stock=out.setdefault('stock',{}).setdefault('at',{})
-                    stock.setdefault('ledger',{})['gmo']=source_ledger
-                    stock.setdefault('research',{})['gmo']=source_research
-                else:
-                    pass
-            except Exception as gmo_exc:
-                self._err('gmo_original_record',gmo_exc)
-                restored=None
-            if restored is not None:
-                try:
-                    from market_research_v033 import offer_records
-                    out['market_research']=offer_records(self.root,out)
-                except Exception as score_error:
-                    self._err('market_research_v033',score_error)
-                return _serialize_hub_v104(out,for_ui)
-            # Do not report an empty GMO screen as a successful PC ledger load.
-            # Read-only source-file diagnostics distinguish absent data from
-            # a strategy engine which has not initialized its account state.
-            gmo_root=Path(self.root)/'stock'
-            present=[name for name in ('PROJECTGMO_V1.0_research.sqlite3',
-                'PROJECTGMO_V1.0_account_state.json') if (gmo_root/name).is_file()]
+            # Fresh PAPER epoch has NO old PC GMO positions or prior scores.
+            # An uninitialized native GMO engine is genuinely not ready;
+            # querying old files for restoration here could revive stale
+            # 2026-11-14 history or double-load a previously deleted wallet.
             stock=out.setdefault('stock',{}).setdefault('at',{})
-            stock.setdefault('ledger',{}).setdefault('gmo',{})
-            stock['ledger']['gmo']['load_diagnostic']={
-                'stage':'ENGINE_NOT_READY' if present else 'PC_SOURCE_NOT_PRESENT',
-                'files_present':present,'files_expected':2,
-                'message':'GMO original file present but its runtime is not ready'
-                          if present else 'No GMO original files located in phone root'
-            }
-            research=stock.setdefault('research',{})
-            if not isinstance(research.get('gmo'),dict):
-                state=_research_source_audit(Path(self.root)/'stock'/
-                    'PROJECTGMO_V1.0_research.sqlite3','gmo_candidates',
-                    ('gmo_events','gmo_fills','gmo_position_history'))
-                research['gmo']={'items':[],'score_items':[],'bands':[],
-                    'origin':'IMPORTED_PC_AND_PHONE','load_status':'ENGINE_NOT_READY',
-                    'loaded_items':0,**state}
+            stock.setdefault('ledger',{})['gmo']={
+                'load_diagnostic':{'stage':'ENGINE_NOT_READY',
+                                   'message':'NATIVE_GMO_ENGINE_START_PENDING'}}
+            stock.setdefault('research',{})['gmo']={
+                'items':[],'load_status':'ENGINE_NOT_READY',
+                'source':'FRESH_NATIVE_GMO_ONLY'}
     except Exception as exc:
         self._err('hub_records_v078',exc)
-        try:
-            restored=_gmo_original_record(self.root)
-            if restored is not None:
-                original_ledger,original_research=restored
-                stock=out.setdefault('stock',{}).setdefault('at',{})
-                ledger=stock.setdefault('ledger',{})
-                ledger['gmo']=_merge_gmo_pc_evidence(
-                    ledger.get('gmo') or {},original_ledger)
-                stock.setdefault('research',{})['gmo']=original_research
-        except Exception as recovery_error:
-            self._err('hub_records_gmo_last_resort',recovery_error)
+        # Never read an old imported PC GMO database to fill holes in a
+        # failed current wallet snapshot; leave the error visible.
         try:
             # Passive, read-only worker. Network and SQLite work only on its
             # daemon thread; this hub snapshot/order thread only enqueues.
