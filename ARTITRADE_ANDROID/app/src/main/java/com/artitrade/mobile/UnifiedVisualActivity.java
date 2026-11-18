@@ -878,13 +878,13 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        // The installed APK is the source of truth after an in-place update.
-        String version="0.7.44";
+        // Show the installed version only; no market, mode, or feature suffix.
+        String version="";
         try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}
-        if(version==null||version.isEmpty())version="버전 확인 중";
+        if(version==null||version.isEmpty())return "버전 확인 중";
         int dash=version.indexOf('-');
         if(dash>0)version=version.substring(0,dash);
-        return "v"+version+" · "+(integratedMode?"통합":("stock".equals(market)?"주식":"코인"));
+        return "v"+version;
     }
 
     private void showShell(){
@@ -4760,109 +4760,18 @@ public final class UnifiedVisualActivity extends Activity {
         },"artitrade-full-ledger-export").start();
     }
 
+    /** Legacy research button shares the verified multipart SAF-folder path. */
     private void exportResearch(Stats st){
-        if(fullExportRunning.get()){
-            new AlertDialog.Builder(this).setTitle("백업 진행 중")
-                .setMessage("기존 백업이 끝난 뒤 다시 추출할 수 있습니다.")
-                .setPositiveButton("확인",null).show();
-            return;
-        }
-        try{
-            JSONObject rs=research(market,strategy);
-            JSONObject summary=new JSONObject()
-                .put("schema","ARTITRADE_RESEARCH_FULL_SOURCE_V079")
-                .put("market",market)
-                .put("strategy",strategy)
-                .put("strategy_name",strategyName(market,strategy))
-                .put("exported_at_kst",new SimpleDateFormat(
-                    "yyyy-MM-dd HH:mm:ss",Locale.KOREA).format(new Date())+" KST")
-                .put("source_total",rs.optInt("source_total",-1))
-                .put("displayed_preview_rows",rs.optInt("loaded_items",st.research.length()))
-                .put("preview_can_be_truncated",rs.optBoolean("partial_window",false))
-                .put("actual_research",rs.optJSONObject("actual_summary"))
-                .put("virtual_research",rs.optJSONObject("virtual_summary"))
-                .put("score_bands",rs.optJSONArray("bands"))
-                .put("evidence_table_counts",rs.optJSONObject("evidence_counts"))
-                .put("note","화면 일부 조회와 무관하게 stock/·coin/ 원본 SQLite 전체를 ZIP에 포함");
-            JSONObject reports=new JSONObject();
-            reports.put("analysis/research_summary.json",summary.toString(2));
-            String preview=rs.toString();
-            if(preview.getBytes(StandardCharsets.UTF_8).length<7*1024*1024){
-                reports.put("analysis/research_preview.json",preview);
-            }
-            reports.put("analysis/reason_guide_ko.txt",
-                "매수 원인: 원본 신호·점수·진입조건 기록을 기준으로 확인\n"+
-                "매도 원인: 원본 실제 체결의 reason / purpose / exit_reason 확인\n"+
-                "가상 연구: shadow / forward / milestone 등 별도 원본 테이블 확인\n"+
-                "체결시각: 원본의 UTC 시간대 정보가 있으면 한국시간(KST)으로 변환\n"+
-                "실제 매도가 없는 고가 접촉은 실제 매도 성공으로 처리하지 않음\n"+
-                "연구화면의 최근 표시건수와 ZIP의 전체 원본건수는 다를 수 있음\n");
-            pendingResearchReports=reports.toString();
-            pendingResearchExport=null; // Old preview-only in-memory ZIP is not full evidence.
-            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA)
-                .format(new Date());
-            beginPreparedLedgerExport(REQUEST_EXPORT_RESEARCH,
-                "ARTITRADE_"+market+"_"+strategy+
-                "_RESEARCH_ALL_ORIGINALS_"+stamp+".zip",
-                pendingResearchReports,"research");
-            pendingResearchReports=null;
-        }catch(Exception e){
-            pendingResearchReports=null;
-            new AlertDialog.Builder(this).setTitle("연구자료 추출 실패")
-                .setMessage(String.valueOf(e.getMessage()))
-                .setPositiveButton("확인",null).show();
-        }
+        requestCombinedResearch("coin".equals(market)?"coin":"stock");
     }
 
     /** Export the original error SQLite/JSON records, not just visible cards.
      * No user credential fields or market orders are created by this export.
      * The existing full-ledger backup verifies the saved ZIP with SHA-256.
      */
+    /** Legacy error ZIP button must never produce an oversized single file. */
     private void requestErrorHistoryExport(){
-        if(fullExportRunning.get()){
-            new AlertDialog.Builder(this).setTitle("오류이력 추출 진행 중")
-                .setMessage("기존 ZIP 추출 완료 후 다시 실행할 수 있습니다.")
-                .setPositiveButton("확인",null).show();
-            return;
-        }
-        try{
-            JSONObject snapshot=copyCache();
-            JSONArray records=marketErrors();
-            JSONObject runtime=snapshot.optJSONObject("strategy_runtime");
-            JSONObject feed=runtime==null?null:runtime.optJSONObject("stock_feed");
-            JSONObject trend=runtime==null?null:runtime.optJSONObject("market_trend_status");
-            JSONObject summary=new JSONObject()
-                .put("schema","ARTITRADE_ERROR_HISTORY_V071")
-                .put("market",market)
-                .put("exported_at_kst",new SimpleDateFormat(
-                    "yyyy-MM-dd HH:mm:ss",Locale.KOREA).format(new Date())+" KST")
-                .put("displayed_error_rows",records.length())
-                .put("preview_may_be_truncated",true)
-                .put("source","현재 UI 진단 기록 + 기존 전체 원본 SQLite/JSON 무결성 백업")
-                .put("stock_feed",feed==null?new JSONObject():feed)
-                .put("market_trend_status",trend==null?new JSONObject():trend);
-            JSONObject reports=new JSONObject();
-            reports.put("analysis/error_history_summary.json",summary.toString(2));
-            reports.put("analysis/error_history_visible.json",records.toString(2));
-            reports.put("analysis/error_history_guide_ko.txt",
-                "화면에 표시된 오류는 최근·중복제거 기록으로 원본 전체와 다를 수 있음\\n"+
-                "ZIP의 원본 SQLite/JSON에서 주식 종가베팅·MA·수급매매·마켓트렌드·실시간 스트림 오류를 확인\\n"+
-                "REST 인증 성공과 WebSocket 실체결 수신은 별개의 상태임\\n"+
-                "TICK_PROCESS_DELAY 등 오류는 체결 실패와 반드시 일대일 대응하지 않음\\n"+
-                "실제 매수·매도는 주문/체결 원장의 확인된 기록으로만 판단\\n");
-            pendingErrorsReports=reports.toString();
-            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
-            beginPreparedLedgerExport(REQUEST_EXPORT_ERRORS,
-                "ARTITRADE_"+market+
-                "_ERROR_HISTORY_ALL_ORIGINALS_"+stamp+".zip",
-                pendingErrorsReports,"errors");
-            pendingErrorsReports=null;
-        }catch(Exception e){
-            pendingErrorsReports=null;
-            new AlertDialog.Builder(this).setTitle("오류이력 ZIP 준비 실패")
-                .setMessage(e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()))
-                .setPositiveButton("확인",null).show();
-        }
+        requestScopedErrorExport("coin".equals(market)?"coin":"stock");
     }
 
     private File scopedErrorCancelMarker(){
@@ -4924,7 +4833,7 @@ public final class UnifiedVisualActivity extends Activity {
         getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE).edit()
             .putString("errors",scope).commit();
         exportStage("errors","SELECT_DIR","오류 ZIP 저장 폴더 선택",0,
-            "원본 주식·코인 오류자료를 파일당 500MB 이하로 분할",true,false);
+            "원본 주식·코인 오류자료를 파일당 95MB 이하로 분할",true,false);
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
@@ -4953,6 +4862,61 @@ public final class UnifiedVisualActivity extends Activity {
         startActivityForResult(picker,REQUEST_EXPORT_COMBINED_RESEARCH);
     }
 
+    /** Every exported ZIP part must be below 100 MB for file transfer tools. */
+    private static final long GPT_SAFE_ZIP_PART_BYTES=95_000_000L;
+
+
+    /** Store the same small, digest-verified JSON beside all ZIP pieces.
+      * Plain JSON can be read by the file service even when code execution
+      * and compressed ZIP extraction are unavailable. It is NOT a trade fill.
+      */
+    private void copyAnalysisSidecarToFolder(
+            File folder,Uri parent,JSONObject info,java.util.List<Uri> newDocuments,
+            boolean allowErrorCancel) throws Exception{
+        JSONObject meta=info.optJSONObject("analysis_file");
+        if(meta==null)throw new IOException("분석용 JSON 파일 목록 누락");
+        String name=meta.getString("name");
+        if(!name.matches("ARTITRADE_[A-Z]+_(ERROR_HISTORY|RESEARCH)_[A-Za-z0-9_]+_ANALYSIS_READY\\.json"))
+            throw new SecurityException("분석용 JSON 파일명 형식 오류");
+        File source=new File(folder,name).getCanonicalFile();
+        if(!source.getParentFile().equals(folder.getCanonicalFile()))
+            throw new SecurityException("분석 JSON 저장 위치가 임시폴더 외부");
+        long expectedSize=meta.getLong("bytes");
+        String sha=meta.getString("sha256");
+        if(!source.isFile()||expectedSize<=0L||expectedSize>2_000_000L||
+                expectedSize!=source.length()||!sha.matches("[0-9a-f]{64}"))
+            throw new IOException("분석용 JSON 크기 또는 SHA 정보 오류");
+        Uri target=DocumentsContract.createDocument(getContentResolver(),parent,
+            "application/json",name);
+        if(target==null)throw new IOException("분석용 JSON 문서 생성 실패");
+        newDocuments.add(target);
+        MessageDigest transfer=MessageDigest.getInstance("SHA-256");
+        try(InputStream in=new FileInputStream(source);
+            OutputStream out=getContentResolver().openOutputStream(target,"w")){
+            if(out==null)throw new IOException("분석용 JSON 저장 스트림 없음");
+            byte[] buffer=new byte[64*1024];int n;
+            while((n=in.read(buffer))!=-1){
+                if(allowErrorCancel)checkScopedErrorCancel();
+                out.write(buffer,0,n);transfer.update(buffer,0,n);
+            }
+            out.flush();
+        }
+        if(!sha.equalsIgnoreCase(hex(transfer.digest())))
+            throw new IOException("분석용 JSON 복사 SHA-256 불일치");
+        MessageDigest stored=MessageDigest.getInstance("SHA-256");
+        long size=0;
+        try(InputStream in=getContentResolver().openInputStream(target)){
+            if(in==null)throw new IOException("분석용 JSON 재조회 실패");
+            byte[] buffer=new byte[64*1024];int n;
+            while((n=in.read(buffer))!=-1){
+                if(allowErrorCancel)checkScopedErrorCancel();
+                stored.update(buffer,0,n);size+=n;
+            }
+        }
+        if(size!=expectedSize||!sha.equalsIgnoreCase(hex(stored.digest())))
+            throw new IOException("분석용 JSON 최종 해시 불일치");
+    }
+
     private void exportCombinedResearchToFolder(Uri tree,String scope){
         if(!fullExportRunning.compareAndSet(false,true))return;
         exportStage("research","PREPARE","원본 연구자료 준비",2,
@@ -4977,7 +4941,7 @@ public final class UnifiedVisualActivity extends Activity {
                 File runtime=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
                 String raw=Python.getInstance().getModule("android_research_bundle")
                     .callAttr("make_bundle",runtime.getAbsolutePath(),
-                        folder.getAbsolutePath(),scope,500_000_000,
+                        folder.getAbsolutePath(),scope,GPT_SAFE_ZIP_PART_BYTES,
                         progressFile.getAbsolutePath()).toString();
                 JSONObject info=new JSONObject(raw);
                 if(!info.optBoolean("ok")||info.optInt("parts")<=0)
@@ -4997,8 +4961,8 @@ public final class UnifiedVisualActivity extends Activity {
                         throw new SecurityException("안전하지 않은 출력 파일명");
                     File source=new File(folder,filename);
                     if(!source.isFile()||source.length()!=item.getLong("bytes")||
-                       source.length()>500_000_000L)
-                        throw new IOException("500MB 한도 또는 원본 파일 크기 검사 실패");
+                       source.length()>GPT_SAFE_ZIP_PART_BYTES)
+                        throw new IOException("95MB 한도 또는 원본 파일 크기 검사 실패");
                     Uri saved=DocumentsContract.createDocument(getContentResolver(),
                         parent,"application/zip",filename);
                     if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
@@ -5030,13 +4994,14 @@ public final class UnifiedVisualActivity extends Activity {
                         String.format(Locale.KOREA,"%d/%d파트 · %,d바이트 검증",
                             i+1,parts.length(),verified),true,false);
                 }
+                copyAnalysisSidecarToFolder(folder,parent,info,newDocuments,false);
                 exportStage("research","DONE","연구 ZIP 저장 완료",100,
                     String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
                     false,false);
                 fullLedgerExportResult(true,
                     ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
                     " 연구이력 "+parts.length()+"개 ZIP 저장 완료\n"+
-                    "각 파일 500MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "각 ZIP 95MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
                     "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
                     "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",true);
             }catch(Throwable e){
@@ -5112,7 +5077,7 @@ public final class UnifiedVisualActivity extends Activity {
                     health.getLong("last_checked_exit_ms",0L));
                 String raw=Python.getInstance().getModule("android_research_bundle")
                     .callAttr("make_bundle",runtime.getAbsolutePath(),
-                        folder.getAbsolutePath(),scope,500_000_000,
+                        folder.getAbsolutePath(),scope,GPT_SAFE_ZIP_PART_BYTES,
                         progressFile.getAbsolutePath(),"errors",
                         nativeReport.toString(),cancelMarker.getAbsolutePath()).toString();
                 checkScopedErrorCancel();
@@ -5135,8 +5100,8 @@ public final class UnifiedVisualActivity extends Activity {
                         throw new SecurityException("안전하지 않은 출력 파일명");
                     File source=new File(folder,filename);
                     if(!source.isFile()||source.length()!=item.getLong("bytes")||
-                       source.length()>500_000_000L)
-                        throw new IOException("500MB 한도 또는 원본 파일 크기 검사 실패");
+                       source.length()>GPT_SAFE_ZIP_PART_BYTES)
+                        throw new IOException("95MB 한도 또는 원본 파일 크기 검사 실패");
                     Uri saved=DocumentsContract.createDocument(getContentResolver(),
                         parent,"application/zip",filename);
                     if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
@@ -5181,13 +5146,14 @@ public final class UnifiedVisualActivity extends Activity {
                             i+1,parts.length(),verified),true,false);
                 }
                 checkScopedErrorCancel();
+                copyAnalysisSidecarToFolder(folder,parent,info,newDocuments,true);
                 exportStage("errors","DONE","오류 ZIP 저장 완료",100,
                     String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
                     false,false);
                 fullLedgerExportResult(true,
                     ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
                     " 오류이력 "+parts.length()+"개 ZIP 저장 완료\n"+
-                    "각 파일 500MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "각 ZIP 95MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
                     "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
                     "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",false,"오류이력 분할 ZIP 추출");
             }catch(Throwable e){
