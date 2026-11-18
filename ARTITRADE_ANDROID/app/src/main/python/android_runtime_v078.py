@@ -997,8 +997,7 @@ def _ma_pending_diagnostics(self,snap):
 
 def _stock_ma_full(self):
     if not self.stock_runner:
-        return {}
-    snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
+        return {}    snap=_ma_pending_diagnostics(self,self.stock_runner.ma.snapshot() or {})
     perf=snap.get('performance_by_frame') or {}
     from ma_epoch_v062 import stock_active
     db=stock_active(self.root)
@@ -1997,8 +1996,7 @@ def _hub_records_v078(self,for_ui=False):
     except Exception as exc:
         self._err('hub_records_v078',exc)
         # Never read an old imported PC GMO database to fill holes in a
-        # failed current wallet snapshot; leave the error visible.
-        try:
+        # failed current wallet snapshot; leave the error visible.        try:
             # Passive, read-only worker. Network and SQLite work only on its
             # daemon thread; this hub snapshot/order thread only enqueues.
             from market_research_v033 import offer_records
@@ -2016,6 +2014,14 @@ def _hub_records_v078(self,for_ui=False):
         out['market_research']={
             'stock':{'score':None,'status':'시장점수 처리 오류'},
             'coin':{'score':None,'status':'시장점수 처리 오류'}}
+    # Read-only source freshness diagnostics: one KRX 0B/0D status, Upbit
+    # WS-vs-REST distinction and original public score factor failures.
+    # No second market socket, no order, no persisted wallet mutation.
+    try:
+        from market_feed_health_v004 import snapshot as feed_health
+        out['market_feed_health_v004']=feed_health(self)
+    except Exception as feed_exc:
+        self._err('market_feed_health_v004',feed_exc)
     return _serialize_hub_v104(out,for_ui)
 
 def _stock_at_ledger_v19(self):
