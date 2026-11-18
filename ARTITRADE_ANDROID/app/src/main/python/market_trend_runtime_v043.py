@@ -994,6 +994,23 @@ class Coordinator:
                             or str(status).startswith(('BROKER:', 'UNSAFE:'))):
                         self._last_fetch_error[market]="SELL:"+status
                     if sold:
+                        # A reconnect/gap can place the first received genuine
+                        # bid above both TP1 and TP2. Consume two CONFIRMED
+                        # native wallet SELLs on that ONE fresh book, with
+                        # distinct reason keys and remaining visible depth.                        # Do not evaluate the third trailing stop on this book.
+                        if (p.qty>0 and result[0]=="MT_TP1" and
+                            getattr(p,'nl1118_policy',None) and
+                            q["bid"]>=p.target2):
+                            second=p.action(q["bid"],now,
+                                bar_finished=bool(p.__dict__.get("bar_finalized")),
+                                bar3_preclose=bool(p.__dict__.get("bar3_preclose")))
+                            if second and second[0]=="MT_TP2":
+                                capacity=max(0,float(q["bid_size"])-float(sold))
+                                if capacity>0:
+                                    next_sold,next_status=owner.sell(
+                                        p,q["bid"],now,"MT_TP2",bid_size=capacity)
+                                    if not next_sold:
+                                        self._last_fetch_error[market]="TP2:"+str(next_status)
                         if result[0]=="MT_STOP_9PCT":
                             p.__dict__["stop_fill_at"]=now.isoformat()
                             if p.strategy=='trend':
