@@ -46,6 +46,12 @@ jobs:
                 if '실주문 및 계좌' in line:
                   print('REAL_ACCOUNT_BLOCK',i+1,'|',' | '.join(lines[max(0,i-3):min(len(lines),i+4)]))
           PY
+      - name: Verify v105 fresh depth fallback remains PAPER-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v105_manual_rest_bid.py' -v
       - name: Existing v094 safety / memory regression
         shell: bash
         run: |
