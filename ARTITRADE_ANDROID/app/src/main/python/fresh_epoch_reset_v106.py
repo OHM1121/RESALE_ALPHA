@@ -197,6 +197,9 @@ def reset(root, *, confirmation, engine_stopped=False,
         return {"status": "ALREADY_COMMITTED", "epoch_id": existing["epoch_id"]}
     candidates, _ = _scan(path)
     _check_real_order_proof(path, candidates)
+    # Even read-only SQLite probes can create -shm coordination sidecars.
+    # Rescan AFTER closing probes; never leave a journal from the old epoch.
+    candidates, _ = _scan(path)
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     record = existing or {"schema": SCHEMA, "epoch_id": str(uuid.uuid4()),
                           "created_at_utc": now, "mode": "PAPER_ONLY"}
