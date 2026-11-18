@@ -907,11 +907,18 @@ public final class UnifiedVisualActivity extends Activity {
         brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         brand.setLetterSpacing(.065f);
         brandLine.addView(brand);
-        if(wideHeader){
-            TextView ver=text("  ·  "+marketVersionLabel(),12);
-            ver.setTextColor(accent());
-            brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(22)));
+        // Show installed APK version directly to the RIGHT of ARTITRADE
+        // in portrait too. Full market caption is kept only on wide screens.
+        String installedVersion=marketVersionLabel();
+        if(!wideHeader){
+            int split=installedVersion.indexOf(" · ");
+            if(split>0)installedVersion=installedVersion.substring(0,split);
         }
+        TextView ver=text("  ·  "+installedVersion,wideHeader?12:11);
+        ver.setTextColor(accent());
+        ver.setSingleLine(true);
+        ver.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(22)));
         brandBox.addView(brandLine,new LinearLayout.LayoutParams(-1,dp(24)));
         top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(24),1));
 
