@@ -32,19 +32,36 @@ final class FreshEpochGateV106 {
      * is not a legacy-position migration and cannot be skipped.
      */
     static boolean mandatoryFreshStartPending(Context c)throws Exception{
-        // A lost marker after a previous COMMITTED epoch must NEVER initiate
-        // another destructive "first launch" reset. The independent prefs
-        // checkpoint survives replacement of the stock/coin SQLite root.
+        // Two independent durable witnesses outlive a replaced stock/coin
+        // folder. Once ANY witness exists, NEVER run reset again, including
+        // when the old marker has reverted to PREPARING with the SAME id.
         String prior=c.getSharedPreferences(CHECKPOINT,Context.MODE_PRIVATE)
             .getString("applied_epoch_id","");
+        String second=c.getSharedPreferences(
+            "artitrade_ledger_guard_v002",Context.MODE_PRIVATE)
+            .getString("epoch_id","");
+        File diskWitness=new File(c.getFilesDir(),
+            "ARTITRADE_LEDGER_GUARD_V002.json");
         JSONObject saved=read(c);
-        if(!prior.isEmpty()&&saved==null)
+        if(!prior.isEmpty()&&!second.isEmpty()&&!prior.equals(second))
             throw new IllegalStateException(
-                "OLD_EPOCH_MARKER_MISSING_KEEP_NEW_LEDGER_AND_BLOCK");
-        if(!prior.isEmpty()&&saved!=null&&
-                !prior.equals(saved.optString("epoch_id")))
-            throw new IllegalStateException(
-                "OLD_EPOCH_MARKER_REPLACED_KEEP_NEW_LEDGER_AND_BLOCK");
+                "INDEPENDENT_EPOCH_WITNESSES_CONFLICT_BLOCK");
+        String remembered=prior.isEmpty()?second:prior;
+        if(!remembered.isEmpty()||diskWitness.isFile()){
+            if(saved==null)
+                throw new IllegalStateException(
+                    "COMMITTED_EPOCH_MARKER_MISSING_NO_REINITIALIZE");
+            if(!"COMMITTED".equals(saved.optString("state")))
+                throw new IllegalStateException(
+                    "COMMITTED_EPOCH_MARKER_REWOUND_TO_PREPARING_NO_RESET");
+            if(!remembered.isEmpty()&&
+                !remembered.equals(saved.optString("epoch_id")))
+                throw new IllegalStateException(
+                    "OLD_EPOCH_MARKER_REPLACED_KEEP_NEW_LEDGER_AND_BLOCK");
+            // The independent file witness is validated again by the
+            // monotonic guard before any strategy can start.
+            return false;
+        }
         return saved==null||!"COMMITTED".equals(saved.optString("state"));
     }
 
