@@ -153,7 +153,8 @@ class FreshEpochV106(unittest.TestCase):
         self.assertFalse((JAVA / "LegacyLedgerMigration.java").exists())
         self.assertLess(svc.index("FreshEpochGateV106.clearDerivedCachesIfNeeded(this);"),
                         svc.index("JSONObject started=strategy.start();"))
-        self.assertIn("if(FreshEpochGateV106.hasMarker(this))return;", svc)
+        self.assertNotIn("checkPendingPCArchive", svc)
+        self.assertIn("LedgerAntiRollbackV002.verify(this);", svc)
         self.assertIn('"FRESH_EPOCH_BLOCKED".equals(epochState)', svc)
         self.assertNotIn("checkPendingPCArchive(", svc)
         self.assertNotIn("APPLY_PC_MIGRATION.equals(", svc)
