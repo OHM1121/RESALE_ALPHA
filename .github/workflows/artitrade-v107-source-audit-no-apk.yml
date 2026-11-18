@@ -151,5 +151,32 @@ jobs:
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v092_scenarios_8_wallets.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v095_trade_basis_ai.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v106_fresh_paper_epoch.py' -v
+      - name: Audit stock MA native pending match and quote contracts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          packed=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(packed))
+          for filename in ('stock_ma_engine.py','d_minute_repair_fast.py','d_v19_portfolio.py'):
+              source=z.read(filename).decode('utf8')
+              lines=source.splitlines()
+              t=ast.parse(source)
+              for node in ast.walk(t):
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and (
+                    filename=='stock_ma_engine.py' and
+                      (node.name in ('on_tick','_fill','_buy','_process_buy','_match','scan_completed',
+                       '_candidate','_entry','_buy_pending','_on_real') or
+                       any(k in node.name for k in ('buy','match','fill','candidate')))
+                    or filename=='d_minute_repair_fast.py' and node.name=='exchange_stamp_is_fresh'
+                    or filename=='d_v19_portfolio.py' and node.name=='live_session'
+                  ):
+                      parent=next((p.name for p in ast.walk(t) if isinstance(p,ast.ClassDef) and node in p.body),'module')
+                      print('METHOD_BEGIN',filename,parent,node.name,node.lineno,node.end_lineno)
+                      for i in range(node.lineno-1,min(node.end_lineno,node.lineno+195)):
+                          print('NATIVE',filename,i+1,lines[i][:230])
+          PY
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
