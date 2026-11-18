@@ -1,0 +1,18 @@
+name: ARTITRADE v086 original stock manual EXE vs Android analysis
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths: ['.github/workflows/forensic-v086-stock-manual-host-20261118.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '56514928d7abc0b5aa880369b135c28d5a3b1298'
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python3 ARTITRADE_ANDROID/ui_tests/forensic_v086_stock_manual_core.py
