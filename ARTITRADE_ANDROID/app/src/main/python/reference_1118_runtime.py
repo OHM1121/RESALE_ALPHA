@@ -55,6 +55,13 @@ def _mark(c,position,market):
             "qty":float(p["qty"]),"stage":0,"stage1_filled":0.0,
             "stage2_filled":0.0,"peak_after_second":float(entry),
             "seen_above_entry":False,"score_positive_at_buy":True})
+        if market=="coin":
+            # Original Upbit wallet's immutable actual hold_until remains
+            # authoritative. Its default auto SELL is suppressed only for
+            # THIS new policy, so re-apply same deadline here.
+            plan["deadline"]=str(p["hold_until"])
+        elif "hold_until" in p.keys() and p["hold_until"]:
+            plan["deadline"]=str(p["hold_until"])
         plan["sell_intents"][0]["quantity"]=nl.stage_quantity(plan["qty0"],market,1)
         plan["sell_intents"][1]["quantity"]=nl.stage_quantity(plan["qty0"],market,2)
         c.execute(_TBL)
