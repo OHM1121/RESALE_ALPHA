@@ -40,6 +40,8 @@ public final class UnifiedTradingService extends Service {
     static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
+    private static volatile boolean SERVICE_INSTANCE_ACTIVE=false;
+    static boolean isServiceActiveForFreshReset(){return SERVICE_INSTANCE_ACTIVE;}
     private final AtomicBoolean running=new AtomicBoolean(false);
     private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
     private final AtomicBoolean uiRecordCollecting=new AtomicBoolean(false);
@@ -64,6 +66,7 @@ public final class UnifiedTradingService extends Service {
 
     @Override public void onCreate(){
         super.onCreate();
+        SERVICE_INSTANCE_ACTIVE=true;
         ProcessHealthV087.install(this);
         crashes=new RuntimeCrashStore(this);
         strategy=new StrategyRuntimeBridge(this);
@@ -89,6 +92,17 @@ public final class UnifiedTradingService extends Service {
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         try{
             if(intent!=null&&STOP.equals(intent.getAction())){
+                stopSafely();stopSelf();return START_NOT_STICKY;
+            }
+            // v108: the new package is a fresh PAPER-only epoch. Before the
+            // phone finishes one complete reset, forbid ANY strategy startup,
+            // automatic PC import or background daemon resurrection.
+            try{
+                if(FreshEpochGateV106.mandatoryFreshStartPending(this)){
+                    stopSafely();stopSelf();return START_NOT_STICKY;
+                }
+            }catch(Exception markerError){
+                crashes.add("mandatory_fresh_paper_epoch_gate",markerError);
                 stopSafely();stopSelf();return START_NOT_STICKY;
             }
             ensureChannel();
@@ -968,6 +982,9 @@ public final class UnifiedTradingService extends Service {
             .putBoolean("service_running",false).putBoolean("wifi_lock",false)
             .putBoolean("cpu_lock",false).apply();
     }
-    @Override public void onDestroy(){stopSafely();super.onDestroy();}
+    @Override public void onDestroy(){
+        try{stopSafely();}
+        finally{SERVICE_INSTANCE_ACTIVE=false;super.onDestroy();}
+    }
     @Override public IBinder onBind(Intent intent){return null;}
 }
