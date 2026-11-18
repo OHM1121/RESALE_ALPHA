@@ -9,6 +9,9 @@ on:
       - ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py
       - ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py
       - ARTITRADE_ANDROID/ui_tests/test_v107_closed_rsi_and_exports.py
+      - ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py
+      - ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+      - ARTITRADE_ANDROID/ui_tests/test_v107_at_negative_market_gate.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -105,5 +108,10 @@ jobs:
                       for j in range(max(0,i-1),min(len(lines),i+25)):
                           print("SRC",j+1,lines[j][:200])
           PY
+      - name: Run negative market-score reference-bar scope tests
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v107_at_negative_market_gate.py' -v
       - name: Assert source-only
         run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
