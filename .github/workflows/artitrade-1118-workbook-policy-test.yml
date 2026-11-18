@@ -1,0 +1,85 @@
+name: ARTITRADE 11.18 workbook 8-wallet trading policy audit NO APK
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-1118-workbook-policy-test.yml
+      - ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py
+      - ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py
+      - ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py
+      - ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py
+      - ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py
+      - ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+      - ARTITRADE_ANDROID/ui_tests/test_new_legacy_1118_workbook.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  workbook-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Parse all newly modified entry/exit Python modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py \
+            ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py \
+            ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py \
+            ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py \
+            ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py \
+            ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py \
+            ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+      - name: 11.18 workbook executable policy and persistence tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_new_legacy_1118_workbook.py' -v
+      - name: Unpack and introspect the EXACT bundled original trading engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          payload=base64.b64decode(''.join(
+              (root/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          destination=Path('/tmp/artitrade_bundle_1118')
+          destination.mkdir(exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(payload)) as bundle:
+              if bundle.testzip() is not None:raise RuntimeError('ORIGINAL_ZIP_INTEGRITY_ERROR')
+              for name in bundle.namelist():
+                  if name.endswith('.py'):
+                      ast.parse(bundle.read(name).decode('utf8'),filename=name)
+              bundle.extractall(destination)
+          print('ORIGINAL_STRATEGY_SOURCE_PARSE_PASS')
+          PY
+          PYTHONPATH="/tmp/artitrade_bundle_1118:$PWD/ARTITRADE_ANDROID/app/src/main/python" python3 - <<'PY'
+          import d_engine,d_v19_portfolio,d_upbit
+          from reference_1118_runtime import install
+          print('ORIGINAL_STOCK_AT_CLASS_MRO',d_v19_portfolio.D19PaperEngine.__mro__)
+          for c in (d_engine.PaperEngine,d_v19_portfolio.D19PaperEngine,d_upbit.CoinLedger):
+              print('ORIGINAL_CLASS',c.__name__)
+              for f in ('_minute_exits','_buy_limit_depth','_buy_if_touch','_sell','process_book'):
+                  if hasattr(c,f):
+                      print('NATIVE_TRADING_METHOD',c.__name__,f,getattr(c,f).__qualname__)
+          install()
+          assert d_engine.PaperEngine._minute_exits.__name__=='_act'
+          assert d_v19_portfolio.D19PaperEngine._buy_limit_depth.__name__=='buy_d19'
+          assert d_upbit.CoinLedger._buy.__name__=='buy_coin'
+          print('11_18_ENGINE_OVERLAYS_INSTALLED_NO_PAPER_BUY_OR_SELL')
+          PY
+      - name: No app or broker binary produced
+        run: |
+          test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
+          echo '11_18_WORKBOOK_POLICY_TESTS_OK_NO_APK'
