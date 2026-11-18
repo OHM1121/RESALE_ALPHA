@@ -33,7 +33,7 @@ try {
         [System.IO.FileAccess]::Read,
         [System.IO.FileShare]::ReadWrite
     )
-    $archive=New-Object System.IO.Compression.ZipArchive(
+    $archive=[System.IO.Compression.ZipArchive]::new(
         $fs,[System.IO.Compression.ZipArchiveMode]::Read,$false
     )
     $entries=@($archive.Entries)
