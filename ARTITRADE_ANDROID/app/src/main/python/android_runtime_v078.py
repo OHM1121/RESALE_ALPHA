@@ -2447,7 +2447,7 @@ def quote_snapshot_v089():
                             status='REST_OR_STORED'
                             source='UPBIT_REST_OR_PERSISTED_MARK_NOT_WS'
                         out[code]={'price':px,'status':status,'source':source,
-                            'received_at_ms':int((wall-age)*1000) if age is not None else 0,
+                            'received_at_ms':int((wall-age)//1)*1000 if age is not None else 0,
                             'age_ms':int(age*1000) if age is not None else None}
                     except (ValueError,TypeError,OverflowError,IndexError):
                         continue
@@ -2456,7 +2456,9 @@ def quote_snapshot_v089():
             coin={'quotes':{},'error':type(exc).__name__}
     # Exclude the sample clock from the revision: an unchanged feed should
     # not trigger a SharedPreferences disk write every 900 milliseconds.
-    fixed={'stock':stock.get('quotes',{}),'coin':coin.get('quotes',{})}
+    stable_coin={code:{k:value for k,value in quote.items() if k!='age_ms'}
+        for code,quote in coin.get('quotes',{}).items()}
+    fixed={'stock':stock.get('quotes',{}),'coin':stable_coin}
     revision=hashlib.sha1(json.dumps(fixed,sort_keys=True,
         ensure_ascii=False,default=str,separators=(',',':')).encode('utf8')).hexdigest()
     return json.dumps({'schema':'ARTITRADE_FAST_QUOTE_V089','sampled_at_ms':int(wall*1000),
