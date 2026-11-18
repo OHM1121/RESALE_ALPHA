@@ -211,3 +211,33 @@
 - 변경: android_manual_paper_sell_v085.py에서 원본 차단코드 전달. stock_at_policy_reconcile_v091.py에서 D19 신규 BUY 정책 초기화 시 1차 목표·2차 기준을 원본 감사이력에 보존. 실제 체결/조건·UUID 처리 방식은 변경하지 않음.
 - GitHub Actions 회귀시험: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44251287333 (성공). 임시 D19 원장에서 수동 SELL·원장 손익·동일 UUID 2차 실행 차단 시험, 기존 3단계 매도 시험 통과.
 - 후속 실기기 실패원인 특정에 필요한 바로 다음 행동: 위 10.1절대로 원본 ZIP 파일 바이트를 실행환경에 연결하고 UUID·호가·원장을 실제 시간순 대조.
+
+## 11. v0.9.3 ZIP95 / 분석 JSON 우회 경로 — 후속 담당자 필수 인계
+
+개선 요구: 오류·연구 ZIP이 ChatGPT 도구의 100MiB 파일복사 한도를 초과한 점과, 100MiB 미만에서도 Python/컨테이너 실행이 ClientError로 실패할 수 있는 점을 별도 장애로 처리할 것. APK가 원격 ChatGPT 실행 서비스의 ClientError를 제거한다고 주장하지 말 것.
+
+실행 가능한 해결 구성:
+1. APK의 통합 오류이력·주식 오류이력·코인 오류이력·통합 연구이력·기존 전략별 연구/오류 추출 버튼에서 동일한 95,000,000바이트 이하 파트 생성기를 사용하도록 일원화. 단일 원본 SQLite가 크면 그 원본을 잃지 않고 파트 인덱스대로 자동 분할.
+2. 각 ZIP의 source SHA-256, ZIP CRC, ZIP SHA-256, 동일 bundle_index.json 및 analysis/restore_parts.py 유지. 저장된 Android SAF 문서를 재열어 바이트 수·해시를 확인하며 검사 실패 시 신규 파일을 정리.
+3. 같은 저장 폴더에 2,000,000바이트 이하 독립 JSON인 ARTITRADE_SCOPE_..._ANALYSIS_READY.json 생성. 원본 파일명·크기·해시·SQLite 테이블별 건수·앱 네이티브 런타임 장애 및 각 ZIP 파트의 해시를 포함. 이 JSON은 파일 분석 코드 실행 없이 텍스트로 읽어 초기 진단할 수 있음. 원본 BUY/SELL·세부 로그의 전체 내용은 분할 ZIP에 남아 있음.
+4. 기존 494,459,745바이트 + 175,089,401바이트 업로드 자료는 새 APK 설치만으로 바뀌지 않음. **해당 오류이력 분석을 진행하려면** 기존 앱 데이터를 삭제하지 말고 같은 패키지·기존 서명의 새 APK를 덮어 설치한 다음 앱의 '통합 오류 추출'에서 새 폴더를 선택하여 ANALYSIS_READY.json과 모든 PART ZIP을 다시 추출해야 함. 우선 JSON만 별도 첨부해 네이티브 오류·테이블 현황을 파악하고, 나머지 ZIP 파트를 순서대로 첨부하면 원본 SQLite/JSONL 전체를 복원할 수 있음. 기존 대용량 파일은 훼손·삭제하지 말 것.
+5. 파일 크기를 줄여도 ChatGPT 실행 환경이 계속 ClientError를 내면 파일 자체 손상으로 단정하지 말고, 먼저 단독 JSON을 파일 서비스의 텍스트 읽기 경로로 열어 분석. 원본 로그나 행 단위 검증이 필요하면 정상 실행 컨테이너 또는 제한된 비공개 파일전달 경로를 확보해 분할 ZIP을 복원. 문제 보고에는 항상 필요한 증거 및 획득 절차를 구체적으로 붙일 것.
+6. signed APK GitHub Actions에서 반드시 기존 서명 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6과 package com.artitrade.unified.s21dex, versionCode 119를 확인해야 함. GitHub 기본 브랜치 cache 키가 동일해도 **29db005a...**의 다른 키를 복원할 수 있으므로 초기 인증서 검증에서 차단하도록 유지. v0.9.2 릴리스가 실제 성공한 GitHub Actions의 원래 서명 캐시 브랜치는 artitrade-phone-main-v070-live-orders-20261112임. 다르게 서명된 APK 배포 금지.
+
+코드: ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py, app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java.
+테스트: ARTITRADE_ANDROID/ui_tests/test_v101_zip95_analysis_ready.py 및 기존 v088/v090 원본 복원 회귀시험.
+PR: https://github.com/OHM1121/RESALE_ALPHA/pull/48
+서명·빌드 검증: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44254864596 (최종 상태·릴리스 자산은 실제 확인 후 기재/보고).
+인수인계 시 이 절의 '필요한 자료 → 얻는 방법 → 확보 후 수행' 정책을 계속 유지할 것.
+
+
+### 11.1 검증된 APK 릴리스 및 ZIP 재추출 순서
+
+- 발행 리포트(성공): https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44254864596
+- 출시 ZIP95 테스트 APK: https://github.com/OHM1121/RESALE_ALPHA/releases/tag/ARTITRADE-v0.9.3-ZIP95-20261118
+- 직접 APK: https://github.com/OHM1121/RESALE_ALPHA/releases/download/ARTITRADE-v0.9.3-ZIP95-20261118/ARTITRADE_UNIFIED_v0.9.3_ZIP95_20261118.apk
+- APK 30,393,465바이트, SHA-256 59f53fcc613fa878038f76c138f9a30cf9267c78b8209a259fcf38219e00095b
+- 패키지 com.artitrade.unified.s21dex, versionCode 119, versionName 0.9.3-ZIP95-ANALYSIS-READY, 기존 원본 서명 SHA-256 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
+- 기존 v0.9.2와 같은 앱을 **삭제하지 않고 덮어 설치**. 앱에서 통합 오류이력 추출 → 폴더 선택 → 생성된 모든 95MB 이하 PART ZIP + 작은 ANALYSIS_READY.json 가운데 JSON부터 진단에 이용.
+- 검증: GitHub Actions 전체 완료, 새 ZIP95/독립 JSON, 기존 손상 없는 SQLite 분할 복원 및 원본 전략 67개 단위시험 통과, 서명과 APK 패키지 검증 통과. 정상 휴대전화의 실제 PAPER 거래 체결을 시험한 것으로 오인 금지.
+- **ZIP 원본 분석에 필요한 다음 구체 행동:** 새 버전 APK에서 통합 오류이력을 다시 추출하고 작은 ANALYSIS_READY.json을 먼저 분석에 제공. 원본 BUY/SELL 시간대는 SHA 검증된 모든 PART ZIP을 사용해 조사. 외부 ChatGPT ClientError 발생 시에도 별도 JSON 텍스트 내용으로 초기 장애 진단 후 ZIP 분석 환경을 복구할 것.
