@@ -2415,7 +2415,29 @@ def price_snapshot_v089():
             return json.dumps({'ready':False,'stock':{'quotes':{}},
                                'coin':{'quotes':{}},'revision':''})
         sr=getattr(runtime,'stock_runner',None)
+        if sr is not None and getattr(sr,'_v066_quote_lock',None) is None:
+            # Hook the ONE original verified 0B observer as early as the
+            # price publisher starts; do not wait for a 6.5s SQLite snapshot.
+            try:
+                from stock_quote_truth_v066 import install_ui_quote_tap
+                install_ui_quote_tap(sr)
+            except (AttributeError,TypeError,ValueError,RuntimeError):
+                pass
         stock=live_quote_snapshot(sr)
+        # Unlike a timestamp-only receipt, a disconnected WebSocket must
+        # never show its last print as continuously streaming LIVE.
+        try:
+            from at_close_bridge import broker_transport_snapshot
+            alive=bool(sr is not None and getattr(sr,'_confirmed_ws_session',False)
+                       and broker_transport_snapshot().get('state')=='connected')
+        except (ImportError,AttributeError,TypeError):
+            alive=False
+        if not alive:
+            for q in (stock.get('quotes') or {}).values():
+                if q.get('status')=='FRESH':
+                    q['status']='LAST_0B'
+                    q['expires_ms']=0
+            stock['revision']=stock.get('revision','')+'|SOCKET_DISCONNECTED'
         # Pending/candidate UI can reuse only already-subscribed, truly
         # received 0B prints. No extra REG slots or research REST calls.
         if sr is not None and getattr(sr,'_v066_quote_lock',None) is not None:
@@ -2427,7 +2449,7 @@ def price_snapshot_v089():
                 codes=sorted({k[0] for k in by_venue
                               if isinstance(k,tuple) and len(k)==2})[:220]
                 now_stock=_dt.datetime.now(KST)
-                connected=bool(getattr(sr,'_confirmed_ws_session',False))
+                connected=alive
                 for code in codes:
                     if code in held:continue
                     valid,last=_choose_for_code(by_venue,code,now_stock,connected)
