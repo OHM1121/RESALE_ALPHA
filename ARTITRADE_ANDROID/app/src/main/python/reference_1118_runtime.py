@@ -87,7 +87,10 @@ def _save(c,plan):
 def _act(self,c,p,minute,at):
     plan=_read(c,p["id"])
     if plan is None:
-        return _ORIGINAL_STOCK_EXIT(self,c,p,minute,at)
+        from d_v19_portfolio import D19PaperEngine
+        owner=(_ORIGINAL_D19_EXIT if isinstance(self,D19PaperEngine)
+               else _ORIGINAL_STOCK_EXIT)
+        return owner(self,c,p,minute,at)
     if str(at)<=str(p["entry_ts"]):return p
     try:
         at_dt=dt.datetime.strptime(str(at),"%Y%m%d%H%M%S").replace(
@@ -131,14 +134,20 @@ def _act(self,c,p,minute,at):
         return p
 
 _ORIGINAL_STOCK_EXIT=None
+_ORIGINAL_D19_EXIT=None
 
 def install():
-    global _INSTALLED,_ORIGINAL_STOCK_EXIT
+    global _INSTALLED,_ORIGINAL_STOCK_EXIT,_ORIGINAL_D19_EXIT
     if _INSTALLED:return
     import d_engine,d_v19_portfolio,d_upbit
 
     _ORIGINAL_STOCK_EXIT=d_engine.PaperEngine._minute_exits
+    _ORIGINAL_D19_EXIT=d_v19_portfolio.D19PaperEngine._minute_exits
     d_engine.PaperEngine._minute_exits=_act
+    # D19 overrides PaperEngine._minute_exits; patch both independently.
+    # Otherwise almost all modern stock AT BUY positions silently retain
+    # obsolete 3LEG31 and ignore the user's 11.18 profit/stop policy.
+    d_v19_portfolio.D19PaperEngine._minute_exits=_act
 
     native_d19=d_v19_portfolio.D19PaperEngine._buy_limit_depth
     def buy_d19(self,c,row,when,venue,observed_trade_price,
