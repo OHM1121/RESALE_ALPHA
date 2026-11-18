@@ -1,0 +1,31 @@
+name: V091 verify durable default exit policy and 30m target stored
+on:
+  push:
+    branches: [fix-artitrade-v091-stock-at-exit-root-cause-portrait-20261118]
+    paths: [.github/workflows/forensic-v091-dstore-policy.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - run: |
+          python3 - <<'PY'
+          import io,zipfile,base64
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          buf=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(buf)) as z:
+            for filename in ('d_storage.py','d_engine.py','d_v19_portfolio.py','d_runtime.py'):
+              if filename not in z.namelist():continue
+              lines=z.read(filename).decode().splitlines()
+              terms=('exit_policy','exit_first_target','3LEG31','_latest_open_position','ref_bodytop','CREATE TABLE IF NOT EXISTS positions','ALTER TABLE positions')
+              found=[]
+              for i,s in enumerate(lines):
+                if any(x in s for x in terms):found.extend(range(max(0,i-3),min(len(lines),i+6)))
+              seen=set()
+              for i in found:
+                if i not in seen:
+                  print('P',filename,i+1,lines[i][:275]);seen.add(i)
+          PY
