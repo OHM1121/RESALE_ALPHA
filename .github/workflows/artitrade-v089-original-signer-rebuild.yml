@@ -9,6 +9,7 @@ permissions:
 concurrency:
   group: artitrade-v089-fast-verified-quotes-original-signer
   cancel-in-progress: false
+# v089 signer target is a verified immutable commit from the feature branch.
 jobs:
   build-verify-release:
     runs-on: ubuntu-latest
