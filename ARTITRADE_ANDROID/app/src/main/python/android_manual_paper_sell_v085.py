@@ -91,11 +91,11 @@ def _coin_book(rt,code):
         raise ValueError('FRESH_COIN_ORDERBOOK_MISSING') from exc
 
 def _stock_at(rt,req):
-    tick=_stock_tick(rt,req['code'],None)
-    # Verify native owner, source market, quantity and idempotency in V19 engine.
-    return rt.stock_runner.engine.manual_sell(
-        req['position_id'],req['percent'],req['request_id'],tick,
-        expected_qty=int(req['expected_qty']))
+    # v086: genuine KRX 0D/ka10004 depth may prove a confirmed PAPER
+    # user exit without any coincident 0B print. The original AT engine's
+    # _sell remains the only cash/PnL/execution accountant.
+    from stock_manual_v086 import manual_stock_at
+    return manual_stock_at(rt,req)
 
 class _VerifiedManualStockBid:
     """Paper manual exits: borrow only displayed fresh KRX best-bid depth.
@@ -153,37 +153,11 @@ def _stock_verified_bid_book(rt,code):
 
 
 def _stock_ma(rt,req):
-    from stock_ma_engine import _connect
-    service=rt.stock_runner.ma
-    if service is None:raise ValueError('STOCK_MA_NOT_READY')
-    reason='USER_SIM_MANUAL:'+req['request_id']
-    with service.lock,_connect(service.db) as c:
-        # UUID repeat must remain idempotent even after the first request
-        # has fully CLOSED the position and no current quote is available.
-        old=c.execute("""SELECT e.qty,e.price FROM executions e
-            JOIN positions p ON p.id=e.position_id
-            WHERE p.id=? AND p.code=? AND e.reason=? AND e.side='SELL'""",
-            (req['position_id'],req['code'],reason)).fetchone()
-        if old:return {'already_executed':True,'qty':old['qty'],'price':old['price']}
-        row=c.execute("SELECT * FROM positions WHERE id=? AND code=? AND status='OPEN' AND qty>0",
-                      (req['position_id'],req['code'])).fetchone()
-        if row is None:raise ValueError('MA_POSITION_NOT_OPEN_OR_MISMATCH')
-        if int(row['qty'])!=int(req['expected_qty']):
-            raise ValueError('MA_QTY_CHANGED_RECONFIRM')
-        # A real exchange 0D update remains valid for a manual PAPER exit
-        # even without a coincident 0B trade. Use the ACTUAL best bid,
-        # never the unrelated last-trade tick price.
-        bid,now,verified_book=_stock_verified_bid_book(rt,req['code'])
-        qty=max(1,min(int(row['qty']),int(Decimal(str(row['qty']))*
-                      Decimal(str(req['percent']))/Decimal('100'))))
-        sold=service._sell(c,row,qty,bid,now,reason,verified_book)
-        if not sold:raise ValueError('FRESH_MA_BID_DEPTH_MISSING')
-        execution=c.execute('SELECT qty,price FROM executions WHERE position_id=? AND reason=?',
-                            (req['position_id'],reason)).fetchone()
-        if not execution:raise ValueError('MA_SELL_FILL_UNVERIFIED')
-        return {'qty':int(execution['qty']),'price':int(execution['price']),
-                'requested_qty':int(qty),'remaining_qty':max(0,int(row['qty'])-int(execution['qty'])),
-                'quote_source':'LIVE_KRX_0D_BID_PAPER_ONLY'}
+    # Current and preserved historical MA epochs are separate original
+    # wallets. Match the exact position and UUID before any new quote.
+    from stock_manual_v086 import manual_stock_ma
+    return manual_stock_ma(rt,req)
+
 
 def _coin(rt,req,which):
     ledger=(rt.coin_runner.ma_ledger if which=='ma' else rt.coin_runner.ledger)
@@ -225,6 +199,9 @@ def _coin(rt,req,which):
     raise ValueError('COIN_MANUAL_FILL_NOT_RECORDED')
 
 def _trend(rt,req):
+    if req.get('market')=='stock':
+        from stock_manual_v086 import manual_stock_trend
+        return manual_stock_trend(rt,req)
     co=getattr(rt,'market_trend',None)
     if co is None:raise ValueError('TREND_RUNTIME_NOT_READY')
     with co.lock:
@@ -249,41 +226,14 @@ def _trend(rt,req):
     return {'qty':sold,'price':quote['bid']}
 
 def _gmo(rt,req):
-    service=rt.stock_runner.gmo
-    if service is None:raise ValueError('GMO_SERVICE_NOT_READY')
-    # A verified user-initiated PAPER SELL may place its original GMO
-    # pending intent on genuine 0D bid depth alone. A new 0B trade is
-    # required later by the ORIGINAL paper matcher to mark it FILLED;
-    # never create a synthetic print simply to bypass a quiet book.
-    at=dt.datetime.now(KST)
-    if not (dt.time(9,0)<=at.time()<dt.time(15,30) or
-            dt.time(16,0)<=at.time()<dt.time(20,0)):
-        raise ValueError('GMO_MANUAL_KRX_SESSION_CLOSED')
-    with service._lock,service.engine._lock:
-        p=service.engine.positions.get(req['code'])
-        if p is None or p.qty<=0:raise ValueError('GMO_POSITION_NOT_OPEN')
-        if int(p.qty)!=int(req['expected_qty']):raise ValueError('GMO_QTY_CHANGED_RECONFIRM')
-        book=service.last_book.get(req['code'])
-        if (not book or len(book)<5
-            or book[4].tzinfo is None
-            or not -.5<=(at-book[4]).total_seconds()<=3
-            or int(book[1])<=0 or int(book[3])<=0):
-            raise ValueError('GMO_FRESH_KRX_BID_MISSING')
-        reason='USER_SIM_MANUAL:'+req['request_id']
-        existing=next((o for o in service.engine.orders.values()
-            if o.code==req['code'] and o.side=='SELL' and o.purpose==reason),None)
-        if existing:
-            return {'status':'PENDING' if existing.state not in ('FILLED','CANCELED') else existing.state,
-                    'already_executed':True,'order_id':existing.id}
-        if p.pending_sell_id:
-            raise ValueError('GMO_EXISTING_SELL_PENDING')
-        qty=max(1,min(p.qty,int(Decimal(str(p.qty))*Decimal(str(req['percent']))/100)))
-        intent=service.engine._exit(p,reason,qty,int(book[1]),at.isoformat())
-        if intent is None:raise ValueError('GMO_MANUAL_SELL_INTENT_BLOCKED')
-        service._persist(True)
-        # This is NOT a fill; the original matcher waits for the NEXT genuine
-        # KRX 0B with eligible depth. Never turn stored book/REST into a fill.
-        return {'status':'PENDING_REAL_KRX_PRINT','order_id':intent.id,'qty_requested':qty}
+    from stock_manual_v086 import manual_stock_gmo
+    return manual_stock_gmo(rt,req)
+
+
+def _stock_close(rt,req):
+    from stock_manual_v086 import manual_stock_close
+    return manual_stock_close(rt,req)
+
 
 def perform(raw):
     try:
@@ -324,6 +274,8 @@ def perform(raw):
             filled=_stock_ma(rt,request)
         elif market=='stock' and strategy=='gmo':
             filled=_gmo(rt,request)
+        elif market=='stock' and strategy=='close':
+            filled=_stock_close(rt,request)
         elif strategy=='trend':
             filled=_trend(rt,request)
         elif market=='coin' and strategy in ('general','ma'):

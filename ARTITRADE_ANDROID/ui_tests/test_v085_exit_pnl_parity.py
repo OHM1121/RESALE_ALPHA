@@ -33,8 +33,14 @@ class ManualExitDashboardParity(unittest.TestCase):
         self.assertIn("if(reusedLocalRecords&&meaningfulLocalRecords&&!hubGapChanged",UI)
     def test_manual_execution_requires_durable_native_sell_evidence(self):
         self.assertIn("COIN_MANUAL_FILL_NOT_RECORDED",MANUAL)
-        self.assertIn("MA_SELL_FILL_UNVERIFIED",MANUAL)
-        self.assertIn("GMO_MANUAL_SELL_INTENT_BLOCKED",MANUAL)
-        self.assertIn("PENDING_REAL_KRX_PRINT",MANUAL)
+        # v086 routes stock exits to their original strategy owners. A
+        # native PAPER fill is authoritative only after its exact original
+        # SELL row exists; a pending intent cannot masquerade as completion.
+        STOCK=(ROOT/"python/stock_manual_v086.py").read_text(encoding="utf-8")
+        self.assertIn("STOCK_MA_SELL_FILL_NOT_RECORDED",STOCK)
+        self.assertIn("STOCK_GMO_MANUAL_INTENT_REJECTED",STOCK)
+        self.assertIn("PENDING_REAL_KRX_BOOK",STOCK)
+        self.assertIn("STOCK_CLOSE_SELL_FILL_NOT_RECORDED",STOCK)
+        self.assertIn("STOCK_AT_MANUAL_SELL_NOT_RECORDED",STOCK)
 
 if __name__=="__main__":unittest.main()

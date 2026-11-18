@@ -38,6 +38,8 @@ class Runtime:
         self.stock_runner.engine=type("Engine",(),{})()
         self.stock_runner.engine.book=book
         self.stock_runner.ma=Service(store)
+        self.stock_runner._confirmed_ws_session=True
+        self.root=Path(store).parent
         # Deliberately NO current trade print: the real 0D is independent.
         self.stock_runner.latest_krx_trade=lambda code:None
 
@@ -65,9 +67,15 @@ class ManualForcedSell(unittest.TestCase):
         self.now=dt.datetime.now(KST)
         self.book=StockBook(self.now)
         self.rt=Runtime(self.db,self.book)
+        # Deterministic genuine KRX-session fixture; real runtime still
+        # enforces official exchange date and clock eligibility.
+        self.session=patch('stock_manual_v086._krx_session',return_value=True)
+        self.session.start()
         self.req={'code':'005930','position_id':41,'expected_qty':'10',
                   'percent':100,'request_id':'9c3dca87-2b1c-4b23-8d78-4ed7e5fa0e14'}
-    def tearDown(self):self.tmp.cleanup()
+    def tearDown(self):
+        self.session.stop()
+        self.tmp.cleanup()
     def rows(self):
         with sqlite3.connect(self.db) as c:
             return c.execute("SELECT qty,status FROM positions WHERE id=41").fetchone(),c.execute(
