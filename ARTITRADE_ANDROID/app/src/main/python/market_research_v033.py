@@ -839,14 +839,27 @@ _WORKERS={}
 _WORKERS_LOCK=threading.Lock()
 
 
-def offer_records(root,records):
-    """Called by existing hub records adapter; only enqueue a reference and return."""
+def ensure_worker(root):
+    """Start/recover authentic independent stock/coin score polling.
+
+    The previous fresh-epoch code left a dead worker in _WORKERS forever
+    after an unrecoverable SQLite startup error; deleting the old score
+    history then left the display empty despite connected broker feeds.
+    This never manufactures a score or approves a trade.
+    """
     path=str(Path(root).resolve())
     with _WORKERS_LOCK:
         worker=_WORKERS.get(path)
-        if worker is None:
+        if (worker is None or worker._stop.is_set()
+                or not worker._thread.is_alive()):
             worker=_MarketWorker(path)
             _WORKERS[path]=worker
+    return worker
+
+
+def offer_records(root,records):
+    """Called by existing hub records adapter; only enqueue a reference and return."""
+    worker=ensure_worker(root)
     worker.offer(records)
     snapshot=worker.snapshot()
     # Attach current market-score evidence to the archival task. This is a

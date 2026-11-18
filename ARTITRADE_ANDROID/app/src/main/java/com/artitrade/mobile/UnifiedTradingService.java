@@ -40,6 +40,8 @@ public final class UnifiedTradingService extends Service {
     static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
+    private static volatile boolean SERVICE_INSTANCE_ACTIVE=false;
+    static boolean isServiceActiveForFreshReset(){return SERVICE_INSTANCE_ACTIVE;}
     private final AtomicBoolean running=new AtomicBoolean(false);
     private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
     private final AtomicBoolean uiRecordCollecting=new AtomicBoolean(false);
@@ -64,6 +66,7 @@ public final class UnifiedTradingService extends Service {
 
     @Override public void onCreate(){
         super.onCreate();
+        SERVICE_INSTANCE_ACTIVE=true;
         ProcessHealthV087.install(this);
         crashes=new RuntimeCrashStore(this);
         strategy=new StrategyRuntimeBridge(this);
@@ -89,6 +92,17 @@ public final class UnifiedTradingService extends Service {
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         try{
             if(intent!=null&&STOP.equals(intent.getAction())){
+                stopSafely();stopSelf();return START_NOT_STICKY;
+            }
+            // v108: the new package is a fresh PAPER-only epoch. Before the
+            // phone finishes one complete reset, forbid ANY strategy startup,
+            // automatic PC import or background daemon resurrection.
+            try{
+                if(FreshEpochGateV106.mandatoryFreshStartPending(this)){
+                    stopSafely();stopSelf();return START_NOT_STICKY;
+                }
+            }catch(Exception markerError){
+                crashes.add("mandatory_fresh_paper_epoch_gate",markerError);
                 stopSafely();stopSelf();return START_NOT_STICKY;
             }
             ensureChannel();
@@ -164,6 +178,11 @@ public final class UnifiedTradingService extends Service {
             }
             if(intent!=null&&APPLY_PC_MIGRATION.equals(intent.getAction())&&running.get()){
                 new Thread(()->{
+                    if(FreshEpochGateV106.hasMarker(this)){
+                        crashes.add("fresh_epoch_pc_import_blocked",
+                            new IllegalStateException("NO_OLD_PC_LEDGER_IN_FRESH_EPOCH"));
+                        return;
+                    }
                     if(liveOrdersArmed()){
                         getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE).edit()
                             .putString("result",new JSONObject().toString()).apply();
@@ -254,8 +273,35 @@ public final class UnifiedTradingService extends Service {
             crashes.add("pc_ledger_migration_reply",new IllegalStateException(result.toString()));
     }
     private void launchWithMigration(){
-        LegacyLedgerMigration importer=new LegacyLedgerMigration(this,crashes);
-        JSONObject migration=importer.importIfReady();
+        // The user's definitive fresh-only epoch has ZERO legacy PAPER
+        // holdings to import. Do NOT instantiate the old PC ZIP importer,
+        // even for a missing checkpoint. A missing/invalid marker is fatal.
+        JSONObject migration=FreshEpochGateV106.migrationGate(this);
+        if(migration==null){
+            saveMigrationResult(new JSONObject());
+            return;
+        }
+        String epochState=migration.optString("status","");
+        if("FRESH_EPOCH_BLOCKED".equals(epochState)){
+            saveMigrationResult(migration);
+            // An interrupted/deformed reset must NEVER start source engines,
+            // resubscribe quotes or import any old PC archive.
+            return;
+        }
+        if("FRESH_EPOCH_NO_PC_IMPORT".equals(epochState)){
+            try{FreshEpochGateV106.clearDerivedCachesIfNeeded(this);}
+            catch(Exception staleCache){
+                crashes.add("fresh_epoch_display_cache_guard",staleCache);
+                try{
+                    JSONObject blocked=new JSONObject();
+                    blocked.put("ok",false);
+                    blocked.put("status","FRESH_EPOCH_BLOCKED");
+                    blocked.put("reason","STALE_CACHE_NOT_CLEARED_NO_TRADING_START");
+                    saveMigrationResult(blocked);
+                }catch(Exception reportError){crashes.add("fresh_epoch_report",reportError);}
+                return;
+            }
+        }
         JSONObject started=strategy.start();
         if(!started.optBoolean("ok",true))
             crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
@@ -274,19 +320,11 @@ public final class UnifiedTradingService extends Service {
                 crashes.add("ui_initial_bounded_snapshot_v104",viewError);
             }
         }
-        String state=migration.optString("status","");
-        JSONObject audit=new JSONObject();
-        if("FILES_INSTALLED".equals(state)||"LOCAL_FILES_PRESENT".equals(state)){
-            // Allow asynchronous EXE runner bootstrap to finish initializing the
-            // strategy snapshots. No tick or market order is synthesized here.
-            for(int attempt=0;attempt<3&&records.length()==0;attempt++){
-                try{Thread.sleep(500L);}catch(InterruptedException ie){Thread.currentThread().interrupt();break;}
-                records=strategy.hubRecordsUi();
-            }
-            audit=strategy.ledgerAudit(migration.optJSONObject("manifest"));
-        }
-        JSONObject verified=importer.finishRuntimeVerification(migration,started,records,audit);
-        saveMigrationResult(verified);
+        // A new fresh-only epoch has NO older PC rows to verify or inherit.
+        // Source ledgers come exclusively from the eight newly started wallets.
+        // The former importer's finishRuntimeVerification() intentionally
+        // cannot be called because all legacy migration is disabled.
+        saveMigrationResult(migration);
         applyPendingOperation();
     }
     private void safeStartStrategy(){
@@ -339,6 +377,8 @@ public final class UnifiedTradingService extends Service {
     }
 
     private void checkPendingPCArchive(LocalHubClient hub){
+        // Never revive 11/14 imported research or PC paper positions after reset.
+        if(FreshEpochGateV106.hasMarker(this))return;
         if(!strategy.isStarted()||migrationRestarting.get())return;
         long now=System.currentTimeMillis();
         if(now-lastMigrationPoll<15000L)return;
@@ -912,7 +952,7 @@ public final class UnifiedTradingService extends Service {
 
     private Notification notification(String text){
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CHANNEL):new Notification.Builder(this);
-        return b.setContentTitle("ARTITRADE S21+ 메인 엔진 v0.7.8")
+        return b.setContentTitle("ARTITRADE")
             .setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true).setCategory(Notification.CATEGORY_SERVICE).build();
     }
@@ -920,7 +960,7 @@ public final class UnifiedTradingService extends Service {
         if(Build.VERSION.SDK_INT>=26){
             NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
             if(nm!=null){
-                NotificationChannel c=new NotificationChannel(CHANNEL,"ARTITRADE S21+ 메인 엔진",NotificationManager.IMPORTANCE_LOW);
+                NotificationChannel c=new NotificationChannel(CHANNEL,"ARTITRADE",NotificationManager.IMPORTANCE_LOW);
                 c.setDescription("최신 EXE 전략·키움·업비트 실시간·실주문 엔진");
                 nm.createNotificationChannel(c);
             }
@@ -940,6 +980,9 @@ public final class UnifiedTradingService extends Service {
             .putBoolean("service_running",false).putBoolean("wifi_lock",false)
             .putBoolean("cpu_lock",false).apply();
     }
-    @Override public void onDestroy(){stopSafely();super.onDestroy();}
+    @Override public void onDestroy(){
+        try{stopSafely();}
+        finally{SERVICE_INSTANCE_ACTIVE=false;super.onDestroy();}
+    }
     @Override public IBinder onBind(Intent intent){return null;}
 }

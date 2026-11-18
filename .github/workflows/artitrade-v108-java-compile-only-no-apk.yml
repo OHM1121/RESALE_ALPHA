@@ -1,0 +1,41 @@
+name: ARTITRADE v108 Android Java compilation only - NO APK
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-v108-java-compile-only-no-apk.yml
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FreshEpochGateV106.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LegacyLedgerMigration.java
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-unified-source-without-packaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Compile Java sources only, never package, sign or deploy APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p ARTITRADE_ANDROID :app:compileUnifiedDebugJavaWithJavac --no-daemon --stacktrace
+          test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
+          test ! -d ARTITRADE_ANDROID/app/build/outputs/bundle
+          echo "UNIFIED_JAVA_COMPILE_OK_NO_APK_CREATED"

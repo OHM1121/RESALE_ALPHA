@@ -1802,6 +1802,14 @@ def hub_records_ui_v104():
 
 
 def _hub_records_v078(self,for_ui=False):
+    # Authentic market-score collection must initialize even when the
+    # fresh PAPER epoch has no old research/GMO rows. It must not wait for
+    # the expensive combined original-ledger display snapshot to complete.
+    try:
+        from market_research_v033 import ensure_worker
+        ensure_worker(self.root)
+    except Exception as score_error:
+        self._err('market_score_worker_bootstrap_001',score_error)
     _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
     try:
@@ -1845,10 +1853,15 @@ def _hub_records_v078(self,for_ui=False):
                     out.setdefault('coin',{}).setdefault('ma',{})['ledger']=_coin_full(self.coin_runner.ma_ledger)
             except Exception as exc:
                 self._err('coin_ma_history_v078',exc)
-        try:
-            _research_history(self,out)
-        except Exception as exc:
-            self._err('research_history_all_v078',exc)
+        # The dedicated Research screen is removed from v0.0.1. Its full
+        # historical SQLite joins/legacy score reconciliation must not run
+        # again on every 6.5s UI snapshot; full original ledger/AI export
+        # remains unchanged when a full (non-UI) snapshot is requested.
+        if not for_ui:
+            try:
+                _research_history(self,out)
+            except Exception as exc:
+                self._err('research_history_all_v078',exc)
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
@@ -1953,17 +1966,22 @@ def _hub_records_v078(self,for_ui=False):
             # Always prefer the original EXE's paper SELL-fill + 15-session
             # virtual-result research rules over a condensed dashboard's
             # 'high touched' status. Keep current live balances/positions.
-            try:
-                originals=_gmo_original_record(self.root)
-                if originals is not None:
-                    source_ledger,source_research=originals
-                    if source_research.get('load_status')=='OK':
-                        stock['research']['gmo']=source_research
-                        stock['ledger']['gmo']['actual_target']=source_research.get(
-                            'actual_summary') or {}
-                        stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
-            except Exception as original_error:
-                self._err('gmo_original_research_parity',original_error)
+            # GMO snapshot() and research_dashboard() already read the current
+            # original wallet. Running a second full PC-era SQLite/JSON
+            # reconciliation for the removed Research page would double the
+            # work and risk reintroducing old rows into the fresh UI.
+            if not for_ui:
+                try:
+                    originals=_gmo_original_record(self.root)
+                    if originals is not None:
+                        source_ledger,source_research=originals
+                        if source_research.get('load_status')=='OK':
+                            stock['research']['gmo']=source_research
+                            stock['ledger']['gmo']['actual_target']=source_research.get(
+                                'actual_summary') or {}
+                            stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
+                except Exception as original_error:
+                    self._err('gmo_original_research_parity',original_error)
         else:
             # The same PC import already holds the GMO originals. Display their
             # verified original state even if the live GMO service is not ready.
@@ -2345,10 +2363,10 @@ _install_ma_v062_packet(_core)
 from stock_quote_truth_v066 import install as _install_stock_quote_truth_v066
 _install_stock_quote_truth_v066(_core)
 
-# v094 SELL-ONLY monitoring for historical v061/v062 MA BUY positions.
-# Preserve each old SQLite wallet, original exit rules and live-order guards.
-from legacy_ma_exit_watch_v094 import install as _install_legacy_ma_exit_v094
-_install_legacy_ma_exit_v094(_core)
+# Fresh PAPER-only successor: no v061/v062 historical MA positions
+# survive the first mandatory epoch reset. The old historical-only SELL
+# watcher MUST NOT patch the current MA feed/order methods anymore.
+# Active MA v067 native BUY/SELL policy modules remain unchanged.
 
 # v094: finish incomplete initial slot funding ONLY from verified first
 # execution +2 true exchange ticks, using same original public-quote owner.
@@ -2451,6 +2469,12 @@ _install_stock_at_catchup_v086()
 # post-phone unsold D19 buys; then arm the same three-leg native engine.
 from stock_at_policy_reconcile_v091 import install as _install_at_policy_v091
 _install_at_policy_v091()
+
+# 0.0.1 reset-only regression fix: do not inject additional AT/coin-general
+# BUY gates or SQLite candidate-audit wrappers into the proven v0.9.5
+# execution path. The user's next-version workbook changes are separate.
+# New candidate/market-score evidence remains accessible through the native
+# journal and the read-only market-score observer.
 
 # One recovery plan shared by five stock and three coin strategy ledgers.
 # It monitors genuine 0B/Upbit authenticated events, prioritizes held-stock

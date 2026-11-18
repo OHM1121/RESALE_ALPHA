@@ -1,0 +1,138 @@
+name: ARTITRADE ZIP to GPT readable source map - NO APK
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing GitHub Release tag containing a ZIP (optional)'
+        required: false
+        type: string
+      release_asset_zip:
+        description: 'Exact .zip asset name in the release (optional)'
+        required: false
+        type: string
+      repo_zip_path:
+        description: 'Existing ZIP path inside this repository (optional)'
+        required: false
+        type: string
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-v108-gpt-zip-bridge.yml
+permissions:
+  contents: read
+jobs:
+  prepare-gpt-readable-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch existing ZIP or create self-test fixture (NEVER build APK)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_ASSET: ${{ inputs.release_asset_zip }}
+          REPO_ZIP_PATH: ${{ inputs.repo_zip_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/artitrade_zip_input"
+          if [ -n "$RELEASE_TAG" ] || [ -n "$RELEASE_ASSET" ]; then
+            if [ -z "$RELEASE_TAG" ] || [ -z "$RELEASE_ASSET" ]; then
+              echo "::error::Both release_tag and release_asset_zip are required"; exit 2
+            fi
+            gh release download "$RELEASE_TAG" -R "$GH_REPO" \
+              --pattern "$RELEASE_ASSET" --dir "$RUNNER_TEMP/artitrade_zip_input"
+            test -f "$RUNNER_TEMP/artitrade_zip_input/$RELEASE_ASSET"
+            cp "$RUNNER_TEMP/artitrade_zip_input/$RELEASE_ASSET" "$RUNNER_TEMP/ARTITRADE_INPUT.zip"
+          elif [ -n "$REPO_ZIP_PATH" ]; then
+            case "$REPO_ZIP_PATH" in
+              /*|../*|*/../*|*/..) echo "::error::Unsafe repository path"; exit 2 ;;
+            esac
+            test -f "$REPO_ZIP_PATH"
+            cp "$REPO_ZIP_PATH" "$RUNNER_TEMP/ARTITRADE_INPUT.zip"
+          else
+            python3 - <<'PY'
+          import os,zipfile
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])
+          with zipfile.ZipFile(root/'ARTITRADE_INPUT.zip','w',zipfile.ZIP_DEFLATED) as z:
+              z.writestr('example/source.py','def hello_artitrade():\n    return "ZIP_GPT_BRIDGE_OK"\n')
+              z.writestr('example/README.md','# Safe self-test ZIP\n')
+          print('ZIP_BRIDGE_SELFTEST_ONLY')
+          PY
+          fi
+      - name: Read ZIP without uploading credentials or extracting executable binaries
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,os,re,zipfile,json
+          from pathlib import Path
+          archive=Path(os.environ['RUNNER_TEMP'])/'ARTITRADE_INPUT.zip'
+          out=Path(os.environ['RUNNER_TEMP'])/'artitrade_gpt_readable'
+          out.mkdir(exist_ok=True)
+          if archive.stat().st_size>1024*1024*1024:
+              raise SystemExit('ZIP_TOO_LARGE_1GB_MAX')
+          if not zipfile.is_zipfile(archive):
+              raise SystemExit('NOT_A_VALID_ZIP_FILE')
+          allow=('.py','.java','.kt','.md','.txt','.json','.xml','.gradle','.yml','.yaml')
+          sensitive=('secret','keystore','credentials','password','.env','private_key',
+                     'access_token','api_key','oauth','broker_auth')
+          with zipfile.ZipFile(archive) as z:
+              items=[v for v in z.infolist() if not v.is_dir()]
+              if len(items)>15000:raise SystemExit('ZIP_TOO_MANY_ENTRIES')
+              if sum(v.file_size for v in items)>800*1024*1024:
+                  raise SystemExit('ZIP_UNCOMPRESSED_SIZE_UNSAFE')
+              if any(v.flag_bits & 1 for v in items):
+                  raise SystemExit('ZIP_ENCRYPTED_MEMBER_UNSUPPORTED')
+              header=['# ARTITRADE GPT-readable ZIP index',
+                      'No Android APK has been compiled, signed, or published.',
+                      'Archive SHA256: '+hashlib.sha256(archive.read_bytes()).hexdigest(),
+                      'Entry count: '+str(len(items)),'']
+              extracts=['ZIP TEXT SOURCE EXCERPTS (sensitive files omitted)','']
+              selected=0
+              for info in sorted(items,key=lambda a:a.filename):
+                  name=info.filename.replace('\\','/')
+                  if (name.startswith('/') or '..' in name.split('/') or
+                      not name.isprintable()):
+                      raise SystemExit('UNSAFE_ARCHIVE_MEMBER_PATH')
+                  omitted=any(x in name.lower() for x in sensitive)
+                  ext=name.lower().endswith(allow)
+                  eligible=ext and not omitted and info.file_size<=350000
+                  header.append('- '+json.dumps(name,ensure_ascii=False)+
+                                ' | bytes='+str(info.file_size)+
+                                ' | crc='+str(info.CRC)+
+                                (' | TEXT' if eligible else ' | SKIPPED'))
+                  if not eligible or selected>=120:continue
+                  decoded=z.read(info).decode('utf-8','replace')
+                  if decoded.count('\x00')>5:continue
+                  lines=[]
+                  for number,line in enumerate(decoded.splitlines()[:200],1):
+                      if re.search(r'(?i)(api[_-]?key|access[_-]?token|client_secret|password|private_key)\s*[:=]',line):
+                          line='[REDACTED SENSITIVE ASSIGNMENT]'
+                      lines.append(str(number)+': '+line[:240])
+                  extracts.extend(['','===== '+name+' =====']+lines)
+                  selected+=1
+              (out/'SOURCE_MAP.md').write_text('\n'.join(header)+'\n',encoding='utf8')
+              (out/'SOURCE_EXCERPTS.txt').write_text(
+                  '\n'.join(extracts)[:1500000],encoding='utf8')
+          print('GPT_ZIP_SOURCE_MAP_BEGIN')
+          print('\n'.join(header[:1000]))
+          print('GPT_ZIP_SOURCE_MAP_END')
+          print('GPT_ZIP_TEXT_PREVIEW_BEGIN')
+          print('\n'.join(extracts[:500]))
+          print('GPT_ZIP_TEXT_PREVIEW_END')
+          print('GPT_READABLE_ARTIFACT_READY; TEXT_FILES=',selected)
+          PY
+      - name: Keep human-readable files as downloadable GitHub artifact (not APK)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_GPT_ZIP_SOURCE_MAP
+          path: ${{ runner.temp }}/artitrade_gpt_readable/
+          if-no-files-found: error
+          retention-days: 30

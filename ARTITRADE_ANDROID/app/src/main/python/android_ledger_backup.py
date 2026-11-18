@@ -377,6 +377,7 @@ def validate_backup(archive_path: str) -> dict:
                                "phone_buy_evidence_v035.sqlite3",
                                "POST_EXIT_HIGH_V053.sqlite3",
                                "execution_decisions_v074.sqlite3",
+                          "execution_entry_plans_v107.sqlite3",
                                "ANDROID_OPERATION_V074.json")
                 if (not rel.startswith(("stock/","coin/")) and
                         rel not in root_journals) or ".." in Path(rel).parts:

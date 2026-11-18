@@ -1,0 +1,218 @@
+name: ARTITRADE v107 source audit - NO APK
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-v107-source-audit-no-apk.yml
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_closed_entry_v107.py
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
+      - ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py
+      - ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py
+      - ARTITRADE_ANDROID/ui_tests/test_v107_closed_rsi_and_exports.py
+      - ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py
+      - ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+      - ARTITRADE_ANDROID/ui_tests/test_v107_at_negative_market_gate.py
+      - ARTITRADE_ANDROID/app/src/main/python/execution_entry_plans_v107.py
+      - ARTITRADE_ANDROID/app/src/main/python/entry_plan_hooks_v107.py
+      - ARTITRADE_ANDROID/ui_tests/test_v107_entry_plan_epoch.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
+      - ARTITRADE_ANDROID/app/src/main/python/android_ledger_backup.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FreshEpochGateV106.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+      - ARTITRADE_ANDROID/app/src/main/python/fresh_epoch_reset_v106.py
+      - ARTITRADE_ANDROID/ui_tests/test_v108_mandatory_first_epoch.py
+      - ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py
+      - ARTITRADE_ANDROID/app/src/main/python/stock_manual_v086.py
+      - ARTITRADE_ANDROID/app/src/main/python/legacy_ma_exit_watch_v094.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LegacyLedgerMigration.java
+      - ARTITRADE_ANDROID/ui_tests/test_v106_fresh_paper_epoch.py
+      - ARTITRADE_ANDROID/ui_tests/test_v108_native_ma_trend_entry_paths.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Audit embedded original source methods without build or signing
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast, base64, io, zipfile, re
+          from pathlib import Path
+          root=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          data=base64.b64decode("".join((root/("part_%02d.txt"%i)).read_text("ascii") for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(data))
+          print("EMBEDDED_MODULE_COUNT",len(z.namelist()))
+          for fname in ("d_engine.py","d_live.py","d_upbit.py","d_v19_portfolio.py","at_close_bridge.py"):
+              if fname not in z.namelist():
+                  print("FILE_MISSING",fname);continue
+              source=z.read(fname).decode("utf8")
+              tree=ast.parse(source)
+              print("FILE",fname,"LINES",len(source.splitlines()))
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.ClassDef,ast.FunctionDef,ast.AsyncFunctionDef)):
+                      if isinstance(node,ast.ClassDef):
+                          if re.search(r'Engine|Runner|Wallet|Ledger|Market|Score',node.name,re.I):
+                              print(" CLASS",node.name,node.lineno)
+                      elif re.search(r'buy|_entry|candidate|score|_buy|_sell|_handle|_on_tick|_try|_evaluate|_process|target|_record|_cycle',node.name,re.I):
+                          owner=[p.name for p in ast.walk(tree) if isinstance(p,ast.ClassDef) and node in p.body]
+                          print(" METHOD",owner[0] if owner else "module",node.name,"@",node.lineno)
+              lines=source.splitlines()
+              hits=[(i+1,s.strip()[:210]) for i,s in enumerate(lines) if re.search(r'(market.score|market_score|_buy_if_touch|_buy_limit_depth|buy_reason|buy_target|first_target|INSERT INTO (positions|executions)|def .*(buy|entry|target))',s,re.I)]
+              for line,s in hits[:85]:print(" HIT",line,s)
+          PY
+      - name: Inspect original return contracts and score guard integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(data))
+          cases={'d_engine.py':[('PaperEngine','_buy_if_touch')],
+                 'd_v19_portfolio.py':[('D19PaperEngine','_buy_limit_depth')],
+                 'd_upbit.py':[('CoinLedger','_buy')]}
+          for file,members in cases.items():
+              source=z.read(file).decode('utf8').splitlines()
+              tree=ast.parse('\n'.join(source))
+              for cls,method in members:
+                  for n in ast.walk(tree):
+                      if isinstance(n,ast.ClassDef) and n.name==cls:
+                          for fn in n.body:
+                              if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)) and fn.name==method:
+                                  print('CONTRACT',file,cls,method,fn.lineno,fn.end_lineno)
+                                  for sub in ast.walk(fn):
+                                      if isinstance(sub,ast.Return):
+                                          print('RETURN',sub.lineno,source[sub.lineno-1].strip()[:250])
+                                  for i in range(fn.lineno-1,min(fn.end_lineno,fn.lineno+40)):
+                                      print('SOURCE',i+1,source[i][:210])
+          PY
+      - name: Compile updated source without building Android APK
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/market_trend_closed_entry_v107.py ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py ARTITRADE_ANDROID/app/src/main/python/market_trend_preplan_v099.py ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py
+      - name: Run v107 completed RSI and lossless ZIP tests
+        shell: bash
+        run: |
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v107_closed_rsi_and_exports.py' -v
+      - name: Inspect coin ledger instance identity and original AT hooks
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          p=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          raw=base64.b64decode("".join((p/("part_%02d.txt"%n)).read_text("ascii") for n in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(raw))
+          queries={"d_upbit.py":("class CoinLedger:","def _buy(self,c,order,book,seen,amount_available):","CoinLedger("),
+                   "d_engine.py":("class PaperEngine:","def _buy_if_touch(self, c, tf, minute, at):"),
+                   "d_live.py":("PaperEngine(","D19PaperEngine(")}
+          for fname,patterns in queries.items():
+              lines=z.read(fname).decode("utf8").splitlines()
+              for q in patterns:
+                  loc=[i for i,s in enumerate(lines) if q in s][:4]
+                  for i in loc:
+                      print("AUDIT",fname,q,"at",i+1)
+                      for j in range(max(0,i-1),min(len(lines),i+25)):
+                          print("SRC",j+1,lines[j][:200])
+          PY
+      - name: Run negative market-score reference-bar scope tests
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v107_at_negative_market_gate.py' -v
+      - name: Inspect original CLOSE BUY candidate entry hooks
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          p=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          raw=base64.b64decode("".join((p/("part_%02d.txt"%n)).read_text("ascii") for n in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(raw))
+          for name in z.namelist():
+              if "close" not in name.lower():continue
+              print("CLOSE_MODULE",name)
+              lines=z.read(name).decode("utf8").splitlines()
+              for i,line in enumerate(lines):
+                  if any(key in line for key in ("def ", "class ", "INSERT INTO", "buy(", "make_", "signal", "target")):
+                      print("CLOSE",i+1,line[:220])
+          for name in ("at_close_bridge.py",):
+              if name in z.namelist():
+                  for i,line in enumerate(z.read(name).decode("utf8").splitlines()):
+                      print("BRIDGE",i+1,line[:230])
+          PY
+      - name: Source-only eight-wallet entry-plan and one-shot reset tests
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/execution_entry_plans_v107.py ARTITRADE_ANDROID/app/src/main/python/entry_plan_hooks_v107.py
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v107_entry_plan_epoch.py' -v
+      - name: Prior all-eight recovery and AI/BUY reason regression
+        shell: bash
+        run: |
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v092_scenarios_8_wallets.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v095_trade_basis_ai.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v106_fresh_paper_epoch.py' -v
+      - name: Audit stock MA native pending match and quote contracts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          packed=base64.b64decode(''.join((root/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(packed))
+          for filename in ('stock_ma_engine.py','d_minute_repair_fast.py','d_v19_portfolio.py'):
+              source=z.read(filename).decode('utf8')
+              lines=source.splitlines()
+              t=ast.parse(source)
+              for node in ast.walk(t):
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and (
+                    filename=='stock_ma_engine.py' and
+                      (node.name in ('on_tick','_fill','_buy','_process_buy','_match','scan_completed',
+                       '_candidate','_entry','_buy_pending','_on_real') or
+                       any(k in node.name for k in ('buy','match','fill','candidate')))
+                    or filename=='d_minute_repair_fast.py' and node.name=='exchange_stamp_is_fresh'
+                    or filename=='d_v19_portfolio.py' and node.name=='live_session'
+                  ):
+                      parent=next((p.name for p in ast.walk(t) if isinstance(p,ast.ClassDef) and node in p.body),'module')
+                      print('METHOD_BEGIN',filename,parent,node.name,node.lineno,node.end_lineno)
+                      for i in range(node.lineno-1,min(node.end_lineno,node.lineno+195)):
+                          print('NATIVE',filename,i+1,lines[i][:230])
+          PY
+      - name: Prove unconditional cold fresh start, no legacy holdings/import, live guard
+        shell: bash
+        run: |
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v108_mandatory_first_epoch.py' -v
+      - name: Validate stock MA nonfill retry and trend confirmed-bar execution paths
+        shell: bash
+        run: |
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v108_native_ma_trend_entry_paths.py' -v
+      - name: Audit old LEGACY migration and MA watcher for complete reachability
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("ARTITRADE_ANDROID/app/src/main")
+          targets={"LegacyLedgerMigration":"*.java",
+                   "legacy_ma_exit_watch_v094":"*.py"}
+          for keyword,pattern in targets.items():
+              uses=[]
+              for path in root.rglob(pattern):
+                  if path.stem==keyword:continue
+                  for number,line in enumerate(path.read_text("utf-8").splitlines(),1):
+                      if keyword in line and not line.strip().startswith("#"):
+                          uses.append((str(path),number,line.strip()[:180]))
+              print("LEGACY_RUNTIME_REFERENCES",keyword,uses)
+          PY
+      - name: Assert source-only
+        run: test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
