@@ -356,6 +356,8 @@ public final class UnifiedTradingService extends Service {
     }
 
     private void checkPendingPCArchive(LocalHubClient hub){
+        // Never revive 11/14 imported research or PC paper positions after reset.
+        if(FreshEpochGateV106.hasMarker(this))return;
         if(!strategy.isStarted()||migrationRestarting.get())return;
         long now=System.currentTimeMillis();
         if(now-lastMigrationPoll<15000L)return;
