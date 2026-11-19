@@ -142,12 +142,13 @@ class V008RootCause(unittest.TestCase):
             'with self.lock:\n            held_snapshot=list(self._positions.items())',
             'with self.lock:\n            virtual_snapshot=list(self._virtual.items())',
             'with self.lock:\n                owned_snapshot=tuple(self._positions.values())',
-            'with self.lock:\n                if self._positions.get(key) is p:',
-            'with self.lock:\n                    if self._virtual.get(key) is v:',
         )
         for fragment in expected:
             with self.subTest(fragment=fragment[:48]):
                 self.assertIn(fragment,trend)
+        import re
+        self.assertRegex(trend,r'with self\\.lock:\\n\\s+if self\\._positions\\.get\\(key\\) is p:')
+        self.assertRegex(trend,r'with self\\.lock:\\n\\s+if self\\._virtual\\.get\\(key\\) is v:')
         self.assertIn('with self.lock:\n            self._positions[(market,"trend",frame,code)]=position',new_legacy)
 
     def test_all_five_strategies_still_have_original_entry_exit_owners(self):
