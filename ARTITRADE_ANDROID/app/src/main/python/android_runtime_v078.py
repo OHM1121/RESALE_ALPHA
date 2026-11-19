@@ -228,6 +228,20 @@ def _phone_runtime_snapshot(self):
             'rsi_history':warm,
             'both_feeds_available':bool(coin_trade and
                 (not stock_session or not stock_keys or stock_ws))}
+        # Native source-only startup audit. Observe the ORIGINAL ongoing
+        # missing-candle recovery, venue-qualified 0B/0D and Upbit WS book.
+        # Never start a second socket or convert last/REST marks to fills.
+        try:
+            from market_feed_health_v004 import snapshot as _v016_feed
+            from preload_audit_v016 import audit as _v016_audit
+            snapshot['market_feed_health_v004']=_v016_feed(self)
+            snapshot['startup_preload_v081']['work_audit']=_v016_audit(self,snapshot)
+        except Exception as preflight_error:
+            self._err('preload_audit_v016',preflight_error)
+            snapshot['startup_preload_v081']['work_audit']={
+                'status':'AUDIT_FAILED','ready':False,'percent':0,
+                'work_units_done':0,'work_units_total':0,
+                'first_missing':type(preflight_error).__name__}
         # Publish tiny authentic held-stock 0B/official REST prices in the
         # 2.5-second heartbeat. The slow 6.5-17-second full SQLite view
         # cannot be the only route for prices or the trading executor.
