@@ -1021,6 +1021,57 @@
         "test_v015_position_uid_cfg_single.py"
       ],
       "notes": "Narrow owner/frame/symbol/historical-entry date/BUY-only candidate must be uniquely identified or fail closed; user explicitly waived historical bid proof for THIS cycle only. Private backup, native accounting and antirollback checkpoint updates are mandatory. No deletion claimed without actual phone status."
+    },
+    {
+      "id": "AT-016-25",
+      "issue": 102,
+      "found": "0.0.15",
+      "category": "SOURCE_UI_PRELOAD_BYPASS_AND_UNVERIFIED_PROGRESS",
+      "title": "Preloading cover hidden after existing-service heartbeat or closed after 22s with missing official candles, no actual work percent/ETA",
+      "evidence": "0.0.15 UnifiedVisualActivity.shouldRestoreShellImmediately(saved) used background heartbeat to skip; startupReadinessTick used hardcoded 16..94%, warm min 22 seconds and watchdog 40 seconds with no quote/depth/official-history validation in UI. UPBIT_CLOSED original verified candle source initially missed by new audit and corrected before CI.",
+      "root": "CONFIRMED_IN_SOURCE_UI_EARLY_BYPASS_AND_PROGRESS_UNLINKED_TO_NATIVE_PROOF",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.16",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "PRELOAD_VERIFIED_V016",
+        "COIN_FEED",
+        "STOCK_FEED",
+        "UI_RECORDS"
+      ],
+      "tests": [
+        "test_v016_preload_trend_ledger.py",
+        "test_v089_fast_prices_rotation.py",
+        "test_v002_eight_virtual_paper_end_to_end.py"
+      ],
+      "notes": "Every new app UI entry shows existing independent source audit; no new exchange connection; native 21 official bars checked for gaps/recent coin close, per-market genuine WS ticker/books checked, percent from actual checks, ETA only when measured progress. 40s watchdog remains for outages, continuation in native workers. CI cannot prove actual phone API/preload."
+    },
+    {
+      "id": "AT-016-26",
+      "issue": 103,
+      "found": "0.0.15",
+      "category": "TREND_NATIVE_POSITION_BUY_COST_AND_UI_PNL_LINK",
+      "title": "MT54 original BUY price and SELL realized percent absent from history UI despite source SQLite storing original cost/quantity/fees",
+      "evidence": "0.0.15 TrendWalletV054.snapshot exposed raw executions.price but lacked original entry cost, net_profit alias, realized_pct and verified source linkage for older sell positions; stock UI positionMark refused saved mark entirely without 0B quote; native snapshot already persisted entry and fee.",
+      "root": "CONFIRMED_READONLY_PROJECTION_AND_DISPLAY_VALUATION_PROVENANCE_GAP",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.16",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "TREND_COST_PROVENANCE_V016",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "UI_RECORDS",
+        "POSITION_UID_V015"
+      ],
+      "tests": [
+        "test_v016_preload_trend_ledger.py",
+        "test_v015_global_position_uid_and_cfg_single.py",
+        "test_v002_eight_virtual_paper_end_to_end.py"
+      ],
+      "notes": "Original native MT54 position.id/executions.position_id exact cost join, original buy fee apportioned by executed qty; sell net_pnl and ROI verified, holding saved-mark labelled non-live, all frame summaries. Only read-only output; no updates to native trading wallets, no synthetic external order. Phone records and actual UI unverified."
     }
   ],
   "known_normal": [
