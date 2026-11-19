@@ -198,6 +198,29 @@ replace("d_live.py",
                     if self._minute_repair_tries.get(key, 0) < 2 or wait>0:
                         self._minute_repair_retry[key] = time.monotonic() + max(12.0,wait)+0.2
                     self.store.write_runtime_error(exc, 'fast_1m_official_restore:' + code)""")
+# 0.0.7 also recorded 66 FIX8_DB_GATE_CONTENTION waits (some >2s).
+# The original threshold of 24 queued normal ticks is too permissive for
+# a 3-second freshness window. Defer slow source-chart recovery only while
+# the actual priority/normal quote work is backed up; do not lose orders.
+replace("d_live.py",
+"""                if self._tick_queue.qsize() >= 24:
+                    self._frame_repair_retry[key] = time.monotonic() + 1.5
+                    continue""",
+"""                if (self._tick_queue.qsize() >= 3 or
+                    (getattr(self,'_gmo_tick_queue',None) is not None and
+                     self._gmo_tick_queue.qsize()>0) or
+                    (getattr(self,'_feed_message_queue',None) is not None and
+                     self._feed_message_queue.qsize()>=3)):
+                    self._frame_repair_retry[key] = time.monotonic() + 1.5
+                    continue""")
+# Keep only provenance of the original same-venue 0D fields; a zero/missing
+# size is not evidence of an executable ask and never permits PAPER BUY.
+replace("d_gmo_runtime.py",
+"""                    self._log('GMO_BOOK_INVALID',code,'0D no valid ask/ask_qty (not using merged NXT depth)')""",
+"""                    keys='KRX6044='+str(bool(vals.get('6044')))+',KRX61='+str(bool(vals.get('61')))+',Q41='+str(bool(vals.get('41')))
+                    self._log('GMO_BOOK_INVALID',code,
+                        '0D no valid ask/ask_qty (same-venue only; '+keys+')')""")
+
 # Native GMO priority windows were ALSO pinned to the ordinary 09:00
 # opening. Merely patching the 0D timer did not keep priority/REST/watch
 # alive for the special 10:00 open or a later reconnect.
