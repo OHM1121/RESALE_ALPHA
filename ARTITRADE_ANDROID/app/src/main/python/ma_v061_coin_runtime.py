@@ -239,7 +239,14 @@ def install():
     original_record=ma.MACoinLedger.record_candidate
     def record(self,candidate,name,now=None):
         kind=(candidate.get('features') or {}).get('ma_v061_kind')
-        if kind not in ('TURNPOINT','DOWN_BEAR'):return False
+        # The 11.18 workbook RETIRES both the old 5MA-down bearish
+        # strategy and V061 next-bar turnpoint entries. Only a V067
+        # fresh, forming-candle verified up-transition can submit a BUY.
+        proof=candidate.get('features') or {}
+        if not (kind=='TURNPOINT' and
+                proof.get('ma_v067_kind')=='REVERSAL_UP' and
+                proof.get('source')=='UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK'):
+            return False
         if kind=='TURNPOINT':
             stamp=now or d_upbit.kst_now()
             open_at=dt.datetime.fromisoformat(candidate['features']['ma_v061_open_at'])
@@ -277,6 +284,19 @@ def install():
             # Never manufacture a bypass order on a failed guard. The original
             # order path remains authoritative and independently fail-closed.
             return 0
+        proof=c.execute("""SELECT features FROM candidates
+            WHERE market=? AND tf=? AND ref_at=? ORDER BY id DESC LIMIT 1""",
+            (order['market'],order['tf'],order['ref_at'])).fetchone()
+        try:
+            features=json.loads(proof['features'] or '{}') if proof else {}
+        except (TypeError,ValueError):features={}
+        if not (features.get('ma_v067_kind')=='REVERSAL_UP' and
+                features.get('source')=='UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK'):
+            # Only native PAPER pending is retired here. No broker
+            # cancellation may be inferred from this wallet state.
+            c.execute("UPDATE orders SET status='EXPIRED' WHERE id=? AND status='PENDING'",
+                      (order['id'],))
+            return 0
         result=original_buy(self,c,order,book,seen,available)
         if result:
             row=c.execute("""SELECT p.* FROM positions p
@@ -306,7 +326,8 @@ def install():
     original_book=ma.MACoinLedger.process_book
     def scoped_book(self,book,at=None):
         now=at or d_upbit.kst_now()
-        _process_exits(self,book,now,original_sell)
+        # V061 TP/slope/recovery auto-SELL is superseded by NEW LEGACY.
+        # The V067 final decorator owns the only allowed MA exits.
         return original_book(self,book,at)
     ma.MACoinLedger.process_book=scoped_book
     original_scan=d_upbit.UpbitPaperRunner._ma_scan_decision
