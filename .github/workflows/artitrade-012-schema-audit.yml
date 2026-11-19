@@ -1,0 +1,38 @@
+name: ARTITRADE v012 synthetic native-wallet schema probe
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths:
+      - .github/workflows/artitrade-012-schema-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 67affaac0872606304c986ccedf05cedbf6bd01b
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract only original embedded native source for isolated TEST wallets
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          root=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          data=base64.b64decode("".join((root/("part_%02d.txt"%i)).read_text("ascii") for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as zip:
+              assert zip.testzip() is None
+              zip.extractall("/tmp/artitrade012_native")
+          PY
+      - name: Inspect synthetic original ledger schemas (NO user data, NO broker)
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade012_native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 ARTITRADE_ANDROID/ui_tests/probe_v012_ledger_schemas.py
