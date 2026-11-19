@@ -113,6 +113,19 @@ def _phone_runtime_snapshot(self):
         stock['status'] = status
         snapshot['stock'] = stock
         last = dict(getattr(self, '_phone_stock_progress', {}) or {})
+        # Native runner progress is the only acceptable source for a completed
+        # stock-symbol counter. Do not substitute variable health-check totals
+        # or the number of WebSocket subscriptions.
+        stage_name=str(last.get('stage') or '').lower()
+        native_total=int(last.get('total') or 0)
+        native_done=int(last.get('done') or 0)
+        symbol_count_stage=any(token in stage_name for token in (
+            '종목', 'universe', 'history', 'historical', 'preload', 'loading',
+            '봉 로딩', '확정봉 복구', '과거봉'))
+        native_stock_count=bool(symbol_count_stage and native_total>=100
+            and 0<=native_done<=native_total
+            and str(last.get('state') or '').lower() not in
+                ('waiting','error','failed'))
         try:
             from at_close_bridge import broker_transport_snapshot
             transport = broker_transport_snapshot()
@@ -130,6 +143,11 @@ def _phone_runtime_snapshot(self):
         snapshot['stock_feed'] = {
             'stage': last.get('stage') or status,
             'detail': last.get('detail') or (transport.get('reason') or ''),
+            'preload_stock_done': native_done if native_stock_count else -1,
+            'preload_stock_total': native_total if native_stock_count else 0,
+            'preload_stock_counter_source': (
+                'ORIGINAL_NATIVE_PER_SYMBOL_PROGRESS' if native_stock_count
+                else 'NOT_YET_PROVEN'),
             'state': last.get('state') or 'waiting',
             'updated_at_ms': last.get('updated_at_ms') or 0,
             'subscribed': len(getattr(runner, 'subscriptions', []) or []) if runner else 0,
