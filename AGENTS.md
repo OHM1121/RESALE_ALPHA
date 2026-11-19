@@ -22,7 +22,7 @@ Applies to **every** AI coding agent (OpenAI GPT, Claude, GitHub Copilot, Google
 ## Non-negotiable trading invariants
 - PAPER/REAL order authority and cash/position/duplicate-fill source are original wallet and SQLite; display snapshot is not a broker acknowledgement.
 - Never create an order/fill from a REST price, invented candle, cached stale book or UI snapshot. Live order execution requires authorized broker proof and a valid lease.
-- Do not bypass FreshEpochGate or LedgerAntiRollback, erase existing fills, silently migrate other epochs, or turn previously held positions into new buys.
+- Do not bypass FreshEpochGate or LedgerAntiRollback, silently migrate other epochs, or turn previously held positions into new buys. **Exception granted 2026-11-19**: a one-time verified, PAPER-only deletion of attributable pre-NEW LEGACY AT/MA/Trend executions from the user's explicit purge direction, with exact cash/P&L reversal and signed independent witness rebase. This is **not** permission to erase NEW LEGACY, GMO/CW, REAL broker or ambiguous fills; refer to `docs/artitrade/USER_ACTIVE_POLICY.md`.
 - Retired MarketTrend 5m must not re-enter on **stock or coin**. Keep other strategies' 5m and SELL recovery for legacy holdings.
 - Distinguish `healthy empty` from `not ready` from `failed`. Missing evidence ≠ zero orders/fills.
 - Every additional wrapper around `Runtime.hub_records(for_ui=...)` must preserve keyword argument and not perform broker writes.
