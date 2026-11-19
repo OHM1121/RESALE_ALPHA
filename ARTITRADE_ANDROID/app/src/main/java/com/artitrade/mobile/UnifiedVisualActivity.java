@@ -3073,6 +3073,11 @@ public final class UnifiedVisualActivity extends Activity {
             origin.setTextColor(PremiumUi.MUTED);
             top.addView(origin);
             tile.addView(top);
+            TextView uid=text("고유 거래 ID · "+p.optString("position_uid",
+                "원본 연결 확인 필요"),10);
+            uid.setTextColor(PremiumUi.MUTED);
+            uid.setSingleLine(true);
+            tile.addView(uid);
             double pnl=tradePnL(p,"positions");
             double rate=tradeReturnPct(p,"positions",pnl);
             String detail="매수가 "+formatMaybePrice(p,"entry_price","entry","avg_buy_price")+
@@ -3915,7 +3920,9 @@ public final class UnifiedVisualActivity extends Activity {
              e.has("post_sale_state")?e.optString("post_sale_state",""):
              "후속 관측 기록 미연결");
         historyEvidenceCell(fields,"후속 관측상태",postState,196);
-        historyEvidenceCell(fields,"포지션 ID",
+        historyEvidenceCell(fields,"고유 거래 ID",
+            r.optString("position_uid","연결 검증 필요"),260);
+        historyEvidenceCell(fields,"원본 포지션 ID",
             r.optString("position_id",r.optString("source_position_id","미기록")),210);
         details.addView(fields,new HorizontalScrollView.LayoutParams(-2,-2));
         panel.addView(details,new LinearLayout.LayoutParams(-1,dp(56)));
@@ -4056,6 +4063,18 @@ public final class UnifiedVisualActivity extends Activity {
                 panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
             }
 
+            if("positions".equals(kind)||"executions".equals(kind)){
+                String tradeUid=r.optString("position_uid","");
+                String nativeSource=r.optString("position_uid_status","");
+                TextView uidText=text("고유 거래 ID · "+
+                    (tradeUid.isEmpty()?"원본 연결 확인 필요":tradeUid)+
+                    ("UNLINKED_EXECUTION".equals(nativeSource)?
+                        " · 원본 포지션 미연결":""),10);
+                uidText.setTextColor(PremiumUi.MUTED);
+                uidText.setSingleLine(false);
+                uidText.setMaxLines(2);
+                panel.addView(uidText,new LinearLayout.LayoutParams(-1,-2));
+            }
             TextView fastAmount=null;
             LinearLayout figures=new LinearLayout(this);
             figures.setOrientation(LinearLayout.HORIZONTAL);
