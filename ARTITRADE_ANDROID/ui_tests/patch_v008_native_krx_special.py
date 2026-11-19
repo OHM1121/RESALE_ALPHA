@@ -21,10 +21,10 @@ with zipfile.ZipFile(io.BytesIO(raw)) as z:
     original={i.filename:z.read(i.filename) for i in infos}
 modified={}
 
-def update(name,old,new):
+def update(name,old,new,expected=1):
     data=modified.get(name,original[name]).decode("utf8")
-    assert data.count(old)==1,(name,old[:110],data.count(old))
-    data=data.replace(old,new)
+    assert data.count(old)==expected,(name,old[:110],data.count(old))
+    data=data.replace(old,new,expected)
     modified[name]=data.encode("utf8")
 
 # Shared KRX/NXT session is authoritative by exact calendar date.
@@ -75,7 +75,7 @@ update("d_gmo_runtime.py",
 # Prevent phantom time-window limits in native original broker guard.
 update("projectgmo/engine.py",
 """                time(9, 0) <= t.time() < time(15, 30))""",
-"""                __import__('krx_session_v041').in_regular_clock(t,'KRX'))""")
+"""                __import__('krx_session_v041').in_regular_clock(t,'KRX'))""",expected=2)
 update("projectgmo/engine.py",
 """if t.date().isoformat() != entry_date or not ('09:00' <= t.strftime('%H:%M') < '15:30'):""",
 """if t.date().isoformat() != entry_date or not __import__('krx_session_v041').in_regular_clock(t,'KRX'):""")
