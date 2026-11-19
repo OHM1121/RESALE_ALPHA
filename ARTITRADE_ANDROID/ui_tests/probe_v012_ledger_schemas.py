@@ -21,12 +21,13 @@ def inspect(label,c):
     for name in tables:
         if name.startswith('sqlite_'):continue
         cols=[(r[1],r[2]) for r in c.execute('PRAGMA table_info("'+name+'")')]
-        if name in ('accounts','v19_accounts','positions','executions','orders',
-                   'candidates','signals','v19_orders','v19_members',
-                   'nl1118_reference_positions','nl1118_resting_sells',
-                   'ma_v067_positions','seed_allocations','v19_seed_allocations',
-                   'ma_v061_positions','realized_trades','research'):
-            found[name]=cols
+        found[name]=cols
+    for name in ('accounts','v19_accounts','wallets','balances','frame_accounts',
+                 'v19_seed_allocations'):
+        if name in tables:
+            print('V012_ACCOUNT_SAMPLE '+label+' '+name+' '+
+                json.dumps([dict(row) for row in c.execute(
+                    'SELECT * FROM "'+name+'" LIMIT 8')],sort_keys=True,default=str),flush=True)
     print('V012_SCHEMA '+label+' '+json.dumps(found,ensure_ascii=True,sort_keys=True),flush=True)
 with tempfile.TemporaryDirectory() as temp:
     root=Path(temp)
