@@ -156,6 +156,10 @@ public final class UnifiedVisualActivity extends Activity {
     private boolean startupNativeAuditReady=false;
     private long startupFirstWorkAtMs=0L;
     private int startupFirstWorkDone=-1;
+    private int startupStockLoaded=0;
+    private int startupStockTotal=0;
+    private long startupStockFirstProgressAtMs=0L;
+    private int startupStockFirstProgressCount=0;
     private String startupMissingCause="";
     private String market="stock";
     private String policyTargetCode="";
@@ -412,7 +416,7 @@ public final class UnifiedVisualActivity extends Activity {
                 showBoot();
                 if(state!=null&&!state.getBoolean("v089_preload_ready",true)){
                     if(startupProgress!=null)startupProgress.setProgress(
-                        Math.max(5,Math.min(98,state.getInt("v089_preload_pct",5))));
+                        Math.max(0,Math.min(99,state.getInt("v089_preload_pct",0))));
                     if(startupStage!=null)startupStage.setText(
                         state.getString("v089_preload_stage",
                             "원장 · 전략별 시세 사전 준비 중"));
@@ -569,9 +573,11 @@ public final class UnifiedVisualActivity extends Activity {
                 startupNativeAuditReady=audit.optBoolean("ready",false);
                 updateVerifiedStartupProgress(audit.optInt("percent",0),
                     verified,units,total,firstMissing);
+                updateOriginalStockLoadingCounter(all.optJSONObject("stock_feed"));
             }else{
                 startupMissingCause="원본 사전점검 결과 수신 대기";
                 updateStartupProgress(progress,stage);
+                updateOriginalStockLoadingCounter(all.optJSONObject("stock_feed"));
             }
             if(engine&&uiReady&&stockReady&&coinReady){
                 // Preserve the original verified feed/ledger checkpoint for
@@ -898,9 +904,9 @@ public final class UnifiedVisualActivity extends Activity {
         TextView brand=text("ARTITRADE",28);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.12f);p.addView(brand);
         TextView sub=text("S21+ PHONE MAIN · NATIVE SAFEBOOT",12);sub.setTextColor(Color.rgb(139,164,194));sub.setPadding(0,dp(8),0,dp(18));p.addView(sub);
         startupProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
-        startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(5);
+        startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(0);
         p.addView(startupProgress,new LinearLayout.LayoutParams(dp(Math.min(320,Math.max(180,getResources().getConfiguration().screenWidthDp-76))),dp(10)));
-        startupPercent=text("5% · 원본 사전점검 대기",18);
+        startupPercent=text("0% · 종목별 로딩 실적 확인 중",18);
         startupPercent.setTextColor(Color.rgb(178,218,255));
         startupPercent.setPadding(0,dp(11),0,0);p.addView(startupPercent);
         startupStage=text("원장 · 전략별 요약 · 화면 자료를 준비 중",12);
@@ -915,14 +921,51 @@ public final class UnifiedVisualActivity extends Activity {
         root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
+    // Stock progress must come from completed, individual symbols in the native
+    // feed; never turn volatile feed-health check totals into a stock percentage.
+    // A reconnect or a new scan stage cannot roll this screen backward.
+    private void updateOriginalStockLoadingCounter(JSONObject feed){
+        if(preloadScreenReady||feed==null)return;
+        int observedTotal=feed.optInt("preload_stock_total",0);
+        int observedDone=feed.optInt("preload_stock_done",-1);
+        if(observedTotal<=0||observedDone<0||observedDone>observedTotal)return;
+        // Restarted scan/reordered subscription batches must not erase this
+        // session's already verified completed symbol count.
+        if(startupStockTotal!=observedTotal){
+            if(startupStockTotal>0)return; // freeze denominator per load run
+            startupStockTotal=observedTotal;
+            startupStockFirstProgressAtMs=android.os.SystemClock.elapsedRealtime();
+            startupStockFirstProgressCount=observedDone;
+        }
+        startupStockLoaded=Math.max(startupStockLoaded,observedDone);
+        int percent=(int)((100L*startupStockLoaded)/startupStockTotal);
+        if(startupProgress!=null)startupProgress.setProgress(percent);
+        if(startupPercent!=null)startupPercent.setText(
+            percent+"% · "+startupStockLoaded+" / "+startupStockTotal+"종목");
+        if(startupStage!=null)startupStage.setText(
+            "주식 원본 종목별 로딩 "+startupStockLoaded+"/"+startupStockTotal);
+        long elapsed=android.os.SystemClock.elapsedRealtime()-startupStockFirstProgressAtMs;
+        int gain=startupStockLoaded-startupStockFirstProgressCount;
+        String eta="실제 로딩 속도 확인 중";
+        if(startupStockLoaded==startupStockTotal)eta="종목 로딩 완료";
+        else if(gain>=2&&elapsed>=1500L){
+            long seconds=(long)Math.ceil((startupStockTotal-startupStockLoaded)
+                *elapsed/(1000.0*gain));
+            if(seconds>0&&seconds<86400)
+                eta="약 "+String.format(Locale.KOREA,"%02d:%02d",seconds/60,seconds%60)
+                    +" · 실제 종목 처리속도 기준";
+        }
+        if(startupEta!=null)startupEta.setText("완료예상: "+eta);
+    }
+
     private void updateStartupProgress(int percent,String stage){
         main.post(()->{
             if(preloadScreenReady||startupNativeAuditSeen)return;
-            int bounded=Math.min(98,Math.max(0,percent));
-            if(startupProgress!=null)
-                startupProgress.setProgress(Math.max(startupProgress.getProgress(),bounded));
-            if(startupStage!=null)startupStage.setText(stage);
-            if(startupPercent!=null)startupPercent.setText(bounded+"% · 점검 근거 수신 중");
+            // Before native per-symbol counts arrive, do not show guessed 16/38/
+            // 60/94 percentages. The native feed owns the completion metric.
+            if(startupStage!=null&&startupStockTotal==0)startupStage.setText(stage);
+            if(startupPercent!=null&&startupStockTotal==0)
+                startupPercent.setText("0% · 원본 종목별 로딩 실적 수신 대기");
         });
     }
 
@@ -930,40 +973,22 @@ public final class UnifiedVisualActivity extends Activity {
                                                 int total,String firstMissing){
         if(preloadScreenReady)return;
         startupNativeAuditSeen=true;
-        long elapsed=Math.max(1L,android.os.SystemClock.elapsedRealtime()-preloadStartedAt);
-        int bounded=Math.min(99,Math.max(0,percent));
-        if(startupProgress!=null)startupProgress.setProgress(bounded);
-        if(startupPercent!=null)
-            startupPercent.setText(bounded+"% · 실제 확인 "+done+"/"+total+" 항목");
-        if(startupStage!=null)startupStage.setText(detail);
+        // Dynamic check totals are deliberately NOT a load-progress denominator.
+        // Network readiness changes independently of the stock loading counter.
         if(startupChecks!=null)
             startupChecks.setText(firstMissing.isEmpty()
-                ?"확정봉·시세·호가·원장 유효성 점검 완료"
-                :"미확인 항목: "+firstMissing+" · 기존 수신기에서 복구 중");
-        if(startupFirstWorkDone<0){
-            startupFirstWorkDone=done;
-            startupFirstWorkAtMs=elapsed;
-        }
-        int gained=done-startupFirstWorkDone;
-        long observed=elapsed-startupFirstWorkAtMs;
-        String eta="수신 진행상황 확인 중";
-        if(gained>=2 && observed>=1500L && total>done){
-            long left=(long)Math.ceil((total-done)*(observed/1000.0)/gained);
-            eta=left>0&&left<86400L
-                ?("약 "+String.format(Locale.KOREA,"%02d:%02d",left/60,left%60)+
-                    " · 실제 처리속도 기준 추정")
-                :"서버/거래소 응답에 따라 변동";
-        }else if(elapsed>=15000L){
-            eta="현재 확인된 처리속도로 산정 불가 · 수신 대기";
-        }
-        if(startupEta!=null)startupEta.setText("완료예상: "+eta+
-            " · 미완료 시 안전하게 백그라운드 점검");
+                ?"별도 점검: 공식봉·시세·호가·원장 유효성 확인"
+                :"별도 점검 미완료: "+firstMissing+" · 원본 수신기에서 복구 중");
+        if(startupStockTotal==0&&startupStage!=null)
+            startupStage.setText(detail+" · 종목별 완료 건수 수신 대기");
     }
 
     private void finishPreload(boolean engineReady){
         if(preloadScreenReady)return;
         preloadScreenReady=true;
-        if(startupProgress!=null && engineReady && startupNativeAuditReady)
+        // Never advertise 100% when the last native per-stock proof is missing.
+        if(startupProgress!=null && startupStockTotal>0 &&
+            startupStockLoaded==startupStockTotal)
             startupProgress.setProgress(100);
         startupProgress=null;startupStage=null;startupPercent=null;
         startupEta=null;startupChecks=null;
