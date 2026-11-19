@@ -80,8 +80,10 @@ class V080MissedEntries(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(source)) as z:
             self.assertIsNone(z.testzip())
             src=z.read('d_upbit.py').decode()
-            self.assertIn('ping_interval=20,ping_timeout=30,max_size=2**20,max_queue=64',src)
-            self.assertIn('codes=frozenset(codes | bids)',src)
+            self.assertIn('ping_interval=20,ping_timeout=30,max_size=2**20,max_queue=128',src)
+            self.assertIn('self._v083_codes=codes | bids',src)
+            self.assertIn('self._v083_active_codes=codes;self._v083_active_bids=bids',src)
+            self.assertIn('self._v084_accept_tick(code,price,stamp,trade_stamp)',src)
             compile(src,'d_upbit.py','exec')
         overlay=(APP/'market_trend_runtime_v043.py').read_text()
         self.assertIn('if abs(time.time()-float(book.get("timestamp",0))/1000)>3',overlay)

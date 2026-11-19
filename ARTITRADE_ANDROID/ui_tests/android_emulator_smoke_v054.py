@@ -113,14 +113,30 @@ def choose(label,old=None,checks=4):
         tree=dump("scroll_to_"+label+"_"+str(i))
     raise AssertionError("Could not navigate to "+label+"; visible="+str(describe(tree)[-45:]))
 
-def check_screen(label,expected,scroll=2):
+def check_screen(label,expected,scroll=2,drawer=False):
     tree=dump(label)
     seen=list(expected)
     for i in range(scroll+1):
         seen=[word for word in seen if not contains(tree,word)]
         if not seen:return tree
         if i<scroll:
-            adb("shell","input","swipe","1050","900","1050","380","330")
+            if drawer:
+                # The settings panel is right-aligned and only dp(380) wide.
+                # The old fixed x=1050 swipe was OUTSIDE the drawer on
+                # 2340px-wide Android 15 and never scrolled the export bars.
+                # Target the actual right-hand ScrollView, not its dim scrim.
+                size=adb("shell","wm","size",check=False)
+                import re
+                found=re.search(r"(?:Override|Physical) size:\\s*(\\d+)x(\\d+)",size)
+                width=int(found.group(1)) if found else 1920
+                height=int(found.group(2)) if found else 1080
+                x=width-max(80,min(140,width//12))
+                y1=max(180,min(height-90,int(height*.82)))
+                y2=max(50,min(int(height*.26),y1-160))
+                adb("shell","input","swipe",str(x),str(y1),str(x),
+                    str(y2),"460")
+            else:
+                adb("shell","input","swipe","1050","900","1050","380","330")
             time.sleep(.4)
             tree=dump(label+"_scroll_"+str(i))
     raise AssertionError(label+" missing "+str(seen)+"; visible="+str(describe(tree)[-50:]))
@@ -321,7 +337,7 @@ def real_boot():
     if not opened:
         raise AssertionError("REAL_SETTINGS_DRAWER_NOT_OPENING_AFTER_RETRIES")
     check_screen("v076_export_progress_drawer",
-                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4)
+                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4,drawer=True)
     print("V076_RIGHT_DRAWER_EXPORT_PROGRESS_BARS_VISIBLE",flush=True)
     # Touch the dark scrim to the left of the right-aligned drawer.
     # Its close icon may be offscreen after scrolling the long drawer.
@@ -347,6 +363,22 @@ def real_boot():
     independent=adb("shell","run-as",PACKAGE,"ls","-l",wallet,check=False,timeout=15)
     if "market_trend_wallet_v054.sqlite3" not in independent:
         raise AssertionError("MT54_INDEPENDENT_WALLET_NOT_INITIALIZED_AFTER_REAL_BOOT")
+    # This is the actual service-enabled APK, with both strategy engines
+    # started. Verify the new atomic display snapshot was published without
+    # blocking foreground order workers or restarting the Android process.
+    view_file="files/artitrade_view_record_snapshot_v087.json"
+    view=adb("shell","run-as",PACKAGE,"ls","-l",view_file,check=False,timeout=15)
+    if "artitrade_view_record_snapshot_v087.json" not in view:
+        raise AssertionError("V087_SERVICE_ATOMIC_UI_RECORD_NOT_PUBLISHED")
+    health=adb("shell","run-as",PACKAGE,"cat",
+        "shared_prefs/artitrade_process_health_v087.xml",check=False,timeout=15)
+    if "last_memory_sample" not in health:
+        raise AssertionError("V087_ANDROID_MEMORY_SAMPLE_NOT_PERSISTED")
+    memory=adb("shell","dumpsys","meminfo",PACKAGE,timeout=45,check=False)
+    (BASE/"v087_service_memory_pss.txt").write_text(memory,encoding="utf-8")
+    if "TOTAL" not in memory:
+        raise AssertionError("V087_SERVICE_PROCESS_MEMORY_NOT_REPORTED")
+    print("V087_REAL_PROCESS_HEALTH_AND_ATOMIC_VIEW_STORE_PASS",flush=True)
     verify_no_fatal("real_boot")
 
 def fixtures():
@@ -360,6 +392,10 @@ def fixtures():
     adb("shell","am","force-stop",PACKAGE)
     print(adb("install","-r",str(fixture_apk),timeout=180),flush=True)
     adb("shell","am","force-stop",PACKAGE)
+    # This is an isolated emulator fixture. Ensure seeded historical records
+    # are selected instead of a real-boot private atomic file from the prior APK.
+    adb("shell","run-as",PACKAGE,"rm","-f",
+        "files/artitrade_view_record_snapshot_v087.json",check=False)
     put_pref("artitrade_local_records_v075",{
         "records":json.dumps(fixture(),ensure_ascii=False,separators=(",",":")),
         "updated_at":int(time.time()*1000)})

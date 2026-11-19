@@ -38,7 +38,7 @@ class IndependentRunner(TestCase):
         finish=dt.datetime(2026,11,13,10,5,tzinfo=mt.KST)
         co._candidates['coin']={'KRW-BTC':('CRYPTO','KRW-BTC')}
         co._quote=lambda market,code:{'trade':75,'ask':75,'bid':75,'ask_size':1000,'bid_size':1000}
-        co._closed_series=lambda m,code,tf,end:[{'close':100-i,'end':end-dt.timedelta(seconds=300*(21-i))}
+        co._closed_series=lambda m,code,tf,end:[{'close':80+i*.2,'end':end-dt.timedelta(seconds=300*(21-i))}
                                                for i in range(21)] if tf=='5m' else []
         co.wallet.native_owned=lambda m,s:False
         co.standalone_wallet.legacy_owned=lambda m,s:False

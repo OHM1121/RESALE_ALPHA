@@ -30,6 +30,7 @@ public final class UnifiedTradingService extends Service {
     static final String SET_LIVE="com.artitrade.mobile.SET_LIVE";
     static final String SET_TREND_MANUAL="com.artitrade.mobile.SET_TREND_MANUAL";
     static final String APPLY_OPERATION="com.artitrade.mobile.APPLY_OPERATION";
+    static final String MANUAL_PAPER_SELL="com.artitrade.mobile.MANUAL_PAPER_SELL";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
     static final String SET_PC_SYNC="com.artitrade.mobile.SET_PC_LIVE_SYNC";
     static final String APPLY_PC_MIGRATION="com.artitrade.mobile.APPLY_PC_MIGRATION";
@@ -37,6 +38,8 @@ public final class UnifiedTradingService extends Service {
     private static final int NOTIFY_ID=5701;
     private final AtomicBoolean running=new AtomicBoolean(false);
     private final AtomicBoolean migrationRestarting=new AtomicBoolean(false);
+    private final AtomicBoolean uiRecordCollecting=new AtomicBoolean(false);
+    private volatile long uiRecordLastStartedMs=0L;
     private volatile long lastMigrationPoll=0L;
     private volatile String lastAutomaticMigrationSha="";
     private volatile long lastAutomaticMigrationAt=0L;
@@ -54,6 +57,7 @@ public final class UnifiedTradingService extends Service {
 
     @Override public void onCreate(){
         super.onCreate();
+        ProcessHealthV087.install(this);
         crashes=new RuntimeCrashStore(this);
         strategy=new StrategyRuntimeBridge(this);
         clientId=getSharedPreferences("unified_runtime",MODE_PRIVATE).getString("client_id","");
@@ -82,6 +86,11 @@ public final class UnifiedTradingService extends Service {
             }
             ensureChannel();
             startForeground(NOTIFY_ID,notification("안전 시작 · 최신 EXE 전략엔진 준비"));
+            if(intent!=null&&MANUAL_PAPER_SELL.equals(intent.getAction())){
+                final String payload=intent.getStringExtra("request");
+                new Thread(()->applyManualPaperSell(payload),
+                    "artitrade-v085-user-paper-exit").start();
+            }
             if(intent!=null&&SET_LIVE.equals(intent.getAction())){
                 String market=intent.getStringExtra("market");
                 boolean enabled=intent.getBooleanExtra("enabled",false);
@@ -284,6 +293,37 @@ public final class UnifiedTradingService extends Service {
                     "artitrade-pc-research-missing-only").start();
         }catch(Throwable e){crashes.add("pc_ledger_auto_check",e);}
     }
+    private void applyManualPaperSell(String raw){
+        JSONObject result=new JSONObject();
+        String requestId="";
+        try{
+            JSONObject request=new JSONObject(raw==null?"{}":raw);
+            requestId=request.optString("request_id","");
+            // Never accept an unconfirmed or owner-less action.
+            if(!request.optBoolean("user_confirmed",false))
+                result.put("ok",false).put("error","MANUAL_SELL_CONFIRMATION_REQUIRED");
+            else if(!running.get()||strategy==null||!strategy.isStarted())
+                result.put("ok",false).put("error","PAPER_STRATEGY_NOT_RUNNING");
+            else
+                result=strategy.manualPaperSell(request);
+        }catch(Exception e){
+            crashes.add("manual_paper_sell_service",e);
+            try{result.put("ok",false).put("error","MANUAL_SELL_REQUEST_INVALID")
+                .put("detail",e.getClass().getSimpleName());}
+            catch(Exception ignored){}
+        }
+        try{
+            result.put("request_id",requestId);
+            result.put("completed_at",System.currentTimeMillis());
+            getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
+                .edit().putString("last_result",result.toString()).commit();
+            if(!result.optBoolean("ok",false))
+                crashes.add("manual_paper_sell_rejected",
+                    new IllegalStateException(result.optString("error","UNKNOWN")+
+                        ": "+result.optString("detail","")));
+        }catch(Exception e){crashes.add("manual_paper_sell_result_store",e);}
+    }
+
     private void applyPendingOperation(){
         try{
             String raw=getSharedPreferences("artitrade_operation_pending",MODE_PRIVATE).getString("settings","");
@@ -305,6 +345,61 @@ public final class UnifiedTradingService extends Service {
             launchWithMigration();
         }catch(Throwable e){crashes.add("strategy_restart",e);}
         finally{migrationRestarting.set(false);}
+    }
+
+    /**
+     * A FULL historical SQLite/Python JSON aggregation previously ran on the
+     * lease/heartbeat monitor every 2.5 seconds and wrote a multi-MB value
+     * into SharedPreferences XML. Rendering also parsed this every 3.5s.
+     *
+     * Keep market tick/order workers and the 2.5s heartbeat unchanged, but
+     * run the expensive read-only display snapshot on one bounded worker.
+     * On a hidden UI only the display refresh slows; executions do not.
+     */
+    private void scheduleUiRecordsIfDue(LocalHubClient hub){
+        if(!running.get()||strategy==null||!strategy.isStarted())return;
+        long now=System.currentTimeMillis();
+        android.content.SharedPreferences visibility=getSharedPreferences(
+            "artitrade_ui_visibility_v087",MODE_PRIVATE);
+        boolean visible=visibility.getBoolean("foreground",false)
+            &&now-visibility.getLong("at_ms",0L)<13_000L;
+        long interval=visible?6_500L:17_000L;
+        if(!publishOneShot&&now-uiRecordLastStartedMs<interval)return;
+        if(!uiRecordCollecting.compareAndSet(false,true))return;
+        uiRecordLastStartedMs=now;
+        Thread worker=new Thread(()->{
+            long began=android.os.SystemClock.elapsedRealtime();
+            try{
+                if(!running.get()||!strategy.isStarted())return;
+                JSONObject localRecords=strategy.hubRecords();
+                if(!running.get())return;
+                String serialized=localRecords.toString();
+                // Atomic file is a VIEW, never the broker/order authority.
+                // Oversize stops only a UI write, never a live tick or SELL.
+                LargeRecordStoreV087.write(this,serialized);
+                long completed=System.currentTimeMillis();
+                getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE)
+                    .edit().remove("records").putString("storage","file-v087")
+                    .putLong("updated_at",completed).apply();
+                ProcessHealthV087.sample(this,"ledger_ui_publish",serialized.length(),
+                    android.os.SystemClock.elapsedRealtime()-began,false);
+                boolean enabled=getSharedPreferences("artitrade_pc_live_sync_v1",
+                    MODE_PRIVATE).getBoolean("enabled",false);
+                if(running.get()&&PcLiveSyncPolicy.shouldPublish(
+                    enabled,publishOneShot,completed,lastHubPublish)){
+                    publishOneShot=false;
+                    publishPhoneLedgers(hub,localRecords);
+                    lastHubPublish=completed;
+                }
+            }catch(Throwable error){
+                try{crashes.add("ui_record_source_throttled_v087",error);}
+                catch(Throwable ignored){}
+            }finally{
+                uiRecordCollecting.set(false);
+            }
+        },"artitrade-v087-view-snapshot");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     private void monitorLoop(){
@@ -375,19 +470,8 @@ public final class UnifiedTradingService extends Service {
                 String orders=(enabled!=null&&enabled.optBoolean("stock")?"S":"-")+(enabled!=null&&enabled.optBoolean("coin")?"C":"-");
                 NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
                 if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
-                long now=System.currentTimeMillis();
-                JSONObject localRecords=strategy.hubRecords();
-                getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE).edit()
-                    .putString("records",localRecords.toString()).putLong("updated_at",now).apply();
-                boolean pcSyncOn=getSharedPreferences("artitrade_pc_live_sync_v1",
-                    MODE_PRIVATE).getBoolean("enabled",false);
-                if(PcLiveSyncPolicy.shouldPublish(pcSyncOn,publishOneShot,now,lastHubPublish)){
-                    publishOneShot=false;
-                    // Only changed record revisions travel to MSERVER. Phone-local
-                    // collection and trade execution continue even while PC sync is OFF.
-                    publishPhoneLedgers(hub,localRecords);
-                    lastHubPublish=now;
-                }
+                scheduleUiRecordsIfDue(hub);
+                ProcessHealthV087.sample(this,"service_heartbeat",0L,0L,false);
                 if(stockEpoch<=0||coinEpoch<=0)
                     disarmUnverifiedMarkets("LEASE_UNCONFIRMED");
             }catch(Throwable e){crashes.add("strategy_monitor",e);}

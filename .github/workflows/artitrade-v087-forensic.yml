@@ -1,0 +1,53 @@
+name: ARTITRADE v087 pre-fix forensic reproducer
+on:
+  push:
+    branches: [ fix-artitrade-v087-crash-guard-ma-sell-price-20261117 ]
+    paths: [ '.github/workflows/artitrade-v087-forensic.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Confirm actual MA 5min policy decision versus V067 scoped native SELL
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import sys,ast,datetime as dt,re
+          from decimal import Decimal
+          from pathlib import Path
+          path=Path('ARTITRADE_ANDROID/app/src/main/python')
+          sys.path.insert(0,str(path))
+          import ma_v067_policy as p
+          now=dt.datetime(2026,11,17,9,5,7,tzinfo=dt.timezone(dt.timedelta(hours=9)))
+          state=p.initial_up_exit_state('5m')
+          s,qty,reason=p.up_exit(state,Decimal('8.40'),Decimal('8.20'),Decimal('100'),Decimal('100'),now)
+          assert qty==Decimal('10') and reason=='MA_V065_UP_FIRST_10PCT',(qty,reason)
+          src=(path/'ma_v067_coin_runtime.py').read_text()
+          tree=ast.parse(src)
+          install=next(x for x in tree.body if isinstance(x,ast.FunctionDef) and x.name=='install')
+          scoped=next(x for x in install.body if isinstance(x,ast.FunctionDef) and x.name=='scoped_sell')
+          snippet=ast.get_source_segment(src,scoped)
+          print('REPRODUCED_EXPECTED_TARGET',p.up_targets(Decimal('8.20'),'5m')[0])
+          print('REPRODUCED_RECOMMENDED_FIRST_SELL',qty,reason)
+          print('SCOPED_SELL_NATIVE_GATE_START',snippet[:820])
+          print('V067_ACTUAL_GATE_BLOCKS_V065_REASON',not reason.startswith('MA_V067_'))
+          assert not reason.startswith('MA_V067_')
+          # Android source-supported load risks, not a device OOM diagnosis.
+          service=(path.parents[0]/'java/com/artitrade/mobile/UnifiedTradingService.java').read_text()
+          ui=(path.parents[0]/'java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+          assert 'Thread.sleep(2500)' in service
+          assert 'JSONObject localRecords=strategy.hubRecords();' in service
+          assert '.putString("records",localRecords.toString())' in service
+          assert 'private static final long REFRESH_MS=3500L' in ui
+          assert 'localRecords=new JSONObject(raw);' in ui
+          assert 'UiSnapshot previous=uiSnapshot;' in ui
+          assert 'main.postDelayed(this,REFRESH_MS)' in ui
+          print('SOURCE_RISK_CONFIRMED: full Python hub records encode 2.5s, UI JSON reparse/stat-preload 3.5s')
+          print('DEVICE_CAUSE_UNDETERMINED: must check Android ApplicationExitInfo/logcat')
+          PY
