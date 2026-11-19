@@ -100,8 +100,11 @@ def _close_entry(core,native):
 
 def _gmo_preplan(core,native):
     original=native.Preplanner.prepare
-    def capture(self,venue,at=None):
-        result=original(self,venue,at)
+    def capture(self,venue,at=None,recovery=False):
+        # The 0.0.9 phone trace proved this observational hook blocked D+1
+        # after reconnect: capture() rejected the new recovery kwarg.
+        # Forward it to the true owner WITHOUT altering the original result.
+        result=original(self,venue,at,recovery=recovery)
         root=_root(core)
         if not root:return result
         selected=set(result or ())
