@@ -2522,6 +2522,18 @@ def set_live(market,enabled):
             'live_enabled':{'stock':False,'coin':False}},ensure_ascii=False)
     return _core.set_live(market,False)
 
+def broker_sells_v008():
+    """Explicit, read-only broker outstanding SELL evidence; not order execution."""
+    from broker_sell_receipt_v008 import audit_stock_sells
+    try:
+        return json.dumps(audit_stock_sells(getattr(_core,"_RUNTIME",None)),
+                          ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok":False,"orders":[],
+                           "error":"READ_ONLY_BROKER_QUERY_"+type(exc).__name__},
+                          ensure_ascii=False)
+
+
 def manual_paper_sell(request):
     from android_manual_paper_sell_v085 import perform
     return perform(request)
