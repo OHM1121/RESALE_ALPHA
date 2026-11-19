@@ -814,11 +814,30 @@ class Coordinator:
                     if submit:self._record_entry_block(market,code,frame,barid,
                         'CLOSED_CANDLE_HISTORY_MISSING',trade_age_sec=trade_age)
                     continue
-                rsi=mt.rsi20([x["close"] for x in closed],observed_trade)
+                completed_closes=[x["close"] for x in closed]
+                rsi=mt.rsi20(completed_closes,observed_trade)
                 if rsi is None:
                     self._entry_block_counts[market]['RSI_20_HISTORY_INVALID']+=1
                     if submit:self._record_entry_block(market,code,frame,barid,
                         'RSI_20_HISTORY_INVALID',trade_age_sec=trade_age)
+                    continue
+                # First-cross qualification uses the MAIN Wilder RSI20, not
+                # any display signal line or horizontal RSI30 guideline.
+                # A symbol already <=30 on its previous CLOSED bar must
+                # never become a new BUY merely because RSI remains <=30.
+                prior_closed_rsi=mt.rsi20(completed_closes)
+                if prior_closed_rsi is None:
+                    self._prechecked.pop(entry,None)
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'RSI_FIRST_CROSS_HISTORY_UNVERIFIED',rsi,trade_age,
+                        ma_details={'prior_closed_rsi20':None})
+                    continue
+                if prior_closed_rsi<=mt.RSI_ARM:
+                    self._prechecked.pop(entry,None)
+                    if submit:self._record_entry_block(market,code,frame,barid,
+                        'RSI_ALREADY_BELOW_30_ON_PREVIOUS_CLOSE',rsi,trade_age,
+                        ma_details={'prior_closed_rsi20':round(prior_closed_rsi,4),
+                                    'current_forming_rsi20':round(rsi,4)})
                     continue
                 if check:
                     # Store precheck even when no 0D quote exists.

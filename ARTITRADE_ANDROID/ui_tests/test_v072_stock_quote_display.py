@@ -7,7 +7,7 @@ import unittest
 
 import stock_quote_truth_v066 as quote
 
-T=dt.datetime(2026,11,16,10,55,tzinfo=quote.KST)
+T=dt.datetime.now(quote.KST).replace(microsecond=0)
 
 def packet():
     return {'stock': {'at': {'ledger': {'positions': [

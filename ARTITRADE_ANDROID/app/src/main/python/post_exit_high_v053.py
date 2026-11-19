@@ -323,9 +323,11 @@ class Tracker:
         # Re-reading every candidate and order in every SQLite on a 20-second
         # poll adds load without new evidence. WAL is part of the signature.
         paths=("stock/ARTITRADE_D.sqlite3",
-               "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+               "stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
                "stock/close/AT_CLOSE_PAPER.sqlite3",
                "coin/base/upbit_paper.sqlite3",
+               "coin/ma_epoch_v062/upbit_paper.sqlite3",
+               "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
                "coin/ma/upbit_paper.sqlite3",
                "stock/PROJECTGMO_V1.0_account_state.json",
                "stock/PROJECTGMO_V1.0_research.sqlite3",

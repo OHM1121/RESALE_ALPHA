@@ -317,7 +317,7 @@ class TrendWalletV054:
             positions.append(p)
         return positions
 
-    def sell(self,pos,price,at,reason,bid_size=None):
+    def sell(self,pos,price,at,reason,bid_size=None,manual_fraction=None):
         if pos.strategy!='trend':return 0,'WRONG_POSITION_OWNER'
         market,frame,symbol=pos.market,pos.frame,pos.symbol
         at=_as_kst(at)
@@ -334,10 +334,26 @@ class TrendWalletV054:
                     return 0,'LIVE_POSITION_BROKER_DISABLED'
                 if pos.execution_mode=='PAPER' and self._is_live(market):
                     return 0,'PAPER_POSITION_LIVE_MODE'
-                action=pos.action(price,at,bar_finished=bool(pos.__dict__.get('bar_finalized')),
-                                  bar3_preclose=bool(pos.__dict__.get('bar3_preclose')))
-                if action is None or action[0]!=reason:return 0,'NO_EXIT_SIGNAL'
-                fraction=action[1];balance=float(r['qty'])
+                if manual_fraction is None:
+                    action=pos.action(price,at,bar_finished=bool(pos.__dict__.get('bar_finalized')),
+                                      bar3_preclose=bool(pos.__dict__.get('bar3_preclose')))
+                    if action is None or action[0]!=reason:return 0,'NO_EXIT_SIGNAL'
+                    fraction=action[1]
+                else:
+                    # User-confirmed paper-only exit: skip automatic strategy
+                    # triggers, but NOT the original broker guard, orderbook
+                    # depth checks, fill verification or SQLite transaction.
+                    if not str(reason).startswith('USER_SIM_MANUAL:'):
+                        return 0,'INVALID_MANUAL_REQUEST'
+                    try:fraction=float(manual_fraction)
+                    except (ValueError,TypeError):return 0,'INVALID_MANUAL_PERCENT'
+                    if not (0<fraction<=1):return 0,'INVALID_MANUAL_PERCENT'
+                    # A retried UUID must not perform a second partial sale,
+                    # even if the prior request was accepted on a prior second.
+                    if c.execute('SELECT 1 FROM executions WHERE position_id=? AND reason=? LIMIT 1',
+                                 (int(pos.position_id),reason)).fetchone():
+                        return 0,'MANUAL_REQUEST_ALREADY_EXECUTED'
+                balance=float(r['qty'])
                 if market=='stock':
                     qty=int(balance) if fraction>=.999 else max(1,int(round(balance*fraction)))
                     runner=getattr(self.rt,'stock_runner',None)
