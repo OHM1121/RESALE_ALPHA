@@ -644,7 +644,7 @@
       "root": "CONFIRMED_NATIVE_GMO_SCHEDULE_AND_INCOMPLETE_0D",
       "status": "CI_VERIFIED",
       "fix_version": "0.0.9-source",
-      "ci": "SIGNED_SOURCE_PENDING;NATIVE_PASS_RUN_44451729441",
+      "ci": "NATIVE_82_PASS_44451729441;SIGNED_APK_PASS_44451936088",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -667,7 +667,7 @@
       "root": "CONFIRMED_ORIGINAL_PARENT_CLOCK_ASSUMPTION",
       "status": "CI_VERIFIED",
       "fix_version": "0.0.9-source",
-      "ci": "NATIVE_PASS_RUN_44451729441",
+      "ci": "NATIVE_82_PASS_44451729441;SIGNED_APK_PASS_44451936088",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_AT",
@@ -689,7 +689,7 @@
       "root": "CONFIRMED_DNS_SPAM_AND_DEFER_THRESHOLD",
       "status": "CI_VERIFIED",
       "fix_version": "0.0.9-source",
-      "ci": "NATIVE_PASS_RUN_44451729441",
+      "ci": "NATIVE_82_PASS_44451729441;SIGNED_APK_PASS_44451936088",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_FEED",
@@ -713,7 +713,7 @@
       "root": "CONFIRMED_REMOTE_ENDPOINT_UNSUPPORTED",
       "status": "OPEN_UNVERIFIED",
       "fix_version": "0.0.9-client-schedule-only",
-      "ci": "JAVA_SOURCE_BUILD_PENDING",
+      "ci": "JAVA_APK_BUILD_PASS_44451936088; PC_SERVER_UNVERIFIED",
       "device": "UNVERIFIED",
       "nodes": [
         "SERVICE",
@@ -798,34 +798,21 @@
     "notes": "Original package and signer; update in place without reset. Live brokerage unverified."
   },
   "latest_test_artifact": {
-    "versionName": "0.0.8",
-    "versionCode": 130,
+    "versionName": "0.0.9",
+    "versionCode": 131,
     "package": "com.artitrade.unified.s21dex",
-    "signed_build_source_commit": "a768bdae3fbd3830a4247ee77245ed2815b96f08",
-    "github_actions_run_id": 44450056074,
-    "artifact_id": 14494518466,
-    "release_tag": "ARTITRADE-0.0.8-signed-test-20261119",
-    "filename": "ARTITRADE_0.0.8.apk",
-    "size_bytes": 30492085,
-    "sha256": "99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+    "signed_build_source_commit": "9acd71dd133cefcac0bc4dd6c324f5309d714124",
+    "github_actions_run_id": 44451936088,
+    "artifact_id": 14494709945,
+    "release_tag": "ARTITRADE-0.0.9-signed-test-20261119",
+    "filename": "ARTITRADE_0.0.9.apk",
+    "size_bytes": 30492845,
+    "sha256": "d9974c57d0529548ba6b0509da90032e5708863f1cf424594f484a7fe11ea23d",
     "previous_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
     "device_verified": false,
-    "real_order_fill_verified": false,
-    "actual_stage1_stage2_sell_orders_confirmed": false,
-    "read_only_kiwoom_unfilled_query": true,
-    "source_ledger_reset_performed": false,
-    "unresolved_issue_numbers": [
-      58,
-      59,
-      60,
-      71,
-      73,
-      79,
-      80,
-      82,
-      83,
-      84
-    ]
+    "actual_broker_order_verified": false,
+    "paper_only": true,
+    "original_sqlite_preserved_by_source": true
   },
   "work_in_progress_008": {
     "versionName": "0.0.8",
@@ -883,8 +870,8 @@
       88
     ],
     "native_ci_pass_run": 44451729441,
-    "source_commit": "PENDING_SIGNATURE_VERIFICATION",
-    "signed_apk_built": false,
+    "source_commit": "9acd71dd133cefcac0bc4dd6c324f5309d714124",
+    "signed_apk_built": true,
     "phone_verified": false,
     "actual_kiwoom_orders_verified": false,
     "server_daily_backup_verified": false,
@@ -893,6 +880,40 @@
       "43 AT pending on stock market score negative in 0.0.7. 2026-11-19 12:14 score -26.0; positive score policy unchanged.",
       "Historic MA_V067_UP_5S_QUEUE_FULL 1001 occurrences; current latest-per-symbol queue 0.0.8/0.0.9 code has dedicated regression."
     ],
-    "notes": "0.0.8 corrected generic market trading clock and Trend RSI proof, but left native AT parent-series, GMO priority/0D re-reg, and shared history DNS. Do not mark actual Kiwoom/live fills completed."
+    "notes": "0.0.8 corrected generic market trading clock and Trend RSI proof, but left native AT parent-series, GMO priority/0D re-reg, and shared history DNS. Do not mark actual Kiwoom/live fills completed.",
+    "signed_ci_run": 44451936088,
+    "apk_sha256": "d9974c57d0529548ba6b0509da90032e5708863f1cf424594f484a7fe11ea23d",
+    "apk_size_bytes": 30492845,
+    "signer_match_ci_passed": true
+  },
+  "previous_test_artifact_008": {
+    "versionName": "0.0.8",
+    "versionCode": 130,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_build_source_commit": "a768bdae3fbd3830a4247ee77245ed2815b96f08",
+    "github_actions_run_id": 44450056074,
+    "artifact_id": 14494518466,
+    "release_tag": "ARTITRADE-0.0.8-signed-test-20261119",
+    "filename": "ARTITRADE_0.0.8.apk",
+    "size_bytes": 30492085,
+    "sha256": "99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+    "previous_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false,
+    "real_order_fill_verified": false,
+    "actual_stage1_stage2_sell_orders_confirmed": false,
+    "read_only_kiwoom_unfilled_query": true,
+    "source_ledger_reset_performed": false,
+    "unresolved_issue_numbers": [
+      58,
+      59,
+      60,
+      71,
+      73,
+      79,
+      80,
+      82,
+      83,
+      84
+    ]
   }
 }
