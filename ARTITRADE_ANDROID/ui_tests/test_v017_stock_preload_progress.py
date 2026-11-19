@@ -22,9 +22,10 @@ class StockPreloadAndPositiveScoreRegression(unittest.TestCase):
     def test_stock_counter_only_from_original_native_symbol_progress(self):
         src=(PY/"android_runtime_v078.py").read_text("utf8")
         self.assertIn("'preload_stock_counter_source'",src)
-        self.assertIn("ORIGINAL_NATIVE_PER_SYMBOL_PROGRESS",src)
-        self.assertIn("native_total>=100",src)
-        self.assertIn("0<=native_done<=native_total",src)
+        self.assertIn("from stock_pending_recovery_v017 import loading_snapshot",src)
+        self.assertIn("native_load['done']",src)
+        self.assertIn("native_load['total']",src)
+        self.assertNotIn("native_total>=100",src)
         self.assertNotIn("preload_stock_total': stock_subs",src)
 
     def test_reference_buy_requires_fresh_strict_positive_at_order_time(self):
