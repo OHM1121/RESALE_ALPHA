@@ -73,8 +73,24 @@ def _gmo_native(runtime,row):
         actual=_decimal(getattr(p,"entry_price",None))
         # Only match the *same* original LIVE position. Never reuse an older
         # score tier from a symbol's previous purchase or a research event.
-        if buy is None or abs(float(buy-actual))>max(.011,float(buy)*.00001):
+        # The original GMO snapshot rounds its entry_price to one decimal.
+        # Permit only that single display rounding step, then verify the
+        # original engine position's quantity and all prior stage quantities.
+        if buy is None or abs(buy-actual)>Decimal("0.0500001"):
             return None,None
+        view_current=_decimal(row.get("qty"))
+        native_current=_decimal(getattr(p,"qty",None))
+        if view_current is None or native_current is None or view_current!=native_current:
+            return None,None
+        view_initial=_decimal(row.get("gmo_buy_filled_qty"))
+        native_initial=_decimal(getattr(p,"total_qty",None))
+        if view_initial is not None and view_initial!=native_initial:
+            return None,None
+        for view_key,native_key in (("gmo_first_filled","first_filled_qty"),
+                                    ("gmo_second_filled","second_filled_qty")):
+            if view_key in row and Decimal(str(row[view_key]))!=Decimal(str(
+                  getattr(p,native_key,0))):
+                return None,None
         entry_day=str(row.get("entry_date") or
                       row.get("buy_at") or row.get("entry_at") or "")[:10]
         if entry_day and entry_day!=str(getattr(p,"entry_date",""))[:10]:
@@ -254,12 +270,16 @@ def preview(owner,row,runtime=None,native_stages=None):
             or step!=Decimal(".03")):return None
         q1=Decimal(max(1,math.floor(qty*cfg1)))
         q2=Decimal(min(int(qty-q1),max(1,math.floor(qty*cfg2))))
-        first=entry*(1+tier)
+        # Targets must be calculated from the *unrounded native BUY*,
+        # never from the one-decimal UI card.
+        native_entry=_decimal(getattr(p,"entry_price",None))
+        if native_entry is None:return None
+        first=native_entry*(1+tier)
         second=first*(1+step)
         pending=str(getattr(p,"pending_sell_id","") or "")
         order_state=("NATIVE_SELL_INTENT_ID_PRESENT_BROKER_ACK_UNVERIFIED"
             if pending else "NO_BROKER_ORDER_ACK")
-        plan=_make_plan(entry,qty,first,second,q1,q2,owner,
+        plan=_make_plan(native_entry,qty,first,second,q1,q2,owner,
             "ORIGINAL_GMO_SCORE_TIER_4_5_7_FIRST20_SECOND40",
             order_state=order_state,score=int(round(tier*100)))
         if plan is None:return None
