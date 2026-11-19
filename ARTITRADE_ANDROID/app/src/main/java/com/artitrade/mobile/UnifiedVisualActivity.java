@@ -151,7 +151,12 @@ public final class UnifiedVisualActivity extends Activity {
     private long preloadStartedWallMs=0L;
     private String preloadExitNote="";
     private ProgressBar startupProgress;
-    private TextView startupStage;
+    private TextView startupStage, startupPercent, startupEta, startupChecks;
+    private boolean startupNativeAuditSeen=false;
+    private boolean startupNativeAuditReady=false;
+    private long startupFirstWorkAtMs=0L;
+    private int startupFirstWorkDone=-1;
+    private String startupMissingCause="";
     private String market="stock";
     private String policyTargetCode="";
     private String policyTargetStrategy="";
@@ -469,14 +474,20 @@ public final class UnifiedVisualActivity extends Activity {
         // returning from sleep, another app, or Activity recreation.
         if(saved!=null)
             return saved.getBoolean("v089_preload_ready",true);
-        return isRecentBackgroundHeartbeat();
+        // On a new Activity entry, SHOW the source verification screen
+        // even if a healthy service already exists. START remains idempotent,
+        // so this does not restart brokers, discard native warmed candles,
+        // or interrupt already held orders.
+        return false;
     }
 
     private void preloadWatchdog(){
         if(!preloadScreenReady&&!isFinishing()&&root!=null){
             // Bounded escape hatch: broker outages and holidays must never
             // trap the user behind a loading cover. No quote is marked fresh.
-            preloadExitNote="일부 준비 미완료 · 시세·확정봉은 백그라운드 복구 중";
+            preloadExitNote="사전점검 부분완료 · "+(startupMissingCause.isEmpty()
+                ?"확정봉·시세·호가 백그라운드 복구 중":startupMissingCause+
+                    " · 백그라운드 복구 중");
             finishPreload(false);
         }
     }
@@ -538,19 +549,39 @@ public final class UnifiedVisualActivity extends Activity {
                         coinLoaded+"/"+coinTotal+"(코인)";
                 }
             }
-            updateStartupProgress(progress,stage);
-            if(engine&&uiReady&&stockReady&&coinReady){
-                if(coinWarm&&stockWarm){
-                    preloadExitNote="";
-                    finishPreload(true);
-                    return;
-                }
-                if(elapsed>=PRELOAD_BOTH_FEEDS_WARM_MIN_MS){
-                    preloadExitNote="주식·코인 시세 연결됨 · MA/RSI 과거봉은 백그라운드 보강 중";
-                    finishPreload(false);
-                    return;
-                }
+            JSONObject audit=ready==null?null:ready.optJSONObject("work_audit");
+            boolean audited=audit!=null&&
+                "ARTITRADE_VERIFIED_PRELOAD_AUDIT_V016".equals(
+                    audit.optString("schema",""))&&
+                audit.optInt("work_units_total",0)>0;
+            if(audited){
+                int units=audit.optInt("work_units_done",0);
+                int total=audit.optInt("work_units_total",0);
+                JSONObject historyState=audit.optJSONObject("official_history");
+                JSONObject sBars=historyState==null?null:historyState.optJSONObject("stock");
+                JSONObject cBars=historyState==null?null:historyState.optJSONObject("coin");
+                String verified="공식 확정봉 주식 "+(sBars==null?0:sBars.optInt("ready",0))+
+                    "/"+(sBars==null?0:sBars.optInt("required",0))+
+                    " · 코인 "+(cBars==null?0:cBars.optInt("ready",0))+
+                    "/"+(cBars==null?0:cBars.optInt("required",0));
+                String firstMissing=audit.optString("first_missing","");
+                startupMissingCause=firstMissing;
+                startupNativeAuditReady=audit.optBoolean("ready",false);
+                updateVerifiedStartupProgress(audit.optInt("percent",0),
+                    verified,units,total,firstMissing);
+            }else{
+                startupMissingCause="원본 사전점검 결과 수신 대기";
+                updateStartupProgress(progress,stage);
             }
+            if(engine&&uiReady&&stockReady&&coinReady&&coinWarm&&stockWarm
+                 &&audited&&startupNativeAuditReady){
+                preloadExitNote="";
+                finishPreload(true);
+                return;
+            }
+            // 0.0.15 exited after 22s while official candle/book audits
+            // were still missing. Retain the source-check screen through the
+            // bounded watchdog, but never stop original background recovery.
         }catch(Exception e){
             // No network call, strategy order, or database write on the UI thread.
             if(preloadStartedAt>0&&android.os.SystemClock.elapsedRealtime()-
@@ -864,27 +895,73 @@ public final class UnifiedVisualActivity extends Activity {
         startupProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
         startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(5);
         p.addView(startupProgress,new LinearLayout.LayoutParams(dp(Math.min(320,Math.max(180,getResources().getConfiguration().screenWidthDp-76))),dp(10)));
+        startupPercent=text("5% · 원본 사전점검 대기",18);
+        startupPercent.setTextColor(Color.rgb(178,218,255));
+        startupPercent.setPadding(0,dp(11),0,0);p.addView(startupPercent);
         startupStage=text("원장 · 전략별 요약 · 화면 자료를 준비 중",12);
         startupStage.setTextColor(Color.rgb(116,143,178));
         startupStage.setPadding(0,dp(14),0,0);p.addView(startupStage);
+        startupChecks=text("확정봉 연속성 · 시세 · 실시간 매도호가 · 원장 검증",12);
+        startupChecks.setTextColor(Color.rgb(135,160,188));
+        startupChecks.setPadding(0,dp(10),0,0);p.addView(startupChecks);
+        startupEta=text("완료예상: 수신속도 확인 중",12);
+        startupEta.setTextColor(Color.rgb(215,195,140));
+        startupEta.setPadding(0,dp(10),0,0);p.addView(startupEta);
         root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
     private void updateStartupProgress(int percent,String stage){
         main.post(()->{
-            if(preloadScreenReady)return;
+            if(preloadScreenReady||startupNativeAuditSeen)return;
+            int bounded=Math.min(98,Math.max(0,percent));
             if(startupProgress!=null)
-                startupProgress.setProgress(Math.max(startupProgress.getProgress(),
-                    Math.min(98,Math.max(0,percent))));
+                startupProgress.setProgress(Math.max(startupProgress.getProgress(),bounded));
             if(startupStage!=null)startupStage.setText(stage);
+            if(startupPercent!=null)startupPercent.setText(bounded+"% · 점검 근거 수신 중");
         });
+    }
+
+    private void updateVerifiedStartupProgress(int percent,String detail,int done,
+                                                int total,String firstMissing){
+        if(preloadScreenReady)return;
+        startupNativeAuditSeen=true;
+        long elapsed=Math.max(1L,android.os.SystemClock.elapsedRealtime()-preloadStartedAt);
+        int bounded=Math.min(99,Math.max(0,percent));
+        if(startupProgress!=null)startupProgress.setProgress(bounded);
+        if(startupPercent!=null)
+            startupPercent.setText(bounded+"% · 실제 확인 "+done+"/"+total+" 항목");
+        if(startupStage!=null)startupStage.setText(detail);
+        if(startupChecks!=null)
+            startupChecks.setText(firstMissing.isEmpty()
+                ?"확정봉·시세·호가·원장 유효성 점검 완료"
+                :"미확인 항목: "+firstMissing+" · 기존 수신기에서 복구 중");
+        if(startupFirstWorkDone<0){
+            startupFirstWorkDone=done;
+            startupFirstWorkAtMs=elapsed;
+        }
+        int gained=done-startupFirstWorkDone;
+        long observed=elapsed-startupFirstWorkAtMs;
+        String eta="수신 진행상황 확인 중";
+        if(gained>=2 && observed>=1500L && total>done){
+            long left=(long)Math.ceil((total-done)*(observed/1000.0)/gained);
+            eta=left>0&&left<86400L
+                ?("약 "+String.format(Locale.KOREA,"%02d:%02d",left/60,left%60)+
+                    " · 실제 처리속도 기준 추정")
+                :"서버/거래소 응답에 따라 변동";
+        }else if(elapsed>=15000L){
+            eta="현재 확인된 처리속도로 산정 불가 · 수신 대기";
+        }
+        if(startupEta!=null)startupEta.setText("완료예상: "+eta+
+            " · 미완료 시 안전하게 백그라운드 점검");
     }
 
     private void finishPreload(boolean engineReady){
         if(preloadScreenReady)return;
         preloadScreenReady=true;
-        if(startupProgress!=null)startupProgress.setProgress(100);
-        startupProgress=null;startupStage=null;
+        if(startupProgress!=null && engineReady && startupNativeAuditReady)
+            startupProgress.setProgress(100);
+        startupProgress=null;startupStage=null;startupPercent=null;
+        startupEta=null;startupChecks=null;
         showShell(); // showShell already renders the prepared snapshot once.
         updateHeader();
         if(!engineReady && statusText!=null)
