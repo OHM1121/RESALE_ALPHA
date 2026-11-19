@@ -1780,6 +1780,7 @@ public final class UnifiedVisualActivity extends Activity {
             for(int i=0;i<records.length();i++){
                 JSONObject row=records.optJSONObject(i);if(row==null)continue;
                 String frame=timeFrameOf(row);
+                if("trend".equals(parts[1])&&"5m".equals(frame))continue;
                 if(frame.isEmpty())frame=parts[1];
                 double score=num(row,"score","gmo_score_at_signal","original_score","signal_score");
                 boolean purchased=bool(row,"bought","actually_bought","filled");
@@ -2177,13 +2178,25 @@ public final class UnifiedVisualActivity extends Activity {
             if("stock".equals(m))overlayLiveStockQuotes(snapshot,st.positions);
             JSONObject local=snapshot.optJSONObject("local_records");
             JSONObject watches=local==null?null:local.optJSONObject("market_trend_watch");
-            st.pending=watches==null?new JSONArray():array(watches,m);
+            JSONArray rawTrendPending=watches==null?new JSONArray():array(watches,m);
+            st.pending=new JSONArray();
+            for(int n=0;n<rawTrendPending.length();n++){
+                JSONObject candidate=rawTrendPending.optJSONObject(n);
+                if(candidate!=null&&!"5m".equals(timeFrameOf(candidate)))
+                    st.pending.put(candidate);
+            }
             st.executions=array(l,"executions");
             st.realized=num(l,"realized_pnl");
             st.unrealized=num(l,"unrealized_pnl");
             if(finite(st.realized)&&finite(st.unrealized))st.total=st.realized+st.unrealized;
             JSONObject rs=research(snapshot,m,s);
-            st.research=array(rs,"items");
+            JSONArray rawTrendResearch=array(rs,"items");
+            st.research=new JSONArray();
+            for(int n=0;n<rawTrendResearch.length();n++){
+                JSONObject observation=rawTrendResearch.optJSONObject(n);
+                if(observation!=null&&!"5m".equals(timeFrameOf(observation)))
+                    st.research.put(observation);
+            }
             st.candidates=st.research.length();
             int bought=0,sold=0;
             for(int i=0;i<st.executions.length();i++){
