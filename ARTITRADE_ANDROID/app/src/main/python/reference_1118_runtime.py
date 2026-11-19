@@ -200,7 +200,17 @@ def install():
     native_d19=d_v19_portfolio.D19PaperEngine._buy_limit_depth
     def buy_d19(self,c,row,when,venue,observed_trade_price,
                 observed_trade_qty=0):
-        if not nl.validate_stock_score(_market_score(self.store.root,"stock")):
+        # One source-proven lookup per attempted BUY, after normalizing the
+        # DStore(.../stock) key to the shared score publisher's app root.
+        # Previous v012 returned None for every eligible KRX D19 order,
+        # leaving all limit-touched candidates forever PENDING. Distinguish
+        # missing/stale publisher from an actual signed score <=0 so a
+        # legitimate entry is never fabricated or misdiagnosed.
+        from at_market_score_gate_v107 import score_evidence
+        proof=score_evidence(self.store.root,"stock")
+        if proof.get("basis")!="SIGNED_MARKET_SCORE_V033":
+            return False,"NL1118_MARKET_SCORE_UNAVAILABLE:"+str(proof.get("basis") or "UNKNOWN")
+        if not nl.validate_stock_score(proof.get("score")):
             return False,"NL1118_MARKET_SCORE_NOT_POSITIVE"
         result=native_d19(self,c,row,when,venue,observed_trade_price,
                           observed_trade_qty)
