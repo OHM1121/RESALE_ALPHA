@@ -592,7 +592,9 @@ public final class UnifiedVisualActivity extends Activity {
                 // the vendor quote patch and independent broker recovery.
                 // New read-only audits are an ADDITIONAL UI completion gate,
                 // never a substitute for the original one.
-                if(coinWarm&&stockWarm&&audited&&startupNativeAuditReady){
+                if(coinWarm&&stockWarm&&audited&&startupNativeAuditReady
+                        &&startupStockTotal>0
+                        &&startupStockLoaded==startupStockTotal){
                     preloadExitNote="";
                     finishPreload(true);
                     return;
