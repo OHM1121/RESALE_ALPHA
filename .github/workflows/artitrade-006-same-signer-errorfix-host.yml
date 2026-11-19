@@ -18,11 +18,11 @@ jobs:
       CI: 'true'
       ARTIFACT: ARTITRADE_0.0.6
       TAG: ARTITRADE-0.0.6
-      SOURCE: cad7458580b5121fbd0fa78ff797b293e084fd3e
+      SOURCE: 478b5d19bc186168b26b232ff5e149c3695d359e
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: cad7458580b5121fbd0fa78ff797b293e084fd3e
+          ref: 478b5d19bc186168b26b232ff5e149c3695d359e
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -153,6 +153,8 @@ jobs:
           PY
       - name: Enforce graph/issue registry against the exact packaged source
         shell: bash
+        env:
+          ARTITRADE_APPROVED_VENDOR_PATCHED_SHA256: '882ef3e0aea34d71568107e8b5223b7a790cae292299510d3aff0f6d9e69387e'
         run: |
           set -euo pipefail
           python3 tools/artitrade/build_source_graph.py --output artitrade_source_graph.json
