@@ -955,9 +955,9 @@
       "title": "CFG native PAPER missing depth, silent SELL, and legacy attribution safeguards",
       "evidence": "Confirmed existing silent native SELL/book gates and OLD-marker absence misattribution; missing depth during CFG observed, exact physical subscription transport failure inferred.",
       "root": "CONFIRMED_IN_CODE_WITH_DEVICE_UNVERIFIED",
-      "status": "SOURCE_FIXED",
-      "fix_version": "0.0.14-source-candidate",
-      "ci": "PENDING",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.14-source",
+      "ci": "PASSED_RUN_44483423126",
       "device": "UNVERIFIED",
       "nodes": [
         "COIN_FEED",
@@ -974,7 +974,7 @@
         "test_v002_eight_virtual_paper_end_to_end.py",
         "test_v012_legacy_purge_and_holding_frame.py"
       ],
-      "notes": "Coin MA held tick+book inclusion, private rate-limited no-book/native-sell diagnostics, and explicit old-rule BUY/SELL evidence requirement before migration. Real device, broker and original CFG ledger remain UNVERIFIED. Additional related causes from earlier entries retained in issue #98."
+      "notes": "Coin MA held tick+book inclusion, private rate-limited no-book/native-sell diagnostics, and explicit old-rule BUY/SELL evidence requirement before migration. Real device, broker and original CFG ledger remain UNVERIFIED. Additional related causes from earlier entries retained in issue #98. CI PASS for synthetic native CFG recovery, original 8 strategy regression, strict quote, ledger provenance, governance and Android Java compile on 2026-11-19; device quotes, original CFG sale proof and actual on-phone cleanup still unverified."
     }
   ],
   "known_normal": [
