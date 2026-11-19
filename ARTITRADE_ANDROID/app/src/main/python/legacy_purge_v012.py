@@ -172,8 +172,7 @@ def _select_safe(c,root,kind,old):
             # NEW-LEGACY buy without its sidecar. Refuse that ambiguous
             # post-workbook purchase rather than deleting real new history.
             when=str(p.get("entry_at") or "")
-            if when[:10]>="2026-11-18" and not str(p.get("payload") or "").find(
-                    '"nl1118_policy"')>=0:
+            if when[:10]>="2026-11-18":
                 skipped.append((p,"POTENTIALLY_NEW_TREND_BUY_UNMIGRATED"))
                 continue
         ex=_rows(c,"SELECT * FROM executions WHERE position_id=? ORDER BY id",
