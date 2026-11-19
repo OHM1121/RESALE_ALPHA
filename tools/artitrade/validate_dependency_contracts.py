@@ -39,8 +39,9 @@ def validate_generated(path):
     data=read_json(path)
     if data.get("schema")!="ARTITRADE_FULL_SOURCE_GRAPH_V007":
         fail("Generated full graph schema mismatch")
-    if data.get("core_integrity",{}).get("status")!="NATIVE_HASH_VERIFIED":
-        fail("Original 8-strategy core sha/zip verification failed")
+    if data.get("core_integrity",{}).get("status") not in (
+        "NATIVE_HASH_VERIFIED","APPROVED_VENDOR_PATCH_HASH_VERIFIED"):
+        fail("Original/explicitly approved vendor-patched core SHA verification failed")
     summary=data["summary"]
     if min(summary["overlay_python_files"],summary["native_python_files"],
            summary["java_files"])<1:
