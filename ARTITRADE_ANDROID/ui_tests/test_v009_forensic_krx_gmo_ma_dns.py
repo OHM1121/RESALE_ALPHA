@@ -85,7 +85,7 @@ class MAQueueSafety(unittest.TestCase):
         q=_LatestVerifiedMAQueue(maxsize=2)
         for i in range(1001):
             tick=("000680","KOSPI","L","20261119100000",2405,1,
-                  f"2026-11-19T10:00:{i%60:02d}+09:00","KRX",i)
+                  f"2026-11-19T10:00:59.{i:06d}+09:00","KRX",i)
             self.assertTrue(q.offer(tick))
         self.assertEqual(q.qsize(),1)
         self.assertEqual(q.get()[8],1000)
