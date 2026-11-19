@@ -732,9 +732,9 @@
       "title": "GMO D+1 stuck pending: D-close OR policy omitted, 0B-only PAPER proxy blocked, invalid KRX 0D",
       "evidence": "GMO_BOOK_INVALID 193, V097_PREPLANNED_D1_ENTRY_OWNER repeated; LS Networks 000680 D close 2405, official opener 2405, fresh 0B below price; first 12:50 export, strict no real broker fill proof",
       "root": "CONFIRMED_V097_OWNER_LIMIT_AND_REJECTED_MISSING_0D",
-      "status": "SOURCE_CI_VERIFIED_DEVICE_UNVERIFIED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.10-source",
-      "ci": "V010 44455916347 (before subsequent recovery wrapper fix); new signed APK not yet validated",
+      "ci": "source regression pass 44456057127; same-signer Android APK build pending",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -755,9 +755,9 @@
       "title": "GMO reconnect after open TypeError recovery kw discarded by entry_plan_hooks_v107 capture",
       "evidence": "Original stock/runtime_errors.jsonl 2026-11-19T12:23:04.322502+09:00 gmo_paper_tick:000680 TypeError _gmo_preplan.<locals>.capture() got unexpected keyword argument recovery; d_live.py:660 / gmo_d1_preplan_v097.py:278",
       "root": "CONFIRMED_OBSERVATIONAL_HOOK_INCOMPATIBLE_SIGNATURE",
-      "status": "SOURCE_CI_VERIFIED_DEVICE_UNVERIFIED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.10-source",
-      "ci": "RED TDD run 44455795210; GREEN source run pending",
+      "ci": "source regression pass 44456057127; same-signer Android APK build pending",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -777,9 +777,9 @@
       "title": "GMO native matcher and AT secondary parent-series still have fixed 15:30/09:00 references",
       "evidence": "Original signed 0.0.9 embedded native ZIP SHA 53a5ee6e...; projectgmo/engine.py three hardcoded session guards, d_gmo_runtime.py late residual and open timestamp, d_live._process_completed_records 09:00 parents",
       "root": "CONFIRMED_MULTIPLE_NATIVE_TIME_AUTHORITIES",
-      "status": "SOURCE_CI_VERIFIED_DEVICE_UNVERIFIED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.10-source",
-      "ci": "native version code source run 44455916347 prior subsequent tweak",
+      "ci": "source regression pass 44456057127; same-signer Android APK build pending",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -1003,6 +1003,7 @@
     "automatic_broker_real_trades": false,
     "remote_backup_verified": false,
     "independent_original_cw_ma_trend_rules_preserved": true,
-    "notes": "Latest 0.0.9 phone crash TypeError root traced to entry_plan_hooks_v107. Earlier 0.0.9 claim that reconnect fully fixed was false. Unavailable official 0D remains UNKNOWN for real broker; 0B paper proxy is not a broker execution. No verified remote MSERVER daily backup."
+    "notes": "Latest 0.0.9 phone crash TypeError root traced to entry_plan_hooks_v107. Earlier 0.0.9 claim that reconnect fully fixed was false. Unavailable official 0D remains UNKNOWN for real broker; 0B paper proxy is not a broker execution. No verified remote MSERVER daily backup.",
+    "source_ci_verified": 44456057127
   }
 }
