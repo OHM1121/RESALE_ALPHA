@@ -31,6 +31,15 @@ class TrendSourceEvidenceTests(unittest.TestCase):
         self.assertEqual(rows[-1]["end"].strftime("%H:%M"),"08:30")
         self.assertGreaterEqual(len(rows),21)
 
+    def test_special_krx_first_complete_30m_is_required(self):
+        now=dt.datetime(2026,11,19,10,41,27,tzinfo=KST)
+        end=dt.datetime(2026,11,19,10,30,tzinfo=KST)
+        rows=[{"end":end-dt.timedelta(minutes=30*(20-i)),
+               "close":100-i*.1,"source":"LOCAL_KRX_VERIFIED"}
+              for i in range(21)]
+        self.assertEqual(_confirmed_recent(rows,now,"stock","30m")[-1]["end"],end)
+        self.assertEqual(_confirmed_recent(rows[:-1],now,"stock","30m"),[])
+
     def test_missing_newest_completed_bar_must_block_entry(self):
         # ONDO-like 08:41 current price cannot replace missing 08:30 bar.
         self.assertEqual(_confirmed_recent(self.bars[:-1],self.at,"coin","30m"),[])
