@@ -394,8 +394,16 @@ class Preplanner:
             if intent is None:
                 try:
                     per=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))
+                    # v082 validates its own 2-tick ceiling. For the D
+                    # close OR branch it must use an anchor whose two-tick
+                    # ceiling is no HIGHER than D close minus one tick.
+                    # Otherwise the previously verified cheaper opening
+                    # incorrectly suppresses a separately eligible D close.
+                    intent_anchor=int(reference)
+                    if venue=="KRX" and plan.get("entry_reference_source")=="VERIFIED_D_CLOSE_STRICT_BELOW":
+                        intent_anchor=max(1,int(minus_ticks(close_value,3)))
                     intent=Intent("gmo","stock",code,
-                        plan["entry_date"]+":"+venue,str(reference),str(per),
+                        plan["entry_date"]+":"+venue,str(intent_anchor),str(per),
                         str(engine.cfg.buy_fee))
                     self._v082_intents[intent_key]=intent
                 except (ValueError,TypeError,ArithmeticError):
