@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "0.0.10 TEST APK immutable source e237088ead76207562f713e3003524336f02c6e6; 8-strategy PAPER CI 44456475957; signed APK SHA256 b9ac1da1ab7d86b280910720cc7d4c1c50469b233a17d6d8e05e3a6b018bf802; subsequent GitHub docs HEAD not identical to APK source; 0.0.11 candidate source after immutable 0.0.10, physically signed output pending",
+  "source_baseline": "0.0.17 source candidate based on 0.0.16 immutable release 4645788692f7f855400927fc2d4a3569f53ef81a, original 82 module SHA b014a00fd2cc29984650cb7ea24e7ea9672d6480fd68e91a6a1ebbe72754dfbb; native simulated CI in progress, DEVICE_VERIFIED false; previous historical source baselines in release history.",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -22,7 +22,8 @@
         53,
         55,
         60,
-        96
+        96,
+        104
       ],
       "contract": "No source-ready proof from a zero-length array; UI snapshot != original execution DB."
     },
@@ -189,7 +190,8 @@
         87,
         91,
         93,
-        97
+        97,
+        104
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
@@ -239,7 +241,8 @@
         94,
         95,
         97,
-        98
+        98,
+        104
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -474,7 +477,8 @@
         94,
         95,
         97,
-        98
+        98,
+        104
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },
@@ -604,7 +608,8 @@
       "id": "AT_HISTORY_RECOVERY",
       "kind": "native+python",
       "files": [
-        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py"
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/stock_pending_recovery_v017.py"
       ],
       "depends_on": [
         "STOCK_AT",
@@ -613,9 +618,10 @@
       "issues": [
         58,
         71,
-        86
+        86,
+        104
       ],
-      "contract": "Verified KRX completed parent bars are required for AT; DNS/history REST errors are not zero candidates and cannot authorize synthetic fills. Retries presently unverified."
+      "contract": "Verified KRX completed parent bars are required for AT; DNS/history REST errors are not zero candidates and cannot authorize synthetic fills. Retries presently unverified. 0.0.17 KRX original REST retry after DNS/rate/backpressure/55s throttle, prioritize native PENDING, prevent only incorrectly reblocking original VERIFIED audits; unverified states remain BLOCKED and never produce synthetic fills."
     },
     {
       "id": "GMO_D1_RECOVERY_V008",
@@ -906,7 +912,8 @@
         "EXECUTION"
       ],
       "issues": [
-        97
+        97,
+        104
       ],
       "contract": "At original KRX D19 native BUY, resolve signed market worker at shared app root instead of stock ledger root; cold-launch worker before native stock tick. Score must be fresh signed >0 at EXACT BUY, never reuse stale snapshot, fabricate real 0B/0D/5m or bypass native wallet. Order rejection classifies score missing from non-positive, and complete transaction commits a verified native PAPER BUY receipt + NEW LEGACY 30/35 resting plans. Nondeterministic phone session remains separate from CI evidence. GMO and CW owner untouched."
     },
@@ -968,9 +975,10 @@
         "TREND_SHARED_OWNERSHIP"
       ],
       "issues": [
-        102
+        102,
+        104
       ],
-      "contract": "Display true original engine preflight: 21 continuous official closes latest including Upbit UPBIT_CLOSED, original quote+0B/0D book and WS, source gate/wallet, measured percent/ETA. Never duplicate socket, order or mark missing as ready; bounded 40s UI escape keeps source recovery."
+      "contract": "Display true original engine preflight: 21 continuous official closes latest including Upbit UPBIT_CLOSED, original quote+0B/0D book and WS, source gate/wallet, measured percent/ETA. Never duplicate socket, order or mark missing as ready; bounded 40s UI escape keeps source recovery. Original variable check-progress is independent of 0.0.17 distinct stock-symbol loading percent."
     },
     {
       "id": "TREND_COST_PROVENANCE_V016",
@@ -990,6 +998,45 @@
         103
       ],
       "contract": "Original MT54 native position.entry/BUY receipts/source position_id alone establish cost/return across holdings and SELL fills; proportional original buy fees, net_pnl/percent and independent per-frame PnL; missing linkage labelled not fabricated. Non-live stock saved-mark valued with explicit provenance; ZERO source wallet mutation, thresholds and GMO/CW unchanged."
+    },
+    {
+      "id": "STOCK_PENDING_NATIVE_RETRY_V017",
+      "kind": "python+native",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/stock_pending_recovery_v017.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v017_native_pending_retry.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "AT_HISTORY_RECOVERY",
+        "STOCK_AT_SIGNED_SCORE_ROOT_V013",
+        "EXECUTION"
+      ],
+      "issues": [
+        104
+      ],
+      "contract": "Use existing one Kiwoom client and official native recover_frame; bounded DNS/retry after 55s throttle and priority existing PENDING, preserve source VERIFIED higher-frame audits vs stale global checkpoint. A success return with still BLOCKED audit schedules another retry; never fake BUY, broker fill, candle, account or ORDER."
+    },
+    {
+      "id": "PRELOAD_STOCK_SYMBOLS_V017",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/stock_pending_recovery_v017.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
+        "ARTITRADE_ANDROID/ui_tests/test_v017_stock_preload_progress.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v017_native_pending_retry.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "PRELOAD_VERIFIED_V016",
+        "ACTIVITY_UI"
+      ],
+      "issues": [
+        104
+      ],
+      "contract": "Numerator counts uniquely native REST VERIFIED_RESTORED source symbol after actual broker history, denominator freezes original selected KRX scan universe; cannot decrease during rotation/reconnect; 100% is per-symbol load only, never an actual order authorization or full 0B/0D readiness; 40s safe UI exit retained and unresolved repairs remain background."
     }
   ],
   "audit_scope": {
@@ -1012,7 +1059,8 @@
       "0.0.9 phone 12:50 actual 15-source ZIP+SQLite forensic, 8 PAPER regression; new exact error signature 12:23 gmo_paper_tick",
       "0.0.10 code132 old-signature signed original 82-module same-day KRX/GMO/AT regression, actual Samsung orderbook and live broker fill unverified",
       "0.0.11 source candidate: 11.18 original workbook physical cell audit, sanitized 2026-11-19 stock+coin SQLite exports, local PAPER-resting + old policy retirement; signed APK and real broker order verification PENDING",
-      "0.0.12 verified schema audit for generated native SQLite wallets, original-account refund logic, explicit user-authorized legacy PAPER purge and left timeframe badge; real device and actual source P&L correction pending CI"
+      "0.0.12 verified schema audit for generated native SQLite wallets, original-account refund logic, explicit user-authorized legacy PAPER purge and left timeframe badge; real device and actual source P&L correction pending CI",
+      "0.0.17 original synthetic KRX PENDING retry + per-symbol 459-source counter, pending real-device verification"
     ],
     "not_a_completeness_claim": true
   }
