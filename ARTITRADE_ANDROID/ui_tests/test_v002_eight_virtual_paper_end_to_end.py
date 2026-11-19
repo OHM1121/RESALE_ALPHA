@@ -63,7 +63,17 @@ class EightRealPaperWallets(unittest.TestCase):
             order=c.execute('SELECT * FROM v19_orders WHERE signal_id=?',(sid,)).fetchone()
             self.assertEqual(order['status'],'PENDING')
             e.book._items[(code,'KRX')]=(2600,2580,10000,ST)
-            with patch('d_v19_portfolio.live_session',return_value=True),patch.object(ref,'_market_score',return_value=10.):
+            import market_research_v033 as score_research
+            # The real STOCK AT BUY now reads the genuine shared app-root
+            # signed-score publisher, not a patched _market_score shortcut.
+            # Supply a deterministic publisher under that same canonical
+            # root to prove the ORIGINAL native D19 transaction path.
+            key=str(store.root.parent.resolve())
+            fake_publisher=SimpleNamespace(
+                snapshot=lambda:{"stock":{"score":10.,"stale":False}})
+            with patch.dict(score_research._WORKERS,{key:fake_publisher},clear=True),\
+                patch('d_v19_portfolio.live_session',return_value=True),\
+                patch.object(ref,'_market_score',return_value=10.):
                 actual=e._buy_limit_depth(c,order,ST,'KRX',2600,1000)
             self.assertTrue(actual[0],actual)
         with store.connect() as c:
