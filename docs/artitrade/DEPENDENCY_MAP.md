@@ -94,3 +94,37 @@ Static references are not equivalent to a validated real broker execution flow. 
   `test_v013_stock_at_pending_to_native_buy.py`, original eight
   wallet PAPER suites and Java compile. CI and original keystore sign
   validation do not prove DEVICE_VERIFIED real buy/market session.
+
+## 0.0.18 NEW LEGACY(11.18) rev1 red-text F6/F7 + critical coin MA POD held exit (#107)
+- `NL1118_REV1_VERIFIED_LOW_STOP_V018`: the original **MA upward
+  transition signal candle** and original **MarketTrend falling-entry
+  signal candle** must be read from the same authentic native officially
+  completed KRX or Upbit bars; its LOW is immutable reference. During
+  TP1 pending, the signal bar or a later actually completed bar must
+  evidence a touch of this LOW, and an officially CLOSED bar must CLOSE
+  strictly below the original reference LOW. Only then may the original
+  wallet attempt a FULL SELL using current authentic same-venue BID and
+  nonzero capacity. Previous MA/Trend `seen_above_entry && bid <= entry`
+  no longer authorizes full SELL. The reference-bar strategy remains
+  unchanged. NO retroactive sell, candle-HIGH fill or source invention.
+- `MA_COIN_HELD_EXIT_PRIORITY_V018`: existing coin MA open holdings
+  are examined ahead of regular candidate exploration by a bounded
+  independent `~0.12s` best-effort **book freshness observer**.
+  It sees only new genuine Upbit WS orderbook BID, timestamp and
+  executable depth from the original UpbitPaperRunner single WS,
+  passing the intact native v067 policy, SQLite ledger, broker guard,
+  dedupe and native execution receipt. There is **no second websocket,
+  no standalone broker sell order and NO guarantee of 120ms SELL**:
+  slow database/transport and missing BID are still blocking facts.
+  A 1m candle HIGH=595 or original ASK=595 cannot fill TP1=594.66
+  when original verified BID maxes at 593; the existing
+  `nl1118_resting_sells` are PAPER plans, not submitted orders.
+- Source scope includes `ma_v067_policy.py`,
+  `new_legacy_1118_policy.py`,
+  `new_legacy_rev1_low_close.py`,
+  `ma_v067_coin_runtime.py`, `ma_v067_stock_runtime.py`,
+  `market_trend_1118_runtime.py`,
+  `ma_fast_held_exit_v018.py`, and existing runner integration.
+  Regression includes original eight wallets, original reference F5,
+  old CFG price/path sidecar, TP1/TP2 receipt and no-false-fill.
+  DEVICE_VERIFIED requires actual phone and current orderbook evidence.
