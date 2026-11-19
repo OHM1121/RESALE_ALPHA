@@ -474,18 +474,82 @@ class TrendWalletV054:
             executions=[dict(r) for r in c.execute('SELECT * FROM executions ORDER BY id DESC LIMIT 1500')]
             position_total=int(c.execute('SELECT COUNT(*) FROM positions').fetchone()[0])
             execution_total=int(c.execute('SELECT COUNT(*) FROM executions').fetchone()[0])
+            # The original MT54 position is the ONLY authoritative BUY cost.
+            # Even if a SELL is older than the 500-row CLOSED view, join its
+            # own native PK. Never link by symbol, price or reference candle.
+            source_by_id={int(p['id']):p for p in positions}
+            missing=sorted({int(x['position_id']) for x in executions
+                 if x.get('position_id') is not None
+                 and int(x['position_id']) not in source_by_id})
+            for start in range(0,len(missing),350):
+                keys=missing[start:start+350]
+                if not keys:continue
+                q='SELECT id,tf,symbol,entry,entry_fee,qty0,entry_at,execution_mode FROM positions WHERE id IN (' + ','.join('?' for _ in keys)+')'
+                for r in c.execute(q,keys).fetchall():
+                    source_by_id[int(r['id'])]=dict(r)
         for p in positions:
+            valid_entry=float(p['entry'])>0 and float(p['qty0'])>0
+            valid_mark=float(p['mark'])>0
+            holding=bool(p['status']=='TREND_OPEN' and float(p['qty'])>0)
             p.update({'code':p['symbol'],'market':p['symbol'] if market=='coin' else 'KRX',
-                      'tf':p['tf'],'entry_price':p['entry'],'entry_at':p['entry_at'],
-                      'qty0':p['qty0'],'paper_pnl':(p['mark']-p['entry'])*p['qty'],
+                      'tf':p['tf'],'entry_price':p['entry'] if valid_entry else None,
+                      'buy_price':p['entry'] if valid_entry else None,
+                      'entry_at':p['entry_at'],'qty0':p['qty0'],
+                      'last_price':p['mark'] if valid_mark else None,
+                      'paper_pnl':(p['mark']-p['entry'])*p['qty']
+                                  if valid_entry and valid_mark and holding else
+                                  0 if not holding else None,
+                      'valuation_source':'ORIGINAL_MT54_SAVED_MARK_NOT_LIVE',
+                      'valuation_at':p.get('updated_at',''),
+                      'buy_evidence':'ORIGINAL_MT54_POSITION_ENTRY',
                       'entry_mode':'MARKET_TREND','strategy':'trend'})
+            if valid_entry and valid_mark and holding:
+                p['unrealized_pct']=(float(p['mark'])/float(p['entry'])-1.)*100.
+            else:
+                p['valuation_status']='NATIVE_SOURCE_MARK_OR_ENTRY_UNVERIFIED' if holding else 'CLOSED'
             p.pop('payload',None)
         for x in executions:
             x.update({'code':x['symbol'],'market':x['symbol'] if market=='coin' else 'KRX',
-                      'strategy':'trend','entry_mode':'MARKET_TREND'})
+                      'strategy':'trend','entry_mode':'MARKET_TREND',
+                      'source_execution_id':x.get('id')})
+            pid=x.get('position_id')
+            owner=source_by_id.get(int(pid)) if pid is not None else None
+            if not owner or str(owner.get('tf'))!=str(x.get('tf')) or str(owner.get('symbol'))!=str(x.get('symbol')):
+                x['buy_cost_evidence']='NATIVE_POSITION_ID_NOT_LINKED'
+                continue
+            unit=float(owner['entry'])
+            qty0=float(owner['qty0'])
+            sold=float(x['qty'])
+            if not (unit>0 and qty0>0 and sold>0):
+                x['buy_cost_evidence']='ORIGINAL_NATIVE_PRICE_OR_QTY_INVALID'
+                continue
+            prorated_fee=float(owner.get('entry_fee') or 0)*sold/qty0
+            buy_cost=unit*sold+prorated_fee
+            x.update({'entry_price':unit,'buy_price':unit,
+                      'buy_amount':buy_cost,'entry_at':owner.get('entry_at'),
+                      'buy_cost_evidence':'ORIGINAL_MT54_NATIVE_POSITION_ID_AND_BUY',
+                      'source_position_id':pid})
+            if str(x.get('side','')).upper()=='SELL':
+                realized=int(x['net_pnl'])
+                x['net_profit']=realized
+                x['realized_pct']=realized*100./buy_cost if buy_cost>0 else None
+        frame_perf={}
+        for a in accounts:
+            frame=a['tf']
+            held=[p for p in positions if p['tf']==frame and p['status']=='TREND_OPEN' and p['qty']>0]
+            verified=all(p.get('paper_pnl') is not None for p in held)
+            frame_perf[frame]={'realized_won':a['realized'],
+               'holding_won':sum(p['paper_pnl'] for p in held) if verified else None,
+               'open_count':len(held),
+               'closed_count':sum(1 for p in positions if p['tf']==frame and p['status']!='TREND_OPEN')}
+        unsettled=[p for p in positions if p['status']=='TREND_OPEN' and p['qty']>0]
+        all_valuations_valid=all(p.get('paper_pnl') is not None for p in unsettled)
         return {'accounts':accounts,'positions':positions,'executions':executions,
+                'performance_by_frame':frame_perf,
                 'positions_source_total':position_total,'executions_source_total':execution_total,
                 'preview_truncated':len(positions)<position_total or len(executions)<execution_total,
                 'realized_pnl':sum(x['realized'] for x in accounts),
-                'unrealized_pnl':sum(p['paper_pnl'] for p in positions if p['status']=='TREND_OPEN'),
-                'pending':[],'strategy':'trend'}
+                'unrealized_pnl':sum(p['paper_pnl'] for p in unsettled)
+                                  if all_valuations_valid else None,
+                'pending':[],'strategy':'trend',
+                'native_execution_cost_join':'EXACT_POSITION_ID_READONLY'}
