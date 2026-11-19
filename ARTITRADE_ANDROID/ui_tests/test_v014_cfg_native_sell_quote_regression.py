@@ -50,7 +50,14 @@ class MAOriginalNativePaperSimulation(unittest.TestCase):
              ref_at="2026-11-18T09:25:00+09:00",
              ref_end="2026-11-18T09:30:00+09:00",
              score=80,limit="115",target="119",features=details)
-        self.assertTrue(self.wallet.record_candidate(record,"SIM_CFG",ENTRY))
+        # Original 5m range gate requires verifiable high/low as well;
+        # synthetic OHLC must be complete rather than auto-accepted.
+        details.update(high=120,low=100,open=115,close=115)
+        accepted=self.wallet.record_candidate(record,"SIM_MA",ENTRY)
+        with self.wallet.connect() as c:
+            stored=[dict(r) for r in c.execute(
+                "SELECT id,market,tf,ref_at FROM candidates")]
+        self.assertTrue(accepted,stored)
         self.wallet.process_book(genuine_book(114,115,ENTRY+dt.timedelta(seconds=1)),
                                  ENTRY+dt.timedelta(seconds=1))
         with self.wallet.connect() as c:
