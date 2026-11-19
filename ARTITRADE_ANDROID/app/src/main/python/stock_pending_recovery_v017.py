@@ -32,12 +32,16 @@ _RETRYABLE = frozenset((
 ))
 
 
-def _freeze_symbol_loading_universe(runner):
+def _freeze_symbol_loading_universe(runner,allow_create=False):
     """Capture the actual native KRX scan universe, never hardcode 459."""
     with _PRIORITY_LOCK:
         ready=getattr(runner,"_v017_loading_universe",None)
         if ready is not None:
             return ready
+        if not allow_create:
+            # Observing an early, partially populated market_map must never
+            # freeze a misleading denominator before native boot selection.
+            return frozenset()
         mapping=(getattr(runner,"krx_market_map",None) or
                  getattr(runner,"market_map",None) or {})
         if not mapping:
@@ -53,14 +57,14 @@ def _freeze_symbol_loading_universe(runner):
 def _native_boot_recheck(self,clock):
     # Only original native symbols and the original boot work queue.
     # A reconnect keeps the same denominator, preventing backward jumps.
-    _freeze_symbol_loading_universe(self)
+    _freeze_symbol_loading_universe(self,allow_create=True)
     return _ORIGINAL_BOOT(self,clock)
 
 
 def _record_native_history_success(runner,code):
     # Called ONLY after original recover_frame returns VERIFIED_RESTORED;
     # no REST fetch, cache-based increment or fabricated completed symbol.
-    active=_freeze_symbol_loading_universe(runner)
+    active=_freeze_symbol_loading_universe(runner,allow_create=True)
     if str(code) in active:
         with _PRIORITY_LOCK:
             runner._v017_loading_completed.add(str(code))
