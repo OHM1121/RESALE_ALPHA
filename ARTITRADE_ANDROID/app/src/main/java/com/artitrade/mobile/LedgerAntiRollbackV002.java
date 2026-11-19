@@ -15,6 +15,7 @@ import java.io.File;
 final class LedgerAntiRollbackV002 {
     private static final String PREFS="artitrade_ledger_guard_v002";
     private LedgerAntiRollbackV002(){}
+    private static boolean cfgSingleCleanupAttemptedV015=false;
 
     static synchronized JSONObject verify(Context c)throws Exception{
         JSONObject epoch=FreshEpochGateV106.read(c);
@@ -47,6 +48,32 @@ final class LedgerAntiRollbackV002 {
         if(root.isDirectory()&&independent.isFile())
             Python.getInstance().getModule("legacy_purge_v012")
                 .callAttr("run_once",root.getAbsolutePath());
+        // The user approved exactly ONE previously reported KRW-CFG coin MA
+        // 5m PAPER cycle. Run only once per phone process, before engines start.
+        // A symbol-only match NEVER authorizes deletion. The Python module
+        // backs up the exact native wallet, verifies original BUY receipts,
+        // updates cash/P&L and rebases the independent witness atomically.
+        if(!cfgSingleCleanupAttemptedV015&&root.isDirectory()&&independent.isFile()){
+            try{
+                String status=Python.getInstance()
+                    .getModule("cfg_single_paper_cleanup_v015")
+                    .callAttr("run_json",root.getAbsolutePath()).toString();
+                JSONObject result=new JSONObject(status);
+                String state=result.optString("status","UNVERIFIED");
+                // Persist a non-private result code for diagnostics even if no
+                // matching historic position remains on this device.
+                c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+                    .putString("cfg_single_v015_status",state)
+                    .putString("cfg_single_v015_reason",
+                        result.optString("reason","")).commit();
+                if("SKIPPED".equals(state))
+                    android.util.Log.w("ARTITRADE_CFG_V015",
+                        "Exact-single PAPER cleanup skipped: "+
+                        result.optString("reason","NO_SINGLE_POSITION"));
+            }finally{
+                cfgSingleCleanupAttemptedV015=true;
+            }
+        }
         String raw=Python.getInstance()
             .getModule("ledger_rollback_guard_v002")
             .callAttr("verify_json",root.getAbsolutePath(),
