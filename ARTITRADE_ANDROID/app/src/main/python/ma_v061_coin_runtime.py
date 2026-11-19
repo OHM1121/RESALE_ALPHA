@@ -153,67 +153,12 @@ def _verified_forced(frame,symbol,bid,now):
 
 
 def _process_exits(self,book,now,original_sell):
-    from d_upbit import dec,qty_floor
-    if not book or not str(book.get('market','')).startswith('KRW-'):return
-    try:
-        stamp=int(book['timestamp'])/1000
-        bid=dec(book['bid']);size=dec(book['bid_size'])
-        if abs(now.timestamp()-stamp)>3 or bid<=0 or size<0:return
-    except (ValueError,TypeError,KeyError,ArithmeticError):return
-    symbol=str(book['market'])
-    with self.lock,self.connect() as c:
-        _make_table(c)
-        joined=c.execute("""SELECT p.*,m.kind,m.state_json
-          FROM positions p JOIN ma_v061_positions m ON m.position_id=p.id
-          WHERE p.market=? AND p.status='OPEN' ORDER BY p.id""",
-          (symbol,)).fetchall()
-        if not joined:return
-        c.execute('BEGIN IMMEDIATE')
-        depth=qty_floor(size*Decimal('.5'))
-        for p in joined:
-            current=qty_floor(dec(p['qty']))
-            if current<=0:continue
-            forced=_verified_forced(p['tf'],symbol,bid,now)
-            state=json.loads(p['state_json'])
-            state['last_observed_at']=now.isoformat()
-            if p['kind']=='TURNPOINT':
-                updated,wanted,reason=rule.evaluate_pivot_exit(
-                    state,bid,p['entry'],min(current,depth),p['qty0'],forced)
-            elif forced:
-                updated,wanted,reason=state,min(current,depth),forced
-            else:
-                continue  # legacy bearish take-profit is unchanged
-            if updated!=state:
-                c.execute("""UPDATE ma_v061_positions SET state_json=?,updated_at=?
-                    WHERE position_id=?""",
-                    (json.dumps(updated,ensure_ascii=False),now.isoformat(),p['id']))
-            desired=qty_floor(min(wanted,current,depth))
-            if desired<=0 or not reason:continue
-            key='MA_V061:'+symbol+':'+str(p['id'])+':'+reason+':'+str(int(stamp*1000))
-            # This is the existing original broker/ledger code path. In LIVE
-            # mode SQL execution is intercepted by the original FOK proxy.
-            sold=original_sell(self,c,p,desired,bid,now.isoformat(),
-                               reason+' 1차 목표' if reason=='MA_V061_FIRST_20PCT' else reason,
-                               event_key=key)
-            if not sold:continue
-            depth-=desired
-            applied=rule.quantity_after_fill(updated,reason,desired)
-            if reason=='MA_V061_FIRST_20PCT' and (
-                    rule.dec(state.get('first_sold')) or Decimal(0))==0:
-                # The 2nd +3% target is measured from the CONFIRMED first
-                # execution price, not the earlier first-target touch.
-                fill=c.execute("""SELECT price FROM executions
-                    WHERE position_id=? AND side='SELL'
-                    ORDER BY id DESC LIMIT 1""",(p['id'],)).fetchone()
-                if fill and rule.dec(fill['price']) is not None:
-                    applied['first_anchor']=str(fill['price'])
-            c.execute("""UPDATE ma_v061_positions SET state_json=?,updated_at=?
-                WHERE position_id=?""",
-                (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
-            remaining=current-desired
-            if remaining<=0 and reason.startswith('MA_V061_'):
-                c.execute("""UPDATE orders SET status='EXPIRED'
-                    WHERE market=? AND status='PENDING'""",(symbol,))
+    """Retired V061 automatic seller. Kept only for old import signatures.
+
+    11.18 workbook allows ONLY the V067 upward-transition new MA policy.
+    Historical V061 rows/fills stay immutable; no old exit can execute.
+    """
+    return None
 
 
 def install():
