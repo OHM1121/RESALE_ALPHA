@@ -46,8 +46,8 @@ def enrich(runtime,packet):
 
 def install(core):
     old=core.Runtime.hub_records
-    def records(self):
-        raw=old(self)
+    def records(self,for_ui=False):
+        raw=old(self,for_ui=for_ui)
         try:
             packet=json.loads(raw) if isinstance(raw,str) else raw
             if isinstance(packet,dict):
