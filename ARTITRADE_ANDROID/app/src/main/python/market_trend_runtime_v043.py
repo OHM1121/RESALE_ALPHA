@@ -513,8 +513,11 @@ class Coordinator:
             with self.lock:
                 universe=list(self._candidates[market])
                 held=[(p.symbol,p.frame) for p in self._positions.values() if p.market==market]
+            # Retired 5m bars are not fetched for NEW Trend signals. A still
+            # open legacy 5m holding remains in held for SELL recovery.
+            from new_legacy_1118_policy import TREND_FRAMES
             pairs=list(dict.fromkeys(held+[(code,tf) for code in universe
-                                                for tf in mt.FRAMES]))
+                                                for tf in TREND_FRAMES]))
             # Populate missing RSI histories before refreshing existing complete
             # windows. Held positions retain highest repair priority.
             held_set=set(held)
@@ -833,7 +836,8 @@ class Coordinator:
             if gate is not None and not gate.snapshot().get('ready',False):
                 return
         scheduled=[]
-        for frame in mt.FRAMES:
+        from new_legacy_1118_policy import TREND_FRAMES
+        for frame in TREND_FRAMES:
             finish=_end_clock(now,market,frame)
             if finish is None:continue
             if market=="stock":
@@ -1138,7 +1142,8 @@ class Coordinator:
                         continue
                     stale_episodes.discard(code)
                     price=raw[0]
-                    for frame in mt.FRAMES:
+                    from new_legacy_1118_policy import TREND_FRAMES
+                    for frame in TREND_FRAMES:
                         finish=_end_clock(now,market,frame)
                         if finish is None:
                             self.watch.discard(market,code,frame)
@@ -1330,7 +1335,8 @@ class Coordinator:
                     "trend_active":True,
                     "watch_pending":len(self.watch.snapshot(market)) if hasattr(self,"watch") else 0,
                     "trend_wallet_frames":({tf:self.standalone_wallet.allocation(market,tf)
-                       for tf in mt.FRAMES} if hasattr(self,"standalone_wallet") else {}),
+                       for tf in __import__('new_legacy_1118_policy').TREND_FRAMES}
+                       if hasattr(self,"standalone_wallet") else {}),
                     "status":self.mode_details[market],
                     "candidates":len(self._candidates[market]),
                     "candidate_symbols":sorted(self._candidates[market]),
