@@ -1138,6 +1138,41 @@
         109
       ],
       "contract": "Fail-closed PAPER-only chronology audit of source-linked native stop/force/expiry/trailing and original target events. Strict-overshoot ticks are shadow candidates only; equal touch needs book proof; OHLC cannot prove intrabar sequence; stop-first terminates position; no native SELL, cash, fees, or antirollback writes. Crucially historical atomic PAPER ledger catch-up remains NOT IMPLEMENTED and never DEVICE_VERIFIED."
+    },
+    {
+      "id": "V019_PAPER_NATIVE_CHRONOLOGICAL_REPLAY_WIP",
+      "kind": "python pure-proof engine (unwired)",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/paper_exit_replay_v019.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v019_strict_paper_replay.py"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "POSITION_UID_V015",
+        "NL1118_REV1_VERIFIED_LOW_STOP_V018"
+      ],
+      "issues": [
+        109
+      ],
+      "contract": "Eight-owner PAPER-only proof builder with original BUY/plan, owner+epoch+position, source event sequence and full protective rules required. No broker receipt/cash changes. Original phone post-BUY feed coverage and stop-first source reconciliation NOT VERIFIED; no on-phone authenticated tape collector. Same-minute ambiguous conservatively blocked. Not release-ready."
+    },
+    {
+      "id": "V019_NATIVE_ATOMIC_STAGE_SETTLEMENT_WIP",
+      "kind": "python internal native SQLite writer (unwired)",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/paper_exit_native_ledger_v019.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v019_native_ledger_accounting.py"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "POSITION_UID_V015",
+        "V019_PAPER_NATIVE_CHRONOLOGICAL_REPLAY_WIP",
+        "ANTI_ROLLBACK"
+      ],
+      "issues": [
+        109
+      ],
+      "contract": "Native fee, cash, realized P&L, qty and original SELL receipt in one per-owner SQLite transaction; unique replay journal. Synthetic coin Reference/CW tests; all seven SQLite owners and original GMO JSON remain not comprehensively source/CI validated. No crash-safe independent-witness rebase coordinator and no original authenticated on-phone historical tape. NOT wired, NOT authorized to run on private ledger or produce signed release."
     }
   ],
   "audit_scope": {
