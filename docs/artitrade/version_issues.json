@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "artitrade-018-newlegacy-rev1-ma-trend-pod-exit-20261119",
+  "working_branch": "artitrade-019-eight-wallet-target-plan-display-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -1152,6 +1152,34 @@
         "test_new_legacy_1118_workbook.py"
       ],
       "notes": "On MA/Trend native official authenticated completed candle, touch entry-reference-candle low and strictly below-close permits a full SELL only on subsequent current genuine native BID/depth with receipt. Old pre-first entry retouch removed for MA/Trend only, reference strategy unaffected, GMO/CW unchanged. Coin MA held priority worker watches new original Upbit books up to 120ms best-effort; latency NOT guaranteed, BID/ASK and 1m high never proof of broker fill. Historical user positions and paper resting plans preserved. Full device/market execution not yet verified."
+    },
+    {
+      "id": "AT-019-30",
+      "issue": 109,
+      "found": "2026-11-19 user handoff and original native source",
+      "category": "EIGHT_STRATEGY_TARGET_UI_AND_PAPER_CHRONOLOGICAL_REPLAY",
+      "title": "Missing original per-BUY 1st/2nd target quantities and price on all independent wallets; historical PAPER cannot infer fills from later highs before native stops",
+      "evidence": "Original 0.0.18 user release, source 0.0.19 standalone staged_exit_preview not installed; Java GMO first-target fields missing. Original nl1118_resting_sells stores 6 NEW LEGACY plans per native BUY. Source audit confirms GMO tier+4/+5/+7 original 20/40 and CW +1.2% full. User requires stop-first chronological replay and exact owner+epoch+position+stage idempotent settlement. No private device SQLite available for actual corrections.",
+      "root": "CONFIRMED_SOURCE_UI_BRIDGE_MISSING_AND_NO_CHRONOLOGICAL_RETROACTIVE_NATIVE_LEDGER_ENGINE",
+      "status": "SOURCE_PARTIAL_NOT_RELEASE_READY",
+      "fix_version": "0.0.19-source-work-in-progress",
+      "ci": "Original eight-wallet and Java compilation CI https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44528651810 SUCCESS before chronology addition; final chronology source CI pending",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "V019_EIGHT_OWNER_SOURCE_TARGET_DISPLAY",
+        "V019_PAPER_EXIT_CHRONOLOGICAL_AUDIT_ONLY",
+        "POSITION_UID_V015",
+        "EXECUTION",
+        "UI_RECORDS",
+        "ANTI_ROLLBACK"
+      ],
+      "tests": [
+        "test_v019_native_exit_plan_readonly.py",
+        "test_v019_paper_exit_chronology.py",
+        "test_v002_eight_virtual_paper_end_to_end.py",
+        "test_v018_rev1_low_close_and_fast_ma.py"
+      ],
+      "notes": "Read-only six strategy native stage evidence + source GMO/CW target UI and standalone fail-closed chronology audit source committed. CRITICAL GAP: no atomic replay journal, no settled native historical PAPER executions/cash/P&L/witness rollback, no real device test; do not ship 0.0.19 APK/release. Any future source adjustments must preserve exact version number and same signing fingerprint."
     }
   ],
   "known_normal": [
@@ -1419,5 +1447,22 @@
     "original_upbit_single_ws": true,
     "unverified_phone_sell_latency": true,
     "comment": "CI may prove synthetic original PAPER SELL only; no genuine broker order; do not describe original user's POD missed TP1 as fixed historical trade."
+  },
+  "candidate_019": {
+    "versionName": "0.0.19",
+    "versionCodeTarget": 141,
+    "package": "com.artitrade.unified.s21dex",
+    "branch": "artitrade-019-eight-wallet-target-plan-display-20261119",
+    "issue": 109,
+    "release_exists": false,
+    "signed_apk_exists": false,
+    "device_verified": false,
+    "source_status": "SOURCE_PARTIAL",
+    "native_historical_chronological_settlement": "NOT_IMPLEMENTED",
+    "readonly_exit_plan_ui": "SOURCE_COMMITTED_CI_VERIFICATION_PENDING",
+    "read_only_chronological_audit": "SOURCE_COMMITTED_CI_VERIFICATION_PENDING",
+    "baseline_release": "0.0.18",
+    "baseline_release_commit": "2f3b85d0004e16d05e5243af0a038bfc63e3d73c",
+    "original_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
   }
 }
