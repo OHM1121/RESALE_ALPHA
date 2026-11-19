@@ -94,10 +94,10 @@ def _save(c,plan):
 def _act(self,c,p,minute,at):
     plan=_read(c,p["id"])
     if plan is None:
-        from d_v19_portfolio import D19PaperEngine
-        owner=(_ORIGINAL_D19_EXIT if isinstance(self,D19PaperEngine)
-               else _ORIGINAL_STOCK_EXIT)
-        return owner(self,c,p,minute,at)
+        # Workbook is the only automatic exit authority. Never fall back
+        # to retired D19 3LEG31 / original V2.6 for unplanned holdings.
+        # Existing cash/positions remain untouched for explicit migration.
+        return p
     if str(at)<=str(p["entry_ts"]):return p
     try:
         at_dt=dt.datetime.strptime(str(at),"%Y%m%d%H%M%S").replace(
@@ -230,10 +230,14 @@ def install():
 
     original_coin_sell=d_upbit.CoinLedger._sell
     def sell_coin(self,c,p,desired,price,at,reason,event_key=None):
-        if _is_base_coin(self) and _read(c,p["id"]) is not None:
+        if _is_base_coin(self):
             manual=str(reason).startswith(("USER:","사용자")) or str(
                 event_key or "").startswith("USER:")
-            if not str(reason).startswith("NL1118_") and not manual:
+            # A missing sidecar is NOT permission for native V2.6/SR1 exits.
+            # Treat pre-workbook holdings as migration-required, no auto
+            # trade. New positions are rolled back if their sidecar is absent.
+            if not manual and (_read(c,p["id"]) is None or
+                               not str(reason).startswith("NL1118_")):
                 return False
         return original_coin_sell(self,c,p,desired,price,at,reason,
                                   event_key=event_key)
