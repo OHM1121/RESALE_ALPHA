@@ -573,11 +573,16 @@ public final class UnifiedVisualActivity extends Activity {
                 startupMissingCause="원본 사전점검 결과 수신 대기";
                 updateStartupProgress(progress,stage);
             }
-            if(engine&&uiReady&&stockReady&&coinReady&&coinWarm&&stockWarm
-                 &&audited&&startupNativeAuditReady){
-                preloadExitNote="";
-                finishPreload(true);
-                return;
+            if(engine&&uiReady&&stockReady&&coinReady){
+                // Preserve the original verified feed/ledger checkpoint for
+                // the vendor quote patch and independent broker recovery.
+                // New read-only audits are an ADDITIONAL UI completion gate,
+                // never a substitute for the original one.
+                if(coinWarm&&stockWarm&&audited&&startupNativeAuditReady){
+                    preloadExitNote="";
+                    finishPreload(true);
+                    return;
+                }
             }
             // 0.0.15 exited after 22s while official candle/book audits
             // were still missing. Retain the source-check screen through the
