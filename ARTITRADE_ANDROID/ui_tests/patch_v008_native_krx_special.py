@@ -114,9 +114,9 @@ update("d_live.py",
 # Existing 4-second REG resubscription already detects shifted opening; do
 # not rely on its optional fixed-time fast cutover list.
 update("d_live.py",
-"""                                     not '1530' <= now.strftime('%H%M') < '1600'))""",
-"""                                     not (lambda v: v[1]<=now.hour*60+now.minute<v[1]+30)(
-                                         __import__('krx_session_v041').venue_bounds(now,'KRX')) )""")
+"""not '1530' <= now.strftime('%H%M') < '1600'""",
+"""not (lambda v: v[1]<=now.hour*60+now.minute<v[1]+30)(
+                                         __import__('krx_session_v041').venue_bounds(now,'KRX'))""")
 update("d_live.py",
 """                pause = active and '1530' <= now_kst().strftime('%H%M') < '1600'""",
 """                observed=now_kst()
