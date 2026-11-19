@@ -1161,9 +1161,9 @@
       "title": "Missing original per-BUY 1st/2nd target quantities and price on all independent wallets; historical PAPER cannot infer fills from later highs before native stops",
       "evidence": "Original 0.0.18 user release, source 0.0.19 standalone staged_exit_preview not installed; Java GMO first-target fields missing. Original nl1118_resting_sells stores 6 NEW LEGACY plans per native BUY. Source audit confirms GMO tier+4/+5/+7 original 20/40 and CW +1.2% full. User requires stop-first chronological replay and exact owner+epoch+position+stage idempotent settlement. No private device SQLite available for actual corrections.",
       "root": "CONFIRMED_SOURCE_UI_BRIDGE_MISSING_AND_NO_CHRONOLOGICAL_RETROACTIVE_NATIVE_LEDGER_ENGINE",
-      "status": "SOURCE_PARTIAL_NOT_RELEASE_READY",
+      "status": "CI_VERIFIED_READONLY_ONLY_NOT_RELEASE_READY",
       "fix_version": "0.0.19-source-work-in-progress",
-      "ci": "Original eight-wallet and Java compilation CI https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44528651810 SUCCESS before chronology addition; final chronology source CI pending",
+      "ci": "GitHub regression CI 44529023597 SUCCESS at d62d7adace1ea41638da54be36497b4294056f12: source 8-wallet tests, 0.0.19 provenance/chronology unit tests, Android Java compile, dependency governance; no APK signing/real device or retroactive ledger mutation verified",
       "device": "UNVERIFIED",
       "nodes": [
         "V019_EIGHT_OWNER_SOURCE_TARGET_DISPLAY",
@@ -1457,12 +1457,13 @@
     "release_exists": false,
     "signed_apk_exists": false,
     "device_verified": false,
-    "source_status": "SOURCE_PARTIAL",
+    "source_status": "CI_VERIFIED_READONLY_ONLY",
     "native_historical_chronological_settlement": "NOT_IMPLEMENTED",
-    "readonly_exit_plan_ui": "SOURCE_COMMITTED_CI_VERIFICATION_PENDING",
-    "read_only_chronological_audit": "SOURCE_COMMITTED_CI_VERIFICATION_PENDING",
+    "readonly_exit_plan_ui": "CI_VERIFIED_READONLY",
+    "read_only_chronological_audit": "CI_VERIFIED_READONLY",
     "baseline_release": "0.0.18",
     "baseline_release_commit": "2f3b85d0004e16d05e5243af0a038bfc63e3d73c",
-    "original_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+    "original_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "ci_run": 44529023597
   }
 }
