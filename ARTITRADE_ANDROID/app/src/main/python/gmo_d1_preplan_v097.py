@@ -527,21 +527,14 @@ def install(core):
         return out
 
     def subscriptions(self,at=None):
-        now=at or d_live.now_kst()
+        # V097 formerly replaced EVERY other strategy's single-Kiwoom-WS
+        # 0B/0D subscriptions with GMO-only names from 07:58 to 08:00.
+        # That bypassed the V093 five-strategy fairness and held/exit pins,
+        # disconnecting valid AT/CW/MA/Trend paths on the shared socket.
+        # V093 already includes the GMO D+1 watchlist with exchange NXT
+        # eligibility and the hard 200-slot policy. It is the sole selector.
         p=getattr(self.gmo,"_v097_planner",None)
         if p is not None:p.runner=self
-        if "075800"<=now.strftime("%H%M%S")<"080000":
-            codes=list(self.gmo.priority_watchlist(now))
-            eligible=[]
-            for code in codes:
-                ident=self.market_map.get(code)
-                if ident is None or ident[0] not in ("KOSPI","KOSDAQ"):
-                    continue
-                if d_live.is_etf_or_etn(ident[1]):
-                    continue
-                if self.nxt_snapshot.allows(code,now.strftime("%Y%m%d")):
-                    eligible.append(str(code)+"_NX")
-            return eligible[:200]
         return original_subscriptions(self,at)
 
     def no_extra_topup(engine,q):
