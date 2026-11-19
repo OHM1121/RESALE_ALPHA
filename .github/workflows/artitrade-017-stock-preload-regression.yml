@@ -109,6 +109,7 @@ jobs:
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v016_preload_trend_ledger.py' -v 2>&1 | tee -a /tmp/artitrade-v016-tests.log
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v017_stock_preload_progress.py' -v 2>&1 | tee -a /tmp/artitrade-v016-tests.log
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v017_native_pending_retry.py' -v 2>&1 | tee -a /tmp/artitrade-v016-tests.log
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v107_at_negative_market_gate.py' -v 2>&1 | tee -a /tmp/artitrade-v016-tests.log
       - name: Eight unchanged native PAPER strategy wallets and related root guards
         shell: bash
         run: |
