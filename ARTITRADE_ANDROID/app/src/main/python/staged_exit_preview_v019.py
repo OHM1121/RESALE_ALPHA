@@ -96,7 +96,7 @@ def _gmo_native(runtime,row):
         if entry_day and entry_day!=str(getattr(p,"entry_date",""))[:10]:
             return None,None
         return p,getattr(engine,"cfg",None)
-    except (AttributeError,TypeError,ValueError,RuntimeError):
+    except (AttributeError,TypeError,ValueError,RuntimeError,InvalidOperation):
         return None,None
 
 
