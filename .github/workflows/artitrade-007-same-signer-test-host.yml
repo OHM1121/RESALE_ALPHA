@@ -18,11 +18,11 @@ jobs:
       CI: 'true'
       ARTIFACT: ARTITRADE_0.0.7
       TAG: ARTITRADE-0.0.7
-      SOURCE: 66d087f0a12e4505d2480603fd66aa747569183e
+      SOURCE: 901ce172f3c690e3f629915cff63d7f7a8611224
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 66d087f0a12e4505d2480603fd66aa747569183e
+          ref: 901ce172f3c690e3f629915cff63d7f7a8611224
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
