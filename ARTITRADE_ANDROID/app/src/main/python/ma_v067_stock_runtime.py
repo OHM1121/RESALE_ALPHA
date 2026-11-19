@@ -13,6 +13,7 @@ import sqlite3
 import threading
 from decimal import Decimal,ROUND_CEILING
 import ma_v067_policy as policy
+import new_legacy_1118_resting as resting
 
 _INSTALLED=False
 _LOCK=threading.RLock()
@@ -180,6 +181,11 @@ def _join_new_positions(self,c,code):
                else max(1,int(math.ceil(int(p['qty0'])*fraction))))
         c.execute('UPDATE positions SET target=?,first_qty=? WHERE id=?',
                   (int(math.ceil(first_target)),first,p['id']))
+        if kind=='REVERSAL_UP':
+            one,two=policy.up_targets(p['entry'],p['tf'])
+            q1,q2=policy.up_stage_quantities(state,p['qty0'])
+            resting.place(c,int(p['id']),'stock',str(p['code']),str(p['tf']),
+                str(p['entry_at']),p['qty0'],one,two,q1,q2,paper=True)
 
 
 def _expire_old_or_rebounded(self,tick,now):
@@ -285,11 +291,17 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     if not actually:return
     # A returned native sell amount is not enough to advance MA stages:
     # the corresponding exact SELL execution must exist in the same ledger.
-    filled=c.execute("""SELECT price,ts FROM executions WHERE position_id=?
+    filled=c.execute("""SELECT id,price,ts,qty FROM executions WHERE position_id=?
         AND side='SELL' AND reason=? ORDER BY id DESC LIMIT 1""",
         (p['id'],reason)).fetchone()
     if filled is None:return
     px=filled['price']
+    if reason in ('MA_V1118_UP_FIRST_30PCT','MA_V1118_UP_SECOND_35PCT'):
+        resting.confirmed_fill(c,int(p['id']),
+            1 if reason=='MA_V1118_UP_FIRST_30PCT' else 2,
+            int(filled['id']))
+    else:
+        resting.cancel_remaining(c,int(p['id']),reason)
     if kind=='REVERSAL_BEAR':
         state=policy.apply_bear_fill(changed,reason,actually,now)
         state=policy.mark_stage_completion(state,p['qty0'],now,px)
@@ -702,6 +714,21 @@ def install():
                 WHERE p.status='OPEN' AND v.position_id IS NULL
                 AND a.features LIKE '%"ma_v067_kind"%'""").fetchall()
             for row in open_rows:_join_new_positions(self,c,row['code'])
+            # Idempotent after app upgrade: existing OPEN holdings keep
+            # their original ledger, but recover missing PAPER resting rows.
+            held=c.execute("""SELECT p.*,v.state_json
+                FROM positions p JOIN ma_v067_positions v ON v.position_id=p.id
+                WHERE p.status='OPEN' AND v.kind='REVERSAL_UP'""").fetchall()
+            for p in held:
+                try:
+                    state=json.loads(p['state_json'] or '{}')
+                    one,two=policy.up_targets(p['entry'],p['tf'])
+                    q1,q2=policy.up_stage_quantities(state,p['qty0'])
+                    resting.place(c,int(p['id']),'stock',str(p['code']),
+                        str(p['tf']),str(p['entry_at']),p['qty0'],
+                        one,two,q1,q2,paper=True)
+                except (ValueError,TypeError,KeyError):
+                    continue
         self._ma_v067_last_trade={}
     native.StockMAService.__init__=init
 
