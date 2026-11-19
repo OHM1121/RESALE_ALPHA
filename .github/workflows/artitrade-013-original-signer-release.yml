@@ -18,11 +18,11 @@ jobs:
       CI: 'true'
       ARTIFACT: 0.0.13
       TAG: 0.0.13
-      SOURCE: 13b602b5f00ec3ef24ed723501f6adbc26f790bd
+      SOURCE: 17d47cf53411182fb717d362950d6d437ad75d2a
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 13b602b5f00ec3ef24ed723501f6adbc26f790bd
+          ref: 17d47cf53411182fb717d362950d6d437ad75d2a
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
