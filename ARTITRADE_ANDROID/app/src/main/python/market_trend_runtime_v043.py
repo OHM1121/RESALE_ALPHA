@@ -943,7 +943,8 @@ class Coordinator:
                     market,frame,code,name,verified["ask"],
                     verified["ask_size"],at,barid,signal["rsi20_closed"])
                 if p is not None:
-                    self._positions[(market,"trend",frame,code)]=p
+                    with self.lock:
+                        self._positions[(market,"trend",frame,code)]=p
                     result=p
             except Exception as exc:
                 disposition="UNSAFE:"+type(exc).__name__
@@ -981,14 +982,19 @@ class Coordinator:
                     v=mt.TrendPosition(
                         market,"trend",frame,code,at,verified["ask"],1,barid)
                     vkey=(market,"trend",frame,code,barid)
-                    self._virtual[vkey]=v
+                    with self.lock:
+                        self._virtual[vkey]=v
                     self.journal.save_virtual(
                         json.dumps(vkey,ensure_ascii=False),v)
                 except (ValueError,TypeError):
                     pass
 
     def _process_holds(self,market,now):
-        for key,p in list(self._positions.items()):
+        # Snapshot under the same ownership lock used by all BUY writers.
+        # Do not hold it while executing the native wallet/SQLite SELL.
+        with self.lock:
+            held_snapshot=list(self._positions.items())
+        for key,p in held_snapshot:
             if p.market!=market or p.qty<=0:continue
             q=self._quote(market,p.symbol)
             if q is None:continue
@@ -1030,7 +1036,10 @@ class Coordinator:
                                 self.standalone_wallet.save_position(p)
                                 self.journal.record_stop_fill(p.market,p.symbol,now)
                             else:self.journal.save_position(p,p.position_id)
-                        if p.qty<=0:self._positions.pop(key,None)
+                        if p.qty<=0:
+                            with self.lock:
+                                if self._positions.get(key) is p:
+                                    self._positions.pop(key,None)
                 except Exception as exc:
                     self._last_fetch_error[market]="SELL:"+type(exc).__name__
             else:
@@ -1042,7 +1051,9 @@ class Coordinator:
                     if p.strategy=='trend':self.standalone_wallet.save_position(p)
                     else:self.journal.save_position(p,p.position_id)
                     self._position_snapshot_at[key]=now_mono
-        for key,v in list(self._virtual.items()):
+        with self.lock:
+            virtual_snapshot=list(self._virtual.items())
+        for key,v in virtual_snapshot:
             if v.market!=market:continue
             q=self._quote(market,v.symbol)
             if q is None:continue
