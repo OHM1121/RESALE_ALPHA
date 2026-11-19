@@ -3054,11 +3054,20 @@ public final class UnifiedVisualActivity extends Activity {
             tile.setPadding(dp(10),dp(8),dp(10),dp(7));
             LinearLayout top=new LinearLayout(this);
             top.setGravity(Gravity.CENTER_VERTICAL);
+            // Integrated holdings have the same left timeframe square as
+            // strategy-specific holdings; never repeat it beside the name.
+            TextView frameBadge=tradeStage(
+                holdingFrameBadge(p,holding.scopeStrategy),
+                Color.rgb(37,55,88),Color.rgb(154,199,255));
+            top.addView(frameBadge,new LinearLayout.LayoutParams(dp(57),dp(28)));
             TextView symbol=text(nameOf(p),15);
             symbol.setTypeface(null,Typeface.BOLD);
             symbol.setSingleLine(true);
             bindSymbolFourTap(symbol,p,holding.scopeMarket);
-            top.addView(symbol,new LinearLayout.LayoutParams(0,dp(26),1));
+            LinearLayout.LayoutParams symbolLayout=
+                new LinearLayout.LayoutParams(0,dp(26),1);
+            symbolLayout.setMargins(dp(7),0,dp(4),0);
+            top.addView(symbol,symbolLayout);
             TextView origin=text(scopeTitle(holding.scopeMarket,holding.scopeStrategy)+
                 (isTrendRow(p)?" · 마켓트렌드":""),11);
             origin.setTextColor(PremiumUi.MUTED);
