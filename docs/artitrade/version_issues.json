@@ -454,7 +454,7 @@
       "nodes": [
         "SERVICE",
         "EXECUTION",
-        "STOCK_WS_PRIORITY",
+        "STOCK_SHARED_WS_OWNER",
         "CLOSE_FOLLOWUP_ASOF",
         "TREND_SHARED_OWNERSHIP",
         "STOCK_AT",
