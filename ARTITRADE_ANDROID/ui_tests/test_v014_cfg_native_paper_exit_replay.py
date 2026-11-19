@@ -13,6 +13,7 @@ import ma_v067_coin_runtime as ma_runtime
 import ma_v067_policy as ma_policy
 from coin_ma_engine import MACoinLedger
 
+ma_runtime.install()
 KST=dt.timezone(dt.timedelta(hours=9))
 BUY_AT=dt.datetime(2026,11,19,9,34,55,tzinfo=KST)
 SYMBOL="KRW-SIMCFG"  # Not a real exchange order or a user's trade.
@@ -34,7 +35,8 @@ class CFGNativePaperExitReplay(unittest.TestCase):
                 ma_v067_120_delta="-0.01",
                 ma_v067_15s_fill_until=(BUY_AT+dt.timedelta(seconds=15)).isoformat(),
                 ma_v067_quote_source="EXACT_UPBIT_WS_TICK_AND_BOOK",
-                source="UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK"))
+                source="UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK",
+                high=120,low=100,open=115,close=115))
         self.assertTrue(self.wallet.record_candidate(self.candidate,"SIMULATED_MA",BUY_AT))
         with self.wallet.connect() as c:
             self.assertEqual(c.execute("SELECT status FROM orders").fetchone()["status"],"PENDING")
