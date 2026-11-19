@@ -200,6 +200,9 @@ class TrendSourceCost(TestCase):
         self.assertIn("마켓트렌드 마지막 저장 평가가",java)
         self.assertIn("ORIGINAL_MT54_SAVED_MARK_NOT_LIVE",java)
         self.assertIn("실시간 시세 아님",java)
+        self.assertIn('historyEvidenceCell(fields,"마켓트렌드 원본 매수가"',java)
+        self.assertIn('historyEvidenceCell(fields,"원본 실현손익"',java)
+        self.assertIn('historyEvidenceCell(fields,"원본 매도수익률"',java)
 
     def test_retired_fiveminute_trend_not_reopened(self):
         p,status=self.wallet.buy("coin","5m","KRW-SIMCOIN","test",10000,100,
