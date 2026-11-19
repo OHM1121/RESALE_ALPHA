@@ -188,7 +188,8 @@
         80,
         87,
         91,
-        93
+        93,
+        97
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
@@ -234,7 +235,8 @@
         91,
         92,
         94,
-        95
+        95,
+        97
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -432,7 +434,8 @@
       ],
       "issues": [
         60,
-        63
+        63,
+        97
       ],
       "contract": "Trading authority checks source freshness; scoreSnapshotV005 is display-only."
     },
@@ -460,7 +463,8 @@
         90,
         92,
         94,
-        95
+        95,
+        97
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },
@@ -875,6 +879,26 @@
         96
       ],
       "contract": "Left holding status square renders original wallet timeframe 5분/30분/60분/일봉; remove duplicate timeframe from stock/coin symbol text. Nonframe GMO/CW categories shown only as grounded source strategy category. Pending/SELL UI unchanged. Integrated holdings also show timeframe on the left, no missing chart origin."
+    },
+    {
+      "id": "STOCK_AT_SIGNED_SCORE_ROOT_V013",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py",
+        "ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v013_stock_at_pending_to_native_buy.py"
+      ],
+      "depends_on": [
+        "MARKET_SCORE",
+        "STOCK_AT",
+        "STOCK_FEED",
+        "EXECUTION"
+      ],
+      "issues": [
+        97
+      ],
+      "contract": "At original KRX D19 native BUY, resolve signed market worker at shared app root instead of stock ledger root; cold-launch worker before native stock tick. Score must be fresh signed >0 at EXACT BUY, never reuse stale snapshot, fabricate real 0B/0D/5m or bypass native wallet. Order rejection classifies score missing from non-positive, and complete transaction commits a verified native PAPER BUY receipt + NEW LEGACY 30/35 resting plans. Nondeterministic phone session remains separate from CI evidence. GMO and CW owner untouched."
     }
   ],
   "audit_scope": {
