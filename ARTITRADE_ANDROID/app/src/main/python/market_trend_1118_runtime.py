@@ -231,7 +231,8 @@ def _entry_window(self,market,now):
             self._last_fetch_error[market]="NL1118_BUY:"+type(exc).__name__
             continue
         if position is None:continue
-        self._positions[(market,"trend",frame,code)]=position
+        with self.lock:
+            self._positions[(market,"trend",frame,code)]=position
         saved={**watch,"status":"BOUGHT","purchased_at":at.isoformat()}
         self._nl1118_watches[(market,code,frame)]=saved
         self._nl1118_watch_db.save((market,code,frame),saved)
