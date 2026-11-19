@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "fix-artitrade-008-specialsession-trend-proof-20261119",
+  "working_branch": "fix-artitrade-010-v009-cross-strategy-rootcause-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -587,7 +587,7 @@
         "test_v097_gmo_preplan.py",
         "artitrade-008-native-patch-test.yml"
       ],
-      "notes": "Re-arm authenticated D+1 on fresh 0B with verified D-close independent fallback and no fake official opener. Stock LIVE is deliberately disarmed by Android, so actual broker execution remains excluded and not claimed."
+      "notes": "Re-arm authenticated D+1 on fresh 0B with verified D-close independent fallback and no fake official opener. Stock LIVE is deliberately disarmed by Android, so actual broker execution remains excluded and not claimed. 0.0.9 phone 12:50 fault reveals entry_plan_hooks_v107.capture recovery kw TypeError; v0.0.10 fix and exact tests, per-date native second path and Dclose OR; device not verified."
     },
     {
       "id": "AT-008-83",
@@ -655,7 +655,7 @@
       "tests": [
         "test_v009_forensic_krx_gmo_ma_dns.py"
       ],
-      "notes": "0D re-REG over existing subscribed WS across active KRX day, D+1 candidates can be protected even without first BUY. Broker raw same-venue 0D may remain actually unavailable, so no inferred ask size/fill."
+      "notes": "0D re-REG over existing subscribed WS across active KRX day, D+1 candidates can be protected even without first BUY. Broker raw same-venue 0D may remain actually unavailable, so no inferred ask size/fill. 0.0.9 phone 12:50 fault reveals entry_plan_hooks_v107.capture recovery kw TypeError; v0.0.10 fix and exact tests, per-date native second path and Dclose OR; device not verified."
     },
     {
       "id": "AT-007-10",
@@ -723,6 +723,75 @@
         "test_v003_daily_market_backup.py"
       ],
       "notes": "Client marks REMOTE_ENDPOINT_UNSUPPORTED, only checks every 6h (not 5 min), does not set done_date or delete source. Actual remote backup requires PC MSERVER protocol update not present in repository."
+    },
+    {
+      "id": "AT-009-13",
+      "issue": 89,
+      "found": "0.0.9-phone-20261119-1250",
+      "category": "PHONE_SQLITE_SOURCE_REPRO",
+      "title": "GMO D+1 stuck pending: D-close OR policy omitted, 0B-only PAPER proxy blocked, invalid KRX 0D",
+      "evidence": "GMO_BOOK_INVALID 193, V097_PREPLANNED_D1_ENTRY_OWNER repeated; LS Networks 000680 D close 2405, official opener 2405, fresh 0B below price; first 12:50 export, strict no real broker fill proof",
+      "root": "CONFIRMED_V097_OWNER_LIMIT_AND_REJECTED_MISSING_0D",
+      "status": "SOURCE_CI_VERIFIED_DEVICE_UNVERIFIED",
+      "fix_version": "0.0.10-source",
+      "ci": "V010 44455916347 (before subsequent recovery wrapper fix); new signed APK not yet validated",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v010_gmo_d1_or_0b_recovery.py",
+        "test_v010_native_market_clock.py"
+      ],
+      "notes": "Verified D close strictly below OR official open independent, PAPER-only fresh KRX 0B bounded 10% proxy with no fabricated broker ACK. KRX 0D numeric invalid remains an external/source gate for REAL."
+    },
+    {
+      "id": "AT-009-14",
+      "issue": 90,
+      "found": "0.0.9-phone-20261119-1250",
+      "category": "PHONE_TRACEBACK_CONFIRMED",
+      "title": "GMO reconnect after open TypeError recovery kw discarded by entry_plan_hooks_v107 capture",
+      "evidence": "Original stock/runtime_errors.jsonl 2026-11-19T12:23:04.322502+09:00 gmo_paper_tick:000680 TypeError _gmo_preplan.<locals>.capture() got unexpected keyword argument recovery; d_live.py:660 / gmo_d1_preplan_v097.py:278",
+      "root": "CONFIRMED_OBSERVATIONAL_HOOK_INCOMPATIBLE_SIGNATURE",
+      "status": "SOURCE_CI_VERIFIED_DEVICE_UNVERIFIED",
+      "fix_version": "0.0.10-source",
+      "ci": "RED TDD run 44455795210; GREEN source run pending",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "EXECUTION",
+        "PYTHON_RUNTIME"
+      ],
+      "tests": [
+        "test_v010_gmo_capture_recovery_signature.py"
+      ],
+      "notes": "Wrapper now propagates recovery explicitly and preserves original return; does not change wallet owner or account."
+    },
+    {
+      "id": "AT-009-15",
+      "issue": 91,
+      "found": "0.0.9-phone-20261119-1250",
+      "category": "SOURCE_REPRO",
+      "title": "GMO native matcher and AT secondary parent-series still have fixed 15:30/09:00 references",
+      "evidence": "Original signed 0.0.9 embedded native ZIP SHA 53a5ee6e...; projectgmo/engine.py three hardcoded session guards, d_gmo_runtime.py late residual and open timestamp, d_live._process_completed_records 09:00 parents",
+      "root": "CONFIRMED_MULTIPLE_NATIVE_TIME_AUTHORITIES",
+      "status": "SOURCE_CI_VERIFIED_DEVICE_UNVERIFIED",
+      "fix_version": "0.0.10-source",
+      "ci": "native version code source run 44455916347 prior subsequent tweak",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_AT",
+        "STOCK_FEED",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v010_native_market_clock.py",
+        "test_v009_forensic_krx_gmo_ma_dns.py"
+      ],
+      "notes": "Current 2026-11-19 KRX 10:00~16:30 only, future holidays need official calendar ingestion; no synthetic completed bars or after-close PAPER fills."
     }
   ],
   "known_normal": [
@@ -915,5 +984,25 @@
       83,
       84
     ]
+  },
+  "work_in_progress_010": {
+    "versionName": "0.0.10",
+    "versionCode": 132,
+    "source_branch": "fix-artitrade-010-v009-cross-strategy-rootcause-20261119",
+    "source_archive_sha256": "14793bd14dd74cb6c42a104d9a17d38b2a661d5a3a62c99d5808d521c102b1c6",
+    "phone_log_timestamp": "2026-11-19 12:50 KST",
+    "source_issues": [
+      89,
+      90,
+      91
+    ],
+    "signed_apk_built": false,
+    "old_signer_required": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false,
+    "original_ledger_reset": false,
+    "automatic_broker_real_trades": false,
+    "remote_backup_verified": false,
+    "independent_original_cw_ma_trend_rules_preserved": true,
+    "notes": "Latest 0.0.9 phone crash TypeError root traced to entry_plan_hooks_v107. Earlier 0.0.9 claim that reconnect fully fixed was false. Unavailable official 0D remains UNKNOWN for real broker; 0B paper proxy is not a broker execution. No verified remote MSERVER daily backup."
   }
 }
