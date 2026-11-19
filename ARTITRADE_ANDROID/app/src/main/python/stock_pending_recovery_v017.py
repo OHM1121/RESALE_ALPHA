@@ -114,13 +114,14 @@ def _guard_after_verified_native_parent(engine, code, tf, at=None):
     expected = expected_last_parent(stamp,tf)
     if expected is None:
         return _ORIGINAL_GUARD(engine,code,tf,at)
+    verified_native_parent=False
     try:
         with engine.store.lock, engine.store.connect() as db:
             parent = db.execute(
                 "SELECT source FROM bars WHERE code=? AND frame=? AND ts=?",
                 (str(code),tf,expected)).fetchone()
-            if parent is None or str(parent["source"]) != "FIX15_VERIFIED_KIWOOM_REST":
-                return _ORIGINAL_GUARD(engine,code,tf,at)
+            verified_native_parent=(parent is not None and
+                str(parent["source"])=="FIX15_VERIFIED_KIWOOM_REST")
             active = db.execute(
                 """SELECT o.signal_id,a.state,a.checked_at
                    FROM v19_orders o LEFT JOIN v19_higher_frame_audit14 a
@@ -129,12 +130,15 @@ def _guard_after_verified_native_parent(engine, code, tf, at=None):
                    AND o.venue='KRX'""",(str(code),tf)).fetchall()
             # Never turn an unverified or not-yet-rechecked BUY candidate into
             # VERIFIED. That state is only written by original recover_frame.
-            if active and all(r["state"] == "VERIFIED" and
-                              str(r["checked_at"]) >= expected for r in active):
+            if verified_native_parent and active and all(
+                    r["state"]=="VERIFIED" and str(r["checked_at"])>=expected
+                    for r in active):
                 return 0
     except Exception:
         # The original guard is deliberately conservative if audit DB fails.
         pass
+    # The original guard is called only AFTER the read-only DB context exits;
+    # it owns its own write transaction and must never nest a SQLite writer.
     return _ORIGINAL_GUARD(engine,code,tf,at)
 
 
@@ -207,7 +211,7 @@ def _reliable_original_frame_loop(self):
                         "code":code,"frame":tf,"new_pending":result.get("new_pending",0),
                         "signal_time_not_execution_time":True})
                 # Only native VERIFIED audit can release the order safety gate.
-                self._v017_repair_failures.pop(key,None)
+                getattr(self,"_v017_repair_failures",{}).pop(key,None)
             else:
                 delay={
                     "FRAME_NOT_CLOSED":60.0,
