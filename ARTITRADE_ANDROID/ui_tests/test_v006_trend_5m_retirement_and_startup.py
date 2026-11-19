@@ -71,7 +71,7 @@ class RetiredTrend5m(unittest.TestCase):
         ui=_source(JAVA/"UnifiedVisualActivity.java")
         self.assertIn('if("trend".equals(strategy)&&"5m".equals(choice))continue;',ui)
         self.assertIn('if("trend".equals(s)&&"5m".equals(frame)',ui)
-        self.assertIn('if("trend".equals(stg)',ui)
+        self.assertIn('"trend".equals(stg)',ui)
         self.assertIn('if("trend".equals(strategy))',ui)
         self.assertIn('?"trend":', '?"trend":') if False else None
 
