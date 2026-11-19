@@ -198,6 +198,62 @@ replace("d_live.py",
                     if self._minute_repair_tries.get(key, 0) < 2 or wait>0:
                         self._minute_repair_retry[key] = time.monotonic() + max(12.0,wait)+0.2
                     self.store.write_runtime_error(exc, 'fast_1m_official_restore:' + code)""")
+# Native GMO priority windows were ALSO pinned to the ordinary 09:00
+# opening. Merely patching the 0D timer did not keep priority/REST/watch
+# alive for the special 10:00 open or a later reconnect.
+replace("d_gmo_runtime.py",
+"""    def _priority_phase(self, at):
+        hm = at.strftime('%H%M')
+        if GMO_PRIORITY_START <= hm < GMO_NXT_MONITOR_END:
+            return 'NXT_PREMARKET_MONITOR'
+        if GMO_KRX_PREOPEN_START <= hm < SESSION_START:
+            return 'KRX_PREOPEN_ARM'
+        if SESSION_START <= hm < GMO_PRIORITY_END:
+            return 'KRX_GMO_PRIORITY'
+        return ''""",
+"""    def _priority_phase(self, at):
+        from krx_session_v041 import venue_bounds
+        bounds=venue_bounds(at,'KRX')
+        minute=at.hour*60+at.minute
+        if bounds[0]!=10*60 and 8*60<=minute<8*60+50:
+            return 'NXT_PREMARKET_MONITOR'
+        if bounds[0]-10<=minute<bounds[0]:
+            return 'KRX_PREOPEN_ARM'
+        if bounds[0]<=minute<bounds[0]+30:
+            return 'KRX_GMO_PRIORITY'
+        return ''""")
+replace("d_gmo_runtime.py",
+"""                if code in priority and GMO_PRIORITY_START <= hm < GMO_PRIORITY_END:""",
+"""                if code in priority and self._priority_phase(now):""")
+replace("d_gmo_runtime.py",
+"""            if api is not None and '0900' <= hm < '2000':
+                open_retry = 3.0 if hm < GMO_PRIORITY_END else 90.0""",
+"""            from krx_session_v041 import venue_bounds
+            bounds=venue_bounds(now,'KRX')
+            minute=now.hour*60+now.minute
+            if api is not None and bounds[0] <= minute < 20*60:
+                open_retry = 3.0 if minute < bounds[0]+30 else 90.0""")
+replace("d_gmo_runtime.py",
+"""            self._stop.wait(1.0 if '0850' <= hm < GMO_PRIORITY_END else 40.0)""",
+"""            self._stop.wait(1.0 if bounds[0]-10<=minute<bounds[0]+30 else 40.0)""")
+replace("d_gmo_runtime.py",
+"""                if '0850' <= hm < GMO_PRIORITY_END:""",
+"""                if (lambda v:v[0]-10<=now.hour*60+now.minute<v[0]+30)(
+                        __import__('krx_session_v041').venue_bounds(now,'KRX')):""")
+replace("d_live.py",
+"""        priority=await asyncio.to_thread(self.gmo.priority_watchlist,current)
+        if not priority:
+            return []""",
+"""        priority=set(await asyncio.to_thread(
+            self.gmo.priority_watchlist,current))
+        # A reconnected D+1 watcher may have an authentic signal but no
+        # outstanding BUY yet, precisely because 0D never arrived.
+        priority.update(await asyncio.to_thread(
+            self.gmo.active_buy_watchlist,current))
+        priority.update(await asyncio.to_thread(self.gmo.watchlist))
+        if not priority:
+            return []""")
+
 # Enforce all 82 original modules compile and none else changes.
 for name,code in modified.items():
     ast.parse(code.decode("utf8"),filename=name)
