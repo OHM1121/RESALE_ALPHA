@@ -263,10 +263,13 @@ class Coordinator:
                     "mode":self.mode(market),"score":self.scores.get(market)}
 
     def active_symbol(self,market,code):
-        return (any(p.market==market and p.symbol==code and p.qty>0
-                    for p in tuple(self._positions.values())) or
-                self.wallet.trend_owned(market,code) or
-                self.standalone_wallet.owned(market,code))
+        # A fresh quote can update positions concurrently with a different
+        # strategy's BUY guard. Snapshot only ownership under the same lock.
+        with self.lock:
+            held=any(p.market==market and p.symbol==code and p.qty>0
+                     for p in tuple(self._positions.values()))
+        return (held or self.wallet.trend_owned(market,code)
+                or self.standalone_wallet.owned(market,code))
 
     def _start_score_worker(self):
         from market_research_v033 import offer_records
@@ -1689,7 +1692,9 @@ def install(core):
         rt=getattr(core,"_RUNTIME",None)
         co=getattr(rt,"market_trend",None) if rt else None
         if co is not None:
-            for p in tuple(co._positions.values()):
+            with co.lock:
+                current=tuple(co._positions.values())
+            for p in current:
                 if p.market!="stock" or p.qty<=0:continue
                 identity=(self.market_map or {}).get(p.symbol)
                 if identity is None:
@@ -1738,19 +1743,33 @@ def install(core):
 
     original_start=core.Runtime.start
     def runtime_start(self):
-        self.market_trend=Coordinator(self)
-        result=original_start(self)
-        # The original core init installs the MA connection proxy. Wrap the
-        # effective connector only after that setup, not its earlier source.
-        if not hasattr(stock_ma_engine,"_mt43_connect"):
-            stock_ma_engine._mt43_connect=stock_ma_engine._connect
-            @contextlib.contextmanager
-            def gated_connect(*a,**kw):
-                with stock_ma_engine._mt43_connect(*a,**kw) as raw:
-                    yield _NoBuyConnection(raw)
-            stock_ma_engine._connect=gated_connect
-        self.market_trend.start()
-        return result
+        # core.Runtime.start() is idempotent. All outer decorators MUST
+        # preserve that contract or a second start silently replaces an
+        # active Coordinator (and its 14+ quote/score worker threads).
+        if getattr(self,"started",False):
+            return original_start(self)
+        previous=getattr(self,"market_trend",None)
+        if previous is not None:
+            previous.stop()
+        coordinator=Coordinator(self)
+        self.market_trend=coordinator
+        try:
+            result=original_start(self)
+            # The original core init installs the MA connection proxy. Wrap
+            # the effective connector only after that setup.
+            if not hasattr(stock_ma_engine,"_mt43_connect"):
+                stock_ma_engine._mt43_connect=stock_ma_engine._connect
+                @contextlib.contextmanager
+                def gated_connect(*a,**kw):
+                    with stock_ma_engine._mt43_connect(*a,**kw) as raw:
+                        yield _NoBuyConnection(raw)
+                stock_ma_engine._connect=gated_connect
+            coordinator.start()
+            return result
+        except Exception:
+            coordinator.stop()
+            self.market_trend=None
+            raise
     core.Runtime.start=runtime_start
 
     original_stop=core.Runtime.stop
