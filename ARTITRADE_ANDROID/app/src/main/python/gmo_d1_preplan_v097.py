@@ -536,14 +536,20 @@ def install(core):
         return out
 
     def subscriptions(self,at=None):
-        # V097 formerly replaced EVERY other strategy's single-Kiwoom-WS
-        # 0B/0D subscriptions with GMO-only names from 07:58 to 08:00.
-        # That bypassed the V093 five-strategy fairness and held/exit pins,
-        # disconnecting valid AT/CW/MA/Trend paths on the shared socket.
-        # V093 already includes the GMO D+1 watchlist with exchange NXT
-        # eligibility and the hard 200-slot policy. It is the sole selector.
+        # V097 formerly replaced EVERY other strategy's shared Kiwoom 0B/0D
+        # subscriptions with GMO-only names during the 07:58 NXT prewarm.
+        # V093 is the SOLE venue/entitlement/priority selector for all five
+        # strategies, but its ordinary NXT clock opens at 08:00 and would
+        # return [] if called at 07:58. Prewarm the SAME original selector
+        # using the exact scheduled venue opening clock (never an executable
+        # trade timestamp). This preserves both early GMO pre-subscriptions
+        # AND AT/CW/MA/Trend/held exit pins within the hard 200-symbol cap.
+        now=at or d_live.now_kst()
         p=getattr(self.gmo,"_v097_planner",None)
         if p is not None:p.runner=self
+        if "075800"<=now.strftime("%H%M%S")<"080000":
+            opening=now.replace(hour=8,minute=0,second=0,microsecond=0)
+            return original_subscriptions(self,opening)
         return original_subscriptions(self,at)
 
     def no_extra_topup(engine,q):
