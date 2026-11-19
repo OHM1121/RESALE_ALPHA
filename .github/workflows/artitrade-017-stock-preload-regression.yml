@@ -59,6 +59,36 @@ jobs:
           set -euo pipefail
           echo '=== ORIGINAL_NATIVE_PARENT_GAP_TRACE ==='
           grep -R -n -C 12 -E 'FIX14_LIVE_HIGHER_FRAME_GAP_GUARDED|LIVE_PARENT_GAP|FIX13_LIVE_PENDING_GAP_HOLD|FIX5_FRAME_UNVERIFIED' /tmp/artitrade-015-original/ --include='*.py' | head -n 240 || true
+      - name: Diagnose original stock pending recovery ownership and quote truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast
+          root=Path("/tmp/artitrade-015-original")
+          specs={
+            "d_multiframe_recovery_fix14.py":[(1,500)],
+            "d_live.py":[(1250,1440)],
+            "d_pending_audit_fix13.py":[(130,340)],
+            "d_v19_portfolio.py":[],
+          }
+          for filename,parts in specs.items():
+              path=root/filename
+              if not path.exists():continue
+              lines=path.read_text("utf8").splitlines()
+              print("### NATIVE",filename,"total",len(lines))
+              if filename=="d_v19_portfolio.py":
+                  tree=ast.parse("\n".join(lines))
+                  for node in ast.walk(tree):
+                      if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and any(
+                          token in node.name.lower() for token in ("buy_limit","pending","depth","touch")
+                      ):
+                          parts.append((node.lineno,min(node.end_lineno,node.lineno+180)))
+              for start,end in parts:
+                  for i in range(start-1,min(end,len(lines))):
+                      print(str(i+1)+": "+lines[i])
+          PY
       - name: Verified original candle/book preload and trend wallet BUY/PnL tests
         shell: bash
         run: |
