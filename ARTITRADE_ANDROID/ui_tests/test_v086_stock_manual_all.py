@@ -227,10 +227,10 @@ class NativeManualWallets(unittest.TestCase):
         self.runner.engine=SimpleNamespace(book=None)
         self.runner.market_map={CODE:('KOSPI','fixture')}
         at=dt.datetime.now(KST)
-        pos,why=wallet.buy('stock','5m',CODE,'fixture',100,1000,at,at.isoformat(),35)
+        pos,why=wallet.buy('stock','30m',CODE,'fixture',100,1000,at,at.isoformat(),35)
         self.assertIsNotNone(pos,why)
         self.rt.market_trend=SimpleNamespace(lock=threading.RLock(),
-            _positions={('stock','trend','5m',CODE):pos},standalone_wallet=wallet)
+            _positions={('stock','trend','30m',CODE):pos},standalone_wallet=wallet)
         request=make_req('trend',pos.position_id,qty=pos.qty,pct=50)
         got=manual.manual_stock_trend(self.rt,request)
         self.assertGreater(got['qty'],0)
