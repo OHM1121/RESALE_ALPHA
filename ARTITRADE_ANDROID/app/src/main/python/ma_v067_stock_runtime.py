@@ -287,7 +287,7 @@ def _rev1_stock_closed_bar_state(self,state,position,now):
                            'source':str(row['source'] or '')})
         return reconcile(state,position['entry_at'],frame,native,now,
                          entry_bar_start=start)
-    except (ValueError,TypeError,KeyError,AttributeError):
+    except (ValueError,TypeError,KeyError,AttributeError,sqlite3.Error):
         return state
 
 
