@@ -75,9 +75,14 @@ class V008RootCause(unittest.TestCase):
                                          'bar_ts':'20261118'},due,later))
         self.assertIsNone(asof_price(None,{'price':99,'source':'RESEARCH_3M',
                                          'bar_ts':'20261119145500'},due,later))
+        # If the KRX 3-minute bar is timestamped by its start, the
+        # 15:15 opening bar does not complete until 15:18 (no look-ahead).
+        self.assertIsNone(asof_price(None,{'price':111,'source':'RESEARCH_3M',
+                                          'bar_ts':'20261119151500'},due,later))
         valid=asof_price(None,{'price':101,'source':'RESEARCH_3M',
                               'bar_ts':'20261119151200'},due,later)
         self.assertEqual(valid[0],101)
+        self.assertTrue(valid[2].endswith('15:15:00+09:00'))
         self.assertIsNotNone(asof_price({'price':110,'ts':due.isoformat()},None,
                                          due,due+dt.timedelta(seconds=2)))
 
