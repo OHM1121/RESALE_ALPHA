@@ -3603,8 +3603,16 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private String stockQuoteCaption(JSONObject r){
         if(!isStockPosition(r))return "";
-        if(!r.optBoolean("stock_quote_checked_v066",false))
+        if(!r.optBoolean("stock_quote_checked_v066",false)){
+            if(isTrendRow(r) &&
+               "ORIGINAL_MT54_SAVED_MARK_NOT_LIVE".equals(r.optString("valuation_source",""))){
+                double last=usefulNumber(r,"last_price","mark");
+                if(finite(last)&&last>0)
+                    return "마켓트렌드 마지막 저장 평가가 · "+
+                        r.optString("valuation_at","시각 미기록")+" · 실시간 시세 아님";
+            }
             return "키움 현재가 조회 준비 중 · 원장 저장가격과 별도";
+        }
         String state=r.optString("stock_quote_status","");
         String venue=r.optString("stock_quote_venue","");
         String exchange=r.optString("stock_quote_exchange_at","");
@@ -3631,8 +3639,15 @@ public final class UnifiedVisualActivity extends Activity {
         if(isStockPosition(r)){
             // Only the separately proven market-price overlay may be shown.
             // REST and aged 0B are labelled as such, never promoted to LIVE.
-            if(!r.optBoolean("stock_quote_checked_v066",false))return Double.NaN;
-            return usefulNumber(r,"stock_quote_display_price");
+            if(r.optBoolean("stock_quote_checked_v066",false))
+                return usefulNumber(r,"stock_quote_display_price");
+            // Trend P&L may show only an EXPLICITLY LABELLED original
+            // saved valuation, not an executable KRX 0B/0D or live quote.
+            if(isTrendRow(r) &&
+               "ORIGINAL_MT54_SAVED_MARK_NOT_LIVE".equals(
+                   r.optString("valuation_source","")))
+                return usefulNumber(r,"last_price","mark");
+            return Double.NaN;
         }
         return usefulNumber(r,"last_price","mark","current_price","market_price");
     }
