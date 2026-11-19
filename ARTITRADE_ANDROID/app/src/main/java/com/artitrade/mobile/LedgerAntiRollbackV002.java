@@ -37,6 +37,16 @@ final class LedgerAntiRollbackV002 {
                 "LEDGER_GUARD_WITNESS_MISSING_NO_AUTORESET");
         if(!Python.isStarted())
             Python.start(new AndroidPlatform(c.getApplicationContext()));
+        // Explicit user-requested v0.0.12 PAPER-only migration. The signed
+        // Python module validates the pre-change witness, backs up only
+        // the six AT/MA/Trend wallets, removes attributed old-policy PAPER
+        // trades, reconciles cash/P&L and rebases this SAME witness.
+        // GMO/CW are neither opened for mutation nor rebaselined.
+        // Must finish BEFORE normal read-only anti-rollback verification
+        // and BEFORE any trading engine starts; not a general reset route.
+        if(root.isDirectory()&&independent.isFile())
+            Python.getInstance().getModule("legacy_purge_v012")
+                .callAttr("run_once",root.getAbsolutePath());
         String raw=Python.getInstance()
             .getModule("ledger_rollback_guard_v002")
             .callAttr("verify_json",root.getAbsolutePath(),
