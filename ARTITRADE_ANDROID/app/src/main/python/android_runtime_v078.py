@@ -2381,6 +2381,11 @@ _install_gmo_partial_v094()
 from gmo_d1_preplan_v097 import install as _install_gmo_d1_preplan_v097
 _install_gmo_d1_preplan_v097(_core)
 
+# Research-only integrity for CLOSE 5m/15m/30m/EOD/1D+ horizon labels.
+# Never substitutes for the original CLOSE BUY/SELL or native orderbook.
+from close_followup_integrity_v008 import install as _install_close_followup_v008
+_install_close_followup_v008()
+
 # v0.8.1: stock+coin MarketTrend RSI35 watches prepare three 0/1/2
 # *exchange tick* entry budgets. Original MT54 wallet, KRX 0D/Upbit
 # verified books and preclose constraints still own fills. Neither
