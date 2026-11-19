@@ -36,7 +36,7 @@ class _FakeMarketPublisher:
 class _VerifiedDepth:
     def available(self,code,venue,at,price,qty):
         if code!=CODE or venue!="KRX":return None,"UNVERIFIED_VENUE"
-        return (int(price),max(10000,int(qty))),None
+        return (int(price),max(10000,int(qty)),10000,0.0),None
     def reserve(self,*args):
         return True
     def available_sell(self,*args):return 100000
