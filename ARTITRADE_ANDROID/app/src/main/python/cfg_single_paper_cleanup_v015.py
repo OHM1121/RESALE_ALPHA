@@ -257,3 +257,9 @@ def run_once(root):
                 except (OSError,sqlite3.DatabaseError,ValueError):
                     pass
             raise
+
+
+def run_json(root):
+    """Safe Java bridge: return structured non-secret status as JSON text."""
+    result=run_once(root)
+    return json.dumps(result,ensure_ascii=False,sort_keys=True)
