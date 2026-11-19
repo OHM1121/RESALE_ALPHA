@@ -49,6 +49,28 @@ class OriginalWalletPlanTests(unittest.TestCase):
         self.assertFalse(plan["actual_native_sell_receipt"])
         self.assertFalse(plan["actual_broker_order"])
 
+    def test_gmo_rounded_snapshot_uses_original_unrounded_buy_and_native_qty(self):
+        # Synthetic example: the Android 1-decimal card and persisted engine
+        # BUY differ by 0.042, which is legitimate original display rounding.
+        native=SimpleNamespace(code="005930",entry_price=100.042,
+            total_qty=100,qty=100,first_profit_target=.04,
+            first_filled_qty=0,second_filled_qty=0,entry_date="2026-11-19",
+            pending_sell_id="")
+        cfg=SimpleNamespace(first_sell_fraction=.20,second_sell_fraction=.40,
+                            second_target_up=.03)
+        rt=SimpleNamespace(stock_runner=SimpleNamespace(gmo=SimpleNamespace(
+            engine=SimpleNamespace(positions={"005930":native},cfg=cfg))))
+        row={"status":"OPEN","code":"005930","entry_price":100.0,
+             "qty":100,"gmo_buy_filled_qty":100,
+             "gmo_first_filled":0,"gmo_second_filled":0}
+        result=v019.preview("stock/gmo",row,rt)
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result["entry_price"],100.042)
+        self.assertAlmostEqual(result["first_target"],100.042*1.04)
+        self.assertIsNone(v019.preview("stock/gmo",dict(row,qty=99),rt))
+        self.assertIsNone(v019.preview("stock/gmo",dict(row,gmo_buy_filled_qty=101),rt))
+        self.assertIsNone(v019.preview("stock/gmo",dict(row,entry_price=100.1),rt))
+
     def test_original_persisted_stages_preserve_partial_executions(self):
         at="2026-11-19T09:01:12+09:00"
         row={"id":7,"code":"005930","tf":"5m","entry_at":at,
