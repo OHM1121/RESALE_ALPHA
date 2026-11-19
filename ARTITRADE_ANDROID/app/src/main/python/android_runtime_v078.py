@@ -2504,6 +2504,19 @@ _install_nl1118_reference()
 from nl1118_strict_entry_v012 import install as _install_nl1118_strict_entry
 _install_nl1118_strict_entry()
 
+# 0.0.13 root-cause of zero KRX D19 BUY receipts despite historical
+# positive market-score rows: D19's DStore.root points at <phone>/stock,
+# while market-score publisher is registered at <phone>. Normalize its
+# lookup in at_market_score_gate_v107 and start the publisher BEFORE
+# native stock queue/subscription/order engines run. Never use a UI
+# snapshot or stale historical score as a replacement order signal.
+_ORIGINAL_NL1118_SCORE_BOOTSTRAP_START = _core.Runtime.start
+def _start_with_signed_score_publisher(self):
+    from market_research_v033 import ensure_worker
+    ensure_worker(self.root)
+    return _ORIGINAL_NL1118_SCORE_BOOTSTRAP_START(self)
+_core.Runtime.start = _start_with_signed_score_publisher
+
 
 # Only Android knows whether the current active network is validated.
 # This has no ability to make an order or authorize stale 0B/0D.
