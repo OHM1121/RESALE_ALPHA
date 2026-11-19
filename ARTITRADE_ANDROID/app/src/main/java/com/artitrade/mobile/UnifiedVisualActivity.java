@@ -1278,7 +1278,19 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout api=card();TextView brokerState=text(brokerStatusText(brokerKey),12);brokerState.setTextColor(Color.rgb(205,212,229));api.addView(brokerState);
         LinearLayout ar=new LinearLayout(this);ar.setOrientation(LinearLayout.HORIZONTAL);ar.setPadding(0,dp(12),0,0);
         ar.addView(button(brokerName+" 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(44),1));
-        LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(44),1);prp.setMargins(dp(8),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
+        LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(44),1);prp.setMargins(dp(8),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);
+        api.addView(ar);
+        if("stock".equals(market)){
+            TextView receipt=text(brokerSellReceiptStatusText(),11);
+            receipt.setTextColor(PremiumUi.MUTED);
+            receipt.setPadding(0,dp(10),0,dp(7));
+            api.addView(receipt);
+            Button verify=button("키움 실제 미체결 매도주문 조회 (읽기 전용)",false,
+                this::requestBrokerSellReceiptsV008);
+            verify.setTextSize(11);
+            api.addView(verify,new LinearLayout.LayoutParams(-1,dp(44)));
+        }
+        panel.addView(api);
 
         TextView srvTitle=text("MSERVER",14);
         srvTitle.setTypeface(null,Typeface.BOLD);
@@ -1396,6 +1408,60 @@ public final class UnifiedVisualActivity extends Activity {
         old.startAnimation(anim);
     }
 
+    private void requestBrokerSellReceiptsV008(){
+        try{
+            Intent request=new Intent(this,UnifiedTradingService.class);
+            request.setAction(UnifiedTradingService.READ_BROKER_SELLS);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(request);
+            else startService(request);
+            new AlertDialog.Builder(this).setTitle("키움 매도주문 확인")
+                .setMessage("키움 실제 계좌의 현재 미체결 매도주문만 읽기 전용으로 조회합니다.\n\n"+
+                    "이 기능은 1·2차 목표매도 주문을 새로 등록하지 않으며, "+
+                    "조회 결과만으로 앱의 각 매도단계에 주문번호가 연계됐다고 판단하지 않습니다.")
+                .setPositiveButton("확인",null).show();
+            main.postDelayed(()->refresh(false),3500);
+        }catch(Throwable e){
+            new RuntimeCrashStore(this).add("broker_sell_receipt_ui_v008",e);
+        }
+    }
+
+    private String brokerSellReceiptStatusText(){
+        JSONObject data=copyCache().optJSONObject("broker_sell_audit");
+        if(data==null)return "1·2차 실제 브로커 사전매도: 앱 PAPER 전용 · 등록 확인 불가\n"+
+            "키움 실제 계좌 미체결 조회 이력 없음";
+        if(!data.optBoolean("ok",false)){
+            return "1·2차 실제 브로커 사전매도: 등록 확인 불가\n"+
+                "조회 상태: "+data.optString("error","조회 미실행");
+        }
+        JSONArray rows=data.optJSONArray("orders");
+        int size=rows==null?0:rows.length();
+        String suffix=data.optBoolean("has_more",false)?" · 연속조회 미완료":"";
+        return "키움 실제 미체결 매도 "+size+"건"+suffix+
+            " · 조회 "+data.optString("verified_at","")+
+            "\n1·2차 매도단계와 브로커 주문번호의 직접 연계는 미확인";
+    }
+
+    private String brokerSellStatusForHolding(JSONObject row){
+        JSONObject data=copyCache().optJSONObject("broker_sell_audit");
+        if(data==null||!data.optBoolean("ok",false))
+            return "1·2차 실브로커 지정가: 접수 미확인 · 읽기 전용 조회 필요";
+        String code=row.optString("code",row.optString("market","")).replace("A","").trim();
+        JSONArray open=data.optJSONArray("orders");
+        int count=0;String ids="";
+        if(open!=null)for(int k=0;k<open.length();k++){
+            JSONObject x=open.optJSONObject(k);
+            if(x!=null&&code.equals(x.optString("code",""))){
+                count++;
+                if(count<=2)ids+=(ids.isEmpty()?"":", ")+x.optString("broker_order_id","");
+            }
+        }
+        if(count>0)return "키움 실제 미체결 매도 "+count+"건 (주문 "+ids+
+            ") · 1·2차 단계연계 미확인";
+        if(data.optBoolean("has_more",false))
+            return "1·2차 실브로커 지정가: 연속조회 미완료 · 미등록 단정 불가";
+        return "키움 실제 미체결 매도 0건 · 1·2차 사전등록 증빙 없음";
+    }
+
     private String brokerStatusText(String which){
         JSONObject c=copyCache();JSONObject storage=c.optJSONObject("broker_storage");JSONObject probe=c.optJSONObject("broker_probe");
         boolean saved=storage!=null&&storage.optBoolean("kiwoom".equals(which)?"kiwoom_saved":"upbit_saved",false);
@@ -1459,6 +1525,11 @@ public final class UnifiedVisualActivity extends Activity {
                     android.content.SharedPreferences p=getSharedPreferences("unified_live_orders",MODE_PRIVATE);
                     packet.put("live_orders",new JSONObject().put("stock",p.getBoolean("live_stock",false)).put("coin",p.getBoolean("live_coin",false)));
                 }catch(Exception e){packet.put("live_orders",new JSONObject());}
+                try{
+                    String raw=getSharedPreferences("artitrade_broker_sells_v008",MODE_PRIVATE)
+                        .getString("receipt","{}");
+                    packet.put("broker_sell_audit",new JSONObject(raw));
+                }catch(Exception e){packet.put("broker_sell_audit",new JSONObject());}
                 try{
                     String raw=getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).getString("snapshot","{}");
                     packet.put("strategy_runtime",new JSONObject(raw));
@@ -3993,6 +4064,13 @@ public final class UnifiedVisualActivity extends Activity {
                 tradeMetricTile(figures,"수수료",formatMaybeMoney(r,"fees","fee"),false);
             }
             panel.addView(figures,new LinearLayout.LayoutParams(-1,dp(64)));
+            if("positions".equals(kind)&&"stock".equals(market)){
+                TextView brokerage=text(brokerSellStatusForHolding(r),10);
+                brokerage.setTextColor(PremiumUi.MUTED);
+                brokerage.setMaxLines(3);
+                brokerage.setPadding(0,dp(2),0,dp(6));
+                panel.addView(brokerage,new LinearLayout.LayoutParams(-1,-2));
+            }
             if("positions".equals(kind)&&fastAmount!=null){
                 TextView origin=text("실시간 가격 재확인 중 · 원장 손익은 별도 갱신",10);
                 origin.setTextColor(PremiumUi.MUTED);
