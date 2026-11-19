@@ -2498,6 +2498,12 @@ _install_nl1118_trend()
 from reference_1118_runtime import install as _install_nl1118_reference
 _install_nl1118_reference()
 
+# 0.0.12: This final MA-only rule disables the now-disallowed historical
+# bearish/old next-open scanners. Live 10..2s upward MA entry remains on
+# its independent source-proven worker; GMO and CLOSE/CW are excluded.
+from nl1118_strict_entry_v012 import install as _install_nl1118_strict_entry
+_install_nl1118_strict_entry()
+
 
 # Only Android knows whether the current active network is validated.
 # This has no ability to make an order or authorize stale 0B/0D.
