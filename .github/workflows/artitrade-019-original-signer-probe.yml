@@ -1,0 +1,29 @@
+name: ARTITRADE 0.0.19 original signer availability probe (NO APK)
+on:
+  push:
+    branches: [artitrade-019-eight-wallet-target-plan-display-20261119]
+    paths: [.github/workflows/artitrade-019-original-signer-probe.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  certify-existing-signer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Restore existing installed certificate (never regenerate)
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Verify source signer is already in scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true" || { echo "ORIGINAL_SIGNER_CACHE_NOT_AVAILABLE_IN_THIS_BRANCH"; exit 1; }
+          test -s "$HOME/.android/debug.keystore"
+          fp="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$fp" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+          echo ORIGINAL_SAME_SIGNER_AVAILABLE
