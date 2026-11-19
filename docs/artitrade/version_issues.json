@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "release-artitrade-007-cross-strategy-20261119",
+  "working_branch": "fix-artitrade-008-specialsession-trend-proof-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -466,6 +466,80 @@
         "test_v004_abnormal_reconnect_six.py"
       ],
       "notes": "Do not label production ready; open #58/#59/#60/#71/#73. No original ledger reset/auto LIVE. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested."
+    },
+    {
+      "issue": 77,
+      "id": "AT-008-01",
+      "found": "0.0.7",
+      "category": "DEVICE_REPORTED_AND_SOURCE_CONFIRMED",
+      "title": "GMO D+1 late KRX special session and suspended NXT premarket",
+      "evidence": "2026-11-19 published KRX 10:00-16:30 NXT premarket closed; 0.0.7 GMO preplan hardcoded 09:00 and NXT 08:00",
+      "root": "CONFIRMED_DUPLICATE_HARDCODED_VENUE_SCHEDULE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.8-unreleased-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "STOCK_SHARED_WS_OWNER",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v097_gmo_preplan.py",
+        "test_v008_all_strategy_rootcause.py"
+      ],
+      "notes": "Dynamic KRX special opening from existing session calendar; disable 2026-11-19 NXT premarket. KRX D+1 PAPER clock and shared prewarm align, regular-day behavior retained. LS-like actual missed BUY reason not conclusively established without phone signal/quote/order evidence."
+    },
+    {
+      "issue": 78,
+      "id": "AT-008-02",
+      "found": "0.0.7",
+      "category": "USER_REPORTED_AND_SOURCE_RISK_CONFIRMED",
+      "title": "MarketTrend stale completed Upbit candle and unverifiable 24h RSI watch provenance",
+      "evidence": "0.0.7 _confirmed_recent accepted 2x frame stale bars; RSI watch saved only timestamp/RSI without source; v007 pre-quote recheck omitted trade match",
+      "root": "CONFIRMED_SOURCE_FRESHNESS_AND_WATCH_EVIDENCE_GAP",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.8-unreleased-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_TREND",
+        "STOCK_TREND",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v008_special_session_trend_proof.py",
+        "test_new_legacy_1118_workbook.py"
+      ],
+      "notes": "Coin 30m/60m/day requires last expected completed candle, 21 contiguous official candles, durable RSI<=30 evidence and verified current trade. 2026-11-19 08:41 ONDO wallet/RSI/bollinger logs not provided; no assertion actual buy violated rules. Angle uses documented price-normalized atan, not screenshot pixel slope. Old watch stays on disk but may not authorize a new order without fresh verified crossing."
+    },
+    {
+      "issue": 79,
+      "id": "AT-008-03",
+      "found": "0.0.7",
+      "category": "WORKBOOK_FULL_COMPLIANCE_AUDIT",
+      "title": "All-strategy target 1/2 broker pre-submission and next-session resubmission unverified",
+      "evidence": "User NEW LEGACY(11.18).xlsx C11 requires pre-placed sell orders; targets sell_intents explicitly is_real_broker_order=false",
+      "root": "CONFIRMED_INTENT_VS_BROKER_ACK_GAP",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "EXECUTION",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_GENERAL",
+        "COIN_MA",
+        "COIN_TREND",
+        "STOCK_CLOSE",
+        "STOCK_GMO"
+      ],
+      "tests": [],
+      "notes": "Do not claim staging/pre-placement implemented from source target intent alone. Requires broker-verified order IDs, partial-fill and cancel/replace, next trading-day reconciled re-submission, strict zero duplicate-sell guarantee. CW/GMO original ownership respected."
     }
   ],
   "known_normal": [
