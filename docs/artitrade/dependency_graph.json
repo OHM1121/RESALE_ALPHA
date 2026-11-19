@@ -46,7 +46,8 @@
         60,
         62,
         65,
-        70
+        70,
+        75
       ],
       "contract": "Only STARTED Python engine makes trading live. Failure does not masquerade as healthy heartbeat."
     },
@@ -217,7 +218,8 @@
         58,
         60,
         68,
-        71
+        71,
+        75
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -352,7 +354,8 @@
         59,
         60,
         67,
-        73
+        73,
+        75
       ],
       "contract": "Missing source high/low rejected; never abort other eligible book work."
     },
@@ -409,7 +412,8 @@
         62,
         63,
         65,
-        67
+        67,
+        75
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative."
     },
@@ -507,7 +511,8 @@
         "AI_RESEARCH"
       ],
       "issues": [
-        69
+        69,
+        75
       ],
       "contract": "A due research label may be DONE only from native genuine near-due quote or source-validated same-day completed 3m bar. Late REST/daily price cannot backfill an earlier due."
     },
@@ -527,7 +532,8 @@
       ],
       "issues": [
         70,
-        72
+        72,
+        75
       ],
       "contract": "Coordinator.lock protects all shared position/virtual ownership snapshots/assign/pop; original Runtime.start idempotent, no double workers or stale owners."
     },
