@@ -58,6 +58,8 @@ jobs:
           set -euo pipefail
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v008-original:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v008_special_session_trend_proof.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v008_bollinger_pixel_geometry.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v008_broker_sell_receipt.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_new_legacy_1118_workbook.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_eight_virtual_paper_end_to_end.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_post_reset_trend_and_top50.py' -v
