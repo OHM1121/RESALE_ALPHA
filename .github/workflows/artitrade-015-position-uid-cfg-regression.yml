@@ -5,6 +5,7 @@ on:
     paths:
       - ARTITRADE_ANDROID/app/src/main/**
       - ARTITRADE_ANDROID/ui_tests/test_v015_global_position_uid_and_cfg_single.py
+      - ARTITRADE_ANDROID/ui_tests/test_v015_position_uid_cfg_single.py
       - docs/artitrade/**
       - AGENTS.md
       - .github/workflows/artitrade-015-position-uid-cfg-regression.yml
@@ -49,6 +50,7 @@ jobs:
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-015-original:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v015_global_position_uid_and_cfg_single.py' -v 2>&1 | tee /tmp/artitrade-v015-tests.log
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v015_position_uid_cfg_single.py' -v 2>&1 | tee -a /tmp/artitrade-v015-tests.log
       - name: Eight unchanged native PAPER strategy wallets and related root guards
         shell: bash
         run: |
@@ -67,7 +69,7 @@ jobs:
         if: failure()
         shell: bash
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           {
