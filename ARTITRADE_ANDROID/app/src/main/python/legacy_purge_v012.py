@@ -308,6 +308,14 @@ def _apply_one(path,kind,root):
         if not _has(c,"positions") or not _has(c,"executions"):
             return {"kind":kind,"removed":0,"skipped":0,"not_ready":True}
         old,new=_old_positions(c,kind)
+        # No partial account rebasing that would rewrite real broker receipts
+        # co-resident with PAPER records in the same wallet/timeframe.
+        columns={str(x[1]) for x in c.execute("PRAGMA table_info(executions)")}
+        if "execution_mode" in columns and c.execute("""SELECT 1 FROM executions
+            WHERE UPPER(COALESCE(execution_mode,'')) NOT IN ('PAPER','')
+            LIMIT 1""").fetchone():
+            return {"kind":kind,"removed":0,"skipped":len(old),
+                    "reason":"LIVE_EXECUTION_CORESIDENT_FAIL_CLOSED"}
         selected,skipped=_select_safe(c,root,kind,old)
         # Original broker or imported wallet evidence is never deleted.
         # We can still remove separately proven PAPER trades in this file.
@@ -419,7 +427,8 @@ def run_once(root):
             checkpoint=root.parent/CHECKPOINT
             post=state.get("post_witness_sha")
             if post and checkpoint.is_file() and _digest(checkpoint)==post:
-                _json_atomic(finished,{"tag":TAG,"status":"DONE",
+                _json_atomic(finished,{"tag":TAG,
+                                       "status":state.get("status") or "DONE",
                                        "at":_clock(),"result":state.get("result")})
                 shutil.rmtree(stage)
                 return {"ok":True,"status":"RECOVERED_FINISHED"}
@@ -476,18 +485,29 @@ def run_once(root):
                         new[key]=after
                     elif old is not None and old!=after:
                         raise UnsafeLegacyPurge("UNSCOPED_LEDGER_CHANGED")
-            _write_checkpoint(checkpoint,{"schema":SCHEMA,"epoch_id":epoch,
-                "tables":new,"checked_at_utc":dt.datetime.now(dt.timezone.utc).isoformat(),
+            status=("PARTIAL" if any(int(r.get("skipped") or 0)>0
+                                  for r in results) else "DONE")
+            witness={"schema":SCHEMA,"epoch_id":epoch,
+                "tables":new,
+                "checked_at_utc":dt.datetime.now(dt.timezone.utc).isoformat(),
                 "authorized_cleanup":TAG,
-                "cleanup_targets":[rel for _,rel in active]})
-            post=_digest(checkpoint)
+                "cleanup_targets":[rel for _,rel in active]}
+            # Publish expected next checkpoint digest DURABLY before the
+            # witness swap; a crash between os.replace and status writing
+            # can then be identified as a COMPLETE signed migration.
+            next_raw=json.dumps(witness,sort_keys=True,ensure_ascii=False,
+                separators=(",",":")).encode("utf8")
+            expected=hashlib.sha256(next_raw).hexdigest()
             state=json.loads(manifest.read_text("utf8"))
-            state.update(post_witness_sha=post,result=results)
+            state.update(post_witness_sha=expected,result=results,status=status)
             _json_atomic(manifest,state)
-            _json_atomic(finished,{"tag":TAG,"status":"DONE",
+            _write_checkpoint(checkpoint,witness)
+            if _digest(checkpoint)!=expected:
+                raise UnsafeLegacyPurge("GUARD_POST_WITNESS_HASH_MISMATCH")
+            _json_atomic(finished,{"tag":TAG,"status":status,
                 "at":_clock(),"result":results})
             shutil.rmtree(stage)
-            return {"ok":True,"status":"DONE","results":results}
+            return {"ok":True,"status":status,"results":results}
         except Exception:
             # Before independent checkpoint rebase, restore every original
             # wallet backup, including WAL-visible data, atomically per file.
