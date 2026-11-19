@@ -43,7 +43,8 @@
       "issues": [
         53,
         54,
-        60
+        60,
+        62
       ],
       "contract": "Only STARTED Python engine makes trading live. Failure does not masquerade as healthy heartbeat."
     },
@@ -154,7 +155,8 @@
       ],
       "issues": [
         53,
-        55
+        55,
+        63
       ],
       "contract": "No full JSON on order lock, source errors not masked; zero ledger data != missing source."
     },
@@ -170,7 +172,8 @@
       "issues": [
         57,
         58,
-        60
+        60,
+        62
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D."
     },
@@ -185,7 +188,8 @@
       "issues": [
         56,
         59,
-        60
+        60,
+        62
       ],
       "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified."
     },
@@ -356,7 +360,8 @@
         "COIN_FEED"
       ],
       "issues": [
-        60
+        60,
+        63
       ],
       "contract": "Trading authority checks source freshness; scoreSnapshotV005 is display-only."
     },
@@ -371,7 +376,9 @@
         "ANTI_ROLLBACK"
       ],
       "issues": [
-        60
+        60,
+        62,
+        63
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative."
     },
