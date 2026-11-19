@@ -92,13 +92,6 @@ class UIDHistoricalAndFuture(RootFixture):
         ids.annotate_packet(self.root,packet)
         self.assertEqual([x["position_uid"] for x in es],expected)
 
-    def test_same_native_id_with_proven_new_original_buy_allocates_new_generation(self):
-        with ids.Registry(self.root) as_unused if False else _Noop():pass
-
-class _Noop:
-    def __enter__(self):return self
-    def __exit__(self,*args):return False
-
 class UIDExtra(RootFixture):
     def test_reused_native_pk_cannot_get_previous_trade_uid(self):
         with ids._LOCK:
@@ -121,7 +114,6 @@ class UIDExtra(RootFixture):
                 CREATE TABLE executions(id INTEGER PRIMARY KEY,position_id INTEGER,side TEXT);
                 INSERT INTO executions VALUES(1,1,'BUY'),(2,1,'SELL'),(3,2,'BUY'),(4,3,'BUY');""")
         self.assertEqual(ids.backfill_native(self.root)["wallet_position_counts"]["coin/ma"],3)
-        with ids.Registry(self.root) as_unused if False else _Noop():pass
         with sqlite3.connect(self.root/"POSITION_UID_V015.sqlite3") as c:
             self.assertEqual(c.execute("SELECT COUNT(*) FROM position_uid_registry").fetchone()[0],3)
         with sqlite3.connect(db) as c:
@@ -133,7 +125,7 @@ class CFGOnePositionOnly(RootFixture):
         with sqlite3.connect(p) as c:
             c.executescript("""CREATE TABLE wallets(
               tf TEXT PRIMARY KEY,seed INTEGER,cash INTEGER,realized INTEGER);
-              INSERT INTO wallets VALUES('5m',2000000,1979989,0);
+              INSERT INTO wallets VALUES('5m',2000000,1969985,0);
               CREATE TABLE positions(id INTEGER PRIMARY KEY,tf TEXT,market TEXT,
                   ref_at TEXT,entry_at TEXT,entry TEXT,qty0 TEXT,qty TEXT,
                   status TEXT,execution_mode TEXT,broker_order_id TEXT);
@@ -162,7 +154,7 @@ class CFGOnePositionOnly(RootFixture):
                 c.execute("INSERT INTO ma_v067_positions VALUES(?,?,?)",
                          (pid,'REVERSAL_UP',json.dumps({"first_sold":0,"seen_above_entry":False})))
                 c.execute("INSERT INTO executions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (pid,pid,'5m',sym,at,'BUY','100','100',5,0,0,'NL1118_BUY',1979989))
+                    (pid,pid,'5m',sym,at,'BUY','100','100',5,0,0,'NL1118_BUY',2000000-10005*(pid-10)))
                 c.execute("INSERT INTO candidates VALUES(?,?,?,?,?)",
                           (pid,'5m',sym,ref,'{}'))
                 c.execute("INSERT INTO orders VALUES(?,?,?,?,?)",
@@ -185,7 +177,7 @@ class CFGOnePositionOnly(RootFixture):
             self.assertEqual(c.execute("SELECT id FROM positions ORDER BY id").fetchall(),[(12,),(13,)])
             self.assertEqual(c.execute("SELECT id FROM executions ORDER BY id").fetchall(),[(12,),(13,)])
             self.assertEqual(c.execute("SELECT id FROM candidates ORDER BY id").fetchall(),[(12,),(13,)])
-            self.assertEqual(c.execute("SELECT cash FROM wallets WHERE tf='5m'").fetchone()[0],1989994)
+            self.assertEqual(c.execute("SELECT cash FROM wallets WHERE tf='5m'").fetchone()[0],1979990)
             c.row_factory=sqlite3.Row
             self.assertEqual([dict(r) for r in c.execute("SELECT * FROM positions ORDER BY id")],other_before)
         self.assertTrue(guard.verify_and_checkpoint(str(self.root),require_existing=True)["ok"])
