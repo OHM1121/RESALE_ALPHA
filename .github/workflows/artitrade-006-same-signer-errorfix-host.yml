@@ -3,7 +3,7 @@ on:
   push:
     branches: [artitrade-phone-main-v070-live-orders-20261112]
     paths:
-      - .github/workflows/artitrade-006-same-signer-release-host.yml
+      - .github/workflows/artitrade-006-same-signer-errorfix-host.yml
   workflow_dispatch:
 permissions:
   contents: read
