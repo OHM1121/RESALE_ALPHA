@@ -250,6 +250,16 @@ final class StrategyRuntimeBridge {
         catch(Throwable e){crashes.add("operation_apply",e);return error("OPERATION_APPLY",e);}
     }
 
+    /** Explicit user request only: account's Kiwoom outstanding sells, NEVER an order. */
+    synchronized JSONObject brokerSellsV008(){
+        if(module==null||!started)return error("BROKER_RECEIPT_ENGINE_NOT_READY",null);
+        try{return parse(module.callAttr("broker_sells_v008"));}
+        catch(Throwable e){
+            crashes.add("broker_sell_receipt_v008",e);
+            return error("BROKER_RECEIPT_QUERY_FAILED",e);
+        }
+    }
+
     /** Paper-wallet-only explicit manual exit; no broker-order adapter is called. */
     synchronized JSONObject manualPaperSell(JSONObject request){
         if(module==null||!started)return error("PAPER_SELL_RUNTIME_NOT_READY",null);
