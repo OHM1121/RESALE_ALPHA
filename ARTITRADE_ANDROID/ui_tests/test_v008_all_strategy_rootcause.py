@@ -46,16 +46,26 @@ class V008RootCause(unittest.TestCase):
             return ['AT_HELD','CW_HELD','MA_HELD','TREND_HELD','GMO_CANDIDATE']
         class Planner: runner=None
         planner=Planner()
+        from gmo_d1_preplan_v097 import _venue_phase,NXT_PREMARKET_CLOSED
         pre=extracted('gmo_d1_preplan_v097.py','subscriptions',
-            {'original_subscriptions':owner,'d_live':SimpleNamespace(now_kst=lambda:None)})
+            {'original_subscriptions':owner,
+             '_venue_phase':_venue_phase,
+             'NXT_PREMARKET_CLOSED':NXT_PREMARKET_CLOSED,
+             'd_live':SimpleNamespace(now_kst=lambda:None)})
         rt=SimpleNamespace(gmo=SimpleNamespace(_v097_planner=planner))
-        before=dt.datetime(2026,11,19,7,59,20,tzinfo=dt.timezone(dt.timedelta(hours=9)))
+        before=dt.datetime(2026,11,18,7,59,20,tzinfo=dt.timezone(dt.timedelta(hours=9)))
         self.assertEqual(pre(rt,before),['AT_HELD','CW_HELD','MA_HELD','TREND_HELD','GMO_CANDIDATE'])
         self.assertEqual(calls[0].strftime('%H:%M:%S'),'08:00:00')
         self.assertIs(planner.runner,rt)
         now=before.replace(hour=9)
         pre(rt,now)
         self.assertEqual(calls[-1],now)
+        csat=before.replace(day=19)
+        pre(rt,csat)
+        self.assertEqual(calls[-1],csat)  # no synthetic NXT 08:00 opening
+        delayed=csat.replace(hour=9,minute=59)
+        pre(rt,delayed)
+        self.assertEqual(calls[-1].strftime('%H:%M:%S'),'10:00:00')
 
     def test_gmo_bad_quote_fails_closed_without_breaking_shared_ws(self):
         from gmo_d1_preplan_v097 import _verified
