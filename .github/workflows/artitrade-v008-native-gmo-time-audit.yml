@@ -27,6 +27,15 @@ jobs:
           with zipfile.ZipFile(io.BytesIO(data)) as archive:
               files=[x for x in archive.namelist() if x.endswith('.py')]
               print('ORIGINAL_FILES_OF_INTEREST',[x for x in files if 'gmo' in x.lower() or 'live' in x.lower() or 'calendar' in x.lower()])
+              broker=archive.read('android_live_bridge.py').decode('utf8')
+              b_lines=broker.splitlines()
+              b_ast=ast.parse(broker)
+              for cls in (x for x in b_ast.body if isinstance(x,ast.ClassDef)):
+                  if cls.name in ('KiwoomBroker','UpbitBroker','Runtime'):
+                      print('BROKER_CLASS_METHODS',cls.name,[(n.name,n.lineno) for n in cls.body if isinstance(n,ast.FunctionDef)])
+                      for method in cls.body:
+                          if isinstance(method,ast.FunctionDef) and method.name in ('fok','limit','_post','on_live_fill','snapshot','live_enabled','start','submit','_find_fill'):
+                              print('BROKER_METHOD',cls.name,method.name,method.lineno,'\\n','\\n'.join(b_lines[method.lineno-1:min(method.end_lineno,method.lineno+95)]))
               for name in files:
                   if name not in ('d_live.py','d_gmo_runtime.py','projectgmo/engine.py','android_live_bridge.py','d_calendar.py'):
                       continue
