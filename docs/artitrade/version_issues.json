@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "fix-artitrade-010-v009-cross-strategy-rootcause-20261119",
+  "working_branch": "audit-artitrade-014-cfg-sell-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -943,6 +943,77 @@
         "test_v005_market_score_empty_wallet.py"
       ],
       "notes": "Canonical market-score worker root normalized from <root>/stock to <root>; source worker started before native D19 engine. Genuine signed score strictly >0 required; zero/negative/stale/missing never fills. Original official 5m parent/venue/0D/0B/funding native transaction still required. Distinct reject codes for missing vs non-positive. Only PAPER native verified BUY journal in tests, never external order acknowledgement. 71 positive historical score-point matches do not prove quote/parent valid at exact former attempt; requires device next KRX market session verification. GMO/CW unaffected."
+    },
+    {
+      "id": "AT-014-22",
+      "issue": 98,
+      "found": "0.0.13",
+      "category": "SOURCE_AUDIT",
+      "title": "MA held-only coin quote may be absent or stale due to unpinned vendor ticker/book cohorts",
+      "evidence": "Issue #92 observed post-BUY verified ticker but no matching fresh bid; source held-only worker silently had no book. Exact device subscription failure not yet proven.",
+      "root": "INFERRED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.14-source-candidate",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_FEED",
+        "COIN_MA",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v014_cfg_native_sell_quote_regression.py",
+        "test_v002_eight_virtual_paper_end_to_end.py"
+      ],
+      "notes": "Held MA pinned ahead of ranked symbols in existing Upbit subscription API, without adding sockets or relaxing 3s depth freshness. Need phone WS evidence for definitive root cause."
+    },
+    {
+      "id": "AT-014-23",
+      "issue": 98,
+      "found": "0.0.13",
+      "category": "SILENT_FAILURE",
+      "title": "Native coin MA held exit misses book/depth and failed sell without durable rejection",
+      "evidence": "ma_v067_coin_runtime._process_v067_exits returned/broke without reason for stale/zero book, timeout and native SELL rejection.",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.14-source-candidate",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_MA",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v014_cfg_native_sell_quote_regression.py"
+      ],
+      "notes": "Throttle original private issue + original MA decision evidence per held symbol/gate. No synthetic fills. Continue checking stock AT/MA/Trend and coin AT/Trend silent exits."
+    },
+    {
+      "id": "AT-014-24",
+      "issue": 98,
+      "found": "0.0.13",
+      "category": "LEDGER_PROVENANCE",
+      "title": "Legacy purge treats missing NEW sidecar as old buy, regardless historical buy and sell conditions",
+      "evidence": "_old_positions returned all positions without recognized NEW sidecar as OLD; _select_safe verified receipts/cash but not historical rule attribution.",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.14-source-candidate",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "EXECUTION",
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_GENERAL",
+        "COIN_MA",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v012_legacy_purge_and_holding_frame.py"
+      ],
+      "notes": "Conservative explicit retired BUY policy + every historical SELL reason; unknown source remains PARTIAL. No user-phone deleted; earlier one-time DONE marker cannot prove actual cleanup or re-run. Proven invalid NEW PAPER exit cycle requires independent device proof before future scoped migration."
     }
   ],
   "known_normal": [
