@@ -156,6 +156,9 @@ def _native_staged(owner,row,entry,market,stages):
     if original!=initial or current>original:return None
     at=str(row.get("entry_at") or row.get("entry_ts") or "")
     stored_at=str(first.get("created_at") or "")
+    # Original position times can carry a timezone, while the native plan
+    # sometimes keeps the same instant without a local display conversion.
+    # A mismatch is not permission to invent a different native BUY.
     if at and stored_at and at!=stored_at:return None
     if second is not None:
         if (second.get("market")!=market or
@@ -261,6 +264,9 @@ def preview(owner,row,runtime=None,native_stages=None):
             order_state=order_state,score=int(round(tier*100)))
 
     qty=_original_qty(row,market)
+    # CW original full-position target can be observed only when its native
+    # source position includes a verified initial quantity. Never use the
+    # currently reduced holding as an assumed original BUY size.
     if qty is None or qty<=0:return None
 
     if owner=="stock/cw":
