@@ -1,0 +1,111 @@
+name: ARTITRADE 0.0.14 CFG native PAPER quote and exit regression
+on:
+  push:
+    branches: [audit-artitrade-014-cfg-sell-20261119]
+    paths:
+      - .github/workflows/artitrade-014-cfg-native-paper-regression.yml
+      - ARTITRADE_ANDROID/app/src/main/python/coin_held_depth_v014.py
+      - ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py
+      - ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py
+      - ARTITRADE_ANDROID/ui_tests/test_v014_cfg_native_sell_quote_regression.py
+      - ARTITRADE_ANDROID/ui_tests/test_v012_legacy_purge_and_holding_frame.py
+      - docs/artitrade/dependency_graph.json
+      - docs/artitrade/version_issues.json
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-paper-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Apply exact 0.0.13 original vendor transport patches to ephemeral checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/build.gradle')
+          s=p.read_text('utf8')
+          original="versionCode 135\n            versionName '0.0.13'"
+          prior="versionCode 97\n            versionName '0.7.91-MA-STAGE-LEDGER'"
+          assert s.count(original)==1
+          p.write_text(s.replace(original,prior,1),'utf8')
+          PY
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v093_strategy_priority_metadata.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v105_ka10004_readonly.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/build.gradle')
+          s=p.read_text('utf8')
+          assert s.count('versionCode 99')==1
+          assert s.count("versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'")==1
+          s=s.replace('versionCode 99','versionCode 135').replace(
+              "versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'",
+              "versionName '0.0.13'")
+          assert s.count("versionName '0.0.13'")==1
+          p.write_text(s,'utf8')
+          PY
+      - name: Decode exact previously signed 82-module native core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile,hashlib,ast
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          content=base64.b64decode(''.join(
+              (root/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          sha=hashlib.sha256(content).hexdigest()
+          java=Path('ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text('utf8')
+          assert 'CORE_SHA256="'+sha+'"' in java
+          with zipfile.ZipFile(io.BytesIO(content)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              for name in z.namelist():
+                  if name.endswith('.py'):ast.parse(z.read(name).decode(),name)
+              z.extractall('/tmp/artitrade-014-vendor-native')
+          print('PINNED_NATIVE_VENDOR_SHA256',sha)
+          PY
+      - name: Replay CFG-class real native PAPER wallets and full existing regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-014-vendor-native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          for testfile in \
+            test_v014_cfg_native_sell_quote_regression.py \
+            test_v002_eight_virtual_paper_end_to_end.py \
+            test_v011_new_legacy_resting_and_legacy_retirement.py \
+            test_v012_legacy_purge_and_holding_frame.py \
+            test_v013_stock_at_pending_to_native_buy.py \
+            test_v004_abnormal_reconnect_six.py \
+            test_v092_scenarios_8_wallets.py; do
+            echo "REPLAY $testfile"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$testfile" -v
+          done
+      - name: Source graph and provenance contract validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/artitrade/build_source_graph.py --output /tmp/artitrade014_graph.json
+          python3 tools/artitrade/validate_dependency_contracts.py --generated /tmp/artitrade014_graph.json
+      - name: Android Java compilation (no LIVE broker, no APK release)
+        shell: bash
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:compileUnifiedDebugJavaWithJavac
