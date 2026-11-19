@@ -1797,7 +1797,9 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String activeHistoryFilter(){
-        return "stock".equals(market)?historyFilterStock:historyFilterCoin;
+        String chosen="stock".equals(market)?historyFilterStock:historyFilterCoin;
+        // A saved v005 5m selection must never reopen a retired Trend pane.
+        return "trend".equals(strategy)&&"5m".equals(chosen)?"current":chosen;
     }
 
     private java.util.List<HistoryRow> selectedHistory(String kind){
