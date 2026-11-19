@@ -510,6 +510,9 @@ def _process_v067_exits(self,book,now):
         if not rows:return
         depth=qty_floor(bid_qty*Decimal('.5'))
         for item in rows:
+            if item['kind']!='REVERSAL_UP':
+                # The workbook removes the former MA bearish scenario.
+                continue
             for attempt in range(2):
                 # A single genuine post-reconnect order book may be above
                 # BOTH profit targets; consume at most two confirmed stages.
@@ -707,8 +710,18 @@ def install():
         # exact v065 policy or the v067 second-bar guard may pass.
         manual=(str(event_key or '').startswith('USER:') and
                 str(reason).startswith('사용자 가상 강제매도 '))
-        if row and not (str(reason).startswith(('MA_V065_','MA_V067_','MA_V1118_')) or manual):
-            return False
+        if not manual:
+            if row is None or str(reason) not in (
+                'MA_V065_UP_PRE_FIRST_ENTRY_RETURN',
+                'MA_V065_UP_AFTER_FIRST_ENTRY_PLUS_1',
+                'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR',
+                'MA_V1118_UP_FIRST_30PCT',
+                'MA_V1118_UP_SECOND_35PCT',
+                'MA_V1118_UP_AFTER_SECOND_TRAIL',
+                'MA_V1118_STOP_MINUS_15',
+                'MA_V1118_HOLD_EXPIRY',
+            ):
+                return False
         return previous_sell(self,c,p,desired,price,at,reason,event_key=event_key)
     ma.MACoinLedger._sell=scoped_sell
 
