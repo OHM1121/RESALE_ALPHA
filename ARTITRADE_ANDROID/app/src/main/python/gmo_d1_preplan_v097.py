@@ -78,7 +78,7 @@ def _d1_verified(service,signal,at):
         from d_gmo_runtime import _next_day
         return signal.entry_date==at.date().isoformat() and (
             _next_day(signal.event_date,service.root)==signal.entry_date)
-    except (ValueError,TypeError,KeyError,OSError):
+    except (ValueError,TypeError,KeyError,OSError,RuntimeError):
         return False
 
 class Preplanner:
@@ -99,10 +99,12 @@ class Preplanner:
         try:return bool(runner.nxt_snapshot.allows(code,at.strftime("%Y%m%d")))
         except (AttributeError,ValueError):return False
 
-    def prepare(self,venue,at=None):
+    def prepare(self,venue,at=None,recovery=False):
         at=at or self.clock()
-        if not _valid_phase(venue,at,True):return ()
-        if os.environ.get("ARTITRADE_REAL_MODE")=="1":return ()
+        normal=_valid_phase(venue,at,True)
+        late=bool(recovery and venue=="KRX" and _valid_phase(venue,at))
+        if not (normal or late):return ()
+        if not self._entry_authorized():return ()
         service=self.service
         made=[]
         with self.lock,service._lock,service.engine._lock:
@@ -169,7 +171,8 @@ class Preplanner:
                       "status":"PREPARED" if nxt_verified
                                  else "WAIT_NXT_ELIGIBILITY",
                       "scenario":0,"opening_price":None,
-                      "opening_source":None,"order_id":None}
+                      "opening_source":None,"order_id":None,
+                      "late_recovery":bool(late),"venue_schedule":_venue_phase(venue,at)}
                 self.plans[key]=plan
                 if nxt_verified:made.append(code)
                 service.engine._log(code,"GMO_D1_PREPLAN_READY",
@@ -185,14 +188,21 @@ class Preplanner:
                     if day==at.date().isoformat() and
                     p["status"] not in ("COMPLETED","EXPIRED","BLOCKED","SOLD")}
 
-    def _paper_only(self):
-        if os.environ.get("ARTITRADE_REAL_MODE")=="1":return False
+    def _entry_authorized(self):
+        """Respect existing account LIVE toggle; PAPER stays the default."""
         try:
             import android_live_bridge as bridge
             runtime=getattr(bridge,"_RUNTIME",None)
-            return runtime is None or not runtime.live_enabled("stock")
         except (ImportError,AttributeError):
-            return True
+            runtime=None
+        if runtime is not None and runtime.live_enabled("stock"):
+            return bool(runtime.kiwoom.ready())
+        # Never downgrade a requested but unavailable LIVE account to PAPER.
+        return os.environ.get("ARTITRADE_REAL_MODE")!="1"
+
+    def _paper_only(self):
+        # Existing method name preserved for old callers/tests.
+        return self._entry_authorized()
 
     def _open_buy(self,engine,code):
         return next((o for o in engine.orders.values() if o.side=="BUY"
@@ -257,19 +267,23 @@ class Preplanner:
             seconds=at.hour*3600+at.minute*60+at.second
             opening=int(phase[1][:2])*3600+int(phase[1][2:4])*60
             if opening<=seconds<opening+600:self._clear_nxt(at)
-        if not self._paper_only() or not _valid_phase(venue,at):return
+        if not self._entry_authorized() or not _valid_phase(venue,at):return
         t=_verified(tick,at)
         if t is None or tick[7]!=venue:return
         code=str(tick[0]);service=self.service
         key=self._key(code,venue,at)
         plan=self.plans.get(key)
+        if plan is None and venue=="KRX":
+            # Restarted after open: re-arm only the authentic D+1 signal.
+            self.prepare("KRX",at,recovery=True)
+            plan=self.plans.get(key)
         if plan is None or plan["status"] in ("EXPIRED","BLOCKED","SOLD","COMPLETED"):
             return
         phase=_venue_phase(venue,at)
         if not phase:return
         opening=at.replace(hour=int(phase[1][:2]),
                            minute=int(phase[1][2:4]),second=0,microsecond=0)
-        if plan["prepared_at"]>=opening.isoformat():
+        if plan["prepared_at"]>=opening.isoformat() and not plan.get("late_recovery"):
             return
         if venue=="NXT":
             if not self._nxt_allowed(code,at):return
@@ -301,9 +315,10 @@ class Preplanner:
         else:
             from d_gmo_runtime import _number
             opener=service.opens.get((code,at.date().isoformat()))
-            if opener is None or int(opener)<=0:return
-            plan["opening_price"]=int(opener)
-            plan["opening_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+            if opener is not None and int(opener)>0:
+                plan["opening_price"]=int(opener)
+                plan["opening_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+            # Never infer an official open from the first post-restart tick.
             q=service._quote(tick)
             if q is None:return
             ask=int(q.ask)
@@ -317,8 +332,20 @@ class Preplanner:
         code=plan["code"];signal=engine.signals.get(code)
         if not signal or not _d1_verified(svc,signal,at):return
         opener=plan.get("opening_price")
-        if not opener:return
-        caps=(int(opener),plus_ticks(int(opener),1),plus_ticks(int(opener),2))
+        if opener is not None and int(opener)>0:
+            reference=int(opener)
+            caps=(reference,plus_ticks(reference,1),plus_ticks(reference,2))
+            plan["entry_reference_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+        elif venue=="KRX":
+            # Genuine previously verified D close is an INDEPENDENT
+            # permission to buy below D close, even after missing first open.
+            reference=int(getattr(signal,"event_close",0) or 0)
+            if reference<=0 or max(int(last),int(ask))>reference:
+                plan["status"]="WAIT_OFFICIAL_OPEN_OR_D_CLOSE_TOUCH"
+                return
+            caps=(reference,reference,reference)
+            plan["entry_reference_source"]="VERIFIED_D_CLOSE_ONLY"
+        else:return
         # Only a real same-venue verified 0B exchange timestamp may drive
         # the recovery command. A missing/expired quote leaves the original
         # plan waiting; no backfilled print or fake order acknowledgement.
@@ -337,7 +364,7 @@ class Preplanner:
                 try:
                     per=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))
                     intent=Intent("gmo","stock",code,
-                        plan["entry_date"]+":"+venue,str(opener),str(per),
+                        plan["entry_date"]+":"+venue,str(reference),str(per),
                         str(engine.cfg.buy_fee))
                     self._v082_intents[intent_key]=intent
                 except (ValueError,TypeError,ArithmeticError):
@@ -347,7 +374,7 @@ class Preplanner:
                 plan["v082_recovery"]=dict(intent.status(),
                     action=observed.get("action"),
                     quote_reason=observed.get("reason"),
-                    original_order_owner="GMO_PAPER")
+                    original_order_owner="GMO_ORIGINAL_WALLET_EXPLICIT_REAL_OR_PAPER")
                 if observed.get("action")=="WAIT":
                     plan["status"]="WAIT_VERIFIED_RECOVERY_BOOK"
                     return
@@ -406,7 +433,7 @@ class Preplanner:
                 # still fills only proved actual PAPER liquidity at or below
                 # the limit, then keeps the SAME intent for residual shares.
                 active=engine._order(code,"BUY",f"D+1_V097_{venue}_S{scenario}",
-                                      int(opener),int(caps[2]),int(qty),at.isoformat())
+                                      int(reference),int(caps[2]),int(qty),at.isoformat())
                 if proof is not None:
                     intent=self._v082_intents.get((plan["entry_date"],code,venue))
                     if intent is not None:
@@ -453,6 +480,7 @@ class Preplanner:
                 plan["v082_actual_order_status"]={
                     "original_order_id":str(actual.id),
                     "original_state":str(actual.state),
+                    "is_native_wallet_order":True,"broker_ack_verified":False,
                     "original_requested_qty":int(actual.requested),
                     "original_filled_qty":int(actual.filled),
                     "original_unfilled_qty":max(0,int(actual.requested)-int(actual.filled)),
