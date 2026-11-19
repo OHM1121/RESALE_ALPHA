@@ -734,7 +734,7 @@
       "root": "CONFIRMED_V097_OWNER_LIMIT_AND_REJECTED_MISSING_0D",
       "status": "CI_VERIFIED",
       "fix_version": "0.0.10-source",
-      "ci": "source regression pass 44456057127; same-signer Android APK build pending",
+      "ci": "V010 automated 8-strategy PAPER regressions and native source/Android signed build passed run 44456475957; Samsung live execution unverified",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -757,7 +757,7 @@
       "root": "CONFIRMED_OBSERVATIONAL_HOOK_INCOMPATIBLE_SIGNATURE",
       "status": "CI_VERIFIED",
       "fix_version": "0.0.10-source",
-      "ci": "source regression pass 44456057127; same-signer Android APK build pending",
+      "ci": "V010 automated 8-strategy PAPER regressions and native source/Android signed build passed run 44456475957; Samsung live execution unverified",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -779,7 +779,7 @@
       "root": "CONFIRMED_MULTIPLE_NATIVE_TIME_AUTHORITIES",
       "status": "CI_VERIFIED",
       "fix_version": "0.0.10-source",
-      "ci": "source regression pass 44456057127; same-signer Android APK build pending",
+      "ci": "V010 automated 8-strategy PAPER regressions and native source/Android signed build passed run 44456475957; Samsung live execution unverified",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -867,21 +867,21 @@
     "notes": "Original package and signer; update in place without reset. Live brokerage unverified."
   },
   "latest_test_artifact": {
-    "versionName": "0.0.9",
-    "versionCode": 131,
+    "versionName": "0.0.10",
+    "versionCode": 132,
     "package": "com.artitrade.unified.s21dex",
-    "signed_build_source_commit": "9acd71dd133cefcac0bc4dd6c324f5309d714124",
-    "github_actions_run_id": 44451936088,
-    "artifact_id": 14494709945,
-    "release_tag": "ARTITRADE-0.0.9-signed-test-20261119",
-    "filename": "ARTITRADE_0.0.9.apk",
-    "size_bytes": 30492845,
-    "sha256": "d9974c57d0529548ba6b0509da90032e5708863f1cf424594f484a7fe11ea23d",
+    "signed_build_source_commit": "e237088ead76207562f713e3003524336f02c6e6",
+    "github_actions_run_id": 44456475957,
+    "artifact_id": 14498730209,
+    "release_tag": "ARTITRADE-0.0.10-signed-test-20261119",
+    "filename": "ARTITRADE_0.0.10.apk",
+    "size_bytes": 30493001,
+    "sha256": "b9ac1da1ab7d86b280910720cc7d4c1c50469b233a17d6d8e05e3a6b018bf802",
     "previous_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
     "device_verified": false,
     "actual_broker_order_verified": false,
-    "paper_only": true,
-    "original_sqlite_preserved_by_source": true
+    "real_broker_enabled": false,
+    "old_app_data_not_reset_by_source": true
   },
   "work_in_progress_008": {
     "versionName": "0.0.8",
@@ -996,7 +996,7 @@
       90,
       91
     ],
-    "signed_apk_built": false,
+    "signed_apk_built": true,
     "old_signer_required": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
     "device_verified": false,
     "original_ledger_reset": false,
@@ -1004,6 +1004,29 @@
     "remote_backup_verified": false,
     "independent_original_cw_ma_trend_rules_preserved": true,
     "notes": "Latest 0.0.9 phone crash TypeError root traced to entry_plan_hooks_v107. Earlier 0.0.9 claim that reconnect fully fixed was false. Unavailable official 0D remains UNKNOWN for real broker; 0B paper proxy is not a broker execution. No verified remote MSERVER daily backup.",
-    "source_ci_verified": 44456057127
+    "source_ci_verified": 44456057127,
+    "source_commit": "e237088ead76207562f713e3003524336f02c6e6",
+    "signed_ci_run": 44456475957,
+    "artifact_id": 14498730209,
+    "apk_sha256": "b9ac1da1ab7d86b280910720cc7d4c1c50469b233a17d6d8e05e3a6b018bf802",
+    "apk_size_bytes": 30493001,
+    "old_signer_matched": true
+  },
+  "previous_test_artifact_009": {
+    "versionName": "0.0.9",
+    "versionCode": 131,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_build_source_commit": "9acd71dd133cefcac0bc4dd6c324f5309d714124",
+    "github_actions_run_id": 44451936088,
+    "artifact_id": 14494709945,
+    "release_tag": "ARTITRADE-0.0.9-signed-test-20261119",
+    "filename": "ARTITRADE_0.0.9.apk",
+    "size_bytes": 30492845,
+    "sha256": "d9974c57d0529548ba6b0509da90032e5708863f1cf424594f484a7fe11ea23d",
+    "previous_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false,
+    "actual_broker_order_verified": false,
+    "paper_only": true,
+    "original_sqlite_preserved_by_source": true
   }
 }
