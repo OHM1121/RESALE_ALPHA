@@ -415,8 +415,16 @@ public final class UnifiedVisualActivity extends Activity {
             }else{
                 showBoot();
                 if(state!=null&&!state.getBoolean("v089_preload_ready",true)){
+                    startupStockTotal=Math.max(0,state.getInt("v017_stock_loading_total",0));
+                    startupStockLoaded=Math.min(startupStockTotal,Math.max(0,
+                        state.getInt("v017_stock_loading_done",0)));
+                    startupStockFirstProgressAtMs=android.os.SystemClock.elapsedRealtime();
+                    startupStockFirstProgressCount=startupStockLoaded;
                     if(startupProgress!=null)startupProgress.setProgress(
-                        Math.max(0,Math.min(99,state.getInt("v089_preload_pct",0))));
+                        startupStockTotal>0 ? 100*startupStockLoaded/startupStockTotal : 0);
+                    if(startupPercent!=null && startupStockTotal>0)
+                        startupPercent.setText((100*startupStockLoaded/startupStockTotal)+
+                            "% · "+startupStockLoaded+" / "+startupStockTotal+"종목");
                     if(startupStage!=null)startupStage.setText(
                         state.getString("v089_preload_stage",
                             "원장 · 전략별 시세 사전 준비 중"));
@@ -763,7 +771,9 @@ public final class UnifiedVisualActivity extends Activity {
         state.putLong("v089_preload_wall_at",preloadStartedWallMs);
         if(!preloadScreenReady){
             state.putInt("v089_preload_pct",
-                startupProgress==null?5:startupProgress.getProgress());
+                startupProgress==null?0:startupProgress.getProgress());
+            state.putInt("v017_stock_loading_done",startupStockLoaded);
+            state.putInt("v017_stock_loading_total",startupStockTotal);
             state.putString("v089_preload_stage",
                 startupStage==null?"원장 · 전략별 시세 사전 준비 중":
                 startupStage.getText().toString());
