@@ -382,6 +382,25 @@ def install():
             p.entry_signal_policy="NL1118_RSI20_24H_BOLL_20_1_5"
             p.bar_finalized=True
             self.save_position(p)
+            # Two durable, independent PAPER resting sell orders immediately
+            # after the original confirmed BUY. LIVE orders are NOT submitted
+            # here; a planning row must never masquerade as a broker receipt.
+            import new_legacy_1118_resting as resting
+            from new_legacy_1118_policy import stage_quantity
+            from decimal import Decimal, ROUND_DOWN
+            initial=resting.amount(p.original_qty)
+            if market=='stock':
+                first=resting.amount(stage_quantity(initial,market,1))
+                second=resting.amount(stage_quantity(initial,market,2))
+            else:
+                step=Decimal('.00000001')
+                first=(initial*Decimal('.30')).quantize(step,rounding=ROUND_DOWN)
+                second=(initial*Decimal('.35')).quantize(step,rounding=ROUND_DOWN)
+            with self.order_lock,self._connect(market) as c:
+                resting.place(c,int(p.position_id),market,str(p.symbol),
+                    str(p.frame),p.entry_at.isoformat(),initial,
+                    d['first'],d['second'],first,second,
+                    paper=(str(p.execution_mode)=='PAPER'))
         return p,reason
     TrendWalletV054.buy=buy_and_preplan
     _INSTALLED=True
