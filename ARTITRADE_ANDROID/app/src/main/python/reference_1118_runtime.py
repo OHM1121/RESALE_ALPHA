@@ -9,11 +9,13 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+from decimal import Decimal, ROUND_DOWN
 import sqlite3
 import time
 from pathlib import Path
 
 import new_legacy_1118_policy as nl
+import new_legacy_1118_resting as resting
 
 _INSTALLED=False
 _TBL="""CREATE TABLE IF NOT EXISTS nl1118_reference_positions(
@@ -71,6 +73,18 @@ def _mark(c,position,market):
           (int(p["id"]),nl.POLICY,market,p["tf"],plan["symbol"],
            json.dumps(plan,ensure_ascii=False),
            dt.datetime.now(dt.timezone.utc).isoformat()))
+        original=resting.amount(p["entry_qty"] if market=="stock" else p["qty0"])
+        if market=="coin":
+            step=Decimal("0.00000001")
+            first=(original*Decimal(".30")).quantize(step,rounding=ROUND_DOWN)
+            second=(original*Decimal(".35")).quantize(step,rounding=ROUND_DOWN)
+        else:
+            first=resting.amount(nl.stage_quantity(original,market,1))
+            second=resting.amount(nl.stage_quantity(original,market,2))
+        resting.place(c,int(p["id"]),market,plan["symbol"],p["tf"],
+                      str(p.get("entry_ts") or p.get("entry_at") or ""),
+                      original,plan["first"],plan["second"],first,second,
+                      paper=True)
         return True
     except (KeyError,TypeError,ValueError,sqlite3.Error,ArithmeticError):
         # Fail closed for this new policy. Do not silently turn an unplanned
@@ -124,7 +138,7 @@ def _act(self,c,p,minute,at):
         done=self._sell(c,p,at,qty,int(verified_price),reason,
                         event_key=event_key)
         if done is None:return p
-        executed=c.execute("""SELECT qty,price FROM executions
+        executed=c.execute("""SELECT id,qty,price FROM executions
             WHERE event_key=? AND position_id=? AND side='SELL'
             ORDER BY id DESC LIMIT 1""",(event_key,p["id"])).fetchone()
         if executed is None:
@@ -132,6 +146,11 @@ def _act(self,c,p,minute,at):
         qty=int(executed["qty"])
         if qty<=0:
             raise RuntimeError("NL1118_STOCK_SELL_ZERO_QTY")
+        if reason in ("NL1118_TP1","NL1118_TP2"):
+            resting.confirmed_fill(c,int(p["id"]),1 if reason=="NL1118_TP1" else 2,
+                                   int(executed["id"]))
+        else:
+            resting.cancel_remaining(c,int(p["id"]),reason)
         if reason=="NL1118_TP1":
             plan["stage1_filled"]+=qty
             if plan["stage1_filled"]+1e-8>=nl.stage_quantity(
@@ -295,13 +314,18 @@ def install():
                              str(int(float(book["timestamp"]))))
                         if not self._sell(c,pos,wanted,dec(bid),now.isoformat(),
                                           reason,event_key=key):break
-                        proof=c.execute("""SELECT qty,price FROM executions
+                        proof=c.execute("""SELECT id,qty,price FROM executions
                             WHERE event_key=? AND position_id=? AND side='SELL'
                             ORDER BY id DESC LIMIT 1""",
                             (key,pos["id"])).fetchone()
                         if proof is None or dec(proof["qty"])<=0:
                             raise RuntimeError("NL1118_COIN_SELL_RECORD_NOT_CONFIRMED")
                         wanted=dec(proof["qty"])
+                        if reason in ("NL1118_TP1","NL1118_TP2"):
+                            resting.confirmed_fill(c,int(pos["id"]),
+                                1 if reason=="NL1118_TP1" else 2,int(proof["id"]))
+                        else:
+                            resting.cancel_remaining(c,int(pos["id"]),reason)
                         available_depth=max(dec(0),available_depth-wanted)
                         if reason=="NL1118_TP1":
                             plan["stage1_filled"]+=float(wanted)
