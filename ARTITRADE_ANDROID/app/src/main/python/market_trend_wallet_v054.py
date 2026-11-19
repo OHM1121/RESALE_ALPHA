@@ -196,6 +196,9 @@ class TrendWalletV054:
         return price,qty,fee
 
     def buy(self,market,frame,symbol,name,ask,ask_size,at,bar_key,rsi20_live):
+        # Do not permit retired 5m MarketTrend BUY through direct wallet calls.
+        # Keep existing historical fills and SELL recovery untouched.
+        if frame == '5m':return None,'TREND_5M_RETIRED_NO_NEW_BUY'
         if frame not in FRAMES:raise ValueError('bad frame')
         at=_as_kst(at)
         key='MT54:BUY:'+':'.join((market,'trend',frame,str(symbol),str(bar_key)))
