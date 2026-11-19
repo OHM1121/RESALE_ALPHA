@@ -35,11 +35,23 @@ jobs:
             "d_v19_portfolio.py":[(1384,1435),(1710,1730)],
             "d_upbit.py":[(708,745),(2090,2135),(696,708)],
             "stock_ma_engine.py":[(130,153),(268,282)],
-            "d_store.py":[(35,160)],
             "at_close_engine.py":[(185,210)],
             "projectgmo/engine.py":[(533,608)],
             "d_gmo_runtime.py":[(1100,1160)],
           }
+          from pathlib import Path
+          for source in root.rglob("*.py"):
+              lines=source.read_text("utf8").splitlines()
+              hits=[i for i,line in enumerate(lines) if
+                    "def _record_execution(" in line or
+                    "CREATE TABLE IF NOT EXISTS executions" in line or
+                    "CREATE TABLE IF NOT EXISTS positions(" in line]
+              if hits and any(k in source.name for k in
+                              ("d_v18","d_portfolio","d_store","d_v19")):
+                  print("ORIGINAL_RECEIPT_OWNER",source.relative_to(root))
+                  for i in hits:
+                      for n in range(max(0,i-3),min(len(lines),i+18)):
+                          print(n+1,lines[n][:250])
           for name,ranges in targets.items():
               ls=(root/name).read_text("utf8").splitlines()
               for a,b in ranges:
