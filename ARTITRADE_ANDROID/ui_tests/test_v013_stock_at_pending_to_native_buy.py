@@ -131,7 +131,6 @@ class SignedPositiveToNativeExecution(unittest.TestCase):
         self.assertFalse(result[0],result)
         self.assertEqual(self._state()[2],"PENDING")
     def test_06_stock_worker_root_is_not_stock_folder(self):
-        self.assertEqual(gate._score_worker_root(self.store.root),self.root.resolve()) if False else None
         self.assertEqual(gate._score_worker_root(self.store.root,"stock"),self.root.resolve())
         self.assertEqual(gate._score_worker_root(self.root,"stock"),self.root.resolve())
         self.assertEqual(gate._score_worker_root(self.root/"coin"/"base","coin"),
