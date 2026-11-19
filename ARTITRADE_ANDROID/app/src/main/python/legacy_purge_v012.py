@@ -342,6 +342,9 @@ def _apply_one(path,kind,root):
         orphan_count=c.execute("""SELECT COUNT(*) FROM executions
             WHERE position_id IS NOT NULL AND
             position_id NOT IN (SELECT id FROM positions)""").fetchone()[0]
+        if kind.startswith("old_") and orphan_count:
+            return {"kind":kind,"removed":0,"skipped":int(orphan_count),
+                    "reason":"ARCHIVE_ORPHAN_NATIVE_FILL_UNVERIFIED"}
         if not selected and not old and not kind.startswith("old_"):
             if orphan_count:
                 return {"kind":kind,"removed":0,"skipped":int(orphan_count),
