@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 import sqlite3
 import threading
-import uuid
+
 
 _LOCK=threading.RLock()
 _NAME="POSITION_UID_V015.sqlite3"
@@ -186,7 +186,9 @@ def _annotate_ledger(reg,owner,ledger):
                  "tf","frame","buy_at","candidate_id")],ensure_ascii=True)
             if not any(_text(row.get(k)) for k in
                 ("entry_at","entry_date","buy_at","candidate_id","ref_at")):
-                raise ValueError("OPEN_POSITION_ORIGINAL_ENTRY_PROOF_MISSING:"+owner)
+                row["position_uid"]=""
+                row["position_uid_status"]="ORIGINAL_POSITION_ENTRY_ID_MISSING"
+                continue
             key="unlinked_position:"+hashlib.sha256(fp.encode()).hexdigest()
             row["position_uid"]=reg.assign(owner,key)
             row["position_uid_status"]="NATIVE_ID_MISSING_UNLINKED"
@@ -194,7 +196,9 @@ def _annotate_ledger(reg,owner,ledger):
         key,native=_identity_key(row,"execution")
         if key is None:
             # No stable original event ID: never manufacture a trade linkage.
-            raise ValueError("EXECUTION_ORIGINAL_KEY_MISSING:"+owner)
+            row["position_uid"]=""
+            row["position_uid_status"]="UNLINKED_EXECUTION_NO_SOURCE_EVENT"
+            continue
         if key in source_positions and not native:
             identity_status="ENTRY_COHORT"
         elif key.startswith("unlinked_fill:"):
@@ -287,7 +291,10 @@ def install(core):
         except Exception as exc:
             self._err("position_uid_v015_attribution",exc)
             # Fail closed for the identity display, not for trading.
-            return '{"position_uid_v015":{"status":"FAILED_IDENTITY_UNVERIFIED"}}'
+            # Losing an optional UID must NEVER hide the original holdings,
+            # fills, cash or error history from the dashboard.
+            return original if isinstance(original,str) else _json.dumps(
+                original,ensure_ascii=False,default=str,separators=(",",":"))
     core.Runtime.hub_records=with_position_uid
     old_start=core.Runtime.start
     def start(self):
