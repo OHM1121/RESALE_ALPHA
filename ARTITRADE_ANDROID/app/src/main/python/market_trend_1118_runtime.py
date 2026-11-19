@@ -323,7 +323,9 @@ def _entry_window(self,market,now):
 def _trend_exit_action(self,price,now,bar_finished=True,bar3_preclose=False):
     from new_legacy_1118_policy import exit_signal
     if getattr(self,"nl1118_policy",None)!=POLICY:
-        return _ORIGINAL_ACTION(self,price,now,bar_finished,bar3_preclose)
+        # Old MarketTrend exits are not an authorized 11.18 policy.
+        # Keep the original holding intact; require audited migration.
+        return None
     if self.qty<=0:return None
     p=mt._finite(price)
     if p is None or p<=0:return None
