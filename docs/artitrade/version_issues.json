@@ -867,6 +867,55 @@
         "test_v002_eight_virtual_paper_end_to_end.py"
       ],
       "notes": "Old automatic fallback paths blocked and old MA bearish/next-bar candidate retired; existing old portfolio records preserved and unplanned holdings fail closed pending audited migration. New PAPER resting targets are local SQLite orders, not live broker orders. NEW LEGACY full policy and physical phone verification still open, especially original broker resting/day-rollover implementation."
+    },
+    {
+      "id": "AT-011-19",
+      "issue": 95,
+      "found": "0.0.11-phone-source-20261119",
+      "category": "EXPLICIT_USER_DATA_PURGE",
+      "title": "Legacy PAPER positions, native executions and related profits remain after new workbook policy is installed",
+      "evidence": "Original six wallet SQLite formats inspected read-only from generated native test accounts. User requests pre-11.18 old automatic trades removed from holdings, execution, P&L and retired MA archives. Current known older V2.6/SR1 records mixed with NEW LEGACY records; NGO/CW must remain unchanged.",
+      "root": "CONFIRMED_PREVIOUS_RELEASE_PRESERVED_OLD_PAPER_LEDGER",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.12-source-candidate",
+      "ci": "PENDING_NATIVE_SIX_WALLET_SANITIZATION_AND_ORIGINAL_SIGNER",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "EXECUTION",
+        "ANTI_ROLLBACK",
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_MA",
+        "NL1118_PAPER_LEGACY_PURGE_V012"
+      ],
+      "tests": [
+        "test_v012_legacy_purge_and_holding_frame.py",
+        "test_v002_eight_virtual_paper_end_to_end.py",
+        "test_v002_ledger_rollback_guard.py"
+      ],
+      "notes": "User-authorized only PAPER: preserve new policy receipts, rebase wallet cash/realized and remaining native receipt cash_after using originals. GMO/CW DBs never open for mutation. Old ambiguous broker/imported evidence fails closed, so target may be partially skipped. Temporary same-account backups discarded only after witness rebase; no new real mode. CI/device not yet verified."
+    },
+    {
+      "id": "AT-011-20",
+      "issue": 96,
+      "found": "0.0.11-Android-holdings-UI",
+      "category": "USER_SCREEN_REQUIREMENT",
+      "title": "Holdings badge label incorrect and redundant timeframe text after symbol",
+      "evidence": "UnifiedVisualActivity.renderList originally used tradeStage('보유') for positions and HistorySelection.strategyTag next to symbol. Integrated holdings separately printed scope title + timeframe.",
+      "root": "CONFIRMED_UI_TIMEFRAME_DISPLAY_TWICE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.12-source-candidate",
+      "ci": "PENDING_ANDROID_JAVA_BUILD",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "ACTIVITY_UI",
+        "UI_RECORDS",
+        "HOLDING_FRAME_BADGE_V012"
+      ],
+      "tests": [
+        "test_v012_legacy_purge_and_holding_frame.py"
+      ],
+      "notes": "Badge becomes explicit 5분/30분/60분/일봉; GMO/CW use category badge 수급/종가 when no real frame, unchanged strategy. Position symbol loses redundant timeframe tag; pending/executions unchanged. Physical Android render not verified."
     }
   ],
   "known_normal": [
