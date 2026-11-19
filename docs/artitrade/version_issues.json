@@ -1101,7 +1101,7 @@
     },
     {
       "id": "AT-017-28",
-      "issue": 104,
+      "issue": 106,
       "found": "0.0.16-on-device",
       "category": "USER_DEVICE_PRELOAD_PERCENT_REGRESSION",
       "title": "Source startup percent moves backward when growing/volatile readiness checklist changes denominator; phase-based stock progress not actually per symbol",
@@ -1374,6 +1374,7 @@
     "original_wallets_protected": true,
     "original_kiwoom_rest_only": true,
     "original_signer_to_be_verified_by_ci": true,
-    "notes": "Source candidate, not completed release. Original D19 native PAPER BUY verified only under deterministic fresh score and orderbook fixture. Live phone quote/session and actual buy unverified; never promise arbitrary trades."
+    "notes": "Source candidate, not completed release. Original D19 native PAPER BUY verified only under deterministic fresh score and orderbook fixture. Live phone quote/session and actual buy unverified; never promise arbitrary trades.",
+    "issue_preload": 106
   }
 }
