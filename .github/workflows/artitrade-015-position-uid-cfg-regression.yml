@@ -99,5 +99,20 @@ jobs:
       - name: Compile exact Android UI and ledger guard, no signed APK
         run: |
           set -euo pipefail
-          gradle -p ARTITRADE_ANDROID :app:compileUnifiedDebugJavaWithJavac --no-daemon --stacktrace
+          gradle -p ARTITRADE_ANDROID :app:compileUnifiedDebugJavaWithJavac --no-daemon --stacktrace 2>&1 | tee /tmp/artitrade-v015-gradle.log
           test ! -d ARTITRADE_ANDROID/app/build/outputs/apk
+      - name: Publish sanitized Java compile error trace
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '0.0.15 Android Java compile failure diagnostic (synthetic CI only)'
+            echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo '~~~'
+            tail -n 115 /tmp/artitrade-v015-gradle.log 2>/dev/null | sed -E 's#/home/runner/work/[^ ]+#<CI_WORKSPACE>#g' || true
+            echo '~~~'
+          } > /tmp/artitrade-v015-gradle-errors.md
+          gh issue comment 100 --repo "$GITHUB_REPOSITORY" --body-file /tmp/artitrade-v015-gradle-errors.md
