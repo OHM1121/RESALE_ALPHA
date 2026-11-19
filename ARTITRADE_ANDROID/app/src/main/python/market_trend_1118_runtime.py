@@ -84,7 +84,12 @@ def _ready_market(co,market,now):
     return True
 
 def _confirmed_recent(history,now,market,frame):
-    if len(history)<21:return []
+    """Reject source gaps, missing latest completed bars and unknown venue data.
+
+    Source candles and a current genuine print are separate obligations:
+    live prints must NEVER stand in for a missing completed RSI candle.
+    """
+    if frame not in TREND_FRAMES or len(history)<21:return []
     rows=sorted((r for r in history
                  if isinstance(r,dict) and
                  isinstance(r.get("end"),dt.datetime) and
@@ -92,13 +97,9 @@ def _confirmed_recent(history,now,market,frame):
                 key=lambda x:x["end"])
     if len(rows)<21:return []
     latest=rows[-1]["end"]
-    # A current 30m/60m session quote may use the latest completed
-    # genuine candle. Do not accept bars from previous intraday sessions
-    # after source failure. The daily frame has a previous-close gap.
+    width=mt.FRAME_SECS[frame]
     if market=="coin":
-        # Historical 30m/60m/day candles must be consecutive and end at the
-        # LAST completed venue bucket; a missing bar is not price evidence.
-        width=mt.FRAME_SECS[frame]
+        # A 30m 08:41:27 entry needs the real completed 08:30 candle.
         expected=dt.datetime.fromtimestamp((int(now.timestamp())//width)*width,mt.KST)
         if latest!=expected:return []
         recent=rows[-21:]
@@ -107,15 +108,29 @@ def _confirmed_recent(history,now,market,frame):
         if any(r.get("source") not in
                ("UPBIT_CLOSED","NATIVE_UPBIT_VERIFIED_COMPLETED")
                for r in recent):return []
-    elif frame!="day" and (now-latest).total_seconds()>mt.FRAME_SECS[frame]*2:
-        return []
-    elif frame=="day":
+    elif market=="stock":
         from market_trend_v043 import _krx_day
+        from krx_session_v041 import SPECIAL_SESSIONS,START,END
+        opening,closing=SPECIAL_SESSIONS.get(now.date().isoformat(),(START,END))
+        begin=now.replace(hour=opening//60,minute=opening%60,second=0,microsecond=0)
+        finish=now.replace(hour=closing//60,minute=closing%60,second=0,microsecond=0)
+        if not begin<=now<finish:return []
         prior=now.date()-dt.timedelta(days=1)
         while not _krx_day(prior):
             prior-=dt.timedelta(days=1)
             if (now.date()-prior).days>15:return []
-        if latest.date()!=prior:return []
+        prior_closing=SPECIAL_SESSIONS.get(prior.isoformat(),(START,END))[1]
+        prior_close=dt.datetime.combine(prior,dt.time(prior_closing//60,prior_closing%60),
+                                         tzinfo=mt.KST)
+        if frame=="day":
+            if latest!=prior_close:return []
+        else:
+            completed=int((now-begin).total_seconds()//width)
+            expected=begin+dt.timedelta(seconds=completed*width) if completed else prior_close
+            if latest!=expected:return []
+        if any(r.get("source") not in ("LOCAL_KRX_VERIFIED","KIWOOM_VERIFIED")
+               for r in rows[-21:]):return []
+    else:return []
     if any(mt._finite(r.get("close")) is None or
            float(r["close"])<=0 for r in rows[-21:]):return []
     return rows[-90:]
@@ -208,7 +223,9 @@ def _entry_window(self,market,now):
             old=self._nl1118_watches.get(k)
             if old is None and rsi>30:continue
             proof=None
-            if rsi<=30:
+            if (rsi<=30 and
+                    (old is None or old["status"]=="READY" or
+                     (old["status"]=="WATCHING" and not old.get("evidence")))):
                 completed=closed[-21:]
                 payload="|".join(
                     row["end"].isoformat()+":"+repr(float(row["close"]))
