@@ -925,10 +925,10 @@
       "title": "D19 KRX AT PENDING limit-touched stocks never create native BUY when score publisher exists only under top-level app root",
       "evidence": "2026-11-19 original stock archive 105 pending AT source orders, zero native buys, 245 LIMIT_TOUCH_NOT_BOUGHT and source cross-trace. DStore.root=<phone>/stock; market score publisher keyed at <phone>; score_evidence old lookup incorrectly used stock wallet path, returned None at actual BUY, and strict workbook overlay returned NL1118_MARKET_SCORE_NOT_POSITIVE even for valid positive market score.",
       "root": "CONFIRMED_SCORE_WORKER_PATH_MISMATCH_AND_LATE_BOOTSTRAP",
-      "status": "SOURCE_FIXED",
-      "fix_version": "0.0.13-source-candidate",
-      "ci": "PENDING_ORIGINAL_D19_NATIVE_PAPER_END_TO_END_AND_ORIGINAL_SIGNER",
-      "device": "UNVERIFIED",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.13",
+      "ci": "SUCCESS https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44477866299",
+      "device": "UNVERIFIED_KRX_TRADING_SESSION_PENDING_TO_BUY",
       "nodes": [
         "STOCK_AT",
         "MARKET_SCORE",
@@ -942,7 +942,10 @@
         "test_v107_at_negative_market_gate.py",
         "test_v005_market_score_empty_wallet.py"
       ],
-      "notes": "Canonical market-score worker root normalized from <root>/stock to <root>; source worker started before native D19 engine. Genuine signed score strictly >0 required; zero/negative/stale/missing never fills. Original official 5m parent/venue/0D/0B/funding native transaction still required. Distinct reject codes for missing vs non-positive. Only PAPER native verified BUY journal in tests, never external order acknowledgement. 71 positive historical score-point matches do not prove quote/parent valid at exact former attempt; requires device next KRX market session verification. GMO/CW unaffected."
+      "notes": "Canonical market-score worker root normalized from <root>/stock to <root>; source worker started before native D19 engine. Genuine signed score strictly >0 required; zero/negative/stale/missing never fills. Original official 5m parent/venue/0D/0B/funding native transaction still required. Distinct reject codes for missing vs non-positive. Only PAPER native verified BUY journal in tests, never external order acknowledgement. 71 positive historical score-point matches do not prove quote/parent valid at exact former attempt; requires device next KRX market session verification. GMO/CW unaffected. CI verified original native 8 PAPER wallets plus positive/negative/0/stale/unavailable scoreboard; actual Android buy remains unverified. Numeric tag/APK exact 0.0.13. Default main AGENTS.md and active user policies updated for future conflict warnings.",
+      "source_commit": "17d47cf53411182fb717d362950d6d437ad75d2a",
+      "release": "https://github.com/OHM1121/RESALE_ALPHA/releases/tag/0.0.13",
+      "apk_sha256": "57858287c8d1c8ff9896c9f1ad2ab30e1dac7436058c1320b43954b0d0177a13"
     },
     {
       "id": "AT-014-22",
