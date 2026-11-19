@@ -37,3 +37,17 @@ flowchart TD
 `tools/artitrade/build_source_graph.py` reads (without executing) **all current Python overlays, all 22-archive original EXE strategy Python files, all Java classes and dependency references**, emits `artitrade_source_graph.json`, and labels inferred/dynamic edges as not statically verifiable. The workflow `artitrade-dependency-governance.yml` regenerates and uploads a complete per-commit artifact. If a function is registered dynamically (monkeypatch/callback/serialized event), add it to the critical [dependency_graph.json](dependency_graph.json) manually.
 
 Static references are not equivalent to a validated real broker execution flow. Every missing, unknown or dormant dependency must be disclosed as such, not silently claimed to be inspected.
+
+
+## Position identity + one-cycle cleanup (0.0.15)
+- **POSITION_UID_V015**: original 8 wallet positions/BUY/SELL receipts →
+  private epoch-scoped UID sidecar → read-only hub/UI history; no strategy,
+  quote, broker or original SQLite wallet writes. Historical closed rows are
+  indexed from native source DB, not inferred from symbol+time alone.
+- **CFG_SINGLE_PAPER_CLEANUP_V015**: after original old-policy migration and
+  before native runtime startup, qualify exactly one historically reported
+  coin MA 5m KRW-CFG PAPER position, backup native SQLite, reverse original
+  cash/P&L, delete only that position's linked receipts, rebase independent
+  witness. Zero or multiple matches are SKIPPED; never bulk ticker deletion.
+- Both features require original native regression and Java CI; a GitHub CI
+  pass does not prove phone-side migration ran or that any live fill exists.
