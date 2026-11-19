@@ -25,7 +25,10 @@ jobs:
               for name,ranges in (
                ('d_live.py',[(1,85),(933,982),(998,1022),(1525,1565),(1845,1872),(2198,2251),(2322,2373),(2418,2451)]),
                ('d_gmo_runtime.py',[(374,416),(622,665),(683,754),(805,850)]),
-               ('android_live_bridge.py',[(1,60),(125,214),(258,290),(425,452)])):
+               ('android_live_bridge.py',[(1,60),(125,214),(258,290),(425,452)]),
+               ('d_v19_portfolio.py',[(1,130)]),
+               ('d_status_v20.py',[(1,105)]),
+               ('d_engine.py',[(1,125)])):
                   lines=z.read(name).decode('utf8').splitlines()
                   print('SOURCE',name,'TOTAL',len(lines))
                   for a,b in ranges:
