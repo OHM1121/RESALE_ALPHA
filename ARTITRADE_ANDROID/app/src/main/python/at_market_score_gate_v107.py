@@ -1,4 +1,4 @@
-"""v107 independent negative signed-score gate for native reference-bar buys.
+"""v017 strictly positive, fresh signed-score gate for native reference-bar buys.
 
 STOCK: legacy PaperEngine AT and currently active D19 AT only.
 COIN: base/general original four-timeframe reference-bar CoinLedger only.
@@ -10,7 +10,7 @@ from pathlib import Path
 from execution_entry_plans_v107 import record_plan
 
 _INSTALLED=False
-_NEGATIVE_ONLY="MARKET_SCORE_NEGATIVE_BLOCK_NEW_REFERENCE_BAR_BUY"
+_NOT_POSITIVE="MARKET_SCORE_NOT_FRESH_STRICTLY_POSITIVE_AT_BUY"
 
 def _observe(root,market,strategy,frame,symbol,reference,reason,
              candidate_target=None,extra=None):
@@ -44,7 +44,7 @@ def score_evidence(root,market):
     with _WORKERS_LOCK:
         worker=_WORKERS.get(key)
     if worker is None:
-        return {"negative":False,"score":None,
+        return {"negative":False,"positive":False,"score":None,
                 "basis":"SCORE_PUBLISHER_NOT_READY","score_root":key}
     try:
         row=(worker.snapshot() or {}).get(market) or {}
@@ -57,7 +57,7 @@ def score_evidence(root,market):
             raise ValueError("invalid signed market score")
         if row.get("stale"):
             return {"negative":False,"score":None,"basis":"STALE_SCORE_NO_DECISION"}
-        return {"negative":value<0,"score":value,
+        return {"negative":value<0,"positive":value>0,"score":value,
                 "basis":"SIGNED_MARKET_SCORE_V033"}
     except (ValueError,TypeError,OverflowError):
         return {"negative":False,"score":None,"basis":"SCORE_UNVERIFIED"}
@@ -76,7 +76,7 @@ def install():
 
     def legacy_stock(self,c,tf,minute,at):
         root=getattr(self.store,"root",None)
-        if root is not None and score_evidence(root,"stock")["negative"]:
+        if root is None or not score_evidence(root,"stock")["positive"]:
             return None
         try:
             pending=self._pending(c,tf)
@@ -93,8 +93,8 @@ def install():
     def d19_stock(self,c,row,when,venue,observed_trade_price,
                   observed_trade_qty=0):
         root=getattr(self.store,"root",None)
-        if root is not None and score_evidence(root,"stock")["negative"]:
-            return False,_NEGATIVE_ONLY
+        if root is None or not score_evidence(root,"stock")["positive"]:
+            return False,_NOT_POSITIVE
         try:
             data=dict(row)
             _observe(root,"stock","at",data.get("tf"),data.get("code"),
@@ -119,7 +119,7 @@ def install():
                 path.parent.name=="base" and
                 path.parent.parent.name=="coin"):
                 root=path.parent.parent.parent
-                if score_evidence(root,"coin")["negative"]:
+                if not score_evidence(root,"coin")["positive"]:
                     return 0
                 try:
                     data=dict(order)
