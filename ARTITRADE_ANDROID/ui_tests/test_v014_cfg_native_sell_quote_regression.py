@@ -81,7 +81,7 @@ class MAOriginalNativePaperSimulation(unittest.TestCase):
             return list(c.execute("SELECT side,qty,reason FROM executions WHERE position_id=? ORDER BY id",
                                   (self.pid,)))
 
-    def test_cfg_rally_without_book_creates_no_fake_sell_then_retrace_sells(self):
+    def test_cfg_rally_without_book_never_fakes_sell_retrace_only_holds_until_rev1_close(self):
         rally=ENTRY+dt.timedelta(seconds=3)
         runtime._persist_verified_up_ascent(self.wallet,SYMBOL,"118",rally)
         with self.wallet.connect() as c:
@@ -97,17 +97,39 @@ class MAOriginalNativePaperSimulation(unittest.TestCase):
             runtime._process_v067_exits(self.wallet,stale,moment)
             self.assertTrue(any("BOOK_STALE" in str(v) for v in report.call_args_list))
         self.assertEqual([x["side"] for x in self.sell_receipts()],["BUY"])
-        # The next genuinely fresh bid is below entry; the ORIGINAL native
-        # wallet creates a verified protective SELL and debits the position.
+        # NEW LEGACY rev1 F6: returning to entry is NOT an automatic exit.
         live=moment+dt.timedelta(seconds=1)
         self.wallet.process_book(genuine_book(112,113,live),live)
         receipts=self.sell_receipts()
-        self.assertEqual([x["side"] for x in receipts],["BUY","SELL"])
-        self.assertEqual(receipts[1]["reason"],"MA_V065_UP_PRE_FIRST_ENTRY_RETURN")
+        self.assertEqual([x["side"] for x in receipts],["BUY"])
         with self.wallet.connect() as c:
             p=c.execute("SELECT qty,status FROM positions WHERE id=?",(self.pid,)).fetchone()
-            self.assertEqual(float(p["qty"]),0.)
-            self.assertEqual(p["status"],"CLOSED")
+            self.assertGreater(float(p["qty"]),0.)
+            self.assertEqual(p["status"],"OPEN")
+        # Only an original verified entry-reference-low touch AND a later
+        # CLOSED Upbit candle with close below that LOW can authorize the
+        # native protective exit on a separate genuine sellable current BID.
+        import ma_v061_coin_runtime as source
+        closed=ENTRY.replace(minute=35,second=1)
+        with source._HISTORY_LOCK:
+            source._HISTORY[("5m",SYMBOL)]=(closed,(
+                {"start":ENTRY.replace(minute=25,second=0),
+                 "low":"113","high":"116","close":"115"},
+                {"start":ENTRY.replace(minute=30,second=0),
+                 "low":"112","high":"115","close":"112"}))
+        try:
+            self.wallet.process_book(genuine_book(112,113,closed),closed)
+            receipts=self.sell_receipts()
+            self.assertEqual([x["side"] for x in receipts],["BUY","SELL"])
+            self.assertEqual(receipts[1]["reason"],"MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE")
+            with self.wallet.connect() as c:
+                p=c.execute("SELECT qty,status FROM positions WHERE id=?",
+                            (self.pid,)).fetchone()
+                self.assertEqual(float(p["qty"]),0.)
+                self.assertEqual(p["status"],"CLOSED")
+        finally:
+            with source._HISTORY_LOCK:
+                source._HISTORY.pop(("5m",SYMBOL),None)
 
     def test_invalid_bid_depth_does_not_fill_and_is_diagnosed(self):
         now=ENTRY+dt.timedelta(seconds=6)

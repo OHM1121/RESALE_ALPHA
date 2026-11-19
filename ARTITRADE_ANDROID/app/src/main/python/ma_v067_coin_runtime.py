@@ -537,6 +537,37 @@ def _expire_or_rebound(self,c,book,now):
                           (row['order_id'],))
 
 
+
+def _rev1_coin_closed_bar_state(state,position,now):
+    """Read the EXISTING original Upbit MA verified candle cache only.
+
+    No fresh network request, no REST-as-trade fill and no completion from a
+    still-forming bar. The original MA scanner owns this immutable history.
+    """
+    import ma_v061_coin_runtime as native_history
+    from d_upbit import SECONDS
+    from new_legacy_rev1_low_close import reconcile
+    frame=str(position['tf'])
+    market=str(position['market'])
+    with native_history._HISTORY_LOCK:
+        source=native_history._HISTORY.get((frame,market))
+    if not source or not state.get('entry_bar_start'):
+        return state
+    updated_at, bars=source
+    if (not isinstance(updated_at,dt.datetime) or
+        updated_at.tzinfo is None or
+        not isinstance(bars,(list,tuple))):
+        return state
+    # An old snapshot is not evidence of a newly completed low break.
+    if abs((now-updated_at.astimezone(now.tzinfo)).total_seconds()) > SECONDS[frame]+10:
+        return state
+    official=[dict(x,source='ORIGINAL_UPBIT_MA_VERIFIED') for x in bars
+              if isinstance(x,dict) and all(k in x for k in
+                                        ('start','low','high','close'))]
+    return reconcile(state,position['entry_at'],frame,official,now,
+                     entry_bar_start=state.get('entry_bar_start'))
+
+
 def _process_v067_exits(self,book,now):
     from d_upbit import dec,qty_floor
     if not isinstance(book,dict):return
@@ -606,6 +637,7 @@ def _process_v067_exits(self,book,now):
                         p['tf'],symbol,state,p['entry'],trade,now):
                     forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
                 if p['kind']=='REVERSAL_UP':
+                    state=_rev1_coin_closed_bar_state(state,p,now)
                     updated,want,reason=policy.up_exit(
                         state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
                 else:
@@ -801,6 +833,7 @@ def install():
                 str(reason).startswith('사용자 가상 강제매도 '))
         if not manual:
             if row is None or str(reason) not in (
+                'MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE',
                 'MA_V065_UP_PRE_FIRST_ENTRY_RETURN',
                 'MA_V065_UP_AFTER_FIRST_ENTRY_PLUS_1',
                 'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR',

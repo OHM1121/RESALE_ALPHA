@@ -259,6 +259,38 @@ def _second_followup_bar(self,p,when,forming_trade):
     return after==2 and policy.number(forming_trade)<policy.number(p['entry'])
 
 
+
+def _rev1_stock_closed_bar_state(self,state,position,now):
+    """Original source-verified KRX bars, read-only until native SELL commits."""
+    from new_legacy_rev1_low_close import reconcile
+    import d_engine
+    start=str(state.get('entry_bar_start') or '')
+    if not start:return state
+    try:
+        entry=dt.datetime.fromisoformat(start)
+        if entry.tzinfo is None:return state
+        frame=str(position['tf'])
+        src_stamp=entry.astimezone(KST).strftime('%Y%m%d%H%M%S')
+        with self.market_store.connect() as db:
+            rows=db.execute("""SELECT ts,low,high,close,source FROM bars
+                WHERE code=? AND frame=? AND ts>=?
+                ORDER BY ts LIMIT 250""",(position['code'],frame,src_stamp)).fetchall()
+        native=[]
+        for row in rows:
+            s=str(row['ts'])[:14]
+            if len(s)!=14:continue
+            begins=dt.datetime.strptime(s,'%Y%m%d%H%M%S').replace(tzinfo=KST)
+            close_end=str(d_engine.bar_end(s,frame))[:14]
+            ends=dt.datetime.strptime(close_end,'%Y%m%d%H%M%S').replace(tzinfo=KST)
+            native.append({'start':begins,'end':ends,'low':row['low'],
+                           'high':row['high'],'close':row['close'],
+                           'source':str(row['source'] or '')})
+        return reconcile(state,position['entry_at'],frame,native,now,
+                         entry_bar_start=start)
+    except (ValueError,TypeError,KeyError,AttributeError,sqlite3.Error):
+        return state
+
+
 def _exit_policy(self,c,p,bid,now,book,previous):
     kind,state=_read_state(c,p['id'])
     if state is None or kind!='REVERSAL_UP':
@@ -280,6 +312,9 @@ def _exit_policy(self,c,p,bid,now,book,previous):
         changed,wanted,reason=policy.bear_exit(
             state,bid,p['entry'],available,p['qty0'],now,forced)
     else:
+        # MA REV1 F6: a genuine completed KRX bar, NOT the current best bid,
+        # may confirm the reference candle LOW-close full stop.
+        state=_rev1_stock_closed_bar_state(self,state,p,now)
         changed,wanted,reason=policy.up_exit(
             state,bid,p['entry'],available,p['qty0'],now,forced)
     if changed!=state:_store_state(c,p['id'],changed,now)

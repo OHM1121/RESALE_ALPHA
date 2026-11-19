@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "0.0.17 source candidate based on 0.0.16 immutable release 4645788692f7f855400927fc2d4a3569f53ef81a, original 82 module SHA b014a00fd2cc29984650cb7ea24e7ea9672d6480fd68e91a6a1ebbe72754dfbb; native simulated CI in progress, DEVICE_VERIFIED false; previous historical source baselines in release history.",
+  "source_baseline": "0.0.18 11.18 rev1 source candidate from 0.0.17 exact release SHA 85b20dc39f247c9d7883c86977af62eab4ac5098; original 82 vendor modules retained; original 8 wallet flows protected; native 0.0.18 CI ongoing; DEVICE_VERIFIED=false.",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -212,7 +212,8 @@
         62,
         67,
         78,
-        98
+        98,
+        107
       ],
       "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified."
     },
@@ -270,7 +271,8 @@
         92,
         94,
         95,
-        98
+        98,
+        107
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -360,7 +362,8 @@
         78,
         79,
         80,
-        98
+        98,
+        107
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -405,7 +408,8 @@
         92,
         94,
         95,
-        98
+        98,
+        107
       ],
       "contract": "Missing source high/low rejected; never abort other eligible book work."
     },
@@ -429,7 +433,8 @@
         73,
         78,
         79,
-        98
+        98,
+        107
       ],
       "contract": "New BUY 30m/60m/day only; prior 5m sells intact. Coin MarketTrend RSI20 requires actual latest continuous official completed bars and durable verified <=30 within 24h before Bollinger MID angle/touch."
     },
@@ -479,7 +484,8 @@
         95,
         97,
         98,
-        104
+        104,
+        107
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },
@@ -1039,6 +1045,53 @@
         106
       ],
       "contract": "Numerator counts uniquely native REST VERIFIED_RESTORED source symbol after actual broker history, denominator freezes original selected KRX scan universe; cannot decrease during rotation/reconnect; 100% is per-symbol load only, never an actual order authorization or full 0B/0D readiness; 40s safe UI exit retained and unresolved repairs remain background."
+    },
+    {
+      "id": "NL1118_REV1_VERIFIED_LOW_STOP_V018",
+      "kind": "python+native",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_rev1_low_close.py",
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v018_rev1_low_close_and_fast_ma.py"
+      ],
+      "depends_on": [
+        "COIN_MA",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "STOCK_FEED",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "issues": [
+        107
+      ],
+      "contract": "User's NEW LEGACY(11.18) rev1 F6/F7 RED: first TP pending no longer full-exits merely on entry-price return. Require exact MA/Trend entry-signal candle reference low from authenticated native completed bar, touch of that low then original or later completed genuine candle CLOSE strictly below low; original fresh broker BID book and native execution receipt required to record sell. No lookahead/ASK-as-bid, cannot treat PAPER_RESTING as broker order. Original reference-bar F5, GMO and CW untouched."
+    },
+    {
+      "id": "MA_COIN_HELD_EXIT_PRIORITY_V018",
+      "kind": "python+native",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/ma_fast_held_exit_v018.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_held_depth_v014.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v018_rev1_low_close_and_fast_ma.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v014_cfg_native_sell_quote_regression.py"
+      ],
+      "depends_on": [
+        "COIN_MA",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "issues": [
+        107
+      ],
+      "contract": "One ORIGINAL Upbit WS; held-first independent polling of new original orderbook at ~120ms best-effort, dedupe genuine timestamp/BID/depth, 3s max age, perform existing MA _process_v067_exits with original ledger, no fabricated fill from candle high or ASK. All native 8 wallet protections and single worker owner unchanged."
     }
   ],
   "audit_scope": {
@@ -1062,7 +1115,8 @@
       "0.0.10 code132 old-signature signed original 82-module same-day KRX/GMO/AT regression, actual Samsung orderbook and live broker fill unverified",
       "0.0.11 source candidate: 11.18 original workbook physical cell audit, sanitized 2026-11-19 stock+coin SQLite exports, local PAPER-resting + old policy retirement; signed APK and real broker order verification PENDING",
       "0.0.12 verified schema audit for generated native SQLite wallets, original-account refund logic, explicit user-authorized legacy PAPER purge and left timeframe badge; real device and actual source P&L correction pending CI",
-      "0.0.17 original synthetic KRX PENDING retry + per-symbol 459-source counter, pending real-device verification"
+      "0.0.17 original synthetic KRX PENDING retry + per-symbol 459-source counter, pending real-device verification",
+      "0.0.18 red rev1 F6/F7 original closed-bar low-touch & close-below guard and same original Upbit held-first fast BID-only SELL, original-wallet CI; DEVICE_UNVERIFIED"
     ],
     "not_a_completeness_claim": true
   }

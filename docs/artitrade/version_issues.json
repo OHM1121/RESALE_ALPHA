@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "artitrade-017-preload-count-and-stock-pending-20261119",
+  "working_branch": "artitrade-018-newlegacy-rev1-ma-trend-pod-exit-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -1123,6 +1123,35 @@
         "test_v081_both_feed_preload.py"
       ],
       "notes": "Freeze native first selected KRX universe, count each symbol only after native verified official historical response, monotonic 0/N->N/N (459 when actual KRX universe has 459), never use volatile health-check percent; no fabricated data. 40s UI watchdog can exit before 100% and original history/quote checks continue. Device 459 completion not proven."
+    },
+    {
+      "id": "AT-018-29",
+      "issue": 107,
+      "found": "0.0.17+user coin original 2026-11-19",
+      "category": "NEW_LEGACY_REV1_PRE_FIRST_EXIT_AND_COIN_MA_HELD_BID_LATENCY",
+      "title": "Red rev1 F6/F7 replaces MA/Trend entry-retrace pre-first exit; original UPBIT coin MA POD TP1 missed due ASK-only target and BID not at target plus stale quote periods",
+      "evidence": "Original local user-provided coin-only read-only export: KRW-POD MA 5m original entry at 20:09:51 583 KRW, first target 594.66 KRW, verified same-window BID max 593 while ASK 595, TP1 original receipt missing, later old entry-retrace full SELL. BOOK_STALE records. No private trade records are committed to public GitHub; only synthetic fixtures.",
+      "root": "CONFIRMED_OLD_ENTRY_RETURN_POLICY_AND_PAPER_RESTING_NOT_BROKER_ORDER; CONFIRMED_ASK_595_BID_593_NOT_AN_EXECUTABLE_TP1_PRICE; INFERRED_TICKER_BOOK_STALE_CAUSES_EXTRA_LATENCY",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.18-source-candidate",
+      "ci": "PENDING_CURRENT_BRANCH_FULL_REGRESSION_AND_ORIGINAL_SIGNER",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "NL1118_REV1_VERIFIED_LOW_STOP_V018",
+        "MA_COIN_HELD_EXIT_PRIORITY_V018",
+        "COIN_MA",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v018_rev1_low_close_and_fast_ma.py",
+        "test_v014_cfg_native_sell_quote_regression.py",
+        "test_v002_eight_virtual_paper_end_to_end.py",
+        "test_new_legacy_1118_workbook.py"
+      ],
+      "notes": "On MA/Trend native official authenticated completed candle, touch entry-reference-candle low and strictly below-close permits a full SELL only on subsequent current genuine native BID/depth with receipt. Old pre-first entry retouch removed for MA/Trend only, reference strategy unaffected, GMO/CW unchanged. Coin MA held priority worker watches new original Upbit books up to 120ms best-effort; latency NOT guaranteed, BID/ASK and 1m high never proof of broker fill. Historical user positions and paper resting plans preserved. Full device/market execution not yet verified."
     }
   ],
   "known_normal": [
@@ -1376,5 +1405,19 @@
     "original_signer_to_be_verified_by_ci": true,
     "notes": "Source candidate, not completed release. Original D19 native PAPER BUY verified only under deterministic fresh score and orderbook fixture. Live phone quote/session and actual buy unverified; never promise arbitrary trades.",
     "issue_preload": 106
+  },
+  "candidate_018": {
+    "versionName": "0.0.18",
+    "versionCode": 140,
+    "package": "com.artitrade.unified.s21dex",
+    "baseline_release": "0.0.17",
+    "baseline_sha": "85b20dc39f247c9d7883c86977af62eab4ac5098",
+    "issue": 107,
+    "pr": 108,
+    "device_verified": false,
+    "original_wallets_protected": true,
+    "original_upbit_single_ws": true,
+    "unverified_phone_sell_latency": true,
+    "comment": "CI may prove synthetic original PAPER SELL only; no genuine broker order; do not describe original user's POD missed TP1 as fixed historical trade."
   }
 }

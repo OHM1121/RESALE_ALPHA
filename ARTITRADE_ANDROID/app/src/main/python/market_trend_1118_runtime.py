@@ -340,6 +340,10 @@ def _trend_exit_action(self,price,now,bar_finished=True,bar3_preclose=False):
         "stage":self.stage,"stage1_filled":self.tp1_sold,
         "stage2_filled":self.tp2_sold,
         "peak_after_second":self.peak,"seen_above_entry":self.above_entry,
+        "rev1_reference_low":getattr(self,"rev1_reference_low",None),
+        "rev1_low_touched":getattr(self,"rev1_low_touched",False),
+        "rev1_below_reference_low_confirmed":getattr(
+            self,"rev1_below_reference_low_confirmed",False),
         "deadline":self.deadline.isoformat()}
     found=exit_signal(state,p,now)
     self.above_entry=bool(state["seen_above_entry"])
@@ -354,14 +358,47 @@ def _trend_exit_action(self,price,now,bar_finished=True,bar3_preclose=False):
 
 _ORIGINAL_ACTION=None
 _ORIGINAL_BUY=None
+_ORIGINAL_CLOSED=None
+
+def _rev1_after_native_closed(self,market):
+    """Observe the ORIGINAL verified closed candles, never REST high-as-fill."""
+    _ORIGINAL_CLOSED(self,market)
+    from new_legacy_rev1_low_close import reconcile
+    with self.lock:
+        current=[p for p in self._positions.values()
+                 if p.market==market and p.strategy=="trend" and p.qty>0
+                 and getattr(p,"nl1118_policy",None)==POLICY]
+        histories={(p.market,p.symbol,p.frame):
+                   list(self._history.get((p.market,p.symbol,p.frame),[]))
+                   for p in current}
+    keys=("rev1_reference_low","rev1_reference_end",
+          "rev1_source_conflict","rev1_low_touched","rev1_low_touched_bar",
+          "rev1_below_reference_low_confirmed","rev1_stop_closed_bar",
+          "rev1_last_bar_end")
+    for p in current:
+        if not p.__dict__.get("bar_finalized"):
+            continue
+        old={k:getattr(p,k,None) for k in keys}
+        rows=histories.get((p.market,p.symbol,p.frame),[])
+        state=reconcile(old,p.entry_at,p.frame,rows,
+                        mt._as_kst(__import__('datetime').datetime.now(mt.KST)),
+                        entry_bar_end=p.bar_key)
+        if state==old:continue
+        for key in keys:
+            if key in state:setattr(p,key,state[key])
+        # Persist only original native position payload; never fabricate SELL.
+        self.standalone_wallet.save_position(p)
+
 
 def install():
-    global _INSTALLED,_ORIGINAL_ACTION,_ORIGINAL_BUY
+    global _INSTALLED,_ORIGINAL_ACTION,_ORIGINAL_BUY,_ORIGINAL_CLOSED
     if _INSTALLED:return
     import market_trend_runtime_v043 as runtime
     from market_trend_wallet_v054 import TrendWalletV054
     _ORIGINAL_ACTION=mt.TrendPosition.action
     _ORIGINAL_BUY=TrendWalletV054.buy
+    _ORIGINAL_CLOSED=runtime.Coordinator._process_closed
+    runtime.Coordinator._process_closed=_rev1_after_native_closed
     mt.TrendPosition.action=_trend_exit_action
     runtime.Coordinator._preclose_candidates=_entry_window
 
