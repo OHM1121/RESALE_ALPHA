@@ -2564,6 +2564,13 @@ def set_network_v092(validated):
 from position_uid_v015 import install as _install_position_uid_v015
 _install_position_uid_v015(_core)
 
+# v017: the original FIX14 completed-bar REST reader lost retry ownership on
+# DNS faults and on wake-ups earlier than its own 55s throttle. Keep source
+# validation + original eight ledgers, repair only scheduling and the stale
+# global-checkpoint reblock of already officially VERIFIED pending rows.
+from stock_pending_recovery_v017 import install as _install_stock_pending_recovery_v017
+_install_stock_pending_recovery_v017()
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
