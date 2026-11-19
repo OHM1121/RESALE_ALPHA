@@ -564,6 +564,75 @@
       ],
       "tests": [],
       "notes": "New overlay preplan and current-trend protections do not prove first verified 10:00 GMO opener or complete 15:30..16:30 stock 0B/0D routing. Requires native vendor patch, all-8 wallet regressions and special-session broker/device evidence."
+    },
+    {
+      "id": "AT-008-82",
+      "issue": 82,
+      "found": "0.0.7",
+      "category": "SOURCE_ROOT_CAUSE",
+      "title": "GMO D+1 late-restart and special-session entry cannot resume",
+      "evidence": "D+1 preplan only at pre-open, on_tick returned with no transient plan, paper-only gate and native 09:00 clock, original shared WS clock",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.8-source",
+      "ci": "V008_NATIVE_SESSION_44449035817; LATE_RESTART_44448126804",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "EXECUTION",
+        "SERVICE"
+      ],
+      "tests": [
+        "test_v097_gmo_preplan.py",
+        "artitrade-008-native-patch-test.yml"
+      ],
+      "notes": "Re-arm authenticated D+1 on fresh 0B with verified D-close independent fallback and no fake official opener. Stock LIVE is deliberately disarmed by Android, so actual broker execution remains excluded and not claimed."
+    },
+    {
+      "id": "AT-008-83",
+      "issue": 83,
+      "found": "0.0.7",
+      "category": "SOURCE_ROOT_CAUSE",
+      "title": "Stage1/2 internal sell_intents confused with live broker rest orders",
+      "evidence": "NEW_LEGACY targets sell_intents all is_real_broker_order=False; app Python set_live() refuses enabled; original KiwoomBroker FOK has no resting order API",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.8-readonly-audit",
+      "ci": "PENDING_FULL_BUILD",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "ACTIVITY_UI",
+        "SERVICE",
+        "STRATEGY_BRIDGE",
+        "PYTHON_RUNTIME",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v008_broker_sell_receipt.py"
+      ],
+      "notes": "Added explicit user-only Kiwoom ka10075 read-only unfinished SELL query and stage linkage unverified display; NEVER claims actual 1/2 broker pre-registration nor enables real trading; no live order submit."
+    },
+    {
+      "id": "AT-008-84",
+      "issue": 84,
+      "found": "0.0.7",
+      "category": "SOURCE_ROOT_CAUSE",
+      "title": "Bollinger percent-gradient angle differs from chart visual angle",
+      "evidence": "atan(100*percent middle per bar) ignores price axis pixel height and bar horizontal pitch; external chart axis zoom arbitrary",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.8-chart-projection",
+      "ci": "PENDING_FULL_BUILD",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v008_bollinger_pixel_geometry.py"
+      ],
+      "notes": "Replaced percentage atan with declared fixed 21-close viewport pixel projection; the output is faithful to that specific internal geometry, NOT provably equal to independently zoomed Upbit app screenshot. Record chart_view for audit. RSI24 proof still mandatory."
     }
   ],
   "known_normal": [
@@ -660,5 +729,18 @@
       71,
       73
     ]
+  },
+  "work_in_progress_008": {
+    "versionName": "0.0.8",
+    "versionCode": 130,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_apk_built": false,
+    "real_broker_execution_verified": false,
+    "source_gmo_special_native_patch_verified": true,
+    "real_broker_stage1_stage2_placement": false,
+    "read_only_ka10075_status_inquiry_implemented": true,
+    "external_exchange_chart_angle_exact_match": false,
+    "device_verified": false,
+    "prior_app_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
   }
 }
