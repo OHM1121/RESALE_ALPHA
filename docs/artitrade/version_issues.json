@@ -975,6 +975,52 @@
         "test_v012_legacy_purge_and_holding_frame.py"
       ],
       "notes": "Coin MA held tick+book inclusion, private rate-limited no-book/native-sell diagnostics, and explicit old-rule BUY/SELL evidence requirement before migration. Real device, broker and original CFG ledger remain UNVERIFIED. Additional related causes from earlier entries retained in issue #98. CI PASS for synthetic native CFG recovery, original 8 strategy regression, strict quote, ledger provenance, governance and Android Java compile on 2026-11-19; device quotes, original CFG sale proof and actual on-phone cleanup still unverified."
+    },
+    {
+      "id": "AT-015-23",
+      "issue": 100,
+      "found": "0.0.14",
+      "category": "STABLE_GLOBAL_NATIVE_POSITION_ID",
+      "title": "Eight-wallet open and historical closed positions can collide on native integer ID or omit UI-linked position reference",
+      "evidence": "Source owner wallets independently allocate numeric primary keys; some historical fills lack explicit position_id; 0.0.14 UI displays only local numeric ID or 'missing'.",
+      "root": "CONFIRMED_WALLET_SCOPED_NATIVE_KEYS",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.15-source-candidate",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "POSITION_UID_V015",
+        "EXECUTION",
+        "UI_RECORDS"
+      ],
+      "tests": [
+        "test_v015_global_position_uid_and_cfg_single.py",
+        "test_v015_position_uid_cfg_single.py"
+      ],
+      "notes": "Sidecar UID namespace epoch+wallet+native key with original BUY receipt generation; never mutate original GMO/CW strategy, broker, cash or PK. Native-historical backfill and read-only UI IDs. Actual phone backfill and realtime race remain unverified."
+    },
+    {
+      "id": "AT-015-24",
+      "issue": 100,
+      "found": "0.0.14",
+      "category": "USER_AUTHORIZED_ONE_CFG_PAPER_EXCEPTION",
+      "title": "One known KRW-CFG coin MA 5m PAPER position has no native SELL after verified ticker ascent",
+      "evidence": "Sanitized issue #92 demonstrates missing native SELL and 100% open, but exact private phone position id unavailable to GitHub.",
+      "root": "CONFIRMED_TICKER_RETRACE_STATE_DID_NOT_ARM_SELL",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.15-source-candidate",
+      "ci": "PENDING",
+      "device": "UNVERIFIED_SINGLE_POSITION_DELETION",
+      "nodes": [
+        "CFG_SINGLE_PAPER_CLEANUP_V015",
+        "COIN_MA",
+        "ANTI_ROLLBACK"
+      ],
+      "tests": [
+        "test_v015_global_position_uid_and_cfg_single.py",
+        "test_v015_position_uid_cfg_single.py"
+      ],
+      "notes": "Narrow owner/frame/symbol/historical-entry date/BUY-only candidate must be uniquely identified or fail closed; user explicitly waived historical bid proof for THIS cycle only. Private backup, native accounting and antirollback checkpoint updates are mandatory. No deletion claimed without actual phone status."
     }
   ],
   "known_normal": [
