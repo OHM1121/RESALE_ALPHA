@@ -3979,6 +3979,20 @@ public final class UnifiedVisualActivity extends Activity {
         historyEvidenceCell(fields,"체결구분",tradeSideOf(r),78);
         historyEvidenceCell(fields,"체결가",formatMaybePrice(r,"price","fill_price"),116);
         historyEvidenceCell(fields,"체결수량",formatMaybeNumber(r,"qty","fill_qty"),106);
+        if(isTrendRow(r)){
+            // Original MT54 source JOIN by immutable native position_id.
+            // A missing source BUY is visibly unknown, never inferred from
+            // candle high/low or matched by symbol alone.
+            historyEvidenceCell(fields,"마켓트렌드 원본 매수가",
+                formatMaybePrice(r,"entry_price","buy_price"),150);
+            if(sell){
+                double net=tradePnL(r,"executions");
+                historyEvidenceCell(fields,"원본 실현손익",
+                    formatMaybeMoney(r,"net_profit","net_pnl"),132);
+                historyEvidenceCell(fields,"원본 매도수익률",
+                    signedPct(tradeReturnPct(r,"executions",net)),125);
+            }
+        }
         historyEvidenceCell(fields,"판단점수",formatMaybeNumber(r,"score","signal_score"),92);
         String verifiedBasis=e.optString("verified_trade_basis","");
         historyEvidenceCell(fields,"매수·매도 근거",
