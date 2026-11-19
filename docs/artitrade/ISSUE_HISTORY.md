@@ -25,7 +25,7 @@ The **GitHub Issues tab** is the version-by-version expandable issue history. [O
 | [#72](https://github.com/OHM1121/RESALE_ALPHA/issues/72) | 0.0.6 → unreleased | Trend shared position dictionaries lack one locking contract | Source fixed; device unverified |
 | [#73](https://github.com/OHM1121/RESALE_ALPHA/issues/73) | historical | Old v067 MA expectations contradict NEW LEGACY(11.18), 8 pre-existing failures | OPEN - baseline/policy review |
 
-| [#75](https://github.com/OHM1121/RESALE_ALPHA/issues/75) | 0.0.6 → 0.0.7 | Same-signer stock/coin cross-strategy test APK | Sign/build/device verification pending |
+| [#75](https://github.com/OHM1121/RESALE_ALPHA/issues/75) | 0.0.6 → 0.0.7 | Same-signer stock/coin cross-strategy test APK | Signed CI passed; device unverified |
 
 ### State vocabulary
 `REPORTED` / `LOG_CONFIRMED` / `ROOT_CAUSE_CONFIRMED` / `SOURCE_FIXED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `OPEN_UNVERIFIED` / `LATENT_UNOBSERVED` / `NON_ERROR_POLICY_BLOCK`. A defect cannot move to `DEVICE_VERIFIED` merely because a paper simulation or Java compile succeeds.
@@ -37,3 +37,12 @@ Raw device SQL and JSON exports are **not** committed to this public repository.
 - Verified workflow: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44438752719
 - Signed APK: `ARTITRADE_0.0.6.apk` (30,475,489 bytes), SHA256 `47e98de3457c544b23960553011afb2913459ca62ecf3142392d75a98f0de2c0`
 - Unresolved environment/on-device incidents #58 #59 #60 remain OPEN, even after source CI. Never label these DEVICE_VERIFIED.
+
+### 0.0.7 cross-strategy signed TEST APK (not phone certified)
+- Package: `com.artitrade.unified.s21dex`; versionName `0.0.7`; versionCode `129`
+- **Exact packaged source:** `901ce172f3c690e3f629915cff63d7f7a8611224`
+- **GitHub Actions signed test:** https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44443393545 — SUCCESS
+- File: `ARTITRADE_0.0.7.apk` (30,475,505 bytes), SHA256 `f044f2aaef724982ba62827fbe0a0539b8e0ae0549a0524c963594506d532e59`
+- Original signer SHA256 `37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6` unchanged.
+- Regression for GMO/CW/AT/Trend/MA cross-coupling and 8 PAPER engines, Java compile, original vendor source SHA, 29-node dependency graph: CI verified.
+- **Still OPEN:** #58, #59, #60, #71, #73; testing on the actual Samsung phone is required. Do not reinitialize existing PAPER wallet or enable LIVE.
