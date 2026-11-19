@@ -2526,6 +2526,12 @@ def set_network_v092(validated):
     if observer is not None:observer.set_android_network(bool(validated))
     return True
 
+# 0.0.15 read-only global position identifiers. This installer wraps
+# the FINAL strategy/UI hub and Runtime.start, so each original wallet remains
+# the only owner of BUY/SELL receipts, cash and native position primary keys.
+from position_uid_v015 import install as _install_position_uid_v015
+_install_position_uid_v015(_core)
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
