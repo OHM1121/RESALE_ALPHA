@@ -156,6 +156,29 @@ class PurgeOneWallet(unittest.TestCase):
         self.assertEqual([x[0] for x in purge.SPECS[:6]],
             ['stock_at','coin_at','stock_ma','coin_ma','stock_trend','coin_trend'])
 
+class StrictEntryAndHoldingBadge(unittest.TestCase):
+    def test_only_verified_upward_ma_worker_may_buy(self):
+        from nl1118_strict_entry_v012 import (
+            _retired_stock_ma_scan,_retired_coin_ma_scan)
+        self.assertEqual(_retired_stock_ma_scan([], '5m', None)[1],None)
+        self.assertEqual(_retired_coin_ma_scan([], '5m', 'KRW-OLD', None, None)[1],None)
+        src=(Path(__file__).resolve().parents[1]/
+             'app/src/main/python/android_runtime_v078.py').read_text()
+        self.assertIn('_install_nl1118_strict_entry()',src)
+        self.assertLess(src.index('_install_nl1118_reference()'),
+                        src.index('_install_nl1118_strict_entry()'))
+
+    def test_holdings_timeframe_is_left_badge_not_symbol_suffix(self):
+        source=(Path(__file__).resolve().parents[1]/
+                'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
+        self.assertIn('holdingFrameBadge(r,source)',source)
+        self.assertIn('holdingFrameBadge(p,holding.scopeStrategy)',source)
+        self.assertIn('"5m".equals(frame))return "5분"',source)
+        self.assertIn('"30m".equals(frame))return "30분"',source)
+        self.assertIn('"60m".equals(frame))return "60분"',source)
+        self.assertIn('"day".equals(frame))return "일봉"',source)
+        self.assertIn('"positions".equals(kind)?nameOf(r):',source)
+
 class AuthorizedRollback(unittest.TestCase):
     def test_user_authorized_migration_updates_guard_only_for_targeted_wallets(self):
         with tempfile.TemporaryDirectory() as temp:
