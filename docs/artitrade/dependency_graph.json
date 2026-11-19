@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "0.0.7 signed test APK source 901ce172; 0.0.8 source with native per-date KRX patch and explicit broker receipt audit, not device verified",
+  "source_baseline": "0.0.8 TEST APK source a768bdae3fbd3830a4247ee77245ed2815b96f08; verified signer Actions 44450056074; not device/live verified. 0.0.7 earlier source 901ce172.",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -652,7 +652,8 @@
       "20-suite PAPER regression",
       "GitHub source+Java CI",
       "real device unresolved",
-      "original-82 native KRX/NXT patch source+CI"
+      "original-82 native KRX/NXT patch source+CI",
+      "signed arm64 0.0.8 test APK SHA256 99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59"
     ],
     "not_a_completeness_claim": true
   }
