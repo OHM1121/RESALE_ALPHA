@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "artitrade-019-eight-wallet-target-plan-display-20261119",
+  "working_branch": "artitrade-010-future-paper-offline-chronology-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -1184,6 +1184,30 @@
         "test_v019_native_ledger_accounting.py"
       ],
       "notes": "0.0.19 SOURCE_WIP. Original 8-owner chronological proof/replay engine not yet fed by a complete authenticated on-device post-BUY event stream. Seven source SQLite wallet atomic adapters exist but only coin general and CW synthetic accounting tests passed; GMO JSON owner, private pre-start backup/crash recovery with independent anti-rollback witness, all seven transaction property tests, same original-signer APK and actual device are UNVERIFIED. No 0.0.19 APK or release. Fail closed; never book HIGH-only TP or mutate live phone."
+    },
+    {
+      "id": "AT-010-31",
+      "issue": 110,
+      "found": "2026-11-19 user future-BUY directive",
+      "category": "FUTURE_PAPER_OFFLINE_EXIT_RECONCILIATION",
+      "title": "0.1.0 PAPER new BUY exits missed during app-off interval require official stop-first chronological replay and owner-native exact-once cash/PnL",
+      "evidence": "User example original PAPER BUY 100 TP1 104, app offline official high 105 then restart price 102. Historical-transaction catchup excluded by explicit user scope change. Existing 0.0.19 source has read-only target UI, partial chronology proof and unwired SQLite writer; no comprehensive authenticated history/replay or GMO JSON writer.",
+      "root": "OFFLINE_PAPER_LIMIT_NOT_EXCHANGE_ORDER_AND_NO_RESTART_SOURCE_CHRONOLOGY_VALIDATED_NATIVE_SETTLEMENT",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.1.0",
+      "ci": "NOT_RUN",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "V010_FUTURE_BUY_ONLY_OFFLINE_PAPER_EXIT",
+        "EXECUTION",
+        "HUB_UI",
+        "ANTI_ROLLBACK",
+        "V019_EIGHT_OWNER_SOURCE_TARGET_DISPLAY",
+        "V019_PAPER_NATIVE_CHRONOLOGICAL_REPLAY_WIP",
+        "V019_NATIVE_ATOMIC_STAGE_SETTLEMENT_WIP"
+      ],
+      "tests": [],
+      "notes": "Do not release or mark fixed until original 8 owners—including GMO JSON and CW full exit—startup/offline missing event guard, tick ordering, fee/qty/cash/antirollback witness, exact-once restart/crash all proven. No private backup ZIP on public GitHub. Signed 0.0.19 candidate is baseline, not 0.1.0."
     }
   ],
   "known_normal": [
@@ -1473,5 +1497,20 @@
     "source_native_gmo_json_reconciliation": "NOT_IMPLEMENTED",
     "source_private_backup_antirollback": "NOT_IMPLEMENTED",
     "all_original_eight_wallet_native_settlement_regression": "NOT_VERIFIED"
+  },
+  "candidate_010": {
+    "versionName": "0.1.0",
+    "versionCodeTarget": 142,
+    "package": "com.artitrade.unified.s21dex",
+    "branch": "artitrade-010-future-paper-offline-chronology-20261119",
+    "issue": 110,
+    "source_baseline": "c99f2246887e34ffbd3a534503a20095c35a6985",
+    "release_exists": false,
+    "signed_apk_exists": false,
+    "device_verified": false,
+    "status": "SPECIFIED_NOT_IMPLEMENTED",
+    "historical_earlier_buys": "EXCLUDED",
+    "future_paper_offline_exit_replay": "NOT_IMPLEMENTED",
+    "signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
   }
 }
