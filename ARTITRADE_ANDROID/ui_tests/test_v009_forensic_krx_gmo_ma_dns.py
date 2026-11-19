@@ -79,6 +79,63 @@ class SpecialKRXNative(unittest.TestCase):
         self.assertEqual(repaired,["20261119100100","20261119100200"])
 
 
+class GMODepthReconnect(unittest.TestCase):
+    def test_0d_missing_can_re_register_after_special_krx_open(self):
+        import asyncio
+        import threading
+        import d_live
+        from types import SimpleNamespace
+        from krx_session_v041 import KST
+        class FakeGmo:
+            _lock=threading.RLock()
+            last_book={}
+            def priority_watchlist(self,at):return set()
+            def active_buy_watchlist(self,at):return set()
+            def watchlist(self):return {'000680'}
+        class WS:
+            sent=[]
+            async def send(self,message):
+                self.sent.append(__import__("json").loads(message))
+        host=object.__new__(d_live.LivePaperRunner)
+        host.gmo=FakeGmo()
+        host._subscribed_groups={'1':['000680','005930']}
+        host._gmo_depth_repair_last_check=-1e9
+        host._gmo_depth_repair_at={}
+        recorded=[]
+        host.store=SimpleNamespace(issue=lambda *a,**kw:recorded.append((a,kw)))
+        ws=WS()
+        at=dt.datetime(2026,11,19,11,25,0,tzinfo=KST)
+        renewed=asyncio.run(host._repair_gmo_depth_on_existing_ws(ws,at))
+        self.assertEqual(renewed,['000680'])
+        self.assertEqual(ws.sent[0]['data'][0],
+                         {'item':['000680'],'type':['0D']})
+        self.assertEqual(ws.sent[0]['trnm'],'REG')
+        self.assertEqual(ws.sent[0]['refresh'],'1')
+        self.assertEqual(len(recorded),1)
+        # Still no actual 0D; do not infer broker order or executable depth.
+        self.assertNotIn('order',ws.sent[0])
+        self.assertEqual(asyncio.run(host._repair_gmo_depth_on_existing_ws(
+            ws,dt.datetime(2026,11,19,16,30,tzinfo=KST))),[])
+
+    def test_gmo_priority_opening_tracks_actual_day_not_fixed_0900(self):
+        import d_gmo_runtime
+        cls=next(getattr(d_gmo_runtime,n) for n in dir(d_gmo_runtime)
+                 if isinstance(getattr(d_gmo_runtime,n),type)
+                 and hasattr(getattr(d_gmo_runtime,n),'_priority_phase'))
+        owner=object.__new__(cls)
+        KST=dt.timezone(dt.timedelta(hours=9))
+        def at(date,h,m):
+            return dt.datetime.fromisoformat(
+                f"{date}T{h:02d}:{m:02d}:00+09:00")
+        self.assertEqual(owner._priority_phase(at("2026-11-19",9,50)),
+                         'KRX_PREOPEN_ARM')
+        self.assertEqual(owner._priority_phase(at("2026-11-19",10,5)),
+                         'KRX_GMO_PRIORITY')
+        self.assertEqual(owner._priority_phase(at("2026-11-19",10,31)),'')
+        self.assertEqual(owner._priority_phase(at("2026-11-18",9,5)),
+                         'KRX_GMO_PRIORITY')
+
+
 class MAQueueSafety(unittest.TestCase):
     def test_1001_repeated_genuine_ticks_do_not_fill_unique_queue(self):
         from ma_v067_stock_runtime import _LatestVerifiedMAQueue
