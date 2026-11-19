@@ -1,6 +1,6 @@
 # ARTITRADE — Mandatory AI / Developer Engineering Contract
 
-Applies to **every** AI coding agent (GPT, Claude, Copilot, Codex, others) and human editor changing ARTITRADE_ANDROID, including GitHub-connected coding sessions. User instruction 2026-11-19. Never treat these rules as optional.
+Applies to **every** AI coding agent (OpenAI GPT, Claude, GitHub Copilot, Google Antigravity, Google Gemini CLI, Codex, Cursor and every other AI coding tool) and human editor changing ARTITRADE_ANDROID, including GitHub-connected coding sessions. User instruction 2026-11-19. Never treat these rules as optional.
 
 ## Before any change
 1. Read this file, `docs/artitrade/DEPENDENCY_MAP.md`, `docs/artitrade/dependency_graph.json`, `docs/artitrade/version_issues.json`, and the **GitHub Issues** tab (search `ARTITRADE`).
@@ -13,6 +13,11 @@ Applies to **every** AI coding agent (GPT, Claude, Copilot, Codex, others) and h
 8. Do not claim 'fixed' unless the status is qualified: `SOURCE_FIXED`, `CI_VERIFIED`, `DEVICE_VERIFIED`. Keep unresolved/unknown items open. Record failures and recovery attempts; never modify past evidence to force a pass.
 9. Never put private account identifiers, credentials, exact personal trade details, tokens, private on-device logs, or original exported SQLite/ZIP into this **public** repository. Only sanitized counts, signatures and root-cause summaries.
 10. On a release candidate, check dependency graph impact, versions, full regression, signing provenance, zero unexpected ledger mutation, score/quote freshness, market-specific order/reconciliation and post-exit continuity. Explicitly report what remains unverified.
+
+## Mandatory all-strategy review matrix
+- Audit stock GMO (supply), stock CW (close), stock AT (reference), stock MA and stock Trend; audit coin reference/AT, coin MA and coin Trend as independent wallet owners. For every one, follow candidate -> pending -> buy -> staged sell -> cancel/retry -> restart -> SQLite -> UI/analysis -> backup, and examine shared queue/book/score/REST coupling.
+- Review logs AND **silent failures**: stale-but-plausible data, swallowed exceptions, duplicate subscriptions, wrong candle/frame, missing order evidence, unexpected state defaults, swallowed partial fills, UI-only success, and migration-induced schema drift.
+- Do not claim a complete exhaustive inspection unless file inventory, branches, symbol/call/dependency graph, test coverage and unresolved risks are listed. Explicitly separate static audit from paper simulation and device tests.
 
 ## Non-negotiable trading invariants
 - PAPER/REAL order authority and cash/position/duplicate-fill source are original wallet and SQLite; display snapshot is not a broker acknowledgement.
