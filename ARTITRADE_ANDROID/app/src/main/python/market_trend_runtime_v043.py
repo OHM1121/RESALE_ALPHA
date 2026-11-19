@@ -643,17 +643,23 @@ class Coordinator:
         for key,rows in histories:
             _,code,frame=key
             if len(rows)<21:continue
+            # Both stock/coin strategy workers may register BUYs in
+            # parallel. Copy the ownership registries under ONE lock before
+            # iterating; never hold it across SQLite/REST/PAPER fills.
+            with self.lock:
+                owned_snapshot=tuple(self._positions.values())
+                virtual_snapshot=tuple(self._virtual.items())
             # Candidate history can remain cached for minutes. Avoid 400
             # unnecessary file transactions per scheduling cycle.
             if (self._last_closed.get(key)==max(x["end"] for x in rows)
                 and not any(p.market==market and p.symbol==code and
                             p.frame==frame and (not p.__dict__.get("bar_finalized")
                                 or p.last_closed_bar!=rows[-1]["end"].isoformat())
-                            for p in self._positions.values())
+                            for p in owned_snapshot)
                 and not any(v.market==market and v.symbol==code and v.frame==frame
                             and (not v.__dict__.get("bar_finalized")
                                 or v.last_closed_bar!=rows[-1]["end"].isoformat())
-                            for v in self._virtual.values())):
+                            for _,v in virtual_snapshot)):
                 continue
             rows=sorted(rows,key=lambda x:x["end"])
             last=self._last_closed.get(key)
@@ -669,7 +675,7 @@ class Coordinator:
                 self.journal.save_latch(market,code,frame,latch)
                 self._last_closed[key]=row["end"]
 
-            held=[p for p in tuple(self._positions.values())
+            held=[p for p in owned_snapshot
                   if p.market==market and p.symbol==code and
                      p.frame==frame and p.qty>0]
             for p in held:
@@ -700,7 +706,7 @@ class Coordinator:
                 if changed:
                     if p.strategy=='trend':self.standalone_wallet.save_position(p)
                     else:self.journal.save_position(p,p.position_id)
-            for virtual_key,v in tuple(self._virtual.items()):
+            for virtual_key,v in virtual_snapshot:
                 if v.market!=market or v.symbol!=code or v.frame!=frame:
                     continue
                 virtual_changed=False
@@ -1075,7 +1081,10 @@ class Coordinator:
                v.market,v.strategy,v.frame,v.symbol,"VIRTUAL",action[0],price=q["bid"],
                qty=amount,payload={"hypothetical_entry":v.entry,
                                    "hypothetical_pct":100*(q["bid"]/v.entry-1)})
-            if v.qty<=0:self._virtual.pop(key,None)
+            if v.qty<=0:
+                with self.lock:
+                    if self._virtual.get(key) is v:
+                        self._virtual.pop(key,None)
 
     def _loop(self,market):
         while not self.stop_event.is_set():
