@@ -32,9 +32,10 @@ jobs:
           from pathlib import Path
           root=Path("/tmp/artitrade-v019-native")
           targets={
-            "d_v19_portfolio.py":[(1384,1435)],
-            "d_upbit.py":[(708,745),(2090,2135)],
+            "d_v19_portfolio.py":[(1384,1435),(1710,1730)],
+            "d_upbit.py":[(708,745),(2090,2135),(696,708)],
             "stock_ma_engine.py":[(130,153),(268,282)],
+            "d_store.py":[(35,160)],
             "at_close_engine.py":[(185,210)],
             "projectgmo/engine.py":[(533,608)],
             "d_gmo_runtime.py":[(1100,1160)],
