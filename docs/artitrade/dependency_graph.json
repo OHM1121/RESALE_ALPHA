@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "0.0.7 signed test APK source 901ce172; 0.0.8 branch source audit (not yet packaged)",
+  "source_baseline": "0.0.7 signed test APK source 901ce172; 0.0.8 source with native per-date KRX patch and explicit broker receipt audit, not device verified",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -576,6 +576,66 @@
         71
       ],
       "contract": "Verified KRX completed parent bars are required for AT; DNS/history REST errors are not zero candidates and cannot authorize synthetic fills. Retries presently unverified."
+    },
+    {
+      "id": "GMO_D1_RECOVERY_V008",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
+        "ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py",
+        "ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py"
+      ],
+      "depends_on": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "EXECUTION",
+        "STOCK_SHARED_WS_OWNER",
+        "PYTHON_RUNTIME"
+      ],
+      "issues": [
+        80,
+        82
+      ],
+      "contract": "True D+1 date, verified live exchange 0B, native KRX session by exact date; replay/restart preplan rearmed, no substitute for official opener, verified D close independent fallback, never automatic live-enable, broker order ID only from native adapter."
+    },
+    {
+      "id": "BROKER_SELL_READONLY_V008",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/broker_sell_receipt_v008.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "STRATEGY_BRIDGE",
+        "SERVICE",
+        "ACTIVITY_UI"
+      ],
+      "issues": [
+        79,
+        83
+      ],
+      "contract": "Explicit user-only read-only Kiwoom ka10075; authenticated open SELL orders displayed with original broker order IDs; APP 1/2 intents never claimed actual broker-registered without matching persisted official ACK, no placing or cancelling orders."
+    },
+    {
+      "id": "TREND_PIXEL_ANGLE_V008",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py"
+      ],
+      "depends_on": [
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "issues": [
+        78,
+        84
+      ],
+      "contract": "Bollinger(20,1.5) mid visual slope = atan2(pixel projected price change, candle pixel pitch); fixed 21-close viewport convention saved with decision; exact external chart screenshot angle depends external zoom and axis, not asserted. RSI 24h evidence remains required."
     }
   ],
   "audit_scope": {
@@ -591,7 +651,8 @@
       "SQLite error evidence",
       "20-suite PAPER regression",
       "GitHub source+Java CI",
-      "real device unresolved"
+      "real device unresolved",
+      "original-82 native KRX/NXT patch source+CI"
     ],
     "not_a_completeness_claim": true
   }
