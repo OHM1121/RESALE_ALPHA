@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import hashlib
 from pathlib import Path
 import sqlite3
 import threading
@@ -22,6 +23,7 @@ _INSTALLED=False
 _KST=mt.KST
 
 class RsiWatch:
+    """Persist RSI watch provenance without deleting or resetting old rows."""
     def __init__(self,root):
         self.path=Path(root)/"market_trend_rsi_watch_v1118.sqlite3"
         self.lock=threading.RLock()
@@ -34,24 +36,37 @@ class RsiWatch:
                 first_rsi20 REAL NOT NULL,status TEXT NOT NULL,
                 purchased_at TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(market,symbol,frame))""")
+            columns={str(row[1]) for row in c.execute("PRAGMA table_info(rsi_watch)")}
+            if "rsi_evidence" not in columns:
+                c.execute("ALTER TABLE rsi_watch ADD COLUMN rsi_evidence TEXT NOT NULL DEFAULT ''")
+
     def load(self):
         with self.lock,sqlite3.connect(self.path) as c:
-            return {(r[0],r[1],r[2]):{
-                "observed_at":r[3],"expires_at":r[4],
-                "rsi20":r[5],"status":r[6],"purchased_at":r[7]}
-                for r in c.execute("""SELECT market,symbol,frame,observed_at,
-                   expires_at,first_rsi20,status,purchased_at FROM rsi_watch""")}
+            out={}
+            for r in c.execute("""SELECT market,symbol,frame,observed_at,
+                   expires_at,first_rsi20,status,purchased_at,rsi_evidence
+                   FROM rsi_watch"""):
+                try:proof=json.loads(r[8]) if r[8] else None
+                except (ValueError,TypeError):proof=None
+                out[(r[0],r[1],r[2])]={
+                    "observed_at":r[3],"expires_at":r[4],
+                    "rsi20":r[5],"status":r[6],"purchased_at":r[7],
+                    "evidence":proof}
+            return out
+
     def save(self,key,row):
         with self.lock,sqlite3.connect(self.path) as c:
             c.execute("""INSERT INTO rsi_watch(market,symbol,frame,observed_at,
-                expires_at,first_rsi20,status,purchased_at)
-                VALUES(?,?,?,?,?,?,?,?)
+                expires_at,first_rsi20,status,purchased_at,rsi_evidence)
+                VALUES(?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(market,symbol,frame) DO UPDATE SET
                 observed_at=excluded.observed_at,expires_at=excluded.expires_at,
                 first_rsi20=excluded.first_rsi20,status=excluded.status,
-                purchased_at=excluded.purchased_at""",
+                purchased_at=excluded.purchased_at,
+                rsi_evidence=excluded.rsi_evidence""",
                 (*key,row["observed_at"],row["expires_at"],row["rsi20"],
-                 row["status"],row.get("purchased_at","")))
+                 row["status"],row.get("purchased_at",""),
+                 json.dumps(row["evidence"],sort_keys=True) if row.get("evidence") else ""))
 
 def _ready_market(co,market,now):
     if market=="stock":
@@ -81,9 +96,17 @@ def _confirmed_recent(history,now,market,frame):
     # genuine candle. Do not accept bars from previous intraday sessions
     # after source failure. The daily frame has a previous-close gap.
     if market=="coin":
-        if (now-latest).total_seconds()>(
-                2*mt.FRAME_SECS[frame] if frame!="day" else 2*86400):
-            return []
+        # Historical 30m/60m/day candles must be consecutive and end at the
+        # LAST completed venue bucket; a missing bar is not price evidence.
+        width=mt.FRAME_SECS[frame]
+        expected=dt.datetime.fromtimestamp((int(now.timestamp())//width)*width,mt.KST)
+        if latest!=expected:return []
+        recent=rows[-21:]
+        if any((recent[i]["end"]-recent[i-1]["end"]).total_seconds()!=width
+               for i in range(1,len(recent))):return []
+        if any(r.get("source") not in
+               ("UPBIT_CLOSED","NATIVE_UPBIT_VERIFIED_COMPLETED")
+               for r in recent):return []
     elif frame!="day" and (now-latest).total_seconds()>mt.FRAME_SECS[frame]*2:
         return []
     elif frame=="day":
@@ -97,12 +120,17 @@ def _confirmed_recent(history,now,market,frame):
            float(r["close"])<=0 for r in rows[-21:]):return []
     return rows[-90:]
 
-def _mark_rsi_watch(self,market,key,observed,rsi,now):
+def _mark_rsi_watch(self,market,key,observed,rsi,now,evidence=None):
+    # A pre-migration watch without evidence is not a new BUY permission.
+    if (observed is not None and observed.get("status")=="WATCHING"
+            and not observed.get("evidence") and rsi<=30 and evidence):
+        observed=None
     if observed is None:
         start=now
         row={"observed_at":start.isoformat(),
              "expires_at":(start+dt.timedelta(hours=RSI_TRACK_HOURS)).isoformat(),
-             "rsi20":float(rsi),"status":"WATCHING","purchased_at":""}
+             "rsi20":float(rsi),"status":"WATCHING","purchased_at":"",
+             "evidence":evidence}
         self._nl1118_watches[key]=row
         self._nl1118_watch_db.save(key,row)
         return row
@@ -127,7 +155,8 @@ def _mark_rsi_watch(self,market,key,observed,rsi,now):
     if observed["status"]=="READY" and rsi<=30:
         row={"observed_at":now.isoformat(),
              "expires_at":(now+dt.timedelta(hours=RSI_TRACK_HOURS)).isoformat(),
-             "rsi20":float(rsi),"status":"WATCHING","purchased_at":""}
+             "rsi20":float(rsi),"status":"WATCHING","purchased_at":"",
+             "evidence":evidence}
         self._nl1118_watches[key]=row
         self._nl1118_watch_db.save(key,row)
         return row
@@ -178,9 +207,29 @@ def _entry_window(self,market,now):
             if rsi is None:continue
             old=self._nl1118_watches.get(k)
             if old is None and rsi>30:continue
+            proof=None
+            if rsi<=30:
+                completed=closed[-21:]
+                payload="|".join(
+                    row["end"].isoformat()+":"+repr(float(row["close"]))
+                    for row in completed)
+                proof={"market":market,"symbol":code,"frame":frame,
+                       "observed_at":now.isoformat(),"rsi20":float(rsi),
+                       "verified_trade":trade,"history_end":closed[-1]["end"].isoformat(),
+                       "source":closed[-1].get("source"),
+                       "closed21_sha256":hashlib.sha256(payload.encode("utf8")).hexdigest()}
             if old is None or old["status"] in ("WATCHING","EXPIRED","READY"):
-                old=_mark_rsi_watch(self,market,k,old,rsi,now)
+                old=_mark_rsi_watch(self,market,k,old,rsi,now,evidence=proof)
             if old["status"]!="WATCHING":continue
+            evidence=old.get("evidence")
+            if (not isinstance(evidence,dict) or
+                    evidence.get("market")!=market or
+                    evidence.get("symbol")!=code or
+                    evidence.get("frame")!=frame or
+                    evidence.get("observed_at")!=old.get("observed_at") or
+                    not isinstance(evidence.get("rsi20"),(int,float)) or
+                    evidence["rsi20"]>30):
+                continue
             condition=bollinger(closes[-20:]+[trade])
             if condition is None or not condition["angle_allowed"]:continue
             if previous is None or not actual_middle_touch(
@@ -216,8 +265,13 @@ def _entry_window(self,market,now):
         if self.standalone_wallet.owned(market,code):continue
         # Recheck genuine broker feed / book BEFORE original position BUY.
         fresh=self._quote(market,code)
-        if fresh is None or not actual_middle_touch(
-                previous,trade,boll["middle"]):
+        with self.lock:
+            observed_tick=self._quotes[market].get(code)
+        if (fresh is None or fresh.get("trade")!=trade or
+                observed_tick!=(trade,self._nl1118_quote_stamps.get((market,code))) or
+                time.monotonic()-observed_tick[1]>(10 if market=="coin" else 3) or
+                not boll["angle_allowed"] or
+                not actual_middle_touch(previous,trade,boll["middle"])):
             continue
         finish=__import__("market_trend_runtime_v043")._end_clock(at,market,frame)
         if finish is None:continue
@@ -244,6 +298,7 @@ def _entry_window(self,market,now):
             price=float(position.entry),rsi20_live=rsi,
             payload={"rsi_first_observed":watch["observed_at"],
                      "rsi_at_buy":rsi,"bollinger":boll,
+                      "rsi_watch_evidence":watch.get("evidence"),
                      "top50":True,"verified_trade":trade,
                      "native_wallet":"TrendWalletV054",
                      "original_fill_mode":position.execution_mode})
