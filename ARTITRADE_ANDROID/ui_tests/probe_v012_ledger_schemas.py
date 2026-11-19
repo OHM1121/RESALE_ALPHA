@@ -29,6 +29,18 @@ def inspect(label,c):
                 json.dumps([dict(row) for row in c.execute(
                     'SELECT * FROM "'+name+'" LIMIT 8')],sort_keys=True,default=str),flush=True)
     print('V012_SCHEMA '+label+' '+json.dumps(found,ensure_ascii=True,sort_keys=True),flush=True)
+import inspect
+import android_live_bridge as ab
+for name in ('__init__','start','stop','hub_records'):
+    item=getattr(ab.Runtime,name,None)
+    if item is None:continue
+    print('V012_RUNTIME_API '+name+' '+str(inspect.signature(item))+
+          ' async='+str(inspect.iscoroutinefunction(item)),flush=True)
+    if name in ('start','__init__'):
+        try:
+            src=inspect.getsource(item)
+            print('V012_RUNTIME_METHOD '+name+' '+json.dumps(src.splitlines()[:55]),flush=True)
+        except Exception:pass
 native_root=Path('/tmp/artitrade012_native')
 for name in ('d_engine.py','d_v19_portfolio.py','d_upbit.py','stock_ma_engine.py'):
     f=native_root/name
