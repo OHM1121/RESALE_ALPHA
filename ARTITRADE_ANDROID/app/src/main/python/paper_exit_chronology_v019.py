@@ -177,8 +177,13 @@ def audit(position,events):
                            "state":"SHADOW_PAPER_LIMIT_CANDIDATE_ONLY",
                            "planned_qty":float(min(planned,active)),
                            "verified_print_above":float(observed)})
-        # Do not debit even the hypothetical quantity. No native receipts.
-        # Therefore TP2 cannot be declared achieved without actual TP1.
-        return _out("SHADOW_ASSUMPTION_NOT_SETTLED",audit_rows,active)
-    return _out("CHRONOLOGY_AUDITED_NO_SYNTHETIC_FILL",
+        # Do not debit even the hypothetical quantity. Continue observing
+        # later authentic native stops. A later full exit still terminates
+        # this position; the shadow candidate never becomes a native fill.
+        # TP2 cannot be declared achieved without actual native TP1 proof.
+        continue
+    return _out("CHRONOLOGY_AUDITED_NO_SYNTHETIC_FILL" if terminal
+                or not any(x.get("state")=="SHADOW_PAPER_LIMIT_CANDIDATE_ONLY"
+                           for x in audit_rows)
+                else "SHADOW_ASSUMPTION_NOT_SETTLED",
                 audit_rows,active)
