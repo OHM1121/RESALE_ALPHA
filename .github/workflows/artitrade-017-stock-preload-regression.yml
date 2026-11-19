@@ -53,6 +53,12 @@ jobs:
               z.extractall("/tmp/artitrade-015-original")
           print("ORIGINAL_82_MODULES_VERIFIED")
           PY
+      - name: Inspect bundled original stock pending and parent history guard sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== ORIGINAL_NATIVE_PARENT_GAP_TRACE ==='
+          grep -R -n -C 12 -E 'FIX14_LIVE_HIGHER_FRAME_GAP_GUARDED|LIVE_PARENT_GAP|FIX13_LIVE_PENDING_GAP_HOLD|FIX5_FRAME_UNVERIFIED' /tmp/artitrade-015-original/ --include='*.py' | head -n 240 || true
       - name: Verified original candle/book preload and trend wallet BUY/PnL tests
         shell: bash
         run: |
