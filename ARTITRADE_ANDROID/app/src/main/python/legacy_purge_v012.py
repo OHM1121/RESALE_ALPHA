@@ -82,14 +82,20 @@ def _old_positions(c,kind):
         for r in _rows(c,"SELECT position_id,kind,state_json FROM ma_v067_positions"):
             try:state=json.loads(r["state_json"] or "{}")
             except (TypeError,ValueError):continue
+            # A 0.0.11 crash can leave new MA policy metadata incomplete.
+            # Do not erase a proven genuine V067 upward-entry as "old"
+            # merely because the descriptive source field is absent.
             if (r["kind"]=="REVERSAL_UP" and
-                state.get("policy_source")=="NEW LEGACY(11.18).xlsx"):
+                (state.get("policy_source")=="NEW LEGACY(11.18).xlsx"
+                 or state.get("policy")=="MA_V1118_REVERSAL_UP")):
                 new.add(int(r["position_id"]))
     elif kind in ("stock_trend","coin_trend"):
         for row in positions:
             try:payload=json.loads(row["payload"] or "{}")
             except (TypeError,ValueError):continue
-            if payload.get("nl1118_policy")=="NEW_LEGACY_1118":
+            if (payload.get("nl1118_policy")=="NEW_LEGACY_1118" or
+                payload.get("entry_signal_policy")=="NL1118_RSI20_24H_BOLL_20_1_5"
+                or payload.get("nl1118_sell_intents")):
                 new.add(int(row["id"]))
     return [p for p in positions if int(p["id"]) not in new],[
         p for p in positions if int(p["id"]) in new]
@@ -160,6 +166,16 @@ def _select_safe(c,root,kind,old):
         if _broker_uncertain(root,kind,p):
             skipped.append((p,"BROKER_OR_REAL_EXPOSURE"))
             continue
+        if kind in ("stock_trend","coin_trend"):
+            # MT54 places an original BUY, then writes NL1118 metadata.
+            # An app crash in that short interval can leave a legitimate
+            # NEW-LEGACY buy without its sidecar. Refuse that ambiguous
+            # post-workbook purchase rather than deleting real new history.
+            when=str(p.get("entry_at") or "")
+            if when[:10]>="2026-11-18" and not str(p.get("payload") or "").find(
+                    '"nl1118_policy"')>=0:
+                skipped.append((p,"POTENTIALLY_NEW_TREND_BUY_UNMIGRATED"))
+                continue
         ex=_rows(c,"SELECT * FROM executions WHERE position_id=? ORDER BY id",
                  (int(p["id"]),)) if _has(c,"executions") else []
         buys=[x for x in ex if str(x.get("side")).upper()=="BUY"]
