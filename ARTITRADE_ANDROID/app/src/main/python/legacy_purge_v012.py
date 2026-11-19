@@ -70,6 +70,57 @@ def _marker(c):
         deleted_positions INTEGER NOT NULL, deleted_fills INTEGER NOT NULL,
         skipped_positions INTEGER NOT NULL)""")
 
+def _proven_retired_rule(c,kind,p):
+    """Require original BUY policy and each SELL provenance, never just date.
+
+    No NL1118 sidecar is NOT affirmative proof of an old-rule purchase.
+    Ambiguous post-upgrade buys and sells must remain in native history.
+    """
+    def canon(value):
+        return str(value or '').upper().replace('-', '_')
+    def old(value):
+        t=canon(value)
+        return bool(t and any(marker in t for marker in
+            ('OLD_V26','OLD_V061','OLD_V043','OLD_3LEG31',
+             'LEGACY_3LEG31','REVERSAL_BEAR','MA_V065_BEAR')))
+    def current(value):
+        t=canon(value)
+        return bool(t and any(marker in t for marker in
+            ('NEW_LEGACY_1118','NEW LEGACY(11.18)', 'NL1118',
+             'MA_V1118','REVERSAL_UP')))
+    receipts=_rows(c,'SELECT * FROM executions WHERE position_id=? ORDER BY id',
+                   (int(p['id']),)) if _has(c,'executions') else []
+    buys=[x for x in receipts if canon(x.get('side'))=='BUY']
+    sells=[x for x in receipts if canon(x.get('side'))=='SELL']
+    if not buys:
+        return False
+    values=[p.get('exit_policy'),p.get('policy'),p.get('strategy')]
+    values.extend(x.get('reason') for x in receipts)
+    if any(current(v) for v in values):
+        return False
+    has_old_entry=old(p.get('exit_policy')) or old(p.get('policy')) or any(
+        old(x.get('reason')) for x in buys)
+    if kind in ('stock_ma','coin_ma'):
+        sidecar=_rows(c,'SELECT kind,state_json FROM ma_v067_positions WHERE position_id=?',
+                      (int(p['id']),)) if _has(c,'ma_v067_positions') else []
+        if sidecar:
+            if any(canon(r['kind'])=='REVERSAL_UP' for r in sidecar):
+                return False
+            if any(canon(r['kind'])=='REVERSAL_BEAR' for r in sidecar):
+                has_old_entry=True
+    if kind in ('stock_trend','coin_trend'):
+        try:
+            payload=json.loads(p.get('payload') or '{}')
+        except (ValueError,TypeError):
+            payload={}
+        if any(current(v) for v in payload.values()):
+            return False
+        has_old_entry=has_old_entry or old(payload.get('entry_signal_policy'))
+    # Each historical SELL must have an explicitly pre-NEW-LEGACY reason;
+    # an unlabeled/native SELL cannot be silently attributed by timestamp.
+    return bool(has_old_entry and all(old(x.get('reason')) for x in sells))
+
+
 def _old_positions(c,kind):
     positions=_rows(c,"SELECT * FROM positions ORDER BY id") if _has(c,"positions") else []
     if kind.startswith("old_"):
@@ -97,8 +148,19 @@ def _old_positions(c,kind):
                 payload.get("entry_signal_policy")=="NL1118_RSI20_24H_BOLL_20_1_5"
                 or payload.get("nl1118_sell_intents")):
                 new.add(int(row["id"]))
-    return [p for p in positions if int(p["id"]) not in new],[
-        p for p in positions if int(p["id"]) in new]
+    # Unknown provenance is not a license to delete. A NEW LEGACY BUY can
+    # temporarily lack its sidecar after a crash in _on_real_buy/_mark.
+    # Date is intentionally not used to classify an OLD execution.
+    old=[];protected=[];uncertain=[]
+    for p in positions:
+        pid=int(p['id'])
+        if pid in new:
+            protected.append(p)
+        elif _proven_retired_rule(c,kind,p):
+            old.append(p)
+        else:
+            uncertain.append(p)
+    return old,protected,uncertain
 
 def _broker_uncertain(root,kind,p):
     # Do not erase actual exchange positions or unresolved broker orders.
@@ -322,7 +384,7 @@ def _apply_one(path,kind,root):
             return {"kind":kind,"removed":0,"skipped":0,"already":True}
         if not _has(c,"positions") or not _has(c,"executions"):
             return {"kind":kind,"removed":0,"skipped":0,"not_ready":True}
-        old,new=_old_positions(c,kind)
+        old,new,uncertain=_old_positions(c,kind)
         # No partial account rebasing that would rewrite real broker receipts
         # co-resident with PAPER records in the same wallet/timeframe.
         columns={str(x[1]) for x in c.execute("PRAGMA table_info(executions)")}
@@ -332,6 +394,7 @@ def _apply_one(path,kind,root):
             return {"kind":kind,"removed":0,"skipped":len(old),
                     "reason":"LIVE_EXECUTION_CORESIDENT_FAIL_CLOSED"}
         selected,skipped=_select_safe(c,root,kind,old)
+        skipped.extend((p,'BUY_SELL_POLICY_PROVENANCE_UNVERIFIED') for p in uncertain)
         # Original broker or imported wallet evidence is never deleted.
         # We can still remove separately proven PAPER trades in this file.
         removed=[p for p,_,_,_,_ in selected]
@@ -345,7 +408,7 @@ def _apply_one(path,kind,root):
         if kind.startswith("old_") and orphan_count:
             return {"kind":kind,"removed":0,"skipped":int(orphan_count),
                     "reason":"ARCHIVE_ORPHAN_NATIVE_FILL_UNVERIFIED"}
-        if not selected and not old and not kind.startswith("old_"):
+        if not selected and not old and not uncertain and not kind.startswith("old_"):
             if orphan_count:
                 return {"kind":kind,"removed":0,"skipped":int(orphan_count),
                         "reason":"ORPHAN_NATIVE_EXECUTION_UNRECONCILABLE"}
@@ -405,7 +468,7 @@ def _apply_one(path,kind,root):
                      ",".join("?" for _ in doomed_ids)+")",
                      tuple(doomed_ids)).fetchone()[0] if doomed_ids else 0:
             raise UnsafeLegacyPurge("REMOVED_POSITION_REAPPEARED")
-        for row in new:
+        for row in new+uncertain:
             if c.execute("SELECT 1 FROM positions WHERE id=?",(row["id"],)).fetchone() is None:
                 raise UnsafeLegacyPurge("PROTECTED_NL1118_POSITION_REMOVED")
         if not skipped and not orphan_count:
