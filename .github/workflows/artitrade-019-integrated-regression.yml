@@ -6,6 +6,8 @@ on:
       - ARTITRADE_ANDROID/app/src/main/python/staged_exit_preview_v019.py
       - ARTITRADE_ANDROID/app/src/main/python/paper_exit_chronology_v019.py
       - ARTITRADE_ANDROID/app/src/main/python/paper_exit_replay_v019.py
+      - ARTITRADE_ANDROID/app/src/main/python/paper_exit_native_ledger_v019.py
+      - ARTITRADE_ANDROID/ui_tests/test_v019_native_ledger_accounting.py
       - ARTITRADE_ANDROID/ui_tests/test_v019_strict_paper_replay.py
       - ARTITRADE_ANDROID/ui_tests/test_v019_paper_exit_chronology.py
       - ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py
@@ -51,6 +53,7 @@ jobs:
             test_v019_native_exit_plan_readonly.py \
             test_v019_paper_exit_chronology.py \
             test_v019_strict_paper_replay.py \
+            test_v019_native_ledger_accounting.py \
             test_v002_eight_virtual_paper_end_to_end.py \
             test_v011_new_legacy_resting_and_legacy_retirement.py \
             test_v012_legacy_purge_and_holding_frame.py \
