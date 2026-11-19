@@ -41,7 +41,8 @@ def verify_window(rows,market,frame,now):
         source=str(item.get("source") or "")
         if source not in ("NATIVE_UPBIT_VERIFIED_COMPLETED",
                           "UPBIT_VERIFIED","LOCAL_KRX_VERIFIED",
-                          "KIWOOM_VERIFIED","UPBIT_OFFICIAL_COMPLETED"):
+                          "KIWOOM_VERIFIED","UPBIT_OFFICIAL_COMPLETED",
+                          "UPBIT_CLOSED"):
             continue
         unique[stamp]=item
     stamps=sorted(unique)[-MIN_BARS:]
@@ -49,6 +50,17 @@ def verify_window(rows,market,frame,now):
         return {"status":"MISSING_OFFICIAL_CANDLES",
                 "count":len(stamps),"gaps":max(0,MIN_BARS-len(stamps))}
     sec=FRAME_SECONDS[frame]
+    # An old but contiguous archive does not prove post-reconnect coverage.
+    # Upbit completed daily candles close at 09:00 KST = 00:00 UTC.
+    # No invented candles: a missing newest expected bar remains MISSING.
+    if market=="coin":
+        expected=dt.datetime.fromtimestamp(
+            (int(now.timestamp())//sec)*sec,dt.timezone.utc)
+        if stamps[-1]<expected-dt.timedelta(seconds=1):
+            return {"status":"LATEST_OFFICIAL_CANDLE_MISSING",
+                    "count":len(stamps),"gaps":1,
+                    "last_closed":stamps[-1].isoformat(),
+                    "expected_last_closed":expected.isoformat()}
     gaps=0
     for prior,cur in zip(stamps,stamps[1:]):
         delta=(cur-prior).total_seconds()
