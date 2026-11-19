@@ -132,8 +132,8 @@ def install(core):
     core.Runtime.stop=tracking_stop
 
     original_hub=core.Runtime.hub_records
-    def tracking_hub(self):
-        raw=original_hub(self)
+    def tracking_hub(self,for_ui=False):
+        raw=original_hub(self,for_ui=for_ui)
         tracker=getattr(self,"post_sale_tracker_v053",None)
         if not tracker:return raw
         try:
