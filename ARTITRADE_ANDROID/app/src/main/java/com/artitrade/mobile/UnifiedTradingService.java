@@ -42,6 +42,7 @@ public final class UnifiedTradingService extends Service {
     static final String MANUAL_PAPER_SELL="com.artitrade.mobile.MANUAL_PAPER_SELL";
     static final String RETRY_SYNC="com.artitrade.mobile.RETRY_MSERVER_SYNC";
     static final String SET_PC_SYNC="com.artitrade.mobile.SET_PC_LIVE_SYNC";
+    static final String READ_BROKER_SELLS="com.artitrade.mobile.READ_ONLY_BROKER_SELLS";
     private static final String CHANNEL="artitrade_phone_main_v070";
     private static final int NOTIFY_ID=5701;
     private static volatile boolean SERVICE_INSTANCE_ACTIVE=false;
@@ -155,6 +156,12 @@ public final class UnifiedTradingService extends Service {
                     }
                 }
             }
+            if(intent!=null&&READ_BROKER_SELLS.equals(intent.getAction())){
+                // Read-only request on a separate worker; no broker order is
+                // submitted and no regular quote / strategy loop is blocked.
+                new Thread(this::checkBrokerSellReceipts,
+                    "artitrade-v008-kiwoom-sells-read-only").start();
+            }
             if(intent!=null&&SET_LIVE.equals(intent.getAction())){
                 String market=intent.getStringExtra("market");
                 boolean enabled=intent.getBooleanExtra("enabled",false);
@@ -223,6 +230,25 @@ public final class UnifiedTradingService extends Service {
             try{ensureChannel();startForeground(NOTIFY_ID,notification("엔진 시작 오류 · 앱 오류 탭 확인"));}catch(Throwable ignored){}
             return START_STICKY;
         }
+    }
+
+    private void checkBrokerSellReceipts(){
+        JSONObject result;
+        try{
+            result=(strategy!=null&&strategy.isStarted())
+                ?strategy.brokerSellsV008()
+                :new JSONObject().put("ok",false)
+                    .put("error","ENGINE_NOT_STARTED").put("orders",new JSONArray());
+        }catch(Throwable error){
+            crashes.add("broker_sell_receipts_v008",error);
+            result=new JSONObject();
+            try{result.put("ok",false).put("orders",new JSONArray())
+                .put("error","BROKER_READ_ONLY_ERROR_"+error.getClass().getSimpleName());}
+            catch(Exception ignored){}
+        }
+        getSharedPreferences("artitrade_broker_sells_v008",MODE_PRIVATE).edit()
+            .putString("receipt",result.toString())
+            .putLong("checked_at",System.currentTimeMillis()).apply();
     }
 
     /** Read-only Android network capability probe. Broker-specific WS/REG and
