@@ -896,6 +896,11 @@ public final class UnifiedTradingService extends Service {
         android.content.SharedPreferences sp=getSharedPreferences(
             "artitrade_daily_backup_v003",MODE_PRIVATE);
         for(String market:new String[]{"stock","coin"}){
+            // The 0.0.7 export proves an older MSERVER responds
+            // unknown_endpoint to /daily. Don't spam it every five minutes;
+            // retain the exact due date and every original source SQLite.
+            if(now<sp.getLong("remote_protocol_retry_after_"+market,0L))
+                continue;
             if(now-sp.getLong("attempt_at_"+market,0L)<DAILY_RETRY_MS)
                 continue;
             if(!dailyBackupRunning.compareAndSet(false,true))return;
@@ -905,11 +910,28 @@ public final class UnifiedTradingService extends Service {
             Thread worker=new Thread(()->{
                 try{runDailyBackup(hub,current);}
                 catch(Throwable failure){
-                    crashes.add("daily_backup_"+current,failure);
-                    sp.edit().putString("stage_"+current,"FAILED")
-                      .putString("error_"+current,
-                        failure.getClass().getSimpleName()+":"+
-                        String.valueOf(failure.getMessage())).apply();
+                    final String detail=String.valueOf(failure.getMessage());
+                    boolean unsupported=detail.contains(
+                        "MSERVER_DAILY_ENDPOINT_UNAVAILABLE:unknown_endpoint");
+                    long checked=System.currentTimeMillis();
+                    // Protocol mismatch is recoverable only after the PC
+                    // endpoint is upgraded. Never label the backup VERIFIED.
+                    if(!unsupported||checked-sp.getLong(
+                            "last_protocol_fault_"+current,0L)>=6*60*60_000L)
+                        crashes.add("daily_backup_"+current,failure);
+                    android.content.SharedPreferences.Editor edit=sp.edit()
+                        .putString("stage_"+current,unsupported?
+                            "REMOTE_ENDPOINT_UNSUPPORTED":"FAILED")
+                        .putString("error_"+current,
+                            failure.getClass().getSimpleName()+":"+detail);
+                    if(unsupported){
+                        edit.putLong("remote_protocol_retry_after_"+current,
+                            checked+6*60*60_000L);
+                        edit.putLong("last_protocol_fault_"+current,checked);
+                    }else{
+                        edit.remove("remote_protocol_retry_after_"+current);
+                    }
+                    edit.apply();
                 }finally{dailyBackupRunning.set(false);}
             },"artitrade-daily-"+market+"-wal-safe");
             worker.setDaemon(true);
