@@ -413,12 +413,12 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
     second_sold=number(state.get('second_sold')) or Decimal(0)
 
     if first_sold<first_goal:
-        # Only an observed climb followed by a RETURN to entry can trigger
-        # the user's pre-first retrace rule. Do not invent a prior price path.
-        if price>base:
-            state['seen_above_entry']=True
-        if state.get('seen_above_entry') and price<=base:
-            return _full(avail,'MA_V065_UP_PRE_FIRST_ENTRY_RETURN',state)
+        # 11.18 REV1 F6 (red): DO NOT sell at the entry-price retrace.
+        # The entry/forming MA candle's verified low must first be touched,
+        # then a genuinely CLOSED source bar must close strictly below it.
+        # Only the original native closed-bar observer sets this durable flag.
+        if state.get('rev1_below_reference_low_confirmed') is True:
+            return _full(avail,'MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE',state)
         if price>=first_target:
             return state,min(avail,first_goal-first_sold),'MA_V1118_UP_FIRST_30PCT'
         return state,Decimal(0),''
