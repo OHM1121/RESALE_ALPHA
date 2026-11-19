@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]/"app/src/main"
 sys.path.insert(0,str(ROOT/"python"))
-from gmo_d1_preplan_v097 import Preplanner,PHASE,_valid_phase,KST
+from gmo_d1_preplan_v097 import Preplanner,PHASE,_valid_phase,_venue_phase,KST
 from projectgmo.prices import plus_ticks
 
 class ServiceFixture:
@@ -33,6 +33,34 @@ class PreplanTests(unittest.TestCase):
         self.now=dt.datetime(2026,11,17,9,0,0,tzinfo=KST)
         self.p=Preplanner(self.svc,clock=lambda:self.now)
     def tearDown(self):self.tmp.cleanup()
+
+    def test_csat_2026_nxt_closed_and_delayed_krx_d1(self):
+        k=lambda hour,minute:dt.datetime(2026,11,19,hour,minute,tzinfo=KST)
+        self.assertIsNone(_venue_phase("NXT",k(8,0)))
+        self.assertFalse(_valid_phase("NXT",k(7,58),True))
+        self.assertFalse(_valid_phase("NXT",k(8,0)))
+        self.assertFalse(_valid_phase("KRX",k(8,50),True))
+        self.assertTrue(_valid_phase("KRX",k(9,50),True))
+        self.assertTrue(_valid_phase("KRX",k(9,59),True))
+        self.assertFalse(_valid_phase("KRX",k(9,59)))
+        self.assertTrue(_valid_phase("KRX",k(10,0)))
+        self.assertTrue(_valid_phase("KRX",k(16,29)))
+        self.assertFalse(_valid_phase("KRX",k(16,30)))
+        self.assertEqual(_venue_phase("KRX",k(10,0)),("095000","100000","163000"))
+        self.svc.engine.signals["005930"].event_date="2026-11-18"
+        self.svc.engine.signals["005930"].entry_date="2026-11-19"
+        # Original D+1 proof remains authoritative; this does not issue BUY.
+        from unittest.mock import patch
+        with patch("d_gmo_runtime._next_day",return_value="2026-11-19"):
+            self.assertEqual(self.p.prepare("NXT",k(7,58)),())
+            self.assertEqual(self.p.prepare("KRX",k(8,50)),())
+            self.assertEqual(self.p.prepare("KRX",k(9,50)),("005930",))
+        p=self.p.plans[("2026-11-19","005930","KRX")]
+        self.assertIn("10:00:00",p["opening_at"])
+        self.assertEqual(p["status"],"PREPARED")
+        self.assertEqual(p["scenario"],0)
+        self.assertIsNone(p["opening_price"])
+        self.assertEqual(self.svc.engine.buy_fills,[])
 
     def test_exact_preflight_times_and_nxt_vs_krx(self):
         self.assertTrue(_valid_phase("NXT",dt.datetime(2026,11,17,7,58,tzinfo=KST),True))
