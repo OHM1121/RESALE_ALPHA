@@ -2353,6 +2353,11 @@ _install_stock_priority_v093(_core)
 from ma_v067_coin_runtime import install as _install_ma_v067_coin
 _install_ma_v067_coin()
 
+# 0.0.18: low-latency held coin MA SELL on existing original Upbit WS books.
+# No extra exchange connection; native original PAPER wallet and depth gate.
+from ma_fast_held_exit_v018 import install as _install_ma_fast_held_exit_v018
+_install_ma_fast_held_exit_v018()
+
 # Keep Kiwoom socket receive/PONG independent from periodic universe REST
 # and local DB refresh. Never add a second Kiwoom WebSocket login.
 from kiwoom_ws_v067 import install as _install_kiwoom_ws_v067
