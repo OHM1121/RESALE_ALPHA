@@ -162,8 +162,7 @@ class AuthorizedRollback(unittest.TestCase):
             files=Path(temp)/'files'
             root=files/'ARTITRADE_PHONE_MAIN_V070'
             root.mkdir(parents=True)
-            start=(dt.datetime.now(dt.timezone.utc)-
-                   dt.timedelta(minutes=10)).isoformat()
+            start='2026-11-18T00:00:00+00:00'
             (root/guard.MARKER).write_text(json.dumps(dict(
                 schema=guard.EPOCH_SCHEMA,epoch_id='SIMULATED_V012_EPOCH',
                 state='COMMITTED',completed_at_utc=start)))
