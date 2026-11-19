@@ -3828,8 +3828,74 @@ public final class UnifiedVisualActivity extends Activity {
     /** Two-level cards: a 10sp key followed by a 16sp value, not dense
      * label/value sentences spread across the entire panel.
      */
+    /** Only the source-owning native wallet may supply this pre-sell target. */
+    private JSONObject v019OriginalExitPlan(JSONObject row){
+        if(row==null)return null;
+        JSONObject plan=row.optJSONObject("v019_exit_plan");
+        if(plan==null)return null;
+        String schema=plan.optString("schema","");
+        String owner=plan.optString("owner","");
+        if(!"V019_ORIGINAL_OWNER_BUY_PRICE_TARGET_PLAN_VIEW_ONLY".equals(schema)
+           || !(owner.equals("stock/at")||owner.equals("stock/ma")
+             ||owner.equals("stock/gmo")||owner.equals("stock/cw")
+             ||owner.equals("stock/trend")||owner.equals("coin/general")
+             ||owner.equals("coin/ma")||owner.equals("coin/trend")))
+            return null;
+        if(plan.optBoolean("actual_broker_order",true)
+           || plan.optBoolean("actual_native_sell_receipt",true))return null;
+        String sourceUid=row.optString("position_uid","");
+        String planUid=plan.optString("position_uid","");
+        if(!sourceUid.isEmpty()&&!planUid.isEmpty()
+            && !sourceUid.equals(planUid))return null;
+        double first=num(plan,"first_target");
+        double amount=num(plan,"first_qty");
+        if(!finite(first)||first<=0||!finite(amount)||amount<=0)return null;
+        return plan;
+    }
+
+    private String v019TargetValue(JSONObject row,int stage){
+        JSONObject plan=v019OriginalExitPlan(row);
+        if(plan==null)return "원본 계획 확인 필요";
+        if(stage==2&&"stock/cw".equals(plan.optString("owner","")))return "2차 없음";
+        double price=num(plan,stage==1?"first_target":"second_target");
+        double amount=num(plan,stage==1?"first_qty":"second_qty");
+        if(!finite(price)||price<=0||!finite(amount)||amount<=0)
+            return stage==2?"2차 없음":"원본 확인 필요";
+        return WonFormat.price(price)+" / "+number(amount);
+    }
+
+    private void v019PlanEvidence(LinearLayout panel,JSONObject row){
+        JSONObject plan=v019OriginalExitPlan(row);
+        String heading="사전매도 계획 · PAPER 화면 계획 (실제 거래소 접수 아님)";
+        String detail;
+        if(plan==null){
+            detail="진입 원본 ID·매수가·최초수량·목표 근거 미확인 — 임의 목표 미표시";
+        }else{
+            String state=plan.optString("order_state","원본 주문상태 미확인");
+            String source=plan.optString("source","원본 전략 정책");
+            double f=num(plan,"first_filled_qty");
+            double g=num(plan,"second_filled_qty");
+            String sold=(finite(f)?number(f):"미확인")+" / "+
+                (finite(g)?number(g):"미확인");
+            detail="1차 "+v019TargetValue(row,1)+
+                   "\n2차 "+v019TargetValue(row,2)+
+                   "\n단계 "+state+" · 원본 체결수량(1차/2차) "+sold+
+                   "\n출처 "+source+" · 진입 "+plan.optString("entry_at","미확인")+
+                   "\n가상 목표는 실제 매도 체결·브로커 주문접수 아님";
+        }
+        TextView title=text(heading,11);
+        title.setTextColor(PremiumUi.MUTED);
+        title.setPadding(0,dp(7),0,dp(2));
+        panel.addView(title,new LinearLayout.LayoutParams(-1,-2));
+        TextView body=text(detail,12);
+        body.setTextColor(Color.rgb(162,206,232));
+        body.setMaxLines(6);
+        panel.addView(body,new LinearLayout.LayoutParams(-1,-2));
+    }
+
     private String stockAtFirstTargetDisplay(JSONObject position,String source){
         if(position==null)return "원장 확인 중";
+        if(v019OriginalExitPlan(position)!=null)return v019TargetValue(position,1);
         // D19/PC FIX31 stores the real durable first target under
         // exit_first_target; legacy D19 positions use ref_bodytop.
         // Neither is first_target (a candidate-preview-only field).
@@ -4254,6 +4320,7 @@ public final class UnifiedVisualActivity extends Activity {
                 tradeMetricTile(figures,"수수료",formatMaybeMoney(r,"fees","fee"),false);
             }
             panel.addView(figures,new LinearLayout.LayoutParams(-1,dp(64)));
+            if("positions".equals(kind))v019PlanEvidence(panel,r);
             if("positions".equals(kind)&&"stock".equals(market)){
                 TextView brokerage=text(brokerSellStatusForHolding(r),10);
                 brokerage.setTextColor(PremiumUi.MUTED);
