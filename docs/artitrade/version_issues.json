@@ -474,8 +474,8 @@
       "category": "DEVICE_REPORTED_AND_SOURCE_CONFIRMED",
       "title": "GMO D+1 late KRX special session and suspended NXT premarket",
       "evidence": "2026-11-19 published KRX 10:00-16:30 NXT premarket closed; 0.0.7 GMO preplan hardcoded 09:00 and NXT 08:00",
-      "root": "CONFIRMED_DUPLICATE_HARDCODED_VENUE_SCHEDULE",
-      "status": "SOURCE_FIXED",
+      "root": "CONFIRMED_OVERLAY_AND_ORIGINAL_CORE_HARDCODED_CLOCK",
+      "status": "OPEN_UNVERIFIED",
       "fix_version": "0.0.8-unreleased-source",
       "ci": "PENDING",
       "device": "UNVERIFIED",
@@ -489,7 +489,7 @@
         "test_v097_gmo_preplan.py",
         "test_v008_all_strategy_rootcause.py"
       ],
-      "notes": "Dynamic KRX special opening from existing session calendar; disable 2026-11-19 NXT premarket. KRX D+1 PAPER clock and shared prewarm align, regular-day behavior retained. LS-like actual missed BUY reason not conclusively established without phone signal/quote/order evidence."
+      "notes": "Dynamic KRX special opening from existing session calendar; disable 2026-11-19 NXT premarket. KRX D+1 PAPER clock and shared prewarm align, regular-day behavior retained. LS-like actual missed BUY reason not conclusively established without phone signal/quote/order evidence. Original ZIP d_live.py, projectgmo/engine.py and d_gmo_runtime.py retain 09:00/15:30 hours and 09:00 first opener. See #80; do not claim full special-session fix until vendor source and actual KRX 0B/open evidence are reconciled."
     },
     {
       "issue": 78,
@@ -540,6 +540,30 @@
       ],
       "tests": [],
       "notes": "Do not claim staging/pre-placement implemented from source target intent alone. Requires broker-verified order IDs, partial-fill and cancel/replace, next trading-day reconciled re-submission, strict zero duplicate-sell guarantee. CW/GMO original ownership respected."
+    },
+    {
+      "issue": 80,
+      "id": "AT-008-04",
+      "found": "0.0.7",
+      "category": "READ_ONLY_NATIVE_SOURCE_AUDIT",
+      "title": "Original native KRX 09:00/15:30 clocks and GMO 09:00 official opening pin block special session",
+      "evidence": "Readonly source audit Actions 44446902415, d_live.py, projectgmo/engine.py, d_gmo_runtime.py, 0.0.7 embedded vendor ZIP",
+      "root": "CONFIRMED_NATIVE_HARDCODED_KRX_SCHEDULE_MULTI_PATH",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NATIVE_SOURCE_INSPECTION_ONLY",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_FEED",
+        "STOCK_GMO",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_CLOSE",
+        "STOCK_TREND",
+        "EXECUTION"
+      ],
+      "tests": [],
+      "notes": "New overlay preplan and current-trend protections do not prove first verified 10:00 GMO opener or complete 15:30..16:30 stock 0B/0D routing. Requires native vendor patch, all-8 wallet regressions and special-session broker/device evidence."
     }
   ],
   "known_normal": [
