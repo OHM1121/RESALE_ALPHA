@@ -13,6 +13,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import re
 import zipfile
@@ -77,15 +78,21 @@ def native_nodes():
         parts=[(NATIVE/("part_%02d.txt"%i)).read_text("ascii") for i in range(22)]
         payload=base64.b64decode("".join(parts),validate=True)
         digest_actual=digest(payload)
-        if digest_actual!=CORE_SHA256:
+        # The release host applies three audited legacy quote patch scripts
+        # to a disposable checkout; that legitimately transforms the core
+        # bytes. Only a CI-supplied exact approved hash can authorize it.
+        approved=os.environ.get('ARTITRADE_APPROVED_VENDOR_PATCHED_SHA256','').lower()
+        if digest_actual!=CORE_SHA256 and (not approved or digest_actual!=approved):
             return [],{"status":"PACKAGED_NATIVE_HASH_MISMATCH","sha256":digest_actual}
+        verified_status=('NATIVE_HASH_VERIFIED' if digest_actual==CORE_SHA256
+                         else 'APPROVED_VENDOR_PATCH_HASH_VERIFIED')
         output=[]
         with zipfile.ZipFile(io.BytesIO(payload)) as z:
             if z.testzip() is not None:raise ValueError("corrupt core zip")
             for entry in sorted(z.namelist()):
                 if not entry.endswith(".py") or ".." in Path(entry).parts:continue
                 output.append(python_record(entry,z.read(entry),"native"))
-        return output,{"status":"NATIVE_HASH_VERIFIED","sha256":digest_actual,
+        return output,{"status":verified_status,"sha256":digest_actual,
                        "python_files":len(output)}
     except (OSError,ValueError,zipfile.BadZipFile) as e:
         return [],{"status":"NATIVE_READ_FAILED","error_type":type(e).__name__}
