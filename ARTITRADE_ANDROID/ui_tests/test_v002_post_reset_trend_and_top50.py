@@ -50,8 +50,9 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             now = dt.datetime(2026,11,18,10,5,0,tzinfo=mt.KST)
             end = now.replace(minute=0,second=0,microsecond=0)
-            bars = [{"close":120.0-0.05*i,"end":end-dt.timedelta(minutes=(20-i)*30)}
-                    for i in range(21)]
+            bars = [{"close":120.0-0.05*i,
+                     "end":end-dt.timedelta(minutes=(20-i)*30),
+                     "source":"UPBIT_CLOSED"} for i in range(21)]
             co=SimpleNamespace()
             co.rt=SimpleNamespace(root=root,coin_runner=SimpleNamespace(preload_gate=None))
             co.lock=threading.RLock()
