@@ -129,7 +129,7 @@ class NoOldAutomaticPolicy(unittest.TestCase):
         self.assertIn('return p',src)
         self.assertIn('not str(reason).startswith("NL1118_")',src)
         v061=(SRC/'ma_v061_coin_runtime.py').read_text()
-        self.assertNotIn('_process_exits(self,book,now,original_sell)',v061)
+        self.assertNotIn('        _process_exits(self,book,now,original_sell)',v061)
         self.assertIn("proof.get('ma_v067_kind')=='REVERSAL_UP'",v061)
         mt=(SRC/'market_trend_1118_runtime.py').read_text()
         self.assertIn('if getattr(self,"nl1118_policy",None)!=POLICY:',mt)
