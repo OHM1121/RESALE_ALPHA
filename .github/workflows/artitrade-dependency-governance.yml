@@ -1,0 +1,39 @@
+name: ARTITRADE dependency/issue history/root-cause governance
+on:
+  push:
+    branches: [main, fix-artitrade-007-v005-errorlog-rootcause-governance-20261119]
+    paths:
+      - AGENTS.md
+      - CLAUDE.md
+      - .github/copilot-instructions.md
+      - .github/ISSUE_TEMPLATE/**
+      - .github/PULL_REQUEST_TEMPLATE.md
+      - .github/workflows/artitrade-dependency-governance.yml
+      - docs/artitrade/**
+      - tools/artitrade/**
+      - ARTITRADE_ANDROID/app/src/main/**
+  pull_request:
+    branches: [main, fix-artitrade-006-trend5m-retire-rootcause-audit-20261119]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  issue-and-graph-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require versioned issues, mapped dependencies and consistent AI policies
+        run: python3 tools/artitrade/main_branch_guard.py
+      - name: Print applicable root cause engineering contract
+        run: |
+          test -f AGENTS.md
+          test -f CLAUDE.md
+          test -f .github/copilot-instructions.md
+          echo "ARTITRADE_GOVERNANCE_SOURCES_PRESENT"
