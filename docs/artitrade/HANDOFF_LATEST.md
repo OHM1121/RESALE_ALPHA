@@ -1,106 +1,73 @@
-# ARTITRADE 개발 인수인계서
+# ARTITRADE 0.1.0 개발 인수인계서
 
 작성일: 2026-11-19 (KST)
-문서 기준: 0.0.19 개발 진행 상태 / 실제 최신 배포본 0.0.18
-검증 등급: 0.0.18 소스·CI·서명 APK 검증 완료 / 0.0.19 일부 소스 및 원본 정책 감사만 확인 / 실기기 0.0.19 미검증
+사용자 최종 지시: 오직 0.1.0 활성화 이후 신규 매수 PAPER 포지션의 앱 종료 중 매도조건 복원.
+기준 소스: 0.0.19 서명 후보의 정확한 소스 커밋 `c99f2246887e34ffbd3a534503a20095c35a6985`.
+0.1.0 신규 개발 브랜치: `artitrade-010-future-paper-offline-chronology-20261119`.
+출시 요구 버전: `0.1.0` / versionCode `142` / 파일 `0.1.0.apk`.
+패키지: `com.artitrade.unified.s21dex`, 기존 인증서 SHA256 `37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6`.
+최신 GitHub 정식 릴리스: `0.0.18`; 0.0.19는 사용자에게 제공한 서명된 후보 APK만 존재하며 GitHub 정식 release 미게시. 0.0.19 CI: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44539092013 (SUCCESS), 0.0.19 화면 목표계획 연결·8원장 회귀·원본 서명 확인. 실제 DEVICE_VERIFIED 아님.
+0.1.0 상태: SPECIFIED ONLY. 아직 0.1.0 프로그램 구현/CI/서명 APK/실기기 검증 없음. **0.1.0 배포 완료라고 주장 금지.**
 
-## 1. 저장소·배포·정확한 소스 기준
+## 1. 필수 인수 규정
 
-- GitHub: https://github.com/OHM1121/RESALE_ALPHA
-- 설치 패키지: com.artitrade.unified.s21dex
-- 최신 배포 버전: 0.0.18 / versionCode 140 (GitHub pre-release)
-- 릴리스: https://github.com/OHM1121/RESALE_ALPHA/releases/tag/0.0.18
-- APK: https://github.com/OHM1121/RESALE_ALPHA/releases/download/0.0.18/0.0.18.apk
-- 배포 APK 용량: 30,608,037바이트
-- 실제 0.0.18 릴리스 소스 커밋: 2f3b85d0004e16d05e5243af0a038bfc63e3d73c
-- 0.0.18 회귀 CI: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44520187563 (SUCCESS)
-- 0.0.18 기존 인증서 서명·APK CI: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44520214527 (SUCCESS)
-- 기존 앱 서명 인증서 SHA256: 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
-- 0.0.19 작업 브랜치: artitrade-019-eight-wallet-target-plan-display-20261119
-- 인수인계 작성 직전 0.0.19 작업 HEAD: 3379b251cb83c8b0886f46350d4c5c23f40f9519
-- main HEAD(작성 직전): 0d357587cdb91e63ff6c2c48d75d7a57fa5bf152. main은 배포 소스와 분기되어 있으므로 main 기준으로 APK를 빌드하지 말 것.
-- 0.0.19 APK/릴리스: 없음. 버전 0.0.19가 이미 배포되었다고 주장 금지.
-- 실제 휴대전화에서 0.0.18의 매도 개선 효과 및 0.0.19의 동작: DEVICE_VERIFIED 아님.
-- 기존 설치 앱·원장을 삭제하지 말고 같은 패키지와 인증서의 숫자 버전 APK로 덮어 설치해야 함.
+원본 `AGENTS.md`, `docs/artitrade/USER_ACTIVE_POLICY.md`, `docs/artitrade/DEPENDENCY_MAP.md`, `docs/artitrade/dependency_graph.json`, `docs/artitrade/version_issues.json`, NEW LEGACY(11.18).xlsx/rev1 원본 표시와 Issues #109/#110을 읽고 모든 전략의 API → 공식 시세/체결 → 큐 → BUY → 원본 정책/손절 → OWNER 지갑/원장 → SQLite/GMO JSON → UI → 백업까지 매핑.
+원장 SQLite/ZIP·계정·개인 체결·API 키를 public GitHub에 업로드하지 말 것. 사용자 앱·원장 삭제/초기화 금지. FreshEpochGate, LedgerAntiRollback 독립 증인, 원본 wallet UID와 기존 브로커 권한 불변.
+증거 상태 CONFIRMED/INFERRED/UNVERIFIED와 코드 상태 SOURCE_FIXED/CI_VERIFIED/DEVICE_VERIFIED 구분.
 
-## 2. 개발 전 필독 및 변경 절차
+## 2. 새로운 범위 — 과거 전체 소급 정산 제외
 
-- 우선 확인: AGENTS.md, docs/artitrade/USER_ACTIVE_POLICY.md, docs/artitrade/DEPENDENCY_MAP.md, docs/artitrade/dependency_graph.json, docs/artitrade/version_issues.json, NEW LEGACY(11.18).xlsx 및 rev1.xlsx의 원본 표시, GitHub Issues.
-- 반드시 원본 API/시세 → 수신·구독 → 큐 → 전략 정책 → 개별 지갑·원장 → SQLite·체결 영수증 → Python hub_records(for_ui) → Android Java UI → 연구·내보내기·백업까지 추적.
-- 증거 상태는 CONFIRMED / INFERRED / UNVERIFIED, 수정 상태는 SOURCE_FIXED / CI_VERIFIED / DEVICE_VERIFIED로 구분. CI 성공을 실기기 성공으로 바꿔 쓰지 말 것.
-- public GitHub에는 개인 원장 SQLite/ZIP, 계정·인증정보, 개인별 거래 영수증, 민감한 주문 데이터를 업로드하지 말 것. 비식별 통계·정책·테스트만 기록.
-- FreshEpochGate, LedgerAntiRollback, 원본 8개 원장과 현금·수량·수수료·고유 UID 및 실거래 주문권한을 임의 변경하거나 초기화하지 말 것.
+**0.1.0 설치·기능 활성화 이후 정확한 최초 원본 BUY가 기록된 신규 PAPER 포지션만 적용.**
+기존 0.0.19 및 그 이전에 매수한 보유/청산 포지션은 자동 재정산 금지. 사용자는 과거 전체 PAPER 거래를 소급 정산할 필요 없다고 명시함.
+0.1.0 활성화 시각·epoch·사용 중인 원본 지갑·새 BUY 원본 receipt를 증명하고 UI의 기존 포지션/이전 epoch와 혼동 금지.
 
-## 3. 보호 대상 8개 독립 전략
+## 3. 동작 — 반드시 완성
 
-- 주식: AT(기준봉), MA, GMO(수급매매), CW(종가베팅), MarketTrend.
-- 코인: Reference(기준봉), MA, MarketTrend.
-- NEW LEGACY 11.18의 30%·35% 분할매도 정책은 주식 AT·MA·MarketTrend, 코인 Reference·MA·MarketTrend의 6개 전략에 적용.
-- GMO와 CW는 NEW LEGACY 매매규칙 변경 대상이 아니지만, 이번 사용자 요청의 '매수 즉시 기존 전략별 사전매도 목표·수량 표시'와 'PAPER 시간순 복원 검토'의 대상에는 포함. GMO와 CW의 수익률·매도비율을 30%·35%로 바꾸면 안 됨.
-- GMO 원본: 최초 확정 점수별 TP1 +4%/+5%/+7%, 최초 수량의 20%; TP2는 TP1 목표가격 대비 추가 +3%, 최초 수량의 40%. 남은 수량은 원래 보호·후행매도 정책을 적용.
-- CW 원본: 매수가 대비 +1.2% 1차 목표에서 전량매도; 2차 매도 단계 없음.
-- 기준봉 정책: 분봉별 TP1 +2%/+3%/+3.5%/+4%, TP2는 1차 목표가격 대비 추가 +2%/+2%/+2.5%/+3%; 최초 수량 대비 TP1 30%, TP2 35%. 실제 BUY 때 서명 시장점수 >0 필수.
-- MA·MarketTrend는 각각 원본 NEW LEGACY 분봉 정책·보유기한·손절(-15%)을 적용. Trend의 신규 5분봉 진입은 금지하며 과거 보유 5분봉의 매도 경로는 보존.
-- 0.0.18 rev1: MA·MarketTrend의 1차 목표 전 매수가 복귀 시 전량매도 규칙을 제거. 원본 진입 기준봉의 저가를 터치한 뒤 해당 봉 또는 이후 원본 확정봉의 종가가 기준봉 저가보다 낮으면 원본 매도 경로로 전량매도. 다른 강제손절·만기·후행 조건은 유지.
+예: 100원 신규 BUY, 매수 당시 1차 PAPER 목표가 104원/계획수량 확정, 앱 종료 중 공식 같은 거래소 가격이 105원까지 거래, 재실행 현재가 102원.
+(1) BUY 원장 커밋과 함께 원본 target, 최초 수량, 매수가, 단계, native position ID, UID, epoch, 정확한 entry instant, 방어/손절/후행/만기 상태를 내구적으로 확정.
+(2) 앱 종료/가격 수신 중단 시각과 마지막 공식 단조 증가 event checkpoint를 남김.
+(3) 재시작 시 해당 BUY 이후의 **완전한 공식 KRX/Upbit 시간순 이력**을 같은 시장·종목에 대해 검증·복구; 거래일/장중 중단/공식 확정봉·가능한 틱·호가와 데이터 결손을 구분.
+(4) 그 당시 실제 전략의 모든 보호 이벤트(하드스톱, forced full exit, 만기, 기준봉 저가+확정 종가, trailing, TP1/TP2, 잔량)를 시간순 재생.
+(5) 105원이 104원 TP보다 **엄격히 높고**, 선행 손절·강제전량매도가 없고, 동봉 선후 불명·과거 봉 결손이 없으며 당시 PAPER limit eligibility까지 입증된 경우 **104원에 원래 계획량만 PAPER 한정 가정체결**. 2차는 실제 정당화된 TP1 이후에만 검증.
+(6) 손절이 TP보다 먼저면 손절이 우선, 뒤의 105원으로 익절 생성 금지. 같은 1분봉 OHLC 손절·익절 동시 터치하나 tick order 불명: `EXIT_SEQUENCE_UNVERIFIED`, 현금/수량/익절 원장 수정 보류.
+(7) 원본 wallet 소유 하에서 PAPER 가정 체결을 브로커 실주문/확정 REAL 체결과 다른 영수증 reason으로 기록. owner+epoch+native position ID+stage 단위 EXACTLY ONCE. 수수료·세금·현금·실현손익·잔량·배분/체결 영수증을 하나의 원자적 트랜잭션에 반영.
+(8) 복구 도중 중복 주문/별도 가격 큐가 발생하지 않도록 포지션별 gate, 기존 원본 realtime SELL과 직렬화, WAL-safe 사전백업 및 independent rollback witness 재검증. 앱 크래시·재시작 복원.
+(9) REAL/브로커 주문 결코 인위 소급 생성 금지, 시세누락·대응 실패·원본 BUY 미확인 시 FAIL-CLOSED. 사용자에게 단계별 `PAPER_OFFLINE_RECOVERY_PENDING/VERIFIED/APPLIED/EXIT_SEQUENCE_UNVERIFIED` 상태 표시.
 
-## 4. 최신 사용자 지시: 모든 전략 사전매도 목표와 PAPER 소급 복원
+## 4. 원본 전략 구분(변경 금지)
 
-### 4-1. 매수 직후 사전매도 계획
+- 주식 AT·MA·MarketTrend / 코인 Reference·MA·MarketTrend: 원래 정책의 분봉별 TP1/TP2 유지. 최초 수량 TP1 30%, TP2 35%, 잔량 35% 원본 보호/후행.
+- 주식 GMO: 최초 점수별 TP1 +4/+5/+7%, 초기 수량 20%; TP2는 **TP1 목표가격 기준 추가 +3%**, 초기 수량 40%. 별도 `PROJECTGMO_V1.0_account_state.json` 원장·현금/잔량/수수료 구현 필수, 일반 SQLite 코드 도용 금지.
+- 주식 CW: 매수가 대비 +1.2%에서 전량, 2차 없음.
+- 기존 0.0.18 rev1 MA/Trend 선행 강제매도, -15% 손절 및 만기, 구 5m Trend 신규진입 금지, 이전 보유 5m SELL 경로 유지.
+- PAPER 미리 계산된 지정가 계획은 거래소가 접수한 실제 주문 아님. 재실행 시 1분봉 HIGH만 보고 매도했다고 주장 금지.
 
-- 8개 전략 각각 실제 원본 BUY 체결 직후 기존 전략 정책대로 목표가·목표수량·단계·진입 시각·원본 포지션 ID를 확정.
-- 보유 화면에 최소한 1차 목표가격/수량, 2차 목표가격/수량(존재하는 전략만), 매도대기 상태와 이미 매도한 수량을 표시. 계획은 매수 시 생성하고 재시작 뒤에도 같은 원본 포지션으로 복원.
-- PAPER 사전매도 계획은 실제 거래소 지정가 주문이 아님. 실거래 등록 주문, 브로커 주문접수 ID, 원본 PAPER 체결을 서로 다른 상태로 표시.
-- 사용자 스크린샷에서 GMO 보유 카드의 '1차 목표 미기록' 원인은 Java 표시 코드가 first_target/target/target_price만 조회하는데, 원본 GMO 보유 snapshot에는 해당 목표가 필드가 누락된 구조임. 실제 목표 정책 부재와 화면 전달 오류를 구분해 수정해야 함.
-- 새로운 목표를 산정할 때 시세·봉 최고가를 매수가로 대체하거나, 현재 잔량을 최초 수량으로 오인하거나, 다른 전략의 목표비율을 사용하지 말 것.
+## 5. 현재 자산과 위험
 
-### 4-2. 사용자 최종 확정: 수익보다 먼저 발생한 강제손절·전량매도를 반드시 우선
+- 기존 `staged_exit_preview_v019.py`: 8원장 목표/수량 화면, GMO 원본 매수가(소수 정밀도)·보유량과 표시 반올림 차이 보완, 타 전략 비율 적용 방지.
+- 기존 `paper_exit_chronology_v019.py`: 읽기 전용 이벤트 감사.
+- 기존 `paper_exit_replay_v019.py`: 사용자 승인된 PAPER 가정체결 후보 산출; 완전한 원본 장중 이력 공급과 실시간 전략 손절 재생 미연결.
+- 기존 `paper_exit_native_ledger_v019.py`: 7개 SQLite 지갑별 원장 정산 소스 시범, 실행 경로 **미연결·전 owner 검증 미완료**. 임의 활성화 금지.
+- 사용자 제공 2026-11-19 휴대폰 원장 ZIP은 개인자료: 공개 GitHub 업로드 금지. 기존 기록 점검에서 3건 coin MA·1건 stock GMO OPEN, 과거 마감 이후 HIGH를 매도 전에 소급할 수 없다는 사실 확인. 신규 버전은 **기존 보유 소급 보정하지 않음**.
+- 공식 1분봉 OHLC에 선후 불명인 stop/TP가 함께 있으면 원천적으로 정확한 시간순 복원이 불가능; 거래/호가 tick 또는 기록된 원본 정책 평가 없이 수익 체결 금지.
+- 원본 서명 키는 동일 저장소라도 브랜치별 GitHub cache가 다를 수 있음. 0.0.19에서 작업 브랜치 캐시 지문이 다른 사례가 발생함. **검증된 0.0.18 원본 서명 브랜치 작업 CI에서만** 이전 인증서 SHA256 일치 확인 후 빌드해야 함.
 
-- 종전의 '매수 이후 고가가 TP1/TP2를 초과했으니 무조건 수익매도' 판정은 명백한 오류이므로 사용 금지.
-- PAPER에 한해 사전에 존재한 전략별 지정가 목표가격을 검증된 사후 가격으로 소급 매칭할 수 있으나, **원본 매수 시각 이후의 전체 매도 이벤트를 시간순으로 먼저 재생**해야 함.
-- 선행 이벤트: 전략별 하드스톱, 강제전량매도, 기간만료, 기준봉 저가·확정봉 종가 이탈, 후행·트레일링, TP1, TP2, 기타 원본 보호규칙. 해당 시점의 전략 상태와 수량을 적용.
-- 예시: 100원 매수 → 98원 강제손절이 먼저 발생 → 이후 고가 105원: 결과는 손절. 나중의 105원을 근거로 104원 익절로 바꾸면 안 됨.
-- TP1이 손절보다 먼저 입증된 경우 TP1 계획수량만 가상체결 가능. 남은 원본 수량은 이후 시간순 손절·TP2·보호매도 판단. TP2 이전에 잔량 전량매도가 먼저 발생하면 TP2는 체결 불가.
-- 고가가 원래 TP보다 **엄격하게 높은 경우**에만 사용자 승인 PAPER 가정체결 후보. TP에 정확히 같으면 당시 원본 호가·체결량 근거 필요. 고가 초과 사실도 선행 매도·주문 유효성·봉의 시간순서를 생략하는 면제증이 아님.
-- 동일 1분봉/다른 분봉의 OHLC에서 손절가와 익절가가 모두 터치되었으나 실제 순서를 증명할 틱·체결 자료가 없으면 EXIT_SEQUENCE_UNVERIFIED로 남기고 임의로 유리한 익절을 만들지 말 것. 원본 봉 누락·타 거래소 가격·매수 전 고가도 소급 근거가 아님.
-- 실제 브로커 REAL 체결을 가상 고가로 생성하거나, 이미 원본 전량매도된 포지션을 다시 수익매도로 바꾸거나, 거래 완료 이후 고가를 매도 전 기록으로 재사용하지 말 것.
-- PAPER 원장 수정은 owner+epoch+원본 position ID+stage별 정확히 한 번만 적용. 원본 거래·원장 백업, 수수료/세금, 현금·실현손익·잔량, 이중 매도/부분체결, 재시작·크래시 복구 및 anti-rollback 증인을 함께 검증해야 함.
-- 개발 상태: 위 **시간순 소급체결 엔진은 아직 미구현·미검증**. 정책만 2026-11-19 USER_ACTIVE_POLICY.md에 기록. 사용자에게 '수정 완료/배포 완료'라고 말하지 말 것.
+## 6. 개발 순서 / 0.1.0 배포 인수조건
 
-## 5. 0.0.19 실제 소스 상태 및 미완료 사항
+1. 공식 API 자료 복구 가능성과 1분봉 내 순서 증명 방식(이벤트 누락/시장 재개, 원본 틱/체결 시각, policy evaluation) 조사. 부족한 구간은 보류 상태로 명확히 노출.
+2. 원본 신규 BUY 내구 저장 및 오프라인 cutover marker, activation gate 구현.
+3. 8개 owner별 정책 재생(손절 first, TP1 then stop, TP1 then TP2, full exit, same-bar ambiguous), GMO JSON 별도 atomic 정산과 원본 SQLite 7원장/UID 매핑.
+4. 원장 백업→witness→중복 방지→재시작/중단 복구 실제 검증. 현금/수수료/손익/수량 불일치 시 거래 중단 및 원본 보존.
+5. Android UI·hub_records(for_ui)·연구·내보내기·WAL 백업과 모든 출처 상태 연결. 별도 브로커 주문 생성 금지.
+6. 전체 8전략 회귀, 새 버전 시뮬레이션, Java 컴파일, `0.1.0`/`142`/`com.artitrade.unified.s21dex` 확인, 원본 인증서 SHA256 검사, 비식별 GitHub CI/Issue #110 갱신.
+7. 실기기 DEVICE_VERIFIED는 별도. 위 **신규매수 오프라인 복원**을 실제 CI로 확인하기 전 APK를 완성·배포되었다고 주장하지 말 것.
 
-- 개발 브랜치에 ARTITRADE_ANDROID/app/src/main/python/staged_exit_preview_v019.py 생성(커밋 188e6a1da279a20585b4d4fd8869c71508ec101e).
-- 이 코드는 8개 원본 전략의 보유 수량·진입가를 이용해 목표를 **화면용으로 읽기 전용 계산**하려는 보조 모듈임. 원본 wallet/SQLite, SELL, BROKER 주문은 변경하지 않음.
-- **중대 미완료:** 이 모듈의 install(core)은 현재 Android 런타임에 연결되지 않음. Java 화면에도 v019_exit_plan 표시 코드를 연결하지 않음. 매수 순간 내구성 있는 사전주문 생성·UI 표시·사후 시간순 청산 엔진은 아직 작동하지 않음.
-- 이 모듈의 전략별 입력 필드, 분봉 비율 참조 및 과거 보유분 누락 처리도 원본 테스트로 검증하지 않음. SOURCE_FIXED나 CI_VERIFIED로 표시 금지.
-- 원본 GMO/CW 정책을 추출해 검토하는 CI 44524177661, 44524355364는 SUCCESS이나 **원본 정책 정적 감사만 수행**. 0.0.19 전체 8원장 회귀시험, Android Java 컴파일, 동일 서명 APK CI 및 실기기 시험은 아직 없음.
-- 0.0.19 신규 APK나 GitHub release는 없음. 사용자 설치본은 스크린샷 기준 0.0.17이었고 GitHub 최신 배포본은 0.0.18임. 설치 여부나 장중 결과를 추정하지 말 것.
-- 핵심 추적 이슈: https://github.com/OHM1121/RESALE_ALPHA/issues/109 (OPEN).
-- 0.0.19 정책 최종 기록: docs/artitrade/USER_ACTIVE_POLICY.md, 커밋 3379b251cb83c8b0886f46350d4c5c23f40f9519.
+## 7. GitHub 보관 / 입력창 금지
 
-## 6. 이전 버전 및 알려진 오류
+- 날짜별 보관 경로: `docs/artitrade/handoffs/ARTITRADE_HANDOFF_2026-11-19_0.1.0.md`.
+- 최신본 경로: `docs/artitrade/HANDOFF_LATEST.md`.
+- 기존 날짜별 0.0.16/0.0.19 이전 문서는 덮어쓰지 않음.
+- 이 문서의 본문은 사용자 채팅에서 복사 가능하도록 동일하게 전달.
+- **채팅 입력창 자동입력, 메시지 제출 준비·자동전송, 후속 메시지 자동 삽입 금지.** 오직 현재 답변과 승인된 GitHub 파일만 기록.
 
-- 0.0.17: 주식 AT PENDING/상위 공식봉 복구 재시도, 459종 실제 대상 수 기반 단조 증가 사전로딩 카운터, 유효한 양수 시장점수 게이트. 원본 회귀/서명 CI 성공이나 실제 KRX 장중 PAPER BUY 정상화는 DEVICE_VERIFIED 아님. 이슈 #104, #106 계속 OPEN.
-- 0.0.18: MA·Trend rev1 저가 이탈 확정봉 규칙 및 코인 MA 보유 종목 빠른 Upbit 호가 평가 경로 추가. 0.12초는 우선 확인 목표이지 체결 보장이 아님. 원본 8개 지갑·서명 검증 성공, 휴대전화 실거래/가상매도 결과는 미검증. 이슈 #107 및 개발 PR #108.
-- 이전 코인 MA 5분봉 매도 누락 조사에서는 분봉 최고가와 실제 원본 매수호가가 불일치했으며, PAPER_RESTING은 거래소에 접수된 실주문이 아니었음. 사용자는 이 데이터 누락 문제를 사전 계획+시간순 PAPER 가상체결 복원으로 보완하려고 함.
-- 0.0.15 고유 포지션 UID와 단일 CFG PAPER 예외 정리는 원본 소스·CI 통과만으로 휴대전화 원장에 실제 반영되었다고 단정할 수 없음.
-- GMO·CW·기존 거래이력의 지갑 소유권, 원본 수량, 체결 수수료, 원장 식별자를 임의 변경하지 말 것.
-
-## 7. 다음 개발자가 수행할 순서와 인수기준
-
-1. 0.0.18 릴리스 커밋과 0.0.19 HEAD를 비교하고, USER_ACTIVE_POLICY.md의 마지막 시간순 복원 규칙을 최우선으로 읽을 것.
-2. 8개 전략별 원본 BUY/TP/강제손절/만기/트레일링 함수·가격 자료 출처와 원본 SQLite 테이블을 매핑. GMO/CW 원래 정책은 그대로 유지.
-3. 각 BUY의 원본 체결 시각·원본 최초 수량·가격·고유 position ID로 계획을 내구적으로 확정. 이전 0.0.19 읽기전용 코드는 검증 후 재사용하거나 교체.
-4. 프로그램 정상화 시 원본 구매 시각 이후 공식 거래소 이력을 시간순으로 복구. 손절 선행, TP1 선행 후 손절, TP1→TP2, TP2 전 전량매도, 같은 봉 선후 불명, 시세/봉 누락, 부분체결, 중복 재시작, 실거래 전환을 각각 결정적으로 시험.
-5. 동일한 원본 PAPER position에만 원장 트랜잭션·잔량·현금·실현손익·수수료를 일치시켜 단일 적용. 과거 원본 영수증의 순서를 재작성하거나 REAL 체결을 소급 생성하지 말 것.
-6. Python hub_records(for_ui) 전체 데코레이터·원본 8개 지갑과 Android Java 카드에 1차/2차 목표가·수량·기록 출처 및 PAPER 계획/확정 체결 구분 표시. CW는 2차 없음으로 명시.
-7. 의존성 그래프, version_issues.json, 비식별 GitHub #109를 업데이트하고 원본 전체 8개 전략 회귀 + Java 컴파일 + 같은 설치 패키지/원본 인증서 서명 확인. 그다음에만 숫자 버전 APK 배포.
-8. 실기기 설치·가격 이력·원장 소급 적용 및 장중 반응은 별도 DEVICE_VERIFIED 증거로 검증. 미검증 결과는 그대로 OPEN 유지.
-
-## 8. 인수인계서 저장·복사 및 자동입력 금지
-
-- 본 인수인계서 Markdown 전체를 채팅 답변의 복사 가능한 문서에 그대로 표시.
-- GitHub 날짜별 보관: docs/artitrade/handoffs/ARTITRADE_HANDOFF_2026-11-19_0.0.19.md.
-- GitHub 최신본: docs/artitrade/HANDOFF_LATEST.md.
-- 날짜별 보관본은 이전 0.0.16 등의 과거 문서를 덮어쓰지 않음. main과 0.0.19 작업 브랜치에서 동일 Markdown 파일을 읽을 수 있게 저장.
-- 후속 인수인계 작성 때는 최신 릴리스·소스 HEAD·CI·APK·GitHub 이슈 상태를 다시 조회하고, 변경된 동일 본문을 채팅 및 GitHub 두 경로에 동시 반영할 것.
-- **채팅 입력창 자동입력·자동 타이핑·메시지 제출 준비·후속 메시지 자동 전송 절대 금지.** 출력은 오직 현재 답변의 복사 가능한 문서와 승인된 GitHub 파일에만 남길 것.
+추적: https://github.com/OHM1121/RESALE_ALPHA/issues/109, https://github.com/OHM1121/RESALE_ALPHA/issues/110
