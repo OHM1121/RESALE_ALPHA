@@ -1588,7 +1588,10 @@ public final class UnifiedVisualActivity extends Activity {
                             Stats st=calculateStats(packet,m,stg);
                             preparedTotals.put(m+"/"+stg,st);
                             if("at".equals(stg)||"ma".equals(stg)||"general".equals(stg)||"trend".equals(stg)){
-                                for(String tf:new String[]{"5m","30m","60m","day"})
+                                String[] activeFrames="trend".equals(stg)
+                                    ?new String[]{"30m","60m","day"}
+                                    :new String[]{"5m","30m","60m","day"};
+                                for(String tf:activeFrames)
                                     preparedFrames.put(m+"/"+stg+"/"+tf,
                                         calculateStatsTf(packet,m,stg,tf,st));
                             }
@@ -1707,6 +1710,10 @@ public final class UnifiedVisualActivity extends Activity {
                 for(int i=0;i<data.length();i++){
                     JSONObject row=data.optJSONObject(i);if(row==null)continue;
                     String frame=timeFrameOf(row);
+                    // Retired Trend 5m entries are hidden from current pending/fill
+                    // history. Existing open holdings remain visible for recovery.
+                    if("trend".equals(s)&&"5m".equals(frame)
+                        &&!"positions".equals(kind))continue;
                     HistoryRow item=new HistoryRow(row,s,frame,rowTimestamp(row));
                     // Current-strategy default, all-strategy opt-in and per-frame within the current strategy.
                     buckets.computeIfAbsent(m+"/"+s+"/"+kind+"/all",k->new java.util.ArrayList<>()).add(item);
@@ -1733,7 +1740,9 @@ public final class UnifiedVisualActivity extends Activity {
             java.util.Map<String,java.util.List<RealizedTrend.Event>> grouped=new HashMap<>();
             grouped.put("all",new java.util.ArrayList<>());
             if(StrategyDashboardScope.showFrameCharts(strategyName))
-                for(String tf:new String[]{"5m","30m","60m","day"})
+                for(String tf:("trend".equals(strategyName)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"}))
                     grouped.put(tf,new java.util.ArrayList<>());
             JSONArray fills=source.getValue().executions;
             for(int i=0;i<fills.length();i++){
@@ -1834,6 +1843,7 @@ public final class UnifiedVisualActivity extends Activity {
             ?new String[]{"current","all","5m","30m","60m","day","gmo","close"}
             :new String[]{"current","all","5m","30m","60m","day"};
         for(String choice:filters){
+            if("trend".equals(strategy)&&"5m".equals(choice))continue;
             android.view.MenuItem item=menu.getMenu().add(HistorySelection.filterLabel(choice));
             item.setCheckable(true);item.setChecked(choice.equals(activeHistoryFilter()));
             item.setOnMenuItemClickListener(selected->{
@@ -2557,7 +2567,8 @@ public final class UnifiedVisualActivity extends Activity {
         }
         for(int i=0;i<pending.length();i++){
             JSONObject row=pending.optJSONObject(i);
-            if(row==null||!"WATCH_PENDING".equals(row.optString("status","")))continue;
+            if(row==null||"5m".equals(timeFrameOf(row))
+                ||!"WATCH_PENDING".equals(row.optString("status","")))continue;
             LinearLayout panel=card();
             String symbol=row.optString("code","종목 미확인");
             panel.addView(text(symbol+" · "+tfLabel(timeFrameOf(row)),17));
@@ -3111,7 +3122,9 @@ public final class UnifiedVisualActivity extends Activity {
             boolean sideBySide=getResources().getConfiguration().screenWidthDp>=720;
             LinearLayout pair=null;
             int pairCount=0;
-            for(String tf:new String[]{"5m","30m","60m","day"}){
+            for(String tf:("trend".equals(strategy)
+                ?new String[]{"30m","60m","day"}
+                :new String[]{"5m","30m","60m","day"})){
                 Stats q=statsTf(market,strategy,tf);
                 TimeframeAccountFlowView flow=new TimeframeAccountFlowView(this);
                 flow.setData(tfLabel(tf),q.total,q.realized,q.unrealized,q.win,q.target,
@@ -3148,8 +3161,13 @@ public final class UnifiedVisualActivity extends Activity {
         // Current strategy only; never merge AT, MA, CLOSE or GMO automatically.
         addTrendCard("all",strategyName(market,strategy)+" 누적",null);
         if(StrategyDashboardScope.showFrameCharts(strategy)){
-            addTrendCard("5m","5분봉","30m");
-            addTrendCard("60m","1시간봉","day");
+            if("trend".equals(strategy)){
+                addTrendCard("30m","30분봉","60m");
+                addTrendCard("day","일봉",null);
+            }else{
+                addTrendCard("5m","5분봉","30m");
+                addTrendCard("60m","1시간봉","day");
+            }
         }
     }
 
@@ -6434,7 +6452,10 @@ public final class UnifiedVisualActivity extends Activity {
                 ?new String[]{"5m","30m","60m","day","gmo","close"}
                 :new String[]{"5m","30m","60m","day"})
             :StrategyDashboardScope.showFrameCharts(scope)
-                ?new String[]{"5m","30m","60m","day"}:new String[]{scope};
+                ?("trend".equals(scope)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"})
+                :new String[]{scope};
         boolean matrixColumns=getResources().getConfiguration().screenWidthDp>=720;
         LinearLayout matrixPair=null;
         int matrixInRow=0,maxRowHeight=0;
@@ -6822,14 +6843,20 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject stock=new JSONObject(),coin=new JSONObject();
             for(String stg:new String[]{"at","ma","trend"}){
                 JSONObject frames=new JSONObject();
-                for(String tf:new String[]{"5m","30m","60m","day"})frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
+                for(String tf:("trend".equals(stg)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"}))
+                    frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
                 stock.put(stg,new JSONObject().put("frames",frames));
             }
             stock.put("close",new JSONObject().put("seed",2000000).put("max_positions",4));
             stock.put("gmo",new JSONObject().put("seed",2000000).put("max_positions",4));
             for(String stg:new String[]{"general","ma","trend"}){
                 JSONObject frames=new JSONObject();
-                for(String tf:new String[]{"5m","30m","60m","day"})frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
+                for(String tf:("trend".equals(stg)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"}))
+                    frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
                 coin.put(stg,new JSONObject().put("frames",frames));
             }
             root.put("stock",stock).put("coin",coin);
@@ -6975,10 +7002,13 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void addFrameOperationSection(String title,String m,String stg,JSONObject settings){
         TextView h=text(title,19);h.setTypeface(null,Typeface.BOLD);h.setTextColor(Color.rgb(224,226,236));h.setPadding(0,dp(18),0,dp(7));content.addView(h);
-        String[] frames={"5m","30m","60m","day"};
-        for(int row=0;row<2;row++){
+        String[] frames="trend".equals(stg)
+            ?new String[]{"30m","60m","day"}
+            :new String[]{"5m","30m","60m","day"};
+        for(int row=0;row<(frames.length+1)/2;row++){
             LinearLayout line=new LinearLayout(this);line.setOrientation(LinearLayout.HORIZONTAL);
             for(int col=0;col<2;col++){
+                if(row*2+col>=frames.length)break;
                 String tf=frames[row*2+col];
                 LinearLayout card=operationFrameCard(m,stg,tf,settings);
                 LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(132),1);
@@ -7003,7 +7033,9 @@ public final class UnifiedVisualActivity extends Activity {
             if("stock".equals(market)){
                 for(String stg:new String[]{"at","ma","trend"}){
                     JSONObject frames=new JSONObject();
-                    for(String tf:new String[]{"5m","30m","60m","day"}){
+                    for(String tf:("trend".equals(stg)
+                        ?new String[]{"30m","60m","day"}
+                        :new String[]{"5m","30m","60m","day"})){
                         EditText[] e=operationFields.get("stock."+stg+"."+tf);if(e==null)continue;
                         frames.put(tf,new JSONObject().put("seed",operationLong(e[0],"시드")).put("max_positions",operationLong(e[1],"최대보유")));
                     }
@@ -7016,7 +7048,9 @@ public final class UnifiedVisualActivity extends Activity {
             }else{
                 for(String stg:new String[]{"general","ma","trend"}){
                     JSONObject frames=new JSONObject();
-                    for(String tf:new String[]{"5m","30m","60m","day"}){
+                    for(String tf:("trend".equals(stg)
+                        ?new String[]{"30m","60m","day"}
+                        :new String[]{"5m","30m","60m","day"})){
                         EditText[] e=operationFields.get("coin."+stg+"."+tf);if(e==null)continue;
                         frames.put(tf,new JSONObject().put("seed",operationLong(e[0],"시드")).put("max_positions",operationLong(e[1],"최대보유")));
                     }
