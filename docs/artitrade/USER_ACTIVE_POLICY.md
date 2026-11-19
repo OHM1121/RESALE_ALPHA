@@ -126,3 +126,30 @@ a new instruction appears different. Cross-check original
    preserving the historical entry and identifying what changed. Update
    `AGENTS.md`, version issues, dependency graph and targeted regression
    tests. Never conceal a conflict by modifying test expectations.
+
+
+## 2026-11-19: Original eight-wallet stable position identifiers
+- A durable, globally unique position UID covers active and completed original
+  positions in stock AT/MA/GMO/CW/Trend and coin Reference/MA/Trend.
+- A UID is namespaced by verified epoch + original owner-wallet + immutable
+  original native position ID/BUY receipt. Original source primary keys,
+  execution foreign keys, strategy policies and cash remain unchanged.
+- Fills without an independently verified source-position relationship are
+  marked UNLINKED_EXECUTION, never assigned a fabricated BUY or joined by
+  ticker alone. Missing provenance is a visible error, not a blank screen.
+- Historical rows are indexed read-only from original native SQLite; newly
+  recorded rows gain identifiers from the same source evidence, including after
+  restart. Sidecar failures must not block genuine SELL or hide original balances.
+
+## 2026-11-19: Specifically authorized one-cycle CFG exception
+- User explicitly authorizes deleting exactly ONE earlier reported KRW-CFG
+  coin MA 5-minute PAPER position with malfunctioning SELL, notwithstanding
+  unresolved historical book-liquidity proof. This exception does not apply
+  to another CFG entry, other frame, other owner, live/broker or other ticker.
+- Require a unique historical original position with native source BUY proof,
+  exact pre-incident entry time and unsold original MA state; ambiguity skips
+  rather than deletes. Restore native PAPER cash, realized P&L and linked
+  history, back up and rebase independent witness before trading starts.
+- Never claim a real phone position was erased or IDs were already indexed
+  solely because a synthetic CI suite or Android APK built. Record exact
+  DELETE_ONE / SKIPPED result privately on the phone.
