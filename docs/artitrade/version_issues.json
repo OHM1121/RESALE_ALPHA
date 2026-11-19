@@ -211,6 +211,51 @@
         "test_v006_trend_5m_retirement_and_startup.py"
       ],
       "notes": "Retain nontrend 5m and exit recovery from earlier holdings."
+    },
+    {
+      "id": "AT-003-004-HIST",
+      "issue": 62,
+      "found": "0.0.3→0.0.4",
+      "category": "USER_HANDOFF_HISTORICAL",
+      "title": "Six restart/quote/recovery/score abnormal scenarios",
+      "evidence": "User-supplied v004 handoff: native PAPER CI 44344459965 and signed APK CI 44344860422, phone unverified",
+      "root": "PARTIAL_HISTORICAL",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.0.4-source",
+      "ci": "HISTORICAL_CI_REPORTED",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_FEED",
+        "COIN_FEED",
+        "EXECUTION",
+        "SERVICE"
+      ],
+      "tests": [
+        "test_v004_abnormal_reconnect_six.py"
+      ],
+      "notes": "User handoff only, device live/auth not verified; historical regression retained."
+    },
+    {
+      "id": "AT-004-005-HIST",
+      "issue": 63,
+      "found": "0.0.4→0.0.5",
+      "category": "USER_HANDOFF_HISTORICAL",
+      "title": "Independent UI score plane and zero-holding score continuity",
+      "evidence": "User-supplied v005 handoff: APK CI 44349415950, native E2E 44349205802, public source probe 44349533568",
+      "root": "PARTIAL_HISTORICAL",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.0.5-source",
+      "ci": "HISTORICAL_CI_REPORTED",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "MARKET_SCORE",
+        "UI_RECORDS",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v005_market_score_empty_wallet.py"
+      ],
+      "notes": "UI score plane is not execution score_events; later v005 errors recorded separately #53-60."
     }
   ],
   "known_normal": [
