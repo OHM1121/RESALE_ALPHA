@@ -292,6 +292,8 @@ def install():
 
     def buy_and_preplan(self,market,frame,symbol,name,ask,ask_size,at,
                         bar_key,rsi20_live):
+        if frame not in TREND_FRAMES:
+            return None,'TREND_5M_RETIRED_NO_NEW_BUY'
         p,reason=_ORIGINAL_BUY(self,market,frame,symbol,name,ask,ask_size,
                                at,bar_key,rsi20_live)
         if p is not None and frame in TREND_FRAMES:
