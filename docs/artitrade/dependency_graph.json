@@ -909,6 +909,46 @@
         97
       ],
       "contract": "At original KRX D19 native BUY, resolve signed market worker at shared app root instead of stock ledger root; cold-launch worker before native stock tick. Score must be fresh signed >0 at EXACT BUY, never reuse stale snapshot, fabricate real 0B/0D/5m or bypass native wallet. Order rejection classifies score missing from non-positive, and complete transaction commits a verified native PAPER BUY receipt + NEW LEGACY 30/35 resting plans. Nondeterministic phone session remains separate from CI evidence. GMO and CW owner untouched."
+    },
+    {
+      "id": "POSITION_UID_V015",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/position_uid_v015.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "UI_RECORDS",
+        "PYTHON_RUNTIME",
+        "ANTI_ROLLBACK"
+      ],
+      "issues": [
+        100
+      ],
+      "contract": "Assign stable owner/epoch/original-native-position+BUY-receipt UIDs for eight strategy wallets, including historical OPEN/CLOSED; never replace original PK or invent fill links. UI display only. Preserve GMO/CW cash, policy and sell owner."
+    },
+    {
+      "id": "CFG_SINGLE_PAPER_CLEANUP_V015",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/cfg_single_paper_cleanup_v015.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java",
+        "ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py"
+      ],
+      "depends_on": [
+        "COIN_MA",
+        "EXECUTION",
+        "ANTI_ROLLBACK",
+        "NL1118_PAPER_LEGACY_PURGE_V012"
+      ],
+      "issues": [
+        92,
+        98,
+        100
+      ],
+      "contract": "User-authorized exactly-one historic KRW-CFG coin MA 5m PAPER failed-exit exception only; require unique source BUY/sidecar/entry evidence. Back up original wallet, reverse only target cash/realized and linked records, rebase independent witness; no other CFG, GMO/CW/REAL, guessed fills or bulk ticker deletion. Real device unverified."
     }
   ],
   "audit_scope": {
