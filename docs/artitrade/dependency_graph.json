@@ -925,7 +925,7 @@
         "ANTI_ROLLBACK"
       ],
       "issues": [
-        100
+        101
       ],
       "contract": "Assign stable owner/epoch/original-native-position+BUY-receipt UIDs for eight strategy wallets, including historical OPEN/CLOSED; never replace original PK or invent fill links. UI display only. Preserve GMO/CW cash, policy and sell owner."
     },
