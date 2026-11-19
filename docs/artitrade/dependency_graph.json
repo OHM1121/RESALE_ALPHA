@@ -1173,6 +1173,32 @@
         109
       ],
       "contract": "Native fee, cash, realized P&L, qty and original SELL receipt in one per-owner SQLite transaction; unique replay journal. Synthetic coin Reference/CW tests; all seven SQLite owners and original GMO JSON remain not comprehensively source/CI validated. No crash-safe independent-witness rebase coordinator and no original authenticated on-phone historical tape. NOT wired, NOT authorized to run on private ledger or produce signed release."
+    },
+    {
+      "id": "V010_FUTURE_BUY_ONLY_OFFLINE_PAPER_EXIT",
+      "kind": "requirements/implementation pending",
+      "files": [
+        "docs/artitrade/USER_ACTIVE_POLICY.md",
+        "docs/artitrade/HANDOFF_LATEST.md",
+        "docs/artitrade/handoffs/ARTITRADE_HANDOFF_2026-11-19_0.1.0.md",
+        "ARTITRADE_ANDROID/app/src/main/python/paper_exit_replay_v019.py",
+        "ARTITRADE_ANDROID/app/src/main/python/paper_exit_native_ledger_v019.py"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "POSITION_UID_V015",
+        "V019_EIGHT_OWNER_SOURCE_TARGET_DISPLAY",
+        "V019_PAPER_NATIVE_CHRONOLOGICAL_REPLAY_WIP",
+        "V019_NATIVE_ATOMIC_STAGE_SETTLEMENT_WIP",
+        "ANTI_ROLLBACK",
+        "STOCK_FEED",
+        "COIN_FEED",
+        "HUB_UI"
+      ],
+      "issues": [
+        110
+      ],
+      "contract": "0.1.0 activation-and-new-native-PAPER-BUY only: original per-owner stage and protection persisted at BUY, recover complete official same-venue post-BUY offline event order and replay all original exits chronologically. Stop first wins; same-OHLC ambiguity fails closed; strict TP overshoot not automatic profitable SELL. Original 7 SQLite+GMO JSON native atomic fees/cash/PnL/qty and exact-once ledger/witness. Never backdate old positions, REAL synthetic fills or modify original GMO/CW rules. Current status SPECIFIED, NOT IMPLEMENTED, NO 0.1.0 APK."
     }
   ],
   "audit_scope": {
