@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 REPO=Path(__file__).resolve().parents[2]
-REQUIRED=("AGENTS.md","CLAUDE.md",".github/copilot-instructions.md",
+REQUIRED=("AGENTS.md","CLAUDE.md","GEMINI.md",".agents/rules/artitrade-root-cause.md",".github/copilot-instructions.md",
           "docs/artitrade/ISSUE_HISTORY.md","docs/artitrade/dependency_graph.json",
           "docs/artitrade/version_issues.json",
           ".github/ISSUE_TEMPLATE/artitrade-root-cause.yml",
