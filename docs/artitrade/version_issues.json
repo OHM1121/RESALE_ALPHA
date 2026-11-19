@@ -573,9 +573,9 @@
       "title": "GMO D+1 late-restart and special-session entry cannot resume",
       "evidence": "D+1 preplan only at pre-open, on_tick returned with no transient plan, paper-only gate and native 09:00 clock, original shared WS clock",
       "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.8-source",
-      "ci": "V008_NATIVE_SESSION_44449035817; LATE_RESTART_44448126804",
+      "ci": "SOURCE_PASS_RUN_44449911066; SIGNED_APK_PASS_RUN_44450056074",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -597,9 +597,9 @@
       "title": "Stage1/2 internal sell_intents confused with live broker rest orders",
       "evidence": "NEW_LEGACY targets sell_intents all is_real_broker_order=False; app Python set_live() refuses enabled; original KiwoomBroker FOK has no resting order API",
       "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.8-readonly-audit",
-      "ci": "PENDING_FULL_BUILD",
+      "ci": "SOURCE_PASS_RUN_44449911066; SIGNED_APK_PASS_RUN_44450056074",
       "device": "UNVERIFIED",
       "nodes": [
         "ACTIVITY_UI",
@@ -621,9 +621,9 @@
       "title": "Bollinger percent-gradient angle differs from chart visual angle",
       "evidence": "atan(100*percent middle per bar) ignores price axis pixel height and bar horizontal pitch; external chart axis zoom arbitrary",
       "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.8-chart-projection",
-      "ci": "PENDING_FULL_BUILD",
+      "ci": "SOURCE_PASS_RUN_44449911066; SIGNED_APK_PASS_RUN_44450056074",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_TREND",
@@ -708,6 +708,56 @@
     "notes": "Original package and signer; update in place without reset. Live brokerage unverified."
   },
   "latest_test_artifact": {
+    "versionName": "0.0.8",
+    "versionCode": 130,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_build_source_commit": "a768bdae3fbd3830a4247ee77245ed2815b96f08",
+    "github_actions_run_id": 44450056074,
+    "artifact_id": 14494518466,
+    "release_tag": "ARTITRADE-0.0.8-signed-test-20261119",
+    "filename": "ARTITRADE_0.0.8.apk",
+    "size_bytes": 30492085,
+    "sha256": "99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+    "previous_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false,
+    "real_order_fill_verified": false,
+    "actual_stage1_stage2_sell_orders_confirmed": false,
+    "read_only_kiwoom_unfilled_query": true,
+    "source_ledger_reset_performed": false,
+    "unresolved_issue_numbers": [
+      58,
+      59,
+      60,
+      71,
+      73,
+      79,
+      80,
+      82,
+      83,
+      84
+    ]
+  },
+  "work_in_progress_008": {
+    "versionName": "0.0.8",
+    "versionCode": 130,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_apk_built": true,
+    "real_broker_execution_verified": false,
+    "source_gmo_special_native_patch_verified": true,
+    "real_broker_stage1_stage2_placement": false,
+    "read_only_ka10075_status_inquiry_implemented": true,
+    "external_exchange_chart_angle_exact_match": false,
+    "device_verified": false,
+    "prior_app_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "source_commit": "a768bdae3fbd3830a4247ee77245ed2815b96f08",
+    "signed_ci_run": 44450056074,
+    "artifact_id": 14494518466,
+    "apk_sha256": "99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+    "apk_size_bytes": 30492085,
+    "old_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "signed_test_only": true
+  },
+  "previous_test_artifact_007": {
     "versionName": "0.0.7",
     "versionCode": 129,
     "package": "com.artitrade.unified.s21dex",
@@ -729,18 +779,5 @@
       71,
       73
     ]
-  },
-  "work_in_progress_008": {
-    "versionName": "0.0.8",
-    "versionCode": 130,
-    "package": "com.artitrade.unified.s21dex",
-    "signed_apk_built": false,
-    "real_broker_execution_verified": false,
-    "source_gmo_special_native_patch_verified": true,
-    "real_broker_stage1_stage2_placement": false,
-    "read_only_ka10075_status_inquiry_implemented": true,
-    "external_exchange_chart_angle_exact_match": false,
-    "device_verified": false,
-    "prior_app_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
   }
 }
