@@ -134,7 +134,8 @@ class WorkbookNovember18(unittest.TestCase):
         with sqlite3.connect(":memory:") as c:
             c.row_factory=sqlite3.Row
             stock=dict(id=7,tf="30m",entry_price=100,
-                entry_qty=100,qty=100,ref_low=90,ref_high=95,code="005930")
+                entry_qty=100,qty=100,ref_low=90,ref_high=95,code="005930",
+                entry_ts="20261118100000")
             self.assertTrue(ref._mark(c,stock,"stock"))
             x=ref._read(c,7)
             self.assertEqual(x["sell_intents"][0]["quantity"],30.)
@@ -147,7 +148,8 @@ class WorkbookNovember18(unittest.TestCase):
                        json.dumps({"low":90,"high":95})))
             coin=dict(id=11,tf="60m",market="KRW-TST",ref_at="2026-11-18T11:00",
                       entry=100,qty0="200",qty="200",
-                      hold_until="2026-12-01T11:00:00+09:00")
+                      hold_until="2026-12-01T11:00:00+09:00",
+                      entry_at="2026-11-18T20:00:00+09:00")
             self.assertTrue(ref._mark(c,coin,"coin"))
             y=ref._read(c,11)
             self.assertEqual(y["sell_intents"][0]["quantity"],60.)
