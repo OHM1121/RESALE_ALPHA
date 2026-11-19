@@ -9,6 +9,8 @@ on:
       - ARTITRADE_ANDROID/ui_tests/test_v009_forensic_krx_gmo_ma_dns.py
       - ARTITRADE_ANDROID/ui_tests/test_v010_gmo_d1_or_0b_recovery.py
       - ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py
+      - ARTITRADE_ANDROID/ui_tests/test_v010_native_market_clock.py
+      - ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py
       - ARTITRADE_ANDROID/app/src/main/python/artitrade_history_dns_circuit_v009.py
       - ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py
   workflow_dispatch:
@@ -38,6 +40,7 @@ jobs:
           python3 ARTITRADE_ANDROID/ui_tests/patch_v105_ka10004_readonly.py
           python3 ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py
           python3 ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py
           python3 - <<'PY'
           from pathlib import Path
           import base64,io,zipfile,hashlib,ast,datetime as dt,sys
@@ -73,6 +76,7 @@ jobs:
           python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v008-native:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v010_gmo_d1_or_0b_recovery.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v010_native_market_clock.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v009_forensic_krx_gmo_ma_dns.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v097_gmo_preplan.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_eight_virtual_paper_end_to_end.py' -v
