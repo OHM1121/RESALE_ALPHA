@@ -18,11 +18,11 @@ jobs:
       CI: 'true'
       ARTIFACT: ARTITRADE_0.0.11
       TAG: ARTITRADE-0.0.11-signed-test-20261119
-      SOURCE: 17a2f9d1fc98f44b977e03c576a363f2889301a4
+      SOURCE: 22589feeb2a361d51fece02c225e17b2115fb7ae
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 17a2f9d1fc98f44b977e03c576a363f2889301a4
+          ref: 22589feeb2a361d51fece02c225e17b2115fb7ae
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
