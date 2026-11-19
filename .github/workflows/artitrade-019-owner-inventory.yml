@@ -1,0 +1,30 @@
+name: ARTITRADE 0.0.19 original eight-wallet source inventory (no user data)
+on:
+  push:
+    branches: [artitrade-019-eight-wallet-target-plan-display-20261119]
+    paths: [.github/workflows/artitrade-019-owner-inventory.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  original-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Print native original source method and SQLite table contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,base64,io,zipfile
+          root=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          data=base64.b64decode("".join((root/("part_%02d.txt"%i)).read_text("ascii") for i in range(22)))
+          assert hashlib.sha256(data).hexdigest()=="b014a00fd2cc29984650cb7ea24e7ea9672d6480fd68e91a6a1ebbe72754dfbb"
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              z.extractall("/tmp/artitrade-v019-native")
+          PY
+          python3 ARTITRADE_ANDROID/ui_tests/audit_v019_native_owner.py
