@@ -223,9 +223,17 @@ def exit_signal(state,observed_bid,now,market_score=None):
             except (TypeError,ValueError):pass
     stage=int(t.get("stage",0))
     if stage<=0:
-        if p>entry:t["seen_above_entry"]=True
-        if t.get("seen_above_entry") and p<=entry:
-            return "NL1118_PRE_FIRST_RETURN_TO_ENTRY",1.0
+        # rev1 F6/F7: the MA / MarketTrend entry-retrace full exit is retired.
+        # Before TP1, a closed, official source candle must prove that price
+        # touched the entry-signal candle low AND later closed strictly below
+        # that same low. No synthetic candle high, no last-tick close proxy.
+        if kind in ("ma","trend"):
+            if t.get("rev1_below_reference_low_confirmed") is True:
+                return "NL1118_REV1_PRE_FIRST_REFERENCE_LOW_CLOSED",1.0
+        else:
+            if p>entry:t["seen_above_entry"]=True
+            if t.get("seen_above_entry") and p<=entry:
+                return "NL1118_PRE_FIRST_RETURN_TO_ENTRY",1.0
         if p>=float(t["first"]):
             left=max(0,stage_quantity(t["qty0"],t["market"],1)-
                      float(t.get("stage1_filled",0)))
