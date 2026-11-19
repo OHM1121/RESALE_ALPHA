@@ -25,6 +25,8 @@ The **GitHub Issues tab** is the version-by-version expandable issue history. [O
 | [#72](https://github.com/OHM1121/RESALE_ALPHA/issues/72) | 0.0.6 → unreleased | Trend shared position dictionaries lack one locking contract | Source fixed; device unverified |
 | [#73](https://github.com/OHM1121/RESALE_ALPHA/issues/73) | historical | Old v067 MA expectations contradict NEW LEGACY(11.18), 8 pre-existing failures | OPEN - baseline/policy review |
 
+| [#75](https://github.com/OHM1121/RESALE_ALPHA/issues/75) | 0.0.6 → 0.0.7 | Same-signer stock/coin cross-strategy test APK | Sign/build/device verification pending |
+
 ### State vocabulary
 `REPORTED` / `LOG_CONFIRMED` / `ROOT_CAUSE_CONFIRMED` / `SOURCE_FIXED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `OPEN_UNVERIFIED` / `LATENT_UNOBSERVED` / `NON_ERROR_POLICY_BLOCK`. A defect cannot move to `DEVICE_VERIFIED` merely because a paper simulation or Java compile succeeds.
 
