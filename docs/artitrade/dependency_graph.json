@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "ARTITRADE 0.0.9 signed source 9acd71dd... and read-only 2026-11-19 12:50 stock export ZIP sha14793bd; v010 source tests initial 44455916347 and actual 0.0.9 phone recovery crash RED 44455795210; REAL and device not verified.",
+  "source_baseline": "0.0.10 TEST APK immutable source e237088ead76207562f713e3003524336f02c6e6; 8-strategy PAPER CI 44456475957; signed APK SHA256 b9ac1da1ab7d86b280910720cc7d4c1c50469b233a17d6d8e05e3a6b018bf802; subsequent GitHub docs HEAD not identical to APK source",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -792,7 +792,8 @@
       "original-82 native KRX/NXT patch source+CI",
       "signed arm64 0.0.8 test APK SHA256 99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
       "0.0.7 actual phone JSON+ZIP 15 original records, read-only local analysis, counts only committed",
-      "0.0.9 phone 12:50 actual 15-source ZIP+SQLite forensic, 8 PAPER regression; new exact error signature 12:23 gmo_paper_tick"
+      "0.0.9 phone 12:50 actual 15-source ZIP+SQLite forensic, 8 PAPER regression; new exact error signature 12:23 gmo_paper_tick",
+      "0.0.10 code132 old-signature signed original 82-module same-day KRX/GMO/AT regression, actual Samsung orderbook and live broker fill unverified"
     ],
     "not_a_completeness_claim": true
   }
