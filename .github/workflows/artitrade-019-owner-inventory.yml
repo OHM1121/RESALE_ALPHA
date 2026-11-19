@@ -52,6 +52,24 @@ jobs:
                   for i in hits:
                       for n in range(max(0,i-3),min(len(lines),i+18)):
                           print(n+1,lines[n][:250])
+          for source in root.rglob("*.py"):
+              name=source.name
+              if name not in ("d_upbit.py","d_live.py","d_v19_portfolio.py",
+                              "d_v18_portfolio.py","d_store.py","d_gmo_runtime.py",
+                              "d_v19_store.py","d_portfolio.py"):continue
+              lines=source.read_text("utf8").splitlines()
+              hits=[i for i,line in enumerate(lines) if any(t in line for t in (
+                  "coin_trade_price_path","coin_trade_followup",
+                  "CREATE TABLE IF NOT EXISTS public","market_ticks",
+                  "INSERT INTO coin_trade","CREATE TABLE IF NOT EXISTS",
+                  "_persist(","state.json","_record_execution("))]
+              if hits:
+                  print("SOURCE_TAPE_SCHEMA",source.relative_to(root),"hits",len(hits))
+                  printed=set()
+                  for i in hits[:25]:
+                      for n in range(max(0,i-2),min(len(lines),i+5)):
+                          if n not in printed:
+                              print(n+1,lines[n][:250]);printed.add(n)
           for name,ranges in targets.items():
               ls=(root/name).read_text("utf8").splitlines()
               for a,b in ranges:
