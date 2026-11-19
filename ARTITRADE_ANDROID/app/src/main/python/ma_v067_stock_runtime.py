@@ -255,7 +255,10 @@ def _second_followup_bar(self,p,when,forming_trade):
 
 def _exit_policy(self,c,p,bid,now,book,previous):
     kind,state=_read_state(c,p['id'])
-    if state is None:return previous(self,c,p,bid,now,book)
+    if state is None or kind!='REVERSAL_UP':
+        # Old MA V061/V24 automatic exits must NEVER run after 11.18.
+        # Missing sidecars remain in the original wallet, not auto-sold.
+        return None
     from ma_v061_stock_runtime import _slope_closes
     trade=_latest_0b(self,p['code'],now)
     # Verified KRX 0D bid/depth can execute targets without a coincident 0B
@@ -683,6 +686,17 @@ def install():
         original_init(self,*a,**kw)
         with self.lock,native._connect(self.db) as c:
             _table(c)
+            # Retire V061/non-11.18 candidates before native on_tick sees
+            # the next 0B; preserve all historical executions/positions.
+            pending=c.execute("SELECT id,features FROM candidates WHERE status='PENDING'").fetchall()
+            for candidate in pending:
+                try:evidence=json.loads(candidate['features'] or '{}')
+                except (TypeError,ValueError):evidence={}
+                if not (evidence.get('ma_v067_kind')=='REVERSAL_UP' and
+                        evidence.get('ma_v067_quote_source')=='EXACT_KRX_0B_AND_0D'):
+                    c.execute("""UPDATE candidates
+                        SET status='NL1118_RETIRED_LEGACY_MA'
+                        WHERE id=? AND status='PENDING'""",(candidate['id'],))
             open_rows=c.execute("""SELECT p.code FROM positions p JOIN candidates a
                 ON a.id=p.candidate_id LEFT JOIN ma_v067_positions v ON v.position_id=p.id
                 WHERE p.status='OPEN' AND v.position_id IS NULL
