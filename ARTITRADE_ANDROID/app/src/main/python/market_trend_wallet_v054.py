@@ -359,7 +359,11 @@ class TrendWalletV054:
                         return 0,'MANUAL_REQUEST_ALREADY_EXECUTED'
                 balance=float(r['qty'])
                 if market=='stock':
-                    qty=int(balance) if fraction>=.999 else max(1,int(round(balance*fraction)))
+                    if getattr(pos,'nl1118_policy',None)=='NEW_LEGACY_1118':
+                        from math import ceil
+                        qty=int(balance) if fraction>=.999 else max(1,int(ceil(balance*fraction-1e-10)))
+                    else:
+                        qty=int(balance) if fraction>=.999 else max(1,int(round(balance*fraction)))
                     if manual_fraction is not None and verified_manual_bid_qty is not None:
                         # Only the confirmed user PAPER path may supply a
                         # newly verified official KRX 0D/ka10004 bid size.
@@ -432,6 +436,18 @@ class TrendWalletV054:
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (key,pos.position_id,frame,symbol,at.isoformat(),'SELL',sold,px,fee,tax,
                        pnl,new_cash,mode,str(fill.get('order_id') or ''),reason))
+                    # A durable TP1/TP2 PAPER resting order is matched ONLY
+                    # after the native execution journal has been written.
+                    # Not a broker-resting order and never a synthetic fill.
+                    if (getattr(pos,'nl1118_policy',None)=='NEW_LEGACY_1118'
+                            and mode=='PAPER'):
+                        import new_legacy_1118_resting as resting
+                        if reason in ('MT_TP1','MT_TP2'):
+                            resting.confirmed_fill(c,int(pos.position_id),
+                                1 if reason=='MT_TP1' else 2,
+                                int(c.execute('SELECT last_insert_rowid()').fetchone()[0]))
+                        else:
+                            resting.cancel_remaining(c,int(pos.position_id),reason)
                     c.commit()
                 pos.__dict__.update(confirmed.__dict__)
             except Exception as exc:
