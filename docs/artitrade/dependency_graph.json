@@ -44,7 +44,8 @@
         53,
         54,
         60,
-        62
+        62,
+        65
       ],
       "contract": "Only STARTED Python engine makes trading live. Failure does not masquerade as healthy heartbeat."
     },
@@ -156,7 +157,8 @@
       "issues": [
         53,
         55,
-        63
+        63,
+        65
       ],
       "contract": "No full JSON on order lock, source errors not masked; zero ledger data != missing source."
     },
@@ -257,7 +259,8 @@
       ],
       "issues": [
         55,
-        60
+        60,
+        65
       ],
       "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet."
     },
@@ -378,7 +381,8 @@
       "issues": [
         60,
         62,
-        63
+        63,
+        65
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative."
     },
@@ -409,7 +413,8 @@
         "ANTI_ROLLBACK"
       ],
       "issues": [
-        54
+        54,
+        65
       ],
       "contract": "KST fixed UTC+9 on Android; WAL-safe local snapshot and verify before publish."
     },
