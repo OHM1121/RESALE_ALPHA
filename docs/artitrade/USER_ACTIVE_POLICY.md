@@ -186,3 +186,9 @@ a new instruction appears different. Cross-check original
 - No changes to the original trend 30m/60m/day entry rules, original broker
   live/PAPER fill ownership, GMO/CW wallets or cash accounting; old Trend 5m
   entry remains retired, and legacy held 5m SELL recovery stays available.
+
+## 2026-11-19: Permanent chat handoff and GitHub dual-publication instruction
+- Every time the user requests an ARTITRADE handoff, show the **complete document directly in the assistant's answer, with copy control**, and save the identical sanitized Markdown during that work in GitHub.
+- Keep two markdown paths: a new dated archive under docs/artitrade/handoffs/ and the refreshed docs/artitrade/HANDOFF_LATEST.md. Commit to the current source branch and default main so the latest handoff can be found regardless of source/main divergence. Verify commit IDs and link them in the response; report a failed write instead of inventing an upload.
+- Do not automatically enter any text into the user's ChatGPT message/input/composer box, do not prefill it and do not automatically submit follow-up chat turns, even if the text is a handoff or a link. Only answer-side copyable text and verified GitHub files.
+- Keep handoffs up-to-date on release SHA, CI, version, APK, open errors, exact strategy/wallet policy, original provenance and device-verification status; no personal on-device private data in public GitHub. Archive revisions rather than replacing prior dated copies.
