@@ -2560,6 +2560,12 @@ def set_network_v092(validated):
 from position_uid_v015 import install as _install_position_uid_v015
 _install_position_uid_v015(_core)
 
+# 0.0.19: source-provenance-only target display. Wrap AFTER v015 owner
+# attribution. Keep for_ui keyword forwarding, original SELL receipts,
+# broker permissions and wallet/SQLite balances entirely untouched.
+from staged_exit_preview_v019 import install as _install_staged_exit_preview_v019
+_install_staged_exit_preview_v019(_core)
+
 # v017: the original FIX14 completed-bar REST reader lost retry ownership on
 # DNS faults and on wake-ups earlier than its own 55s throttle. Keep source
 # validation + original eight ledgers, repair only scheduling and the stale
