@@ -633,6 +633,96 @@
         "test_v008_bollinger_pixel_geometry.py"
       ],
       "notes": "Replaced percentage atan with declared fixed 21-close viewport pixel projection; the output is faithful to that specific internal geometry, NOT provably equal to independently zoomed Upbit app screenshot. Record chart_view for audit. RSI24 proof still mandatory."
+    },
+    {
+      "id": "AT-007-09",
+      "issue": 85,
+      "found": "0.0.7-phone-log",
+      "category": "USER_NATIVE_SQLITE",
+      "title": "GMO D+1 same-KRX 0D zero/invalid despite genuine 0B trade; special-open priority re-register missed",
+      "evidence": "GMO_BOOK_INVALID 135, V097_PREPLANNED_D1_ENTRY_OWNER 30, 0B minute rows >0. Source gmo._repair_gmo_depth_on_existing_ws 08:52-09:30 only and native _priority_phase fixed 09:00/09:30.",
+      "root": "CONFIRMED_NATIVE_GMO_SCHEDULE_AND_INCOMPLETE_0D",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.9-source",
+      "ci": "SIGNED_SOURCE_PENDING;NATIVE_PASS_RUN_44451729441",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "STOCK_SHARED_WS_OWNER",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v009_forensic_krx_gmo_ma_dns.py"
+      ],
+      "notes": "0D re-REG over existing subscribed WS across active KRX day, D+1 candidates can be protected even without first BUY. Broker raw same-venue 0D may remain actually unavailable, so no inferred ask size/fill."
+    },
+    {
+      "id": "AT-007-10",
+      "issue": 86,
+      "found": "0.0.7-phone-log",
+      "category": "USER_NATIVE_SQLITE",
+      "title": "Delayed KRX 10:00 opening rejected by original AT 09:00 parent-series validation",
+      "evidence": "FIX5_FRAME_UNVERIFIED 2075; missing PARENT_SEQUENCE_GAP includes 20261119090000..20261119094500 on 10:00 opening day. v008 did not modify d_engine.complete_session_coverage/d_multiframe_recovery_fix14.",
+      "root": "CONFIRMED_ORIGINAL_PARENT_CLOCK_ASSUMPTION",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.9-source",
+      "ci": "NATIVE_PASS_RUN_44451729441",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_AT",
+        "STOCK_FEED",
+        "AT_HISTORY_RECOVERY"
+      ],
+      "tests": [
+        "test_v009_forensic_krx_gmo_ma_dns.py"
+      ],
+      "notes": "Original 82-core calendar patch matches exact 2026-11-19 start10:00/end16:30 for all parent bar validation; ordinary dates remain09:00/15:30. Still requires genuine KRX completed bars; no backfills as fills."
+    },
+    {
+      "id": "AT-007-11",
+      "issue": 87,
+      "found": "0.0.7-phone-log",
+      "category": "USER_NATIVE_SQLITE",
+      "title": "429 official KRX REST DNS failures and realtime DB-gate contention",
+      "evidence": "Python native runtime errors 429 chart NameResolutionError; FIX8_DB_GATE_CONTENTION 66, TICK_PROCESS_DELAY 28, WS disconnect 27. History recovery consumes shared scheduling/SQLite time.",
+      "root": "CONFIRMED_DNS_SPAM_AND_DEFER_THRESHOLD",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.9-source",
+      "ci": "NATIVE_PASS_RUN_44451729441",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_FEED",
+        "STOCK_AT",
+        "STOCK_GMO",
+        "STOCK_MA",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v009_forensic_krx_gmo_ma_dns.py"
+      ],
+      "notes": "Shared DNS-only optional history circuit, defer chart when priority tick/normal quote backlog, preserving genuine-quote freshness. External ISP DNS and all device lock contention remain unverified."
+    },
+    {
+      "id": "AT-007-12",
+      "issue": 88,
+      "found": "0.0.7-phone-log",
+      "category": "USER_ANDROID_RUNTIME",
+      "title": "Daily backup MSERVER unknown_endpoint protocol mismatch not backup success",
+      "evidence": "0.0.7 Java daily_backup_coin/stock 20 faults, 0.0.6 10 faults; missing compatible MSERVER daily command endpoint.",
+      "root": "CONFIRMED_REMOTE_ENDPOINT_UNSUPPORTED",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.0.9-client-schedule-only",
+      "ci": "JAVA_SOURCE_BUILD_PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "SERVICE",
+        "BACKUP"
+      ],
+      "tests": [
+        "test_v003_daily_market_backup.py"
+      ],
+      "notes": "Client marks REMOTE_ENDPOINT_UNSUPPORTED, only checks every 6h (not 5 min), does not set done_date or delete source. Actual remote backup requires PC MSERVER protocol update not present in repository."
     }
   ],
   "known_normal": [
@@ -779,5 +869,30 @@
       71,
       73
     ]
+  },
+  "work_in_progress_009": {
+    "name": "0.0.9",
+    "versionCode": 131,
+    "source_branch": "fix-artitrade-009-v007-forensic-rootcause-20261119",
+    "original_log_export": "2026-11-19 12:15:58 KST",
+    "uploaded_zip_sha256": "9008abf28393ad380d055def50182ba9a68059793535a3d0b9c8d37a0132dea2",
+    "root_issues": [
+      85,
+      86,
+      87,
+      88
+    ],
+    "native_ci_pass_run": 44451729441,
+    "source_commit": "PENDING_SIGNATURE_VERIFICATION",
+    "signed_apk_built": false,
+    "phone_verified": false,
+    "actual_kiwoom_orders_verified": false,
+    "server_daily_backup_verified": false,
+    "original_ledger_reset": false,
+    "observed_nonerrors": [
+      "43 AT pending on stock market score negative in 0.0.7. 2026-11-19 12:14 score -26.0; positive score policy unchanged.",
+      "Historic MA_V067_UP_5S_QUEUE_FULL 1001 occurrences; current latest-per-symbol queue 0.0.8/0.0.9 code has dedicated regression."
+    ],
+    "notes": "0.0.8 corrected generic market trading clock and Trend RSI proof, but left native AT parent-series, GMO priority/0D re-reg, and shared history DNS. Do not mark actual Kiwoom/live fills completed."
   }
 }
