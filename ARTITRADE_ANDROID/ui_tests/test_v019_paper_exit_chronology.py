@@ -63,6 +63,14 @@ class ChronologyProof(unittest.TestCase):
         self.assertEqual(r["chronology"][0]["kind"],"TP1")
         self.assertFalse(r["wallet_written"])
 
+    def test_shadow_candidate_never_overrides_later_actual_stop(self):
+        r=audit(BASE,[event("01:00","TRADE_TICK",price=105,tradable=True),
+                      event("02:00","HARD_STOP")])
+        self.assertEqual(r["status"],"CHRONOLOGY_AUDITED_NO_SYNTHETIC_FILL")
+        self.assertEqual(r["remaining_qty"],0)
+        self.assertEqual([x["kind"] for x in r["chronology"]],["TP1","HARD_STOP"])
+        self.assertFalse(r["inferred_profit_booked"])
+
     def test_equal_needs_book_proof(self):
         r=audit(BASE,[event("01:00","TRADE_TICK",price=104,tradable=True)])
         self.assertEqual(r["chronology"][0]["state"],"LIMIT_TOUCH_NEEDS_BOOK_AND_QUEUE_PROOF")
