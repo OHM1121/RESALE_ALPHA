@@ -23,7 +23,8 @@
         55,
         60,
         96,
-        104
+        104,
+        106
       ],
       "contract": "No source-ready proof from a zero-length array; UI snapshot != original execution DB."
     },
@@ -976,7 +977,8 @@
       ],
       "issues": [
         102,
-        104
+        104,
+        106
       ],
       "contract": "Display true original engine preflight: 21 continuous official closes latest including Upbit UPBIT_CLOSED, original quote+0B/0D book and WS, source gate/wallet, measured percent/ETA. Never duplicate socket, order or mark missing as ready; bounded 40s UI escape keeps source recovery. Original variable check-progress is independent of 0.0.17 distinct stock-symbol loading percent."
     },
@@ -1034,7 +1036,7 @@
         "ACTIVITY_UI"
       ],
       "issues": [
-        104
+        106
       ],
       "contract": "Numerator counts uniquely native REST VERIFIED_RESTORED source symbol after actual broker history, denominator freezes original selected KRX scan universe; cannot decrease during rotation/reconnect; 100% is per-symbol load only, never an actual order authorization or full 0B/0D readiness; 40s safe UI exit retained and unresolved repairs remain background."
     }
