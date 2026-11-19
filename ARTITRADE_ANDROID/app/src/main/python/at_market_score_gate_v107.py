@@ -24,13 +24,28 @@ def _observe(root,market,strategy,frame,symbol,reference,reason,
         # Audit failure never places, alters, or denies an order.
         pass
 
+def _score_worker_root(root,market):
+    """Map wallet directory to the shared score-publisher root.
+
+    Native stock DStore.root is <phone>/stock; _MarketWorker is registered
+    at <phone>. Previously the strict 11.18 BUY wrapper looked up the wrong
+    key and rejected ALL qualifying stock BUY attempts as "not positive",
+    even with a live positive signed score. Never invent/reuse cached score.
+    """
+    path=Path(root).resolve()
+    if market=="stock" and path.name=="stock":
+        return path.parent
+    return path
+
 def score_evidence(root,market):
     if market not in ("stock","coin"):raise ValueError("unknown market")
     from market_research_v033 import _WORKERS,_WORKERS_LOCK
+    key=str(_score_worker_root(root,market))
     with _WORKERS_LOCK:
-        worker=_WORKERS.get(str(Path(root).resolve()))
+        worker=_WORKERS.get(key)
     if worker is None:
-        return {"negative":False,"score":None,"basis":"SCORE_NOT_YET_AVAILABLE"}
+        return {"negative":False,"score":None,
+                "basis":"SCORE_PUBLISHER_NOT_READY","score_root":key}
     try:
         row=(worker.snapshot() or {}).get(market) or {}
     except Exception:
