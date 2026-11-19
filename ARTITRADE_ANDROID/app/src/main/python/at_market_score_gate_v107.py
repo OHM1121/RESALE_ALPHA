@@ -49,18 +49,18 @@ def score_evidence(root,market):
     try:
         row=(worker.snapshot() or {}).get(market) or {}
     except Exception:
-        return {"negative":False,"score":None,
+        return {"negative":False,"positive":False,"score":None,
                 "basis":"SCORE_WORKER_UNAVAILABLE"}
     try:
         value=float(row.get("score"))
         if not math.isfinite(value) or value < -100 or value > 100:
             raise ValueError("invalid signed market score")
         if row.get("stale"):
-            return {"negative":False,"score":None,"basis":"STALE_SCORE_NO_DECISION"}
+            return {"negative":False,"positive":False,"score":None,"basis":"STALE_SCORE_NO_DECISION"}
         return {"negative":value<0,"positive":value>0,"score":value,
                 "basis":"SIGNED_MARKET_SCORE_V033"}
     except (ValueError,TypeError,OverflowError):
-        return {"negative":False,"score":None,"basis":"SCORE_UNVERIFIED"}
+        return {"negative":False,"positive":False,"score":None,"basis":"SCORE_UNVERIFIED"}
 
 def install():
     """Wrap only original native BUY functions, never BUY replays or SELL."""
