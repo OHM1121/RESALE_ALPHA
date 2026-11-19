@@ -131,4 +131,41 @@ class V008RootCause(unittest.TestCase):
         self.assertEqual(rec(rt),'OK')
         self.assertEqual(new,[])
 
+    def test_trend_registry_owner_lock_covers_buy_sell_and_research_snapshots(self):
+        # v008 source contract: stock+coin Coordinator workers share these
+        # dictionaries with GMO/AT subscription and wallet owner lookups.
+        trend=(BASE/'market_trend_runtime_v043.py').read_text(encoding='utf8')
+        new_legacy=(BASE/'market_trend_1118_runtime.py').read_text(encoding='utf8')
+        expected=(
+            'with self.lock:\n                        self._positions[(market,"trend",frame,code)]=p',
+            'with self.lock:\n                        self._virtual[vkey]=v',
+            'with self.lock:\n            held_snapshot=list(self._positions.items())',
+            'with self.lock:\n            virtual_snapshot=list(self._virtual.items())',
+            'with self.lock:\n                owned_snapshot=tuple(self._positions.values())',
+            'with self.lock:\n                if self._positions.get(key) is p:',
+            'with self.lock:\n                    if self._virtual.get(key) is v:',
+        )
+        for fragment in expected:
+            with self.subTest(fragment=fragment[:48]):
+                self.assertIn(fragment,trend)
+        self.assertIn('with self.lock:\n            self._positions[(market,"trend",frame,code)]=position',new_legacy)
+
+    def test_all_five_strategies_still_have_original_entry_exit_owners(self):
+        # Fixing one live feed must not delete or replace other wallet owners.
+        py=BASE
+        must_have={
+            'gmo_d1_preplan_v097.py':['original_subscriptions(self,opening)','original_topup(engine,q)'],
+            'market_trend_runtime_v043.py':['self.standalone_wallet.buy(','owner.sell(','TREND_FRAMES'],
+            'ma_v067_stock_runtime.py':['service.on_tick(decision_tick,runner.engine.book)'],
+            'ma_v067_coin_runtime.py':['return previous_sell(self,c,p,desired,price,at,reason,event_key=event_key)'],
+            'android_runtime_v078.py':['from close_followup_integrity_v008 import install',
+                                        'from gmo_d1_preplan_v097 import install'],
+        }
+        for name,fragments in must_have.items():
+            source=(py/name).read_text('utf8')
+            for fragment in fragments:
+                with self.subTest(file=name,fragment=fragment[:50]):
+                    self.assertIn(fragment,source)
+
+
 if __name__=='__main__':unittest.main()
