@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "0.0.8 TEST APK source a768bdae3fbd3830a4247ee77245ed2815b96f08; verified signer Actions 44450056074; not device/live verified. 0.0.7 earlier source 901ce172.",
+  "source_baseline": "0.0.7 forensic original records (ZIP SHA 9008abf2) compared with 0.0.8 signed source a768bdae and 0.0.9 new source branch; CI 44451729441, no device proof.",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -182,7 +182,8 @@
         71,
         72,
         77,
-        80
+        80,
+        87
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
@@ -285,7 +286,8 @@
         68,
         77,
         79,
-        80
+        80,
+        85
       ],
       "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy. Overlay preplan fixes are partial; native first opening 09:00 guard may prevent 10:00 venue official open (#80)."
     },
@@ -468,7 +470,8 @@
       ],
       "issues": [
         54,
-        65
+        65,
+        88
       ],
       "contract": "KST fixed UTC+9 on Android; WAL-safe local snapshot and verify before publish."
     },
@@ -573,7 +576,8 @@
       ],
       "issues": [
         58,
-        71
+        71,
+        86
       ],
       "contract": "Verified KRX completed parent bars are required for AT; DNS/history REST errors are not zero candidates and cannot authorize synthetic fills. Retries presently unverified."
     },
@@ -636,6 +640,80 @@
         84
       ],
       "contract": "Bollinger(20,1.5) mid visual slope = atan2(pixel projected price change, candle pixel pitch); fixed 21-close viewport convention saved with decision; exact external chart screenshot angle depends external zoom and axis, not asserted. RSI 24h evidence remains required."
+    },
+    {
+      "id": "KRX_PARENT_COVERAGE_V009",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py",
+        "ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "STOCK_AT",
+        "AT_HISTORY_RECOVERY"
+      ],
+      "issues": [
+        80,
+        86
+      ],
+      "contract": "Original d_engine bar_end, is_krx_regular_reference, complete_session_coverage and d_multiframe_recovery_fix14 expected_last_parent use verified exact-date KRX opening/close, not fixed 09:00. No synthetic parent/fill. 2026-11-19 KRX 10:00; other ordinary days 09:00."
+    },
+    {
+      "id": "GMO_0D_RESTART_V009",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py",
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "STOCK_GMO",
+        "STOCK_SHARED_WS_OWNER",
+        "EXECUTION"
+      ],
+      "issues": [
+        82,
+        85
+      ],
+      "contract": "Native GMO priority phase matches KRX venue date; verified source same-session 0D re-REG after ANY reconnect during live session, with same socket and no duplicate account sessions. Missing/zero qty means no order/fill; 0B only is not executable ask depth."
+    },
+    {
+      "id": "STOCK_HISTORY_REST_CIRCUIT_V009",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/artitrade_history_dns_circuit_v009.py",
+        "ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_FEED",
+        "STOCK_GMO",
+        "STOCK_MA",
+        "EXECUTION"
+      ],
+      "issues": [
+        58,
+        71,
+        87
+      ],
+      "contract": "Only optional past candle REST retries share DNS-only exponential cooldown; stock 0B/0D and exits are never suspended; no future history filled or fake data. Defer slow rest if quote backlog; same current SQLite retained."
+    },
+    {
+      "id": "DAILY_REMOTE_BACKUP_PROTOCOL_V009",
+      "kind": "java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LocalHubClient.java"
+      ],
+      "depends_on": [
+        "SERVICE",
+        "BACKUP"
+      ],
+      "issues": [
+        88
+      ],
+      "contract": "If PC MSERVER reports unknown_endpoint for daily backup, no verified backup claim or done_date; six-hour retry backoff (not every 5min), retain original SQLite/WAL. PC server endpoint update remains required."
     }
   ],
   "audit_scope": {
@@ -653,7 +731,8 @@
       "GitHub source+Java CI",
       "real device unresolved",
       "original-82 native KRX/NXT patch source+CI",
-      "signed arm64 0.0.8 test APK SHA256 99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59"
+      "signed arm64 0.0.8 test APK SHA256 99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+      "0.0.7 actual phone JSON+ZIP 15 original records, read-only local analysis, counts only committed"
     ],
     "not_a_completeness_claim": true
   }
