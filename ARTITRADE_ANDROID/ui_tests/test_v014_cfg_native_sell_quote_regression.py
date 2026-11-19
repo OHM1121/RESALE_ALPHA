@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import coin_held_depth_v014 as book_guard
 from coin_held_depth_v014 import (
     held_ma_symbols, prioritize_watch_codes, book_sell_evidence,
 )
@@ -140,6 +141,32 @@ class HeldSubscriptionAndSafety(unittest.TestCase):
         self.assertEqual(wanted,[SYMBOL,"KRW-AA","KRW-BB","KRW-CC"])
         self.assertEqual(len(wanted),len(set(wanted)))
         self.assertEqual(prioritize_watch_codes(["KRW-AA"],[]),["KRW-AA"])
+
+    def test_real_class_depth_wrapper_installed_and_fake_runner_has_held_priority(self):
+        import d_upbit
+        self.assertEqual(d_upbit.UpbitPaperRunner._both_watched_codes.__name__,
+                         'ma_held_book_watch')
+        class IsolatedRunner:
+            def __init__(self):
+                self.ma_ledger=SimpleNamespace(
+                    _ma_v067_up_hold_symbols={SYMBOL})
+                self._tracking=['KRW-OTHER','KRW-CANDIDATE']
+            def _both_watched_codes(self):
+                return ['KRW-OTHER','KRW-CANDIDATE']
+            @property
+            def tracked(self):
+                return self._tracking
+            @tracked.setter
+            def tracked(self,value):
+                self._tracking=list(value)
+        vendor=SimpleNamespace(UpbitPaperRunner=IsolatedRunner)
+        with patch.object(book_guard,'_INSTALLED',False):
+            book_guard.install(vendor)
+        runner=IsolatedRunner()
+        self.assertEqual(runner._both_watched_codes()[0],SYMBOL)
+        self.assertEqual(runner.tracked[0],SYMBOL)
+        runner.tracked=['KRW-NEW']
+        self.assertEqual(runner.tracked,[SYMBOL,'KRW-NEW'])
 
     def test_true_source_freshness_is_not_extended(self):
         now=ENTRY+dt.timedelta(seconds=5)
