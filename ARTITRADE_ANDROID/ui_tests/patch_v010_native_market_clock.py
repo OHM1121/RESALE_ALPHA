@@ -97,6 +97,22 @@ replace("d_live.py",
     "(tf, stamp[:8] + '090000', latest)).fetchall()",
     "(tf, session_start, latest)).fetchall()")
 
+
+# This SECOND live AT completion path was still comparing against imaginary
+# 09:00 parents on the one-off delayed 10:00 open. It is independent from
+# the higher-frame REST repair patched above. Apply the same date-specific
+# KRX opening to coverage counting, without inventing missing candles.
+replace("d_live.py",
+    """                                required_bars = int((datetime.strptime(ref_ts, '%Y%m%d%H%M%S') - datetime.strptime(ref_ts[:8] + '090000', '%Y%m%d%H%M%S')).total_seconds()) // ({'5m': 5, '30m': 30, '60m': 60}[tf] * 60) + 1""",
+    """                                from krx_session_v041 import venue_bounds
+                                ref_datetime=datetime.strptime(ref_ts, '%Y%m%d%H%M%S')
+                                open_min=venue_bounds(ref_datetime,'KRX')[0]
+                                start_ref_ts=ref_ts[:8]+f'{open_min//60:02d}{open_min%60:02d}00'
+                                required_bars = int((ref_datetime - datetime.strptime(start_ref_ts,'%Y%m%d%H%M%S')).total_seconds()) // ({'5m': 5, '30m': 30, '60m': 60}[tf] * 60) + 1""")
+replace("d_live.py",
+    """(tf, ref_ts[:8] + '090000', ref_ts)).fetchall()""",
+    """(tf, start_ref_ts, ref_ts)).fetchall()""")
+
 for name,body in modified.items():
     ast.parse(body.decode("utf8"),filename=name)
 out=io.BytesIO()
