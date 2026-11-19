@@ -3059,11 +3059,24 @@ public final class UnifiedVisualActivity extends Activity {
         }
         if("stock".equals(market)&&"gmo".equals(strategy)&&
            selected.positions.length()+selected.executions.length()+selected.research.length()==0){
+            // Empty is the expected state of a committed fresh PAPER epoch.
+            // A missing ledger, failed source read, and a verified empty
+            // wallet are three DIFFERENT states; never treat count=0 as corruption.
             JSONObject diag=ledger(market,strategy).optJSONObject("load_diagnostic");
-            String detail=diag==null?"원장 확인 필요":diag.optString("stage","원장 확인 필요");
-            TextView warn=text("◉  수급매매 원장 확인 필요 · "+detail,11);
-            warn.setTextColor(Color.rgb(255,119,133));
-            content.addView(warn,new LinearLayout.LayoutParams(-1,dp(22)));
+            String stage=diag==null?"":diag.optString("stage","");
+            String upper=stage.toUpperCase(java.util.Locale.ROOT);
+            boolean sourceFailed=selected.sourceError||
+                upper.contains("ERROR")||upper.contains("CORRUPT")||
+                upper.contains("FAILED")||upper.contains("UNREADABLE");
+            if(sourceFailed||!selected.sourceReady){
+                String message=sourceFailed
+                    ?"수급매매 원장 조회 오류 · "+(stage.isEmpty()?"SOURCE_ERROR":stage)
+                    :"수급매매 엔진 시작 대기 · 원장 조회 중";
+                TextView status=text(message,11);
+                status.setTextColor(sourceFailed?Color.rgb(255,119,133):PremiumUi.MUTED);
+                content.addView(status,new LinearLayout.LayoutParams(-1,dp(22)));
+            }
+            // verified zero positions/executions is NORMAL and needs no warning
         }
         LinearLayout headline=new LinearLayout(this);headline.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=text(strategyName(market,strategy),20);
