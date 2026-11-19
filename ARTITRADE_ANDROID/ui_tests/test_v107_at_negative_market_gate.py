@@ -1,4 +1,4 @@
-"""No APK / no broker / no SQLite mutation. Hook scope unit test."""
+"""No APK / no broker / no SQLite mutation. Strict NEW LEGACY >0 BUY gate."""
 from pathlib import Path
 import sys
 import tempfile
@@ -74,18 +74,33 @@ class MarketGateTest(unittest.TestCase):
         self.assertEqual(self.ma.sell(),"COIN_SELL_NOT_CHANGED")
         self.assertEqual(self.base.sell(),"COIN_SELL_NOT_CHANGED")
 
-    def test_zero_or_positive_allows_original_buy(self):
+    def test_zero_stock_score_blocks_but_positive_coin_allows_original_buy(self):
+        # NEW LEGACY(11.18) authorizes an actual reference BUY ONLY for signed
+        # scores > 0. The retired negative-only contract was unsafe.
         self.snapshots["stock"]["score"]=0.0
         self.snapshots["coin"]["score"]=1.0
-        self.assertEqual(self.old._buy_if_touch(None,"5m",{},None),"STOCK_LEGACY_BUY")
-        self.assertEqual(self.d19._buy_limit_depth(None,{},None,"KRX",1),(True,"STOCK_D19_BUY"))
+        self.assertIsNone(self.old._buy_if_touch(None,"5m",{},None))
+        self.assertFalse(self.d19._buy_limit_depth(None,{},None,"KRX",1)[0])
         self.assertEqual(self.base._buy(None,{},None,None,None),123.0)
+        self.snapshots["stock"]["score"]=0.1
+        self.assertEqual(self.old._buy_if_touch(None,"5m",{},None),"STOCK_LEGACY_BUY")
+        self.assertEqual(self.d19._buy_limit_depth(None,{},None,"KRX",1),
+                         (True,"STOCK_D19_BUY"))
 
-    def test_stale_or_missing_never_invents_negative(self):
+    def test_stale_or_missing_always_blocks_actual_reference_buy(self):
         self.snapshots["stock"].update(score=-10,stale=True)
         self.snapshots["coin"]["score"]=None
-        self.assertEqual(self.d19._buy_limit_depth(None,{},None,"KRX",1)[0],True)
-        self.assertEqual(self.base._buy(None,{},None,None,None),123.0)
+        stock=gate.score_evidence(self.root,"stock")
+        coin=gate.score_evidence(self.root,"coin")
+        self.assertIsNone(stock["score"])
+        self.assertFalse(stock["positive"])
+        self.assertIsNone(coin["score"])
+        self.assertFalse(coin["positive"])
+        self.assertFalse(self.d19._buy_limit_depth(None,{},None,"KRX",1)[0])
+        self.assertIsNone(self.old._buy_if_touch(None,"5m",{},None))
+        self.assertEqual(self.base._buy(None,{},None,None,None),0)
+        # Other strategies' native policies remain unchanged.
+        self.assertEqual(self.ma._buy(None,{},None,None,None),123.0)
 
 
 if __name__=="__main__":

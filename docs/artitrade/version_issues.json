@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "audit-artitrade-014-cfg-sell-20261119",
+  "working_branch": "artitrade-017-preload-count-and-stock-pending-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -1072,6 +1072,57 @@
         "test_v002_eight_virtual_paper_end_to_end.py"
       ],
       "notes": "Original native MT54 position.id/executions.position_id exact cost join, original buy fee apportioned by executed qty; sell net_pnl and ROI verified, holding saved-mark labelled non-live, all frame summaries. Only read-only output; no updates to native trading wallets, no synthetic external order. Phone records and actual UI unverified."
+    },
+    {
+      "id": "AT-017-27",
+      "issue": 104,
+      "found": "0.0.15-on-device",
+      "category": "USER_DEVICE_ORIGINAL_SQLITE_STOCK_PENDING",
+      "title": "Original KRX stock AT PENDING orders remain BLOCKED after FIX14 verified official frame due discarded DNS/throttle retries and global checkpoint reblock",
+      "evidence": "Sanitized source counts: 181 original higher-frame PENDING, 204 audit BLOCKED, 1534 LIVE_PARENT_GAP guarded events and many official REST ConnectionError. Exact private device original SQLite never uploaded to public GitHub.",
+      "root": "SOURCE_CONFIRMED_NESTED_RETRY_DISCARDED_AND_GLOBAL_REBLOCK; REAL_DEVICE_BUY_UNVERIFIED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.17-source-candidate",
+      "ci": "0.0.17 original eight-wallet/native retry CI pending or see PR #105",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_PENDING_NATIVE_RETRY_V017",
+        "AT_HISTORY_RECOVERY",
+        "STOCK_AT",
+        "STOCK_FEED",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v017_native_pending_retry.py",
+        "test_v013_stock_at_pending_to_native_buy.py",
+        "test_v002_eight_virtual_paper_end_to_end.py"
+      ],
+      "notes": "Preserve original Kiwoom-client REST origin and source SQLite. Retry after DNS errors, throttle, backpressure; prioritize pending, avoid late global checkpoint reblock when exact source VERIFIED; success return with blocked per-order audit must retry. Neither all 181 were eligible nor real broker BUY has been proven. GMO/CW protected, no wallet edits by scheduler."
+    },
+    {
+      "id": "AT-017-28",
+      "issue": 106,
+      "found": "0.0.16-on-device",
+      "category": "USER_DEVICE_PRELOAD_PERCENT_REGRESSION",
+      "title": "Source startup percent moves backward when growing/volatile readiness checklist changes denominator; phase-based stock progress not actually per symbol",
+      "evidence": "0.0.16 preload_audit variable work_units_total and Java UI overwrote percentage; prior 0.0.17 temporary _stock_progress stage heuristic had no native per-stock source. Current original FIX14 recover_frame returns authenticated per-code result.",
+      "root": "CONFIRMED_VARIABLE_CHECKLIST_NOT_STABLE_STOCK_UNIT_COUNTER",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.17-source-candidate",
+      "ci": "0.0.17 synthetics + Android compile pending see PR #105",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "PRELOAD_STOCK_SYMBOLS_V017",
+        "PRELOAD_VERIFIED_V016",
+        "ACTIVITY_UI",
+        "STOCK_FEED"
+      ],
+      "tests": [
+        "test_v017_native_pending_retry.py",
+        "test_v017_stock_preload_progress.py",
+        "test_v081_both_feed_preload.py"
+      ],
+      "notes": "Freeze native first selected KRX universe, count each symbol only after native verified official historical response, monotonic 0/N->N/N (459 when actual KRX universe has 459), never use volatile health-check percent; no fabricated data. 40s UI watchdog can exit before 100% and original history/quote checks continue. Device 459 completion not proven."
     }
   ],
   "known_normal": [
@@ -1308,5 +1359,22 @@
     "actual_broker_order_verified": false,
     "paper_only": true,
     "original_sqlite_preserved_by_source": true
+  },
+  "candidate_017": {
+    "versionName": "0.0.17",
+    "versionCode": 139,
+    "package": "com.artitrade.unified.s21dex",
+    "baseline_release": "0.0.16",
+    "baseline_sha": "4645788692f7f855400927fc2d4a3569f53ef81a",
+    "issue": 104,
+    "pr": 105,
+    "stock_pending_device_verified": false,
+    "stock_native_buy_device_verified": false,
+    "preload_device_verified": false,
+    "original_wallets_protected": true,
+    "original_kiwoom_rest_only": true,
+    "original_signer_to_be_verified_by_ci": true,
+    "notes": "Source candidate, not completed release. Original D19 native PAPER BUY verified only under deterministic fresh score and orderbook fixture. Live phone quote/session and actual buy unverified; never promise arbitrary trades.",
+    "issue_preload": 106
   }
 }

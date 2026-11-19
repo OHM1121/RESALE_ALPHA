@@ -113,6 +113,12 @@ def _phone_runtime_snapshot(self):
         stock['status'] = status
         snapshot['stock'] = stock
         last = dict(getattr(self, '_phone_stock_progress', {}) or {})
+        # The original Runtime._stock_progress only reports generic phases,
+        # not per-stock completions. 0.0.16's phase/checklist denominator could
+        # oscillate, and 0.0.17's interim stage-based guess never counted 459.
+        # Count uniquely proven native recover_frame successes instead.
+        from stock_pending_recovery_v017 import loading_snapshot as _stock_loading
+        native_load=_stock_loading(runner)
         try:
             from at_close_bridge import broker_transport_snapshot
             transport = broker_transport_snapshot()
@@ -130,6 +136,9 @@ def _phone_runtime_snapshot(self):
         snapshot['stock_feed'] = {
             'stage': last.get('stage') or status,
             'detail': last.get('detail') or (transport.get('reason') or ''),
+            'preload_stock_done': native_load['done'],
+            'preload_stock_total': native_load['total'],
+            'preload_stock_counter_source': native_load['source'],
             'state': last.get('state') or 'waiting',
             'updated_at_ms': last.get('updated_at_ms') or 0,
             'subscribed': len(getattr(runner, 'subscriptions', []) or []) if runner else 0,
@@ -2545,6 +2554,13 @@ def set_network_v092(validated):
 # the only owner of BUY/SELL receipts, cash and native position primary keys.
 from position_uid_v015 import install as _install_position_uid_v015
 _install_position_uid_v015(_core)
+
+# v017: the original FIX14 completed-bar REST reader lost retry ownership on
+# DNS faults and on wake-ups earlier than its own 55s throttle. Keep source
+# validation + original eight ledgers, repair only scheduling and the stale
+# global-checkpoint reblock of already officially VERIFIED pending rows.
+from stock_pending_recovery_v017 import install as _install_stock_pending_recovery_v017
+_install_stock_pending_recovery_v017()
 
 # Re-export the stable Android bridge API.
 start = _core.start
