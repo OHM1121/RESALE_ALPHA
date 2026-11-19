@@ -173,8 +173,13 @@ class EightRealPaperWallets(unittest.TestCase):
         now=dt.datetime(2026,11,18,10,5,0,tzinfo=KST)
         end=now.replace(minute=0,second=0,microsecond=0)
         co._candidates[market]={code:('KOSPI' if market=='stock' else 'CRYPTO',code)}
+        # The synthetic fixture declares provenance explicitly; live paths
+        # reject missing or non-venue source evidence.
         co._history[(market,code,'30m')]=[dict(end=end-dt.timedelta(minutes=30*(20-i)),
-                                              close=100-.03*i) for i in range(21)]
+                                              close=100-.03*i,
+                                              source=('UPBIT_CLOSED' if market=='coin'
+                                                      else 'LOCAL_KRX_VERIFIED'))
+                                          for i in range(21)]
         co._decision_clock=lambda:now
         co._quote=lambda m,c:dict(trade=co._quotes[m][c][0],
               bid=co._quotes[m][c][0],ask=co._quotes[m][c][0]+.2,bid_size=100000,ask_size=100000)
