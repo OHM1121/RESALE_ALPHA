@@ -823,7 +823,9 @@
         "ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py",
         "ARTITRADE_ANDROID/app/src/main/python/ma_v061_coin_runtime.py",
         "ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py",
-        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py"
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/nl1118_strict_entry_v012.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py"
       ],
       "depends_on": [
         "STOCK_AT",
@@ -832,9 +834,10 @@
         "EXECUTION"
       ],
       "issues": [
-        94
+        94,
+        95
       ],
-      "contract": "GMO and CLOSE/CW are exempt. No old V2.6/SR1/MA V061/V067 bearish/old MT exit can auto trade; missing NEW LEGACY sidecars fail closed without erasing or reclassifying prior actual fills. Full verified migration of pre-policy open holdings remains open."
+      "contract": "GMO and CLOSE/CW are exempt. No old V2.6/SR1/MA V061/V067 bearish/old MT exit can auto trade; missing NEW LEGACY sidecars fail closed without erasing or reclassifying prior actual fills. Full verified migration of pre-policy open holdings remains open. 0.0.12 install-last strict MA source gate retires old completed-bar stock+coin scanners and retains independent first upward close-minus-10..2s execution. No GMO/CW install modification."
     },
     {
       "id": "NL1118_PAPER_LEGACY_PURGE_V012",
@@ -842,7 +845,8 @@
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py",
         "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java",
-        "ARTITRADE_ANDROID/app/src/main/python/ledger_rollback_guard_v002.py"
+        "ARTITRADE_ANDROID/app/src/main/python/ledger_rollback_guard_v002.py",
+        "ARTITRADE_ANDROID/app/src/main/python/nl1118_strict_entry_v012.py"
       ],
       "depends_on": [
         "EXECUTION",
@@ -870,7 +874,7 @@
       "issues": [
         96
       ],
-      "contract": "Left holding status square renders original wallet timeframe 5분/30분/60분/일봉; remove duplicate timeframe from stock/coin symbol text. Nonframe GMO/CW categories shown only as grounded source strategy category. Pending/SELL UI unchanged."
+      "contract": "Left holding status square renders original wallet timeframe 5분/30분/60분/일봉; remove duplicate timeframe from stock/coin symbol text. Nonframe GMO/CW categories shown only as grounded source strategy category. Pending/SELL UI unchanged. Integrated holdings also show timeframe on the left, no missing chart origin."
     }
   ],
   "audit_scope": {
