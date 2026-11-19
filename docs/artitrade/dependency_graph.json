@@ -181,9 +181,10 @@
         68,
         71,
         72,
-        77
+        77,
+        80
       ],
-      "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D."
+      "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
     {
       "id": "COIN_FEED",
@@ -222,7 +223,8 @@
         68,
         71,
         75,
-        79
+        79,
+        80
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -244,7 +246,8 @@
         60,
         68,
         73,
-        79
+        79,
+        80
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -281,9 +284,10 @@
         65,
         68,
         77,
-        79
+        79,
+        80
       ],
-      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy."
+      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy. Overlay preplan fixes are partial; native first opening 09:00 guard may prevent 10:00 venue official open (#80)."
     },
     {
       "id": "STOCK_CLOSE",
@@ -301,7 +305,8 @@
         60,
         68,
         69,
-        79
+        79,
+        80
       ],
       "contract": "Original CW/close betting engine and native source; no duplicative WS login."
     },
@@ -326,7 +331,8 @@
         72,
         73,
         78,
-        79
+        79,
+        80
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -429,7 +435,8 @@
         75,
         77,
         78,
-        79
+        79,
+        80
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },
