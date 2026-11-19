@@ -186,3 +186,45 @@ a new instruction appears different. Cross-check original
 - No changes to the original trend 30m/60m/day entry rules, original broker
   live/PAPER fill ownership, GMO/CW wallets or cash accounting; old Trend 5m
   entry remains retired, and legacy held 5m SELL recovery stays available.
+
+## 2026-11-19: PAPER preset TP history catch-up MUST replay chronological exits (user clarification)
+- User allows a **PAPER-only** counterfactual resting-limit stage match when
+  authenticated, same-venue historical price actually exceeds the strategy's
+  pre-committed TP limit after its original verified BUY. A high strictly
+  greater than TP is NOT, alone, authorization to book a winning trade.
+- Order all observed events **after exact source BUY timestamp** by credible
+  exchange timestamp, including original hard stop, forced/full exit, expiry,
+  trailing/floor stops, TP1 and TP2. If an authorized hard stop or full exit
+  was reached **first**, terminate that original position's state machine;
+  **never** count a later candle HIGH as a profit or resurrect the holding.
+  A TP1 before a later stop only covers TP1's actual planned original share
+  fraction; the remaining native shares must follow later chronological exits.
+- If high and low triggers occur in the **same OHLC candle** and no original
+  authenticated tick/print ordering exists, high/low alone cannot prove the
+  take-profit came first: **do not create a profitable PAPER fill**. Surface
+  `EXIT_SEQUENCE_UNVERIFIED` or fail closed using a separately disclosed
+  conservative loss-first evaluation; never silently choose favorable path.
+  Likewise, missing older bars, a trading halt, cross-venue price data or
+  timestamps without monotonic ordering must not produce a profitable SELL.
+- After any prior full exit, no subsequent TP is eligible. TP2 is only
+  considered after its strategy's valid TP1 fill and only for verified
+  remaining quantity. Never exceed initial verified BUY quantity or the
+  position's original source cash, realized P&L, fee/tax accounting.
+  Retry/restart must be exactly idempotent per owner+epoch+position+stage.
+- Price **greater than** a pre-persisted TP limit can be a PAPER fill-model
+  assumption only when actual prior chronology and order eligibility permit
+  it; price **equal to** TP needs original exchange book/execution evidence.
+  Never portray an inferred PAPER fill as a broker receipt or actual live trade.
+  Do not retroactively add a profitable SELL to an already confirmed source
+  full-stop or brokerage position. Any historical PAPER ledger correction
+  requires source-position provenance, atomic cash/reason/quantity treatment,
+  backup/anti-rollback and a recorded reconciliation audit.
+- Apply this chronological contract to all eight separate strategy
+  **PAPER** wallets with each owner's ORIGINAL individual thresholds and
+  shares; it does NOT make GMO or CW adopt the NEW LEGACY 30%/35% fractions.
+  Do not enable on REAL brokerage or use a forming/future candle to decide a
+  past event. Preserve each native BUY/SELL source and active-session safety.
+- Status at instruction time: **POLICY_SPECIFIED; chronology engine and
+  device regression NOT VERIFIED**. Do not claim SOURCE_FIXED, CI_VERIFIED,
+  DEVICE_VERIFIED or publish a catch-up APK until the complete chronological
+  replay and all eight wallet regressions have proven this invariant.
