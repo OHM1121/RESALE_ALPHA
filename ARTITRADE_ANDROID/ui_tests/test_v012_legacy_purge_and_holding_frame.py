@@ -104,6 +104,32 @@ class PurgeOneWallet(unittest.TestCase):
         self.assertEqual(read(path,'SELECT COUNT(*) FROM candidates'),[(0,)])
         self.assertEqual(read(path,'SELECT cash,realized FROM wallets'),[(2000000,0)])
 
+    def test_missing_sidecar_without_old_rule_proof_is_not_deleted(self):
+        path=self.root/'coin'/'base'/'upbit_paper.sqlite3'
+        coin_fixture(path)
+        with sqlite3.connect(path) as c:
+            c.execute("UPDATE executions SET reason='BUY_UNATTRIBUTED' WHERE id=1")
+        result=purge._apply_one(path,'coin_at',self.root)
+        self.assertEqual(result['removed'],0)
+        self.assertEqual(result['skipped'],1)
+        self.assertFalse(result['fully_done'])
+        self.assertEqual(read(path,'SELECT COUNT(*) FROM positions'),[(1,)])
+        self.assertEqual(read(path,'SELECT cash FROM wallets'),[(1989995,)])
+
+    def test_mixed_old_entry_and_new_sell_marker_is_protected(self):
+        path=self.root/'coin'/'base'/'upbit_paper.sqlite3'
+        coin_fixture(path)
+        with sqlite3.connect(path) as c:
+            c.execute("""INSERT INTO executions(id,position_id,tf,market,at,side,qty,price,
+                fees,tax,net_pnl,reason,cash_after) VALUES
+                (3,1,'5m','KRW-OLD','2026-11-19T15:03:00+09:00','SELL',
+                 '10','110',1,0,99,'NL1118_TP1',1991094)""")
+        result=purge._apply_one(path,'coin_at',self.root)
+        self.assertEqual(result['removed'],0)
+        self.assertEqual(result['skipped'],1)
+        self.assertEqual(read(path,'SELECT COUNT(*) FROM executions'),[(2,)])
+        self.assertEqual(read(path,'SELECT cash FROM wallets'),[(1989995,)])
+
     def test_stock_at_v19_old_paper_cash_restored(self):
         path=self.root/'stock'/'ARTITRADE_D.sqlite3'
         db(path, """CREATE TABLE v19_accounts(tf TEXT PRIMARY KEY,cash INTEGER,
@@ -115,6 +141,8 @@ class PurgeOneWallet(unittest.TestCase):
                 ref_ts TEXT,entry_qty INTEGER,entry_price INTEGER,entry_fee INTEGER,
                 sell_proceeds INTEGER,sell_costs INTEGER,qty INTEGER,status TEXT);
             INSERT INTO positions VALUES(1,'30m','OLD','old_ref',100,100,5,0,0,100,'OPEN');
+            ALTER TABLE positions ADD COLUMN exit_policy TEXT;
+            UPDATE positions SET exit_policy='OLD_3LEG31' WHERE id=1;
             CREATE TABLE executions(id INTEGER PRIMARY KEY,position_id INTEGER,tf TEXT,
                 side TEXT,qty INTEGER,price INTEGER,gross INTEGER,fees INTEGER,
                 tax INTEGER,cash_after INTEGER);
