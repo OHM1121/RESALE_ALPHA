@@ -16,6 +16,8 @@ from buy_execution_recovery_v082 import Intent
 KST=dt.timezone(dt.timedelta(hours=9))
 _INSTALLED=False
 PHASE={"NXT":("075000","080000","085000"),"KRX":("085000","090000","153000")}
+# Official 2026 CSAT session: NXT 08:00–08:50 is suspended on this day.
+NXT_PREMARKET_CLOSED=frozenset(("2026-11-19",))
 ACTIVE=("NEW","OPEN")
 
 def _now():
@@ -50,8 +52,21 @@ def _verified(tick,clock):
         return None
     return t
 
+def _venue_phase(venue,at):
+    """One KRX special-session calendar for D+1 PAPER preparation and entry."""
+    day=at.date().isoformat()
+    if venue=="NXT" and day in NXT_PREMARKET_CLOSED:return None
+    if venue=="KRX":
+        from krx_session_v041 import SPECIAL_SESSIONS,START,END
+        start,end=SPECIAL_SESSIONS.get(day,(START,END))
+        def clock(minute):
+            return f"{minute//60:02d}{minute%60:02d}00"
+        return clock(start-10),clock(start),clock(end)
+    return PHASE.get(venue)
+
+
 def _valid_phase(venue,at,prepare=False):
-    phase=PHASE.get(venue)
+    phase=_venue_phase(venue,at)
     if not phase:return False
     hhmmss=at.strftime("%H%M%S")
     if prepare:
@@ -134,8 +149,10 @@ class Preplanner:
                      "limit_price":None,"quantity":None},
                     {"scenario":3,"price_rule":"VERIFIED_OPEN_PLUS_2_EXCHANGE_TICKS",
                      "limit_price":None,"quantity":None}]
-                opening_at=at.replace(hour=8 if venue=="NXT" else 9,
-                                      minute=0,second=0,microsecond=0)
+                opening_hhmm=_venue_phase(venue,at)[1]
+                opening_at=at.replace(hour=int(opening_hhmm[:2]),
+                                      minute=int(opening_hhmm[2:4]),
+                                      second=0,microsecond=0)
                 plan={"code":code,"venue":venue,"event_date":signal.event_date,
                       "entry_date":signal.entry_date,
                       "prepared_at":at.isoformat(timespec="seconds"),
@@ -211,7 +228,8 @@ class Preplanner:
             try:
                 # At 08:50 NXT is closed: finalize any outstanding NXT intent
                 # BEFORE preparing the KRX 09:00 budget and scenarios.
-                if "0850"<=at.strftime("%H%M")<"0900":
+                phase=_venue_phase("KRX",at)
+                if phase and phase[0]<=at.strftime("%H%M%S")<phase[1]:
                     self._clear_nxt(at)
                 if _valid_phase("NXT",at,True):
                     self.prepare("NXT",at)
@@ -220,16 +238,25 @@ class Preplanner:
             except Exception as e:
                 svc.last_error="GMO_PREPLAN_"+type(e).__name__+": "+str(e)[:120]
             hhmm=at.strftime("%H%M")
-            # Prompt preflight at 07:50:00 and 08:50:00; the remaining
-            # ten-minute period uses a light, local-only refresh cadence.
-            near_start=("0749"<=hhmm<"0751" or "0849"<=hhmm<"0851")
-            near_open=("0757"<=hhmm<"0801" or "0857"<=hhmm<"0902")
+            # Apply the same scheduling budget on ordinary and special days.
+            current=at.hour*3600+at.minute*60+at.second
+            near_start=near_open=False
+            for v in ("NXT","KRX"):
+                phase=_venue_phase(v,at)
+                if not phase:continue
+                prep=int(phase[0][:2])*3600+int(phase[0][2:4])*60
+                opening=int(phase[1][:2])*3600+int(phase[1][2:4])*60
+                near_start |= abs(current-prep)<=60
+                near_open |= -180<=current-opening<=120
             svc._stop.wait(.5 if near_start or near_open else 4.0)
 
     def on_tick(self,tick,venue):
         at=self.clock()
-        if venue=="KRX" and "0900"<=at.strftime("%H%M")<"0910":
-            self._clear_nxt(at)
+        phase=_venue_phase("KRX",at)
+        if venue=="KRX" and phase:
+            seconds=at.hour*3600+at.minute*60+at.second
+            opening=int(phase[1][:2])*3600+int(phase[1][2:4])*60
+            if opening<=seconds<opening+600:self._clear_nxt(at)
         if not self._paper_only() or not _valid_phase(venue,at):return
         t=_verified(tick,at)
         if t is None or tick[7]!=venue:return
@@ -238,7 +265,11 @@ class Preplanner:
         plan=self.plans.get(key)
         if plan is None or plan["status"] in ("EXPIRED","BLOCKED","SOLD","COMPLETED"):
             return
-        if plan["prepared_at"]>=at.replace(hour=8 if venue=="NXT" else 9,minute=0,second=0,microsecond=0).isoformat():
+        phase=_venue_phase(venue,at)
+        if not phase:return
+        opening=at.replace(hour=int(phase[1][:2]),
+                           minute=int(phase[1][2:4]),second=0,microsecond=0)
+        if plan["prepared_at"]>=opening.isoformat():
             return
         if venue=="NXT":
             if not self._nxt_allowed(code,at):return
@@ -476,10 +507,19 @@ def install(core):
                 if code in eng._v097_managed_codes:return None
                 return old_resume(code,*a,**k)
             def nxt_session_window(order,at):
-                if str(order.purpose).startswith("D+1_V097_NXT_"):
+                purpose=str(order.purpose)
+                if purpose.startswith("D+1_V097_NXT_"):
                     stamp=_stamp(at)
                     return bool(stamp and stamp.date().isoformat()==order.time[:10] and
                                 _valid_phase("NXT",stamp))
+                if purpose.startswith("D+1_V097_KRX_"):
+                    stamp=_stamp(at)
+                    from krx_session_v041 import SPECIAL_SESSIONS
+                    if stamp and stamp.date().isoformat() in SPECIAL_SESSIONS:
+                        # Only the managed original PAPER order's opening
+                        # hour changes; no synthetic trade/book may fill it.
+                        return (stamp.date().isoformat()==order.time[:10]
+                                and _valid_phase("KRX",stamp))
                 return old_window(order,at)
             eng.open_entry=deny_native_open
             eng.resume_legacy_partial_buy=deny_legacy_rearm
@@ -547,9 +587,21 @@ def install(core):
         now=at or d_live.now_kst()
         p=getattr(self.gmo,"_v097_planner",None)
         if p is not None:p.runner=self
-        if "075800"<=now.strftime("%H%M%S")<"080000":
+        if (now.date().isoformat() not in NXT_PREMARKET_CLOSED and
+                "075800"<=now.strftime("%H%M%S")<"080000"):
             opening=now.replace(hour=8,minute=0,second=0,microsecond=0)
             return original_subscriptions(self,opening)
+        # Ensure 09:58 special-day prewarm also uses the SHARED owner.
+        # This clock is for selection only, never a real price or order.
+        phase=_venue_phase("KRX",now)
+        if phase:
+            opening_seconds=int(phase[1][:2])*3600+int(phase[1][2:4])*60
+            now_seconds=now.hour*3600+now.minute*60+now.second
+            if opening_seconds-120<=now_seconds<opening_seconds:
+                opening=now.replace(hour=int(phase[1][:2]),
+                                    minute=int(phase[1][2:4]),
+                                    second=0,microsecond=0)
+                return original_subscriptions(self,opening)
         return original_subscriptions(self,at)
 
     def no_extra_topup(engine,q):
