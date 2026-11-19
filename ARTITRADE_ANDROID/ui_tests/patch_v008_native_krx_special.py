@@ -111,21 +111,12 @@ update("d_live.py",
 update("d_live.py",
 """            if active and '0830' <= clock < '0900' and not self.gmo.priority_watchlist(now_kst()):""",
 """            if active and bounds and bounds[0]-30<=minute<bounds[0] and not self.gmo.priority_watchlist(now_kst()):""")
-update("d_live.py",
-"""                         cutover=(now.strftime('%Y%m%d%H%M') if now.strftime('%H%M')
-                                  in ('0830','0850','0900','1530','1600') else '')""",
-"""                         from krx_session_v041 import venue_bounds
-                         vb=venue_bounds(now,'KRX')
-                         closing=vb[1] if vb else 15*60+30
-                         before=vb[0] if vb else 9*60
-                         boundaries={(8,30),(8,50)}
-                         boundaries.update((divmod(before,60),divmod(closing,60),
-                                            divmod(closing+30,60)))
-                         cutover=(now.strftime('%Y%m%d%H%M') if
-                                  (now.hour,now.minute) in boundaries else '')""")
+# Existing 4-second REG resubscription already detects shifted opening; do
+# not rely on its optional fixed-time fast cutover list.
 update("d_live.py",
 """                                     not '1530' <= now.strftime('%H%M') < '1600'))""",
-"""                                     not closing<=now.hour*60+now.minute<closing+30))""")
+"""                                     not (lambda v: v[1]<=now.hour*60+now.minute<v[1]+30)(
+                                         __import__('krx_session_v041').venue_bounds(now,'KRX')) )""")
 update("d_live.py",
 """                pause = active and '1530' <= now_kst().strftime('%H%M') < '1600'""",
 """                observed=now_kst()
