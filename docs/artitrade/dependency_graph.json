@@ -45,7 +45,8 @@
         54,
         60,
         62,
-        65
+        65,
+        70
       ],
       "contract": "Only STARTED Python engine makes trading live. Failure does not masquerade as healthy heartbeat."
     },
@@ -175,7 +176,10 @@
         57,
         58,
         60,
-        62
+        62,
+        68,
+        71,
+        72
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D."
     },
@@ -191,7 +195,8 @@
         56,
         59,
         60,
-        62
+        62,
+        67
       ],
       "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified."
     },
@@ -205,11 +210,14 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "MARKET_SCORE"
+        "MARKET_SCORE",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         58,
-        60
+        60,
+        68,
+        71
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -223,11 +231,14 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "MA_TICK_QUEUE"
+        "MA_TICK_QUEUE",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         57,
-        60
+        60,
+        68,
+        73
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -255,12 +266,14 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "UI_RECORDS"
+        "UI_RECORDS",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         55,
         60,
-        65
+        65,
+        68
       ],
       "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet."
     },
@@ -273,10 +286,13 @@
       ],
       "depends_on": [
         "STOCK_FEED",
-        "EXECUTION"
+        "EXECUTION",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
-        60
+        60,
+        68,
+        69
       ],
       "contract": "Original CW/close betting engine and native source; no duplicative WS login."
     },
@@ -290,11 +306,16 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "MARKET_SCORE"
+        "MARKET_SCORE",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         61,
-        60
+        60,
+        68,
+        70,
+        72,
+        73
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -329,7 +350,9 @@
       "issues": [
         56,
         59,
-        60
+        60,
+        67,
+        73
       ],
       "contract": "Missing source high/low rejected; never abort other eligible book work."
     },
@@ -347,7 +370,10 @@
       ],
       "issues": [
         61,
-        60
+        60,
+        70,
+        72,
+        73
       ],
       "contract": "New BUY 30m/60m/day only; prior 5m sells intact."
     },
@@ -382,7 +408,8 @@
         60,
         62,
         63,
-        65
+        65,
+        67
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative."
     },
@@ -430,7 +457,9 @@
         "COIN_FEED"
       ],
       "issues": [
-        60
+        60,
+        69,
+        70
       ],
       "contract": "Post-sale high tracking is research, never a broker fill/auto-sell."
     },
@@ -447,9 +476,93 @@
         "EXECUTION"
       ],
       "issues": [
-        60
+        60,
+        69
       ],
       "contract": "Read-only analyses and storage; incomplete evidence must stay unknown, not fabricated."
+    },
+    {
+      "id": "STOCK_SHARED_WS_OWNER",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
+        "ARTITRADE_ANDROID/app/src/main/python/stock_priority_runtime_v093.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED"
+      ],
+      "issues": [
+        68
+      ],
+      "contract": "Exactly one Kiwoom 0B/0D subscription owner for all 5 stock strategies. GMO prewarm may use scheduled opening selection but cannot replace protected/priority symbols or exceed 200."
+    },
+    {
+      "id": "CLOSE_FOLLOWUP_ASOF",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/close_followup_integrity_v008.py"
+      ],
+      "depends_on": [
+        "STOCK_CLOSE",
+        "AI_RESEARCH"
+      ],
+      "issues": [
+        69
+      ],
+      "contract": "A due research label may be DONE only from native genuine near-due quote or source-validated same-day completed 3m bar. Late REST/daily price cannot backfill an earlier due."
+    },
+    {
+      "id": "TREND_SHARED_OWNERSHIP",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/unified_recovery_v092.py",
+        "ARTITRADE_ANDROID/app/src/main/python/post_exit_runtime_v053.py"
+      ],
+      "depends_on": [
+        "STOCK_TREND",
+        "COIN_TREND",
+        "SERVICE"
+      ],
+      "issues": [
+        70,
+        72
+      ],
+      "contract": "Coordinator.lock protects all shared position/virtual ownership snapshots/assign/pop; original Runtime.start idempotent, no double workers or stale owners."
+    },
+    {
+      "id": "AT_HISTORY_RECOVERY",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_FEED"
+      ],
+      "issues": [
+        58,
+        71
+      ],
+      "contract": "Verified KRX completed parent bars are required for AT; DNS/history REST errors are not zero candidates and cannot authorize synthetic fills. Retries presently unverified."
     }
-  ]
+  ],
+  "audit_scope": {
+    "focus": [
+      "GMO",
+      "CW/CLOSE",
+      "AT",
+      "MarketTrend",
+      "MA"
+    ],
+    "modes": [
+      "static source",
+      "SQLite error evidence",
+      "20-suite PAPER regression",
+      "GitHub source+Java CI",
+      "real device unresolved"
+    ],
+    "not_a_completeness_claim": true
+  }
 }
