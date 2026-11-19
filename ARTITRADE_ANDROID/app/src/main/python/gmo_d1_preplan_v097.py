@@ -16,6 +16,8 @@ from buy_execution_recovery_v082 import Intent
 KST=dt.timezone(dt.timedelta(hours=9))
 _INSTALLED=False
 PHASE={"NXT":("075000","080000","085000"),"KRX":("085000","090000","153000")}
+# Official 2026 CSAT session: NXT 08:00–08:50 is suspended on this day.
+NXT_PREMARKET_CLOSED=frozenset(("2026-11-19",))
 ACTIVE=("NEW","OPEN")
 
 def _now():
@@ -50,8 +52,21 @@ def _verified(tick,clock):
         return None
     return t
 
+def _venue_phase(venue,at):
+    """One KRX special-session calendar for D+1 PAPER preparation and entry."""
+    day=at.date().isoformat()
+    if venue=="NXT" and day in NXT_PREMARKET_CLOSED:return None
+    if venue=="KRX":
+        from krx_session_v041 import SPECIAL_SESSIONS,START,END
+        start,end=SPECIAL_SESSIONS.get(day,(START,END))
+        def clock(minute):
+            return f"{minute//60:02d}{minute%60:02d}00"
+        return clock(start-10),clock(start),clock(end)
+    return PHASE.get(venue)
+
+
 def _valid_phase(venue,at,prepare=False):
-    phase=PHASE.get(venue)
+    phase=_venue_phase(venue,at)
     if not phase:return False
     hhmmss=at.strftime("%H%M%S")
     if prepare:
@@ -63,7 +78,7 @@ def _d1_verified(service,signal,at):
         from d_gmo_runtime import _next_day
         return signal.entry_date==at.date().isoformat() and (
             _next_day(signal.event_date,service.root)==signal.entry_date)
-    except (ValueError,TypeError,KeyError,OSError):
+    except (ValueError,TypeError,KeyError,OSError,RuntimeError):
         return False
 
 class Preplanner:
@@ -84,10 +99,12 @@ class Preplanner:
         try:return bool(runner.nxt_snapshot.allows(code,at.strftime("%Y%m%d")))
         except (AttributeError,ValueError):return False
 
-    def prepare(self,venue,at=None):
+    def prepare(self,venue,at=None,recovery=False):
         at=at or self.clock()
-        if not _valid_phase(venue,at,True):return ()
-        if os.environ.get("ARTITRADE_REAL_MODE")=="1":return ()
+        normal=_valid_phase(venue,at,True)
+        late=bool(recovery and venue=="KRX" and _valid_phase(venue,at))
+        if not (normal or late):return ()
+        if not self._entry_authorized():return ()
         service=self.service
         made=[]
         with self.lock,service._lock,service.engine._lock:
@@ -134,8 +151,10 @@ class Preplanner:
                      "limit_price":None,"quantity":None},
                     {"scenario":3,"price_rule":"VERIFIED_OPEN_PLUS_2_EXCHANGE_TICKS",
                      "limit_price":None,"quantity":None}]
-                opening_at=at.replace(hour=8 if venue=="NXT" else 9,
-                                      minute=0,second=0,microsecond=0)
+                opening_hhmm=_venue_phase(venue,at)[1]
+                opening_at=at.replace(hour=int(opening_hhmm[:2]),
+                                      minute=int(opening_hhmm[2:4]),
+                                      second=0,microsecond=0)
                 plan={"code":code,"venue":venue,"event_date":signal.event_date,
                       "entry_date":signal.entry_date,
                       "prepared_at":at.isoformat(timespec="seconds"),
@@ -152,7 +171,8 @@ class Preplanner:
                       "status":"PREPARED" if nxt_verified
                                  else "WAIT_NXT_ELIGIBILITY",
                       "scenario":0,"opening_price":None,
-                      "opening_source":None,"order_id":None}
+                      "opening_source":None,"order_id":None,
+                      "late_recovery":bool(late),"venue_schedule":_venue_phase(venue,at)}
                 self.plans[key]=plan
                 if nxt_verified:made.append(code)
                 service.engine._log(code,"GMO_D1_PREPLAN_READY",
@@ -168,14 +188,21 @@ class Preplanner:
                     if day==at.date().isoformat() and
                     p["status"] not in ("COMPLETED","EXPIRED","BLOCKED","SOLD")}
 
-    def _paper_only(self):
-        if os.environ.get("ARTITRADE_REAL_MODE")=="1":return False
+    def _entry_authorized(self):
+        """Respect existing account LIVE toggle; PAPER stays the default."""
         try:
             import android_live_bridge as bridge
             runtime=getattr(bridge,"_RUNTIME",None)
-            return runtime is None or not runtime.live_enabled("stock")
         except (ImportError,AttributeError):
-            return True
+            runtime=None
+        if runtime is not None and runtime.live_enabled("stock"):
+            return bool(runtime.kiwoom.ready())
+        # Never downgrade a requested but unavailable LIVE account to PAPER.
+        return os.environ.get("ARTITRADE_REAL_MODE")!="1"
+
+    def _paper_only(self):
+        # Existing method name preserved for old callers/tests.
+        return self._entry_authorized()
 
     def _open_buy(self,engine,code):
         return next((o for o in engine.orders.values() if o.side=="BUY"
@@ -211,7 +238,8 @@ class Preplanner:
             try:
                 # At 08:50 NXT is closed: finalize any outstanding NXT intent
                 # BEFORE preparing the KRX 09:00 budget and scenarios.
-                if "0850"<=at.strftime("%H%M")<"0900":
+                phase=_venue_phase("KRX",at)
+                if phase and phase[0]<=at.strftime("%H%M%S")<phase[1]:
                     self._clear_nxt(at)
                 if _valid_phase("NXT",at,True):
                     self.prepare("NXT",at)
@@ -220,25 +248,42 @@ class Preplanner:
             except Exception as e:
                 svc.last_error="GMO_PREPLAN_"+type(e).__name__+": "+str(e)[:120]
             hhmm=at.strftime("%H%M")
-            # Prompt preflight at 07:50:00 and 08:50:00; the remaining
-            # ten-minute period uses a light, local-only refresh cadence.
-            near_start=("0749"<=hhmm<"0751" or "0849"<=hhmm<"0851")
-            near_open=("0757"<=hhmm<"0801" or "0857"<=hhmm<"0902")
+            # Apply the same scheduling budget on ordinary and special days.
+            current=at.hour*3600+at.minute*60+at.second
+            near_start=near_open=False
+            for v in ("NXT","KRX"):
+                phase=_venue_phase(v,at)
+                if not phase:continue
+                prep=int(phase[0][:2])*3600+int(phase[0][2:4])*60
+                opening=int(phase[1][:2])*3600+int(phase[1][2:4])*60
+                near_start |= abs(current-prep)<=60
+                near_open |= -180<=current-opening<=120
             svc._stop.wait(.5 if near_start or near_open else 4.0)
 
     def on_tick(self,tick,venue):
         at=self.clock()
-        if venue=="KRX" and "0900"<=at.strftime("%H%M")<"0910":
-            self._clear_nxt(at)
-        if not self._paper_only() or not _valid_phase(venue,at):return
+        phase=_venue_phase("KRX",at)
+        if venue=="KRX" and phase:
+            seconds=at.hour*3600+at.minute*60+at.second
+            opening=int(phase[1][:2])*3600+int(phase[1][2:4])*60
+            if opening<=seconds<opening+600:self._clear_nxt(at)
+        if not self._entry_authorized() or not _valid_phase(venue,at):return
         t=_verified(tick,at)
         if t is None or tick[7]!=venue:return
         code=str(tick[0]);service=self.service
         key=self._key(code,venue,at)
         plan=self.plans.get(key)
+        if plan is None and venue=="KRX":
+            # Restarted after open: re-arm only the authentic D+1 signal.
+            self.prepare("KRX",at,recovery=True)
+            plan=self.plans.get(key)
         if plan is None or plan["status"] in ("EXPIRED","BLOCKED","SOLD","COMPLETED"):
             return
-        if plan["prepared_at"]>=at.replace(hour=8 if venue=="NXT" else 9,minute=0,second=0,microsecond=0).isoformat():
+        phase=_venue_phase(venue,at)
+        if not phase:return
+        opening=at.replace(hour=int(phase[1][:2]),
+                           minute=int(phase[1][2:4]),second=0,microsecond=0)
+        if plan["prepared_at"]>=opening.isoformat() and not plan.get("late_recovery"):
             return
         if venue=="NXT":
             if not self._nxt_allowed(code,at):return
@@ -270,9 +315,10 @@ class Preplanner:
         else:
             from d_gmo_runtime import _number
             opener=service.opens.get((code,at.date().isoformat()))
-            if opener is None or int(opener)<=0:return
-            plan["opening_price"]=int(opener)
-            plan["opening_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+            if opener is not None and int(opener)>0:
+                plan["opening_price"]=int(opener)
+                plan["opening_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+            # Never infer an official open from the first post-restart tick.
             q=service._quote(tick)
             if q is None:return
             ask=int(q.ask)
@@ -286,8 +332,20 @@ class Preplanner:
         code=plan["code"];signal=engine.signals.get(code)
         if not signal or not _d1_verified(svc,signal,at):return
         opener=plan.get("opening_price")
-        if not opener:return
-        caps=(int(opener),plus_ticks(int(opener),1),plus_ticks(int(opener),2))
+        if opener is not None and int(opener)>0:
+            reference=int(opener)
+            caps=(reference,plus_ticks(reference,1),plus_ticks(reference,2))
+            plan["entry_reference_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+        elif venue=="KRX":
+            # Genuine previously verified D close is an INDEPENDENT
+            # permission to buy below D close, even after missing first open.
+            reference=int(getattr(signal,"event_close",0) or 0)
+            if reference<=0 or max(int(last),int(ask))>reference:
+                plan["status"]="WAIT_OFFICIAL_OPEN_OR_D_CLOSE_TOUCH"
+                return
+            caps=(reference,reference,reference)
+            plan["entry_reference_source"]="VERIFIED_D_CLOSE_ONLY"
+        else:return
         # Only a real same-venue verified 0B exchange timestamp may drive
         # the recovery command. A missing/expired quote leaves the original
         # plan waiting; no backfilled print or fake order acknowledgement.
@@ -306,7 +364,7 @@ class Preplanner:
                 try:
                     per=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))
                     intent=Intent("gmo","stock",code,
-                        plan["entry_date"]+":"+venue,str(opener),str(per),
+                        plan["entry_date"]+":"+venue,str(reference),str(per),
                         str(engine.cfg.buy_fee))
                     self._v082_intents[intent_key]=intent
                 except (ValueError,TypeError,ArithmeticError):
@@ -316,7 +374,7 @@ class Preplanner:
                 plan["v082_recovery"]=dict(intent.status(),
                     action=observed.get("action"),
                     quote_reason=observed.get("reason"),
-                    original_order_owner="GMO_PAPER")
+                    original_order_owner="GMO_ORIGINAL_WALLET_EXPLICIT_REAL_OR_PAPER")
                 if observed.get("action")=="WAIT":
                     plan["status"]="WAIT_VERIFIED_RECOVERY_BOOK"
                     return
@@ -375,7 +433,7 @@ class Preplanner:
                 # still fills only proved actual PAPER liquidity at or below
                 # the limit, then keeps the SAME intent for residual shares.
                 active=engine._order(code,"BUY",f"D+1_V097_{venue}_S{scenario}",
-                                      int(opener),int(caps[2]),int(qty),at.isoformat())
+                                      int(reference),int(caps[2]),int(qty),at.isoformat())
                 if proof is not None:
                     intent=self._v082_intents.get((plan["entry_date"],code,venue))
                     if intent is not None:
@@ -422,6 +480,7 @@ class Preplanner:
                 plan["v082_actual_order_status"]={
                     "original_order_id":str(actual.id),
                     "original_state":str(actual.state),
+                    "is_native_wallet_order":True,"broker_ack_verified":False,
                     "original_requested_qty":int(actual.requested),
                     "original_filled_qty":int(actual.filled),
                     "original_unfilled_qty":max(0,int(actual.requested)-int(actual.filled)),
@@ -476,10 +535,19 @@ def install(core):
                 if code in eng._v097_managed_codes:return None
                 return old_resume(code,*a,**k)
             def nxt_session_window(order,at):
-                if str(order.purpose).startswith("D+1_V097_NXT_"):
+                purpose=str(order.purpose)
+                if purpose.startswith("D+1_V097_NXT_"):
                     stamp=_stamp(at)
                     return bool(stamp and stamp.date().isoformat()==order.time[:10] and
                                 _valid_phase("NXT",stamp))
+                if purpose.startswith("D+1_V097_KRX_"):
+                    stamp=_stamp(at)
+                    from krx_session_v041 import SPECIAL_SESSIONS
+                    if stamp and stamp.date().isoformat() in SPECIAL_SESSIONS:
+                        # Only the managed original PAPER order's opening
+                        # hour changes; no synthetic trade/book may fill it.
+                        return (stamp.date().isoformat()==order.time[:10]
+                                and _valid_phase("KRX",stamp))
                 return old_window(order,at)
             eng.open_entry=deny_native_open
             eng.resume_legacy_partial_buy=deny_legacy_rearm
@@ -547,9 +615,21 @@ def install(core):
         now=at or d_live.now_kst()
         p=getattr(self.gmo,"_v097_planner",None)
         if p is not None:p.runner=self
-        if "075800"<=now.strftime("%H%M%S")<"080000":
+        if (now.date().isoformat() not in NXT_PREMARKET_CLOSED and
+                "075800"<=now.strftime("%H%M%S")<"080000"):
             opening=now.replace(hour=8,minute=0,second=0,microsecond=0)
             return original_subscriptions(self,opening)
+        # Ensure 09:58 special-day prewarm also uses the SHARED owner.
+        # This clock is for selection only, never a real price or order.
+        phase=_venue_phase("KRX",now)
+        if phase:
+            opening_seconds=int(phase[1][:2])*3600+int(phase[1][2:4])*60
+            now_seconds=now.hour*3600+now.minute*60+now.second
+            if opening_seconds-120<=now_seconds<opening_seconds:
+                opening=now.replace(hour=int(phase[1][:2]),
+                                    minute=int(phase[1][2:4]),
+                                    second=0,microsecond=0)
+                return original_subscriptions(self,opening)
         return original_subscriptions(self,at)
 
     def no_extra_topup(engine,q):

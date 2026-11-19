@@ -1,0 +1,38 @@
+name: ARTITRADE native KRX venue / recovery source line audit (READ ONLY)
+on:
+  push:
+    branches: [fix-artitrade-008-specialsession-trend-proof-20261119]
+    paths: [.github/workflows/artitrade-008-original-routing-audit.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect original engine routing and broker order interfaces
+        run: |
+          python3 - <<'PY'
+          import zipfile,io,base64,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for name,ranges in (
+               ('d_live.py',[(1,85),(933,982),(998,1022),(1525,1565),(1845,1872),(2198,2251),(2322,2373),(2418,2451)]),
+               ('d_gmo_runtime.py',[(374,416),(622,665),(683,754),(805,850)]),
+               ('android_live_bridge.py',[(1,60),(125,214),(258,290),(425,452)]),
+               ('d_v19_portfolio.py',[(1,130)]),
+               ('d_status_v20.py',[(1,105)]),
+               ('d_engine.py',[(1,125)])):
+                  lines=z.read(name).decode('utf8').splitlines()
+                  print('SOURCE',name,'TOTAL',len(lines))
+                  for a,b in ranges:
+                      print('RANGE',name,a,b)
+                      for i in range(a-1,min(b,len(lines))):print(f'{i+1}: {lines[i]}')
+                  ast.parse('\n'.join(lines),filename=name)
+          PY

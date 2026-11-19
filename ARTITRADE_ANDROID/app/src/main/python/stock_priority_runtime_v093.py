@@ -117,18 +117,29 @@ def install(core):
         hhmm = now.strftime("%H%M")
         gmo_priority = list(self.gmo.priority_watchlist(now))
 
-        # D+1 preopen is a time-specific KRX/NXT venue switch with its own
-        # safety/arming gates, not a regular-session ranking contest.
-        if gmo_priority and "0830" <= hhmm < "0900":
+        # Normal mornings keep the established native GMO preopen contract.
+        # On the 2026 CSAT day, NXT premarket is CLOSED and KRX is at 10:00.
+        # Do not allow native 08:30..09:00 selection to pose as live venue.
+        from krx_session_v041 import SPECIAL_SESSIONS, START, END, is_regular_open
+        from gmo_d1_preplan_v097 import NXT_PREMARKET_CLOSED
+        day=now.date().isoformat()
+        special=day in SPECIAL_SESSIONS
+        regular_start=SPECIAL_SESSIONS.get(day,(START,END))[0]
+        minute=now.hour*60+now.minute
+        preopen=(gmo_priority and regular_start-30<=minute<regular_start)
+        if gmo_priority and not special and "0830" <= hhmm < "0900":
             return native(self, at)
 
-        venue = (
-            "NXT" if d_live.live_session(now, "NXT")
-            else "KRX" if d_live.live_session(now, "KRX")
-            else None
-        )
-        if not venue:
-            return []
+        if day in NXT_PREMARKET_CLOSED and minute<regular_start:
+            venue="KRX" if preopen else None
+        else:
+            venue=(
+                "NXT" if d_live.live_session(now, "NXT")
+                else "KRX" if d_live.live_session(now, "KRX")
+                else "KRX" if is_regular_open(now)
+                else None
+            )
+        if not venue:return []
         pinned = self._pinned_stocks()
         base = (self.nxt_market_map or self.krx_market_map or self.market_map
                 if venue == "NXT" else self.krx_market_map or self.market_map)
@@ -231,6 +242,12 @@ def install(core):
             return valid_cache[code]
 
         eligible_critical = [str(code) for code in critical if valid(code)]
+        if preopen and special:
+            # The few D+1 GMO candidates are mandatory first-session pins,
+            # AFTER existing held/pending SELL symbols. Shared slots remain
+            # available to AT/CW/MA/Trend and all non-GMO subscriptions.
+            eligible_critical.extend(str(code) for code in gmo_priority
+                                     if valid(code) and str(code) not in eligible_critical)
         eligible = [[str(code) for code in band if valid(code)]
                     for band in raw_bands]
         phase = int(time.monotonic() // OVERFLOW_ROTATION_SECONDS)

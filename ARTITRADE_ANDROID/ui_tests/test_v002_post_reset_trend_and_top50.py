@@ -50,8 +50,15 @@ class NewLegacyV002RestoredBuy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             now = dt.datetime(2026,11,18,10,5,0,tzinfo=mt.KST)
             end = now.replace(minute=0,second=0,microsecond=0)
-            bars = [{"close":120.0-0.05*i,"end":end-dt.timedelta(minutes=(20-i)*30)}
-                    for i in range(21)]
+            bars = [{"close":120.0-0.05*i,
+                     "end":end-dt.timedelta(minutes=(20-i)*30),
+                     "source":"UPBIT_CLOSED"} for i in range(21)]
+            # This is the ORIGINAL-mode routing test, not a steep visual
+            # Bollinger slope test. Make the source 21-bar price viewport
+            # broad while retaining the same midline and 120->118 crossover:
+            # the new executable -20..+30 visual-angle limit must ALSO pass.
+            bars[5]["close"]=110.0
+            bars[6]["close"]=129.45
             co=SimpleNamespace()
             co.rt=SimpleNamespace(root=root,coin_runner=SimpleNamespace(preload_gate=None))
             co.lock=threading.RLock()

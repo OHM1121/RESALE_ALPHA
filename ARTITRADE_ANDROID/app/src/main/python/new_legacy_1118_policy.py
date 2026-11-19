@@ -90,12 +90,42 @@ def ma_up_alignment(prior_ma,current_ma):
             return False
     return is_up(current_ma) and not is_up(prior_ma)
 
-def bollinger(closes):
-    """20 period, 1.5 std. Angle is per-bar % change of the MID line.
+VISUAL_CHART_HEIGHT_PX=180.0
+VISUAL_CANDLE_PITCH_PX=8.0
+VISUAL_AXIS_PADDING=0.08
 
-    Trading chart visual angle depends on zoom; a price-unit slope angle
-    varies with price denomination. Use dimensionless percentage per bar
-    before atan; that explicit convention is recorded with every signal.
+
+def projected_chart_angle(former,now,chart_view):
+    """The pixel slope of the line drawn in this EXACT price-axis viewport.
+
+    The renderer MUST use the same vertical price bounds and candle pitch.
+    A third-party chart with a different zoom/scale need not have this angle.
+    Missing or degenerate geometry NEVER permits an executable BUY.
+    """
+    try:
+        lo=valid_num(chart_view["price_min"])
+        hi=valid_num(chart_view["price_max"])
+        height=valid_num(chart_view["plot_height_px"])
+        pitch=valid_num(chart_view["candle_pitch_px"])
+        if any(v is None for v in (lo,hi,height,pitch)):
+            return None
+        if not (hi>lo>0 and height>0 and pitch>0):
+            return None
+        dy_px=(now-former)*height/(hi-lo)
+        angle=math.degrees(math.atan2(dy_px,pitch))
+        return angle if math.isfinite(angle) else None
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return None
+
+
+def bollinger(closes,chart_view=None):
+    """Bollinger(20,1.5), midpoint slope in matching PIXEL-CHART geometry.
+
+    The previous atan(100*midpoint percentage change) was not the
+    screenshot's apparent line angle and could approve steep falls.
+    For reproducible unattended execution we use one fixed internal chart
+    projection; the app must display these exact axis bounds if comparing
+    visually. An external exchange chart can only match after zoom/axis sync.
     """
     if len(closes)<21:return None
     items=[valid_num(x) for x in closes[-21:]]
@@ -104,10 +134,20 @@ def bollinger(closes):
     now=fmean(items[-BOLL_PERIOD:])
     if former<=0 or now<=0:return None
     std=pstdev(items[-BOLL_PERIOD:])
-    angle=math.degrees(math.atan((now/former-1)*100))
+    if chart_view is None:
+        low,high=min(items),max(items)
+        span=max(high-low,now*0.001)
+        chart_view={"price_min":max(0.0000000001,low-span*VISUAL_AXIS_PADDING),
+                    "price_max":high+span*VISUAL_AXIS_PADDING,
+                    "plot_height_px":VISUAL_CHART_HEIGHT_PX,
+                    "candle_pitch_px":VISUAL_CANDLE_PITCH_PX,
+                    "lookback_bars":21}
+    angle=projected_chart_angle(former,now,chart_view)
+    if angle is None:return None
     return {"middle":now,"upper":now+BOLL_MULT*std,
             "lower":now-BOLL_MULT*std,"angle_deg":angle,
-            "angle_basis":"ATAN_MIDDLE_PERCENT_DELTA_PER_BAR",
+            "angle_basis":"PIXEL_PROJECTED_BOLLINGER_MID_21_BAR_VIEWPORT_V008",
+            "chart_view":dict(chart_view),
             "angle_allowed":BOLL_ANGLE_MIN<angle<BOLL_ANGLE_MAX}
 
 def actual_middle_touch(previous_trade,current_trade,middle):

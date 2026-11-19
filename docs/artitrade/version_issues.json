@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "release-artitrade-007-cross-strategy-20261119",
+  "working_branch": "fix-artitrade-008-specialsession-trend-proof-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -466,6 +466,173 @@
         "test_v004_abnormal_reconnect_six.py"
       ],
       "notes": "Do not label production ready; open #58/#59/#60/#71/#73. No original ledger reset/auto LIVE. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested."
+    },
+    {
+      "issue": 77,
+      "id": "AT-008-01",
+      "found": "0.0.7",
+      "category": "DEVICE_REPORTED_AND_SOURCE_CONFIRMED",
+      "title": "GMO D+1 late KRX special session and suspended NXT premarket",
+      "evidence": "2026-11-19 published KRX 10:00-16:30 NXT premarket closed; 0.0.7 GMO preplan hardcoded 09:00 and NXT 08:00",
+      "root": "CONFIRMED_OVERLAY_AND_ORIGINAL_CORE_HARDCODED_CLOCK",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.0.8-unreleased-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "STOCK_SHARED_WS_OWNER",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v097_gmo_preplan.py",
+        "test_v008_all_strategy_rootcause.py"
+      ],
+      "notes": "Dynamic KRX special opening from existing session calendar; disable 2026-11-19 NXT premarket. KRX D+1 PAPER clock and shared prewarm align, regular-day behavior retained. LS-like actual missed BUY reason not conclusively established without phone signal/quote/order evidence. Original ZIP d_live.py, projectgmo/engine.py and d_gmo_runtime.py retain 09:00/15:30 hours and 09:00 first opener. See #80; do not claim full special-session fix until vendor source and actual KRX 0B/open evidence are reconciled."
+    },
+    {
+      "issue": 78,
+      "id": "AT-008-02",
+      "found": "0.0.7",
+      "category": "USER_REPORTED_AND_SOURCE_RISK_CONFIRMED",
+      "title": "MarketTrend stale completed Upbit candle and unverifiable 24h RSI watch provenance",
+      "evidence": "0.0.7 _confirmed_recent accepted 2x frame stale bars; RSI watch saved only timestamp/RSI without source; v007 pre-quote recheck omitted trade match",
+      "root": "CONFIRMED_SOURCE_FRESHNESS_AND_WATCH_EVIDENCE_GAP",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.8-unreleased-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_TREND",
+        "STOCK_TREND",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v008_special_session_trend_proof.py",
+        "test_new_legacy_1118_workbook.py"
+      ],
+      "notes": "Coin 30m/60m/day requires last expected completed candle, 21 contiguous official candles, durable RSI<=30 evidence and verified current trade. 2026-11-19 08:41 ONDO wallet/RSI/bollinger logs not provided; no assertion actual buy violated rules. Angle uses documented price-normalized atan, not screenshot pixel slope. Old watch stays on disk but may not authorize a new order without fresh verified crossing."
+    },
+    {
+      "issue": 79,
+      "id": "AT-008-03",
+      "found": "0.0.7",
+      "category": "WORKBOOK_FULL_COMPLIANCE_AUDIT",
+      "title": "All-strategy target 1/2 broker pre-submission and next-session resubmission unverified",
+      "evidence": "User NEW LEGACY(11.18).xlsx C11 requires pre-placed sell orders; targets sell_intents explicitly is_real_broker_order=false",
+      "root": "CONFIRMED_INTENT_VS_BROKER_ACK_GAP",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "EXECUTION",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_GENERAL",
+        "COIN_MA",
+        "COIN_TREND",
+        "STOCK_CLOSE",
+        "STOCK_GMO"
+      ],
+      "tests": [],
+      "notes": "Do not claim staging/pre-placement implemented from source target intent alone. Requires broker-verified order IDs, partial-fill and cancel/replace, next trading-day reconciled re-submission, strict zero duplicate-sell guarantee. CW/GMO original ownership respected."
+    },
+    {
+      "issue": 80,
+      "id": "AT-008-04",
+      "found": "0.0.7",
+      "category": "READ_ONLY_NATIVE_SOURCE_AUDIT",
+      "title": "Original native KRX 09:00/15:30 clocks and GMO 09:00 official opening pin block special session",
+      "evidence": "Readonly source audit Actions 44446902415, d_live.py, projectgmo/engine.py, d_gmo_runtime.py, 0.0.7 embedded vendor ZIP",
+      "root": "CONFIRMED_NATIVE_HARDCODED_KRX_SCHEDULE_MULTI_PATH",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NATIVE_SOURCE_INSPECTION_ONLY",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_FEED",
+        "STOCK_GMO",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_CLOSE",
+        "STOCK_TREND",
+        "EXECUTION"
+      ],
+      "tests": [],
+      "notes": "New overlay preplan and current-trend protections do not prove first verified 10:00 GMO opener or complete 15:30..16:30 stock 0B/0D routing. Requires native vendor patch, all-8 wallet regressions and special-session broker/device evidence."
+    },
+    {
+      "id": "AT-008-82",
+      "issue": 82,
+      "found": "0.0.7",
+      "category": "SOURCE_ROOT_CAUSE",
+      "title": "GMO D+1 late-restart and special-session entry cannot resume",
+      "evidence": "D+1 preplan only at pre-open, on_tick returned with no transient plan, paper-only gate and native 09:00 clock, original shared WS clock",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.8-source",
+      "ci": "SOURCE_PASS_RUN_44449911066; SIGNED_APK_PASS_RUN_44450056074",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "EXECUTION",
+        "SERVICE"
+      ],
+      "tests": [
+        "test_v097_gmo_preplan.py",
+        "artitrade-008-native-patch-test.yml"
+      ],
+      "notes": "Re-arm authenticated D+1 on fresh 0B with verified D-close independent fallback and no fake official opener. Stock LIVE is deliberately disarmed by Android, so actual broker execution remains excluded and not claimed."
+    },
+    {
+      "id": "AT-008-83",
+      "issue": 83,
+      "found": "0.0.7",
+      "category": "SOURCE_ROOT_CAUSE",
+      "title": "Stage1/2 internal sell_intents confused with live broker rest orders",
+      "evidence": "NEW_LEGACY targets sell_intents all is_real_broker_order=False; app Python set_live() refuses enabled; original KiwoomBroker FOK has no resting order API",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.8-readonly-audit",
+      "ci": "SOURCE_PASS_RUN_44449911066; SIGNED_APK_PASS_RUN_44450056074",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "ACTIVITY_UI",
+        "SERVICE",
+        "STRATEGY_BRIDGE",
+        "PYTHON_RUNTIME",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v008_broker_sell_receipt.py"
+      ],
+      "notes": "Added explicit user-only Kiwoom ka10075 read-only unfinished SELL query and stage linkage unverified display; NEVER claims actual 1/2 broker pre-registration nor enables real trading; no live order submit."
+    },
+    {
+      "id": "AT-008-84",
+      "issue": 84,
+      "found": "0.0.7",
+      "category": "SOURCE_ROOT_CAUSE",
+      "title": "Bollinger percent-gradient angle differs from chart visual angle",
+      "evidence": "atan(100*percent middle per bar) ignores price axis pixel height and bar horizontal pitch; external chart axis zoom arbitrary",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.8-chart-projection",
+      "ci": "SOURCE_PASS_RUN_44449911066; SIGNED_APK_PASS_RUN_44450056074",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v008_bollinger_pixel_geometry.py"
+      ],
+      "notes": "Replaced percentage atan with declared fixed 21-close viewport pixel projection; the output is faithful to that specific internal geometry, NOT provably equal to independently zoomed Upbit app screenshot. Record chart_view for audit. RSI24 proof still mandatory."
     }
   ],
   "known_normal": [
@@ -541,6 +708,56 @@
     "notes": "Original package and signer; update in place without reset. Live brokerage unverified."
   },
   "latest_test_artifact": {
+    "versionName": "0.0.8",
+    "versionCode": 130,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_build_source_commit": "a768bdae3fbd3830a4247ee77245ed2815b96f08",
+    "github_actions_run_id": 44450056074,
+    "artifact_id": 14494518466,
+    "release_tag": "ARTITRADE-0.0.8-signed-test-20261119",
+    "filename": "ARTITRADE_0.0.8.apk",
+    "size_bytes": 30492085,
+    "sha256": "99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+    "previous_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false,
+    "real_order_fill_verified": false,
+    "actual_stage1_stage2_sell_orders_confirmed": false,
+    "read_only_kiwoom_unfilled_query": true,
+    "source_ledger_reset_performed": false,
+    "unresolved_issue_numbers": [
+      58,
+      59,
+      60,
+      71,
+      73,
+      79,
+      80,
+      82,
+      83,
+      84
+    ]
+  },
+  "work_in_progress_008": {
+    "versionName": "0.0.8",
+    "versionCode": 130,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_apk_built": true,
+    "real_broker_execution_verified": false,
+    "source_gmo_special_native_patch_verified": true,
+    "real_broker_stage1_stage2_placement": false,
+    "read_only_ka10075_status_inquiry_implemented": true,
+    "external_exchange_chart_angle_exact_match": false,
+    "device_verified": false,
+    "prior_app_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "source_commit": "a768bdae3fbd3830a4247ee77245ed2815b96f08",
+    "signed_ci_run": 44450056074,
+    "artifact_id": 14494518466,
+    "apk_sha256": "99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+    "apk_size_bytes": 30492085,
+    "old_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "signed_test_only": true
+  },
+  "previous_test_artifact_007": {
     "versionName": "0.0.7",
     "versionCode": 129,
     "package": "com.artitrade.unified.s21dex",
