@@ -2488,6 +2488,19 @@ public final class UnifiedVisualActivity extends Activity {
         return tf;
     }
 
+    private String holdingFrameBadge(JSONObject row,String sourceStrategy){
+        // Display the real wallet timeframe IN the former holding-status
+        // square, not repeated after the symbol. GMO/CW have no bar frame.
+        String frame=timeFrameOf(row);
+        if("5m".equals(frame))return "5분";
+        if("30m".equals(frame))return "30분";
+        if("60m".equals(frame))return "60분";
+        if("day".equals(frame))return "일봉";
+        if("gmo".equals(sourceStrategy))return "수급";
+        if("close".equals(sourceStrategy))return "종가";
+        return "—";
+    }
+
     private String[][] strategyList(String m){
         return "stock".equals(m)
             ?new String[][]{{"at","기준봉"},{"ma","MA"},{"close","종가베팅"},{"gmo","수급매매"},{"trend","마켓트렌드"}}
@@ -3047,7 +3060,6 @@ public final class UnifiedVisualActivity extends Activity {
             bindSymbolFourTap(symbol,p,holding.scopeMarket);
             top.addView(symbol,new LinearLayout.LayoutParams(0,dp(26),1));
             TextView origin=text(scopeTitle(holding.scopeMarket,holding.scopeStrategy)+
-                " "+tfLabel(timeFrameOf(p))+
                 (isTrendRow(p)?" · 마켓트렌드":""),11);
             origin.setTextColor(PremiumUi.MUTED);
             top.addView(origin);
@@ -3976,7 +3988,8 @@ public final class UnifiedVisualActivity extends Activity {
             double rate=tradeReturnPct(r,kind,profit);
             String side="executions".equals(kind)?tradeSideOf(r):
                 "pending".equals(kind)?
-                    (r.optBoolean("ledger_is_virtual_only",false)?"가상체결":"대기"):"보유";
+                    (r.optBoolean("ledger_is_virtual_only",false)?"가상체결":"대기"):
+                    holdingFrameBadge(r,source);
             boolean isSell="매도".equals(side),isBuy="매수".equals(side);
             int chipBg=isSell?Color.rgb(79,34,46):
                 isBuy?Color.rgb(28,72,67):
@@ -3991,7 +4004,8 @@ public final class UnifiedVisualActivity extends Activity {
             top.setGravity(Gravity.CENTER_VERTICAL);
             TextView badge=tradeStage(side,chipBg,chipText);
             top.addView(badge,new LinearLayout.LayoutParams(dp(64),dp(36)));
-            TextView symbol=text(nameOf(r)+" · "+
+            TextView symbol=text("positions".equals(kind)?nameOf(r):
+                nameOf(r)+" · "+
                 HistorySelection.strategyTag(source,marketWide?item.frame:timeFrameOf(r))+
                 (isTrendRow(r)?" · 마켓트렌드":""),16);
             symbol.setTypeface(null,Typeface.BOLD);
