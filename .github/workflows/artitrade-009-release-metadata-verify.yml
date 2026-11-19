@@ -1,0 +1,68 @@
+name: ARTITRADE 0.0.9 signed APK metadata consistency correction
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths:
+      - .github/workflows/artitrade-009-release-metadata-verify.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  verify-asset-metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify published APK digest without rebuilding, correct versionCode metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=ARTITRADE-0.0.9-signed-test-20261119
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')" = "$tag"
+          mkdir -p /tmp/artitrade-v009-verify
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern ARTITRADE_0.0.9.apk --dir /tmp/artitrade-v009-verify
+          actual="$(sha256sum /tmp/artitrade-v009-verify/ARTITRADE_0.0.9.apk | awk '{print $1}')"
+          test "$actual" = d9974c57d0529548ba6b0509da90032e5708863f1cf424594f484a7fe11ea23d
+          test "$(stat -c %s /tmp/artitrade-v009-verify/ARTITRADE_0.0.9.apk)" = 30492845
+          cat > ARTITRADE_0.0.9.txt <<'META'
+          versionName=0.0.9
+          versionCode=131
+          package=com.artitrade.unified.s21dex
+          source=9acd71dd133cefcac0bc4dd6c324f5309d714124
+          build_run=44451936088
+          apk_size_bytes=30492845
+          apk_sha256=d9974c57d0529548ba6b0509da90032e5708863f1cf424594f484a7fe11ea23d
+          signer_sha256=37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
+          original_epoch_preserved=true
+          actual_samsung_fills_verified=false
+          real_broker_enabled=false
+          real_broker_sell_orders_not_automatically_placed=true
+          remote_daily_backup_verified=false
+          META
+          cat > /tmp/artitrade-v009-notes <<'NOTES'
+          ARTITRADE 0.0.9 signed TEST APK (PAPER-only; actual Samsung real broker trading not verified).
+
+          Updated from signed v0.0.8/130 with exact same Android package, preserved old signing certificate and versionCode 131.
+          Build source commit: 9acd71dd133cefcac0bc4dd6c324f5309d714124 (not subsequent documentation edits).
+          GitHub Actions build: https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44451936088
+          APK SHA256: d9974c57d0529548ba6b0509da90032e5708863f1cf424594f484a7fe11ea23d
+
+          Fixes include original 82-module audit/calendar patch for KRX 2026-11-19 10:00->16:30 AT parent coverage;
+          GMO D+1 date-based priority, same-session 0D missing-book re-registration, verified 0B+0D required
+          for executable PAPER buy, history-only shared DNS retry circuit, backpressure relief for live quote paths.
+          The original 0.0.7 runtime had repeated remote MSERVER unknown_endpoint daily backup failures. Android
+          now records an unsupported endpoint and retries less often; remote daily backup itself is NOT fixed.
+
+          Existing ledger SQLite and app data must NOT be reset. Do not uninstall old version to update.
+          This build does not submit real broker buy/sell or actual resting 1/2 profit-target orders. The official
+          Kiwoom outstanding SELL query is read-only, and internal sell intent != broker accepted order.
+          Bollinger angle uses fixed internal display projection, not arbitrary exchange-chart zoom.
+          Sources and synthetic regression tests do not substitute for actual on-device broker/quote verification.
+
+          This asset's initial .txt incorrectly said versionCode 130 due to stale workflow metadata;
+          .txt has been corrected to versionCode 131, matching APK's actual verified manifest.
+          NOTES
+          gh release upload "$tag" ARTITRADE_0.0.9.txt --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file /tmp/artitrade-v009-notes
+          test "$(gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern ARTITRADE_0.0.9.txt --output - | grep '^versionCode=')" = "versionCode=131"
+          echo "APK_RECHECKED_AND_RELEASE_METADATA_CODE_131_CORRECTED"
