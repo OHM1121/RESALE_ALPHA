@@ -78,7 +78,10 @@ class V081TwoFeedsPreload(unittest.TestCase):
     def test_real_quote_and_original_ledger_are_gated_before_cold_shell(self):
         java=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
         self.assertIn('PRELOAD_WATCHDOG_MS=40_000L',java)
-        self.assertIn('PRELOAD_BOTH_FEEDS_WARM_MIN_MS=8_000L',java)
+        self.assertIn('PRELOAD_WATCHDOG_MS=40_000L',java)
+        self.assertIn('startupNativeAuditReady',java)
+        self.assertIn('updateVerifiedStartupProgress(',java)
+        self.assertNotIn('if(elapsed>=PRELOAD_BOTH_FEEDS_WARM_MIN_MS)',java)
         self.assertIn('startupReadinessTick()',java)
         self.assertIn('coin.optBoolean("ws_ready",false)',java)
         self.assertIn('stock.optBoolean("ws_ready",false)',java)
