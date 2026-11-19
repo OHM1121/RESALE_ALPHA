@@ -33,7 +33,7 @@ class OriginalWalletPlanTests(unittest.TestCase):
         cfg=SimpleNamespace(first_sell_fraction=.20,second_sell_fraction=.40,
                             second_target_up=.03)
         native=SimpleNamespace(code="005930",entry_price=100,
-            total_qty=100,first_profit_target=.07,
+            total_qty=100,qty=100,first_profit_target=.07,
             entry_date="2026-11-19",pending_sell_id="")
         rt=SimpleNamespace(stock_runner=SimpleNamespace(
             gmo=SimpleNamespace(engine=SimpleNamespace(
