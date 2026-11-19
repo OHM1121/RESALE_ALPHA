@@ -110,7 +110,16 @@ class VerifiedPath(unittest.TestCase):
             after,want,reason=ma_v067_policy.up_exit(
                 saved,Decimal('95'),Decimal('96.4'),Decimal('100'),
                 Decimal('100'),now+dt.timedelta(minutes=5))
-            self.assertEqual(reason,'MA_V065_UP_PRE_FIRST_ENTRY_RETURN')
+            # NEW LEGACY rev1: a verified ticker rally followed by entry
+            # retrace cannot trigger a full SELL without an official
+            # reference-LOW touch and subsequent CLOSED below-LOW candle.
+            self.assertEqual(reason,'')
+            self.assertEqual(want,Decimal('0'))
+            saved['rev1_below_reference_low_confirmed']=True
+            after,want,reason=ma_v067_policy.up_exit(
+                saved,Decimal('95'),Decimal('96.4'),Decimal('100'),
+                Decimal('100'),now+dt.timedelta(minutes=5))
+            self.assertEqual(reason,'MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE')
             self.assertEqual(want,Decimal('100'))
 
     def test_hold_deadlines_match_uploaded_workbook(self):
