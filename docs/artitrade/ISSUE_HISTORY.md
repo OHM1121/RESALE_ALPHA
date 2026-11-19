@@ -16,6 +16,8 @@ The **GitHub Issues tab** is the version-by-version expandable issue history. [O
 | [#62](https://github.com/OHM1121/RESALE_ALPHA/issues/62) | 0.0.3 → 0.0.4 | Historic restart/quote/fill recovery handoff | Historical CI reported; device unverified |
 | [#63](https://github.com/OHM1121/RESALE_ALPHA/issues/63) | 0.0.4 → 0.0.5 | UI score-plane and empty-wallet handoff | Historical CI reported; device unverified |
 
+| [#65](https://github.com/OHM1121/RESALE_ALPHA/issues/65) | 0.0.5 → 0.0.6 | Same-signer in-place update and root-cause release candidate | Signed CI and device verification pending |
+
 ### State vocabulary
 `REPORTED` / `LOG_CONFIRMED` / `ROOT_CAUSE_CONFIRMED` / `SOURCE_FIXED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `OPEN_UNVERIFIED` / `LATENT_UNOBSERVED` / `NON_ERROR_POLICY_BLOCK`. A defect cannot move to `DEVICE_VERIFIED` merely because a paper simulation or Java compile succeeds.
 
