@@ -112,7 +112,7 @@ jobs:
             echo '0.0.15 Android Java compile failure diagnostic (synthetic CI only)'
             echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo '~~~'
-            tail -n 115 /tmp/artitrade-v015-gradle.log 2>/dev/null | sed -E 's#/home/runner/work/[^ ]+#<CI_WORKSPACE>#g' || true
+            grep -n -E -C 9 '(error:|FAILURE:|What went wrong:|Caused by:|> Could not|Execution failed for task|Compilation failed|ANDROID_HOME|SDK location|No toolchains|Unable to create)' /tmp/artitrade-v015-gradle.log 2>/dev/null | head -n 115 | sed -E 's#/home/runner/work/[^ ]+#<CI_WORKSPACE>#g' || true
             echo '~~~'
           } > /tmp/artitrade-v015-gradle-errors.md
           gh issue comment 100 --repo "$GITHUB_REPOSITORY" --body-file /tmp/artitrade-v015-gradle-errors.md
