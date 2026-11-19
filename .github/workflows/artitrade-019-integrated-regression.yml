@@ -34,6 +34,8 @@ jobs:
               assert z.testzip() is None and len(z.namelist())==82
               z.extractall('/tmp/artitrade-019-original')
           PY
+      - name: Install original strategy runtime test dependencies
+        run: python3 -m pip install -q requests websockets holidays
       - name: Compile all source before native regression
         run: python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
       - name: Core 0.0.19 preview plus original eight-wallet regression
