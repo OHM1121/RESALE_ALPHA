@@ -100,7 +100,7 @@
       "tests": [
         "test_v007_error_history_root_contracts.py"
       ],
-      "notes": "Validate any candidate high/low before original range; no fabrication. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
+      "notes": "Validate any candidate high/low before original range; no fabrication. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified. Warning: 0.0.6 blanket range guard blocked valid 5m MA; corrected in 0.0.7 candidate via issue #67."
     },
     {
       "id": "AT-005-05",
@@ -289,7 +289,7 @@
       "title": "Coin MA V079 valid 5m UP signal wrongly subject to reference-bar OHLC",
       "evidence": "v005 native SQLite 14 MA 5m positions; MA source feature schema has no reference high/low",
       "root": "CONFIRMED_SOURCE_SCHEMA_CONFLATION",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "nodes": [
         "COIN_MA",
         "COIN_FEED",
@@ -298,11 +298,11 @@
       "tests": [
         "test_v008_all_strategy_rootcause.py"
       ],
-      "notes": "Signal-specific verified origin proof for MA UP/BEAR, while reference OHLC 2% gate retained; previously issued 0.0.6 APK does not include this correction.",
+      "notes": "Signal-specific verified origin proof for MA UP/BEAR, while reference OHLC 2% gate retained; previously issued 0.0.6 APK does not include this correction. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested.",
       "found": "0.0.6",
       "category": "CROSS_STRATEGY_SOURCE_AUDIT",
-      "fix_version": "0.0.7-unreleased-source",
-      "ci": "V008_IN_PROGRESS",
+      "fix_version": "0.0.7-test",
+      "ci": "PASSED_RUN_44443393545",
       "device": "UNVERIFIED"
     },
     {
@@ -311,7 +311,7 @@
       "title": "GMO 07:58 prewarm replaced shared 200 Kiwoom subscription owner",
       "evidence": "gmo_d1_preplan_v097 and stock_priority_runtime_v093 source analysis",
       "root": "CONFIRMED_SUBSCRIPTION_OWNER_BYPASS",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "nodes": [
         "STOCK_GMO",
         "STOCK_FEED",
@@ -324,11 +324,11 @@
         "test_v008_all_strategy_rootcause.py",
         "test_v093_strategy_subscription_priority.py"
       ],
-      "notes": "Calls shared authorized ranking at actual opening clock for pre-registration; no prices/orders created.",
+      "notes": "Calls shared authorized ranking at actual opening clock for pre-registration; no prices/orders created. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested.",
       "found": "0.0.6",
       "category": "CROSS_STRATEGY_SOURCE_AUDIT",
-      "fix_version": "0.0.7-unreleased-source",
-      "ci": "V008_IN_PROGRESS",
+      "fix_version": "0.0.7-test",
+      "ci": "PASSED_RUN_44443393545",
       "device": "UNVERIFIED"
     },
     {
@@ -337,7 +337,7 @@
       "title": "CLOSE post-close research falsely marked due with stale/future last price",
       "evidence": "at_close_runner._process_followups accepts late live as fallback without event timestamp proof",
       "root": "CONFIRMED_ASOF_CONTRACT_GAP",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "nodes": [
         "STOCK_CLOSE",
         "POST_EXIT",
@@ -347,11 +347,11 @@
         "test_v008_all_strategy_rootcause.py",
         "test_v075_gmo_cw_original_failure_audit.py"
       ],
-      "notes": "Research-only verified same-day 3m as-of or near-due genuine quote. Not executable order evidence. Unverified on phone.",
+      "notes": "Research-only verified same-day 3m as-of or near-due genuine quote. Not executable order evidence. Unverified on phone. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested.",
       "found": "0.0.6",
       "category": "CROSS_STRATEGY_SOURCE_AUDIT",
-      "fix_version": "0.0.7-unreleased-source",
-      "ci": "V008_IN_PROGRESS",
+      "fix_version": "0.0.7-test",
+      "ci": "PASSED_RUN_44443393545",
       "device": "UNVERIFIED"
     },
     {
@@ -360,7 +360,7 @@
       "title": "Duplicate Runtime.start replaces active Trend/PostExit/Recovery worker owners",
       "evidence": "market_trend_runtime_v043.runtime_start and post_exit_runtime_v053/unified_recovery_v092 decorators",
       "root": "CONFIRMED_IDEMPOTENCE_WRAPPER_BYPASS",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "nodes": [
         "SERVICE",
         "STOCK_TREND",
@@ -370,11 +370,11 @@
       "tests": [
         "test_v008_all_strategy_rootcause.py"
       ],
-      "notes": "Preserved original idempotency contract; cleanup on restart only where appropriate.",
+      "notes": "Preserved original idempotency contract; cleanup on restart only where appropriate. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested.",
       "found": "0.0.6",
       "category": "CROSS_STRATEGY_SOURCE_AUDIT",
-      "fix_version": "0.0.7-unreleased-source",
-      "ci": "V008_IN_PROGRESS",
+      "fix_version": "0.0.7-test",
+      "ci": "PASSED_RUN_44443393545",
       "device": "UNVERIFIED"
     },
     {
@@ -402,7 +402,7 @@
       "title": "Trend held/virtual dictionaries modified during concurrent stock/coin iteration",
       "evidence": "source confirms some writers lacked Coordinator.lock while stock_priority_v093 readers assumed it",
       "root": "CONFIRMED_SHARED_MEMORY_OWNERSHIP_GAP",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "nodes": [
         "STOCK_TREND",
         "COIN_TREND",
@@ -411,11 +411,11 @@
       "tests": [
         "test_v008_all_strategy_rootcause.py"
       ],
-      "notes": "Short registry snapshot/assign/pop protected by Coordinator.lock, no lock held over broker/SQLite calls. Device race occurrence unverified.",
+      "notes": "Short registry snapshot/assign/pop protected by Coordinator.lock, no lock held over broker/SQLite calls. Device race occurrence unverified. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested.",
       "found": "0.0.6",
       "category": "CROSS_STRATEGY_SOURCE_AUDIT",
-      "fix_version": "0.0.7-unreleased-source",
-      "ci": "V008_IN_PROGRESS",
+      "fix_version": "0.0.7-test",
+      "ci": "PASSED_RUN_44443393545",
       "device": "UNVERIFIED"
     },
     {
@@ -447,9 +447,9 @@
       "title": "Same-signer Android test package with cross-strategy root fixes",
       "evidence": "Source audit #67-72; 20 grouped suites with 19 passes and one pre-existing 8-failure old v067 test; newer v008 full CI validation",
       "root": "TRACKED_ROOT_CAUSE_SET",
-      "status": "OPEN_UNVERIFIED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.7-test",
-      "ci": "PENDING_SIGNED_007_BUILD",
+      "ci": "PASSED_RUN_44443393545",
       "device": "UNVERIFIED",
       "nodes": [
         "SERVICE",
@@ -465,7 +465,7 @@
         "test_v002_eight_virtual_paper_end_to_end.py",
         "test_v004_abnormal_reconnect_six.py"
       ],
-      "notes": "Do not label production ready; open #58/#59/#60/#71/#73. No original ledger reset/auto LIVE."
+      "notes": "Do not label production ready; open #58/#59/#60/#71/#73. No original ledger reset/auto LIVE. Signed 0.0.7 same-installer certificate confirmed; native+Java CI verified, actual phone not tested."
     }
   ],
   "known_normal": [
@@ -534,10 +534,33 @@
   "pending_release": {
     "name": "0.0.7",
     "versionCodeTarget": 129,
-    "apk_built": false,
+    "apk_built": true,
     "device_verified": false,
     "baseline_apk": "0.0.6 (128)",
-    "source_status": "PENDING_SIGNED_APK_CI",
-    "notes": "Original appId + original signer; no app data reset or ledger mutation."
+    "source_status": "CI_VERIFIED_TEST_RELEASE",
+    "notes": "Original package and signer; update in place without reset. Live brokerage unverified."
+  },
+  "latest_test_artifact": {
+    "versionName": "0.0.7",
+    "versionCode": 129,
+    "package": "com.artitrade.unified.s21dex",
+    "signed_build_source_commit": "901ce172f3c690e3f629915cff63d7f7a8611224",
+    "github_actions_run_id": 44443393545,
+    "artifact_id": 14492421001,
+    "filename": "ARTITRADE_0.0.7.apk",
+    "size_bytes": 30475505,
+    "sha256": "f044f2aaef724982ba62827fbe0a0539b8e0ae0549a0524c963594506d532e59",
+    "previous_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "vendor_core_sha256": "882ef3e0aea34d71568107e8b5223b7a790cae292299510d3aff0f6d9e69387e",
+    "device_verified": false,
+    "real_order_fill_verified": false,
+    "source_ledger_reset_performed": false,
+    "unresolved_issue_numbers": [
+      58,
+      59,
+      60,
+      71,
+      73
+    ]
   }
 }
