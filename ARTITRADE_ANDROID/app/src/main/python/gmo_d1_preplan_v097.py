@@ -370,8 +370,12 @@ class Preplanner:
                 plan["status"]="WAIT_VERIFIED_D_CLOSE"
                 return
             strict_cap=int(minus_ticks(reference,1))
+            if touch_ref:=max(int(last),int(ask)):
+                if touch_ref>strict_cap:
+                    plan["status"]="WAIT_OFFICIAL_OPEN_OR_D_CLOSE_TOUCH"
+                    return
             caps=(strict_cap,strict_cap,strict_cap)
-            plan["entry_reference_source"]="VERIFIED_D_CLOSE_STRICT_BELOW"
+            plan["entry_reference_source"]="VERIFIED_D_CLOSE_ONLY"
         else:return
         # Only a real same-venue verified 0B exchange timestamp may drive
         # the recovery command. A missing/expired quote leaves the original
