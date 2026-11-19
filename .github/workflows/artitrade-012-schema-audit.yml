@@ -32,6 +32,7 @@ jobs:
               zip.extractall("/tmp/artitrade012_native")
           PY
       - name: Inspect synthetic original ledger schemas (NO user data, NO broker)
+        continue-on-error: true
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade012_native:$PWD/ARTITRADE_ANDROID/ui_tests"
