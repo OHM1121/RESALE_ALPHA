@@ -14,10 +14,48 @@ import time
 from decimal import Decimal
 import ma_v067_policy as policy
 import new_legacy_1118_resting as resting
+from coin_held_depth_v014 import book_sell_evidence
 
 _INSTALLED=False
 KST=dt.timezone(dt.timedelta(hours=9))
 _LOCK=threading.RLock()
+
+
+def _v014_exit_block(self, symbol, now, reason, details=None):
+    """Durable, throttled local diagnostics for an actual held MA position.
+
+    Never logs a missing bid as a sell, or posts personal records to GitHub.
+    Called off the WS callback thread. A repeated shortage is observable
+    without filling issue storage with one row per market tick.
+    """
+    if str(symbol) not in getattr(self, '_ma_v067_up_hold_symbols', set()):
+        return
+    monotonic=time.monotonic()
+    signature=(str(symbol),str(reason))
+    with _LOCK:
+        recent=getattr(self,'_ma_v014_exit_audit_seen',{})
+        if monotonic-recent.get(signature,-1000)<30:
+            return
+        recent[signature]=monotonic
+        if len(recent)>500:
+            recent.clear()
+            recent[signature]=monotonic
+        self._ma_v014_exit_audit_seen=recent
+    fields=dict(details or {})
+    fields.update(stage='HELD_EXIT',source='ORIGINAL_UPBIT_WS',
+                  book_is_execution=False,receipt_confirmed=False)
+    stamp=now.isoformat() if isinstance(now,dt.datetime) else str(now)
+    try:
+        self.write_issue('MA_V014_HELD_EXIT_BLOCK',
+            str(symbol)+' '+str(reason)+' at='+stamp+
+            ' evidence='+json.dumps(fields,ensure_ascii=False,default=str)[:350],
+            severity='WARNING')
+    except Exception:
+        # Fall back to the separate original research decision journal.
+        pass
+    _record_v074_ma_observation(str(symbol),'held',stamp,
+                                'MA_V014_'+str(reason),fields)
+
 
 def _table(c):
     c.execute("""CREATE TABLE IF NOT EXISTS ma_v067_positions(
@@ -279,6 +317,8 @@ def _v074_coin_tick_worker(runner):
                     book=(getattr(runner,'last_book',{}) or {}).get(code)
             else:book=(getattr(runner,'last_book',{}) or {}).get(code)
             if not isinstance(book,dict):
+                if hold:
+                    _v014_exit_block(ledger,code,now,'BOOK_MISSING_AFTER_TICKER')
                 for tf,end in due:
                     _record_v074_ma_observation(code,tf,end.isoformat(),
                         ('MA_PREWATCH_BOOK_NOT_READY' if policy.in_ma_prewatch_window(_bar_close(now,tf)[0])
@@ -286,6 +326,9 @@ def _v074_coin_tick_worker(runner):
                 continue
             stamp=book.get('timestamp')
             if not isinstance(stamp,(int,float)) or abs(now.timestamp()-stamp/1000)>3:
+                if hold:
+                    _v014_exit_block(ledger,code,now,'BOOK_STALE_AFTER_TICKER',
+                                     {'timestamp_ms':str(stamp)[:40]})
                 for tf,end in due:
                     _record_v074_ma_observation(code,tf,end.isoformat(),
                         ('MA_PREWATCH_BOOK_STALE' if policy.in_ma_prewatch_window(_bar_close(now,tf)[0])
@@ -500,12 +543,17 @@ def _process_v067_exits(self,book,now):
     symbol=str(book.get('market') or '')
     trade=_recent_trade(self,symbol,now)
     # Same authentic Upbit bid/depth as before: no synthetic sale on reconnect.
+    status,evidence=book_sell_evidence(book,now)
+    if status!='OK':
+        _v014_exit_block(self,symbol,now,status,evidence)
+        return
     try:
         bid=dec(book['bid']);bid_qty=dec(book['bid_size'])
-        if bid<=0 or bid_qty<=0:return
-        if abs(now.timestamp()-float(book['timestamp'])/1000)>3:return
-    except (TypeError,KeyError,ValueError):return
+    except (TypeError,KeyError,ValueError):
+        _v014_exit_block(self,symbol,now,'BOOK_DECIMAL_REJECTED')
+        return
     began=time.monotonic()
+    failed=[]
     with self.lock,self.connect() as c:
         _table(c)
         rows=c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
@@ -522,7 +570,12 @@ def _process_v067_exits(self,book,now):
                 # A single genuine post-reconnect order book may be above
                 # BOTH profit targets; consume at most two confirmed stages.
                 # Protect against a slow SQLite operation aging that book.
-                if depth<=0 or time.monotonic()-began>2.5:break
+                if depth<=0:
+                    break
+                if time.monotonic()-began>2.5:
+                    failed.append(('NATIVE_BOOK_PROCESSING_TIMEOUT',
+                                   {'position_id':int(item['id'])}))
+                    break
                 # First stage uses the already-authoritative initial SQL
                 # row. Only after the first confirmed SELL do we re-read
                 # the now-changed position and sidecar for stage 2.
@@ -570,13 +623,22 @@ def _process_v067_exits(self,book,now):
                 key=('MA_V067:'+symbol+':'+str(p['id'])+':'+
                      reason+':'+str(int(book['timestamp'])))
                 if not self._sell(c,p,desired,bid,now.isoformat(),reason,event_key=key):
+                    failed.append(('NATIVE_SELL_REJECTED',
+                                   {'position_id':int(p['id']),
+                                    'exit_reason':reason,'order_qty':str(desired)}))
                     break
                 executed=c.execute("""SELECT id,qty,price FROM executions
                     WHERE event_key=? AND side='SELL' AND position_id=?""",
                     (key,p['id'])).fetchone()
-                if executed is None:break
+                if executed is None:
+                    failed.append(('NATIVE_SELL_RECEIPT_MISSING',
+                                   {'position_id':int(p['id']),'exit_reason':reason}))
+                    break
                 actually=policy.number(executed['qty'])
-                if actually is None or actually<=0:break
+                if actually is None or actually<=0:
+                    failed.append(('NATIVE_SELL_RECEIPT_BAD_QTY',
+                                   {'position_id':int(p['id']),'exit_reason':reason}))
+                    break
                 px=executed['price']
                 if reason in ('MA_V1118_UP_FIRST_30PCT','MA_V1118_UP_SECOND_35PCT'):
                     resting.confirmed_fill(c,int(p['id']),
@@ -610,6 +672,9 @@ def _process_v067_exits(self,book,now):
                 # Only a FULLY booked first stage may immediately arm second.
                 # Otherwise await a new authentic orderbook with enough depth.
                 if not first_reason or confirmed<first_goal:break
+    # Emit after releasing the wallet transaction/SQLite lock.
+    for blocked,details in failed:
+        _v014_exit_block(self,symbol,now,blocked,details)
 
 
 def install():
@@ -834,4 +899,9 @@ def install():
                     'OPERATIONAL_MA_TICK_DISPATCH_'+type(exc).__name__)
         return prior_tick(coord,code,price)
     trend.Coordinator.observe_coin_tick=verified_coin_tick
+    # MA currently-open symbols must remain in the vendor's existing ticker
+    # and orderbook subscription sets even if rank/preload cohorts rotate.
+    # No second Upbit socket, REST-as-book, lease or LIVE order is created.
+    from coin_held_depth_v014 import install as install_ma_held_depth
+    install_ma_held_depth(d_upbit)
     _INSTALLED=True
