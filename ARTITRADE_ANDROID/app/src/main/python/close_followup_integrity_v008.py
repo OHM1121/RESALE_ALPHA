@@ -60,10 +60,14 @@ def asof_price(live,saved,due,now):
         if saved.get('source')!='RESEARCH_3M':return None
         price=_positive_price(saved.get('price'))
         bar=_timestamp(saved.get('bar_ts'))
-        if (price is not None and bar is not None
+        # KRX 3-minute bar_ts is the bar START. Its close price is
+        # not observed/confirmed until bar_start + 3m. A 15:15 candle
+        # must NOT be labeled the 15:15 research price before 15:18.
+        bar_end=bar+timedelta(minutes=3) if bar is not None else None
+        if (price is not None and bar_end is not None
             and bar.date()==due.date()
-            and 0<=(due-bar).total_seconds()<=MAX_SAVED_3M_BAR_DISTANCE_SEC):
-            return price,'RESEARCH_3M_VERIFIED_ASOF',bar.isoformat(timespec='seconds')
+            and 0<=(due-bar_end).total_seconds()<=MAX_SAVED_3M_BAR_DISTANCE_SEC):
+            return price,'RESEARCH_3M_VERIFIED_ASOF',bar_end.isoformat(timespec='seconds')
     return None
 
 
