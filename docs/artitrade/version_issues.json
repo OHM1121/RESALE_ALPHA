@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "fix-artitrade-007-v005-errorlog-rootcause-governance-20261119",
+  "working_branch": "release-artitrade-006-v005-errorfix-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -256,6 +256,32 @@
         "test_v005_market_score_empty_wallet.py"
       ],
       "notes": "UI score plane is not execution score_events; later v005 errors recorded separately #53-60."
+    },
+    {
+      "id": "AT-006-RELEASE",
+      "issue": 65,
+      "found": "0.0.5→0.0.6",
+      "category": "RELEASE_CANDIDATE",
+      "title": "Original-signer in-place update APK after root-cause fixes",
+      "evidence": "0.0.5 real device log and v007 source changes, 0.0.6/128 packaging required",
+      "root": "TRACKED_REPAIR",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.0.6-source",
+      "ci": "PENDING_SIGNED_APK_VERIFICATION",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "SERVICE",
+        "EXECUTION",
+        "UI_RECORDS",
+        "BACKUP",
+        "STOCK_GMO"
+      ],
+      "tests": [
+        "test_v007_error_history_root_contracts.py",
+        "test_v006_trend_5m_retirement_and_startup.py",
+        "test_v002_eight_virtual_paper_end_to_end.py"
+      ],
+      "notes": "No data reset, no automatic LIVE; exact installed signer required; actual phone fills unverified."
     }
   ],
   "known_normal": [
