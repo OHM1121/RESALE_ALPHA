@@ -105,7 +105,7 @@ def validate_registry():
                 fail("Missing code fix/regression evidence for "+e["id"])
         for n in e["nodes"]:
             if n not in known:fail(e["id"]+" points at absent graph node "+n)
-    for name in ("AGENTS.md","CLAUDE.md",".github/copilot-instructions.md",
+    for name in ("AGENTS.md","CLAUDE.md","GEMINI.md",".agents/rules/artitrade-root-cause.md",".github/copilot-instructions.md",
                  ".github/ISSUE_TEMPLATE/artitrade-root-cause.yml",
                  ".github/PULL_REQUEST_TEMPLATE.md","docs/artitrade/ISSUE_HISTORY.md"):
         if not (REPO/name).is_file():fail("Missing cross-AI governance file "+name)
