@@ -335,7 +335,17 @@ def _apply_one(path,kind,root):
         # Original broker or imported wallet evidence is never deleted.
         # We can still remove separately proven PAPER trades in this file.
         removed=[p for p,_,_,_,_ in selected]
-        if not selected and not old:
+        # If an older executable fill has no matching position, there is
+        # no provable source cost basis. Never synthesize a cash refund
+        # or claim the ledger is fully cleared. Keep it for explicit review.
+        ids={int(p["id"]) for p in old+new}
+        orphan_count=c.execute("""SELECT COUNT(*) FROM executions
+            WHERE position_id IS NOT NULL AND
+            position_id NOT IN (SELECT id FROM positions)""").fetchone()[0]
+        if not selected and not old and not kind.startswith("old_"):
+            if orphan_count:
+                return {"kind":kind,"removed":0,"skipped":int(orphan_count),
+                        "reason":"ORPHAN_NATIVE_EXECUTION_UNRECONCILABLE"}
             c.execute("INSERT INTO nl1118_legacy_purge_v012 VALUES(?,?,?,?,?)",
                       (TAG,_clock(),0,0,0))
             return {"kind":kind,"removed":0,"skipped":0}
@@ -395,12 +405,12 @@ def _apply_one(path,kind,root):
         for row in new:
             if c.execute("SELECT 1 FROM positions WHERE id=?",(row["id"],)).fetchone() is None:
                 raise UnsafeLegacyPurge("PROTECTED_NL1118_POSITION_REMOVED")
-        if not skipped:
+        if not skipped and not orphan_count:
             c.execute("INSERT INTO nl1118_legacy_purge_v012 VALUES(?,?,?,?,?)",
                       (TAG,_clock(),len(removed),total_fills,0))
         return {"kind":kind,"removed":len(removed),
-                "fills":total_fills,"skipped":len(skipped),
-                "fully_done":not bool(skipped)}
+                "fills":total_fills,"skipped":len(skipped)+int(orphan_count),
+                "fully_done":not bool(skipped or orphan_count)}
 
 def _digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
