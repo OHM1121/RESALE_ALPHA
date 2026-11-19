@@ -218,9 +218,9 @@ jobs:
         with:
           name: ARTITRADE_0_0_19_SIGNED_CANDIDATE
           path: |
-            0.0.18.apk
-            0.0.18.sha256
-            0.0.18.txt
+            0.0.19.apk
+            0.0.19.sha256
+            0.0.19.txt
           retention-days: 30
           if-no-files-found: error
 
