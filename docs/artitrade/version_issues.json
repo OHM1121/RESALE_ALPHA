@@ -1163,7 +1163,7 @@
       "root": "CONFIRMED_SOURCE_UI_BRIDGE_MISSING_AND_NO_CHRONOLOGICAL_RETROACTIVE_NATIVE_LEDGER_ENGINE",
       "status": "OPEN_UNVERIFIED",
       "fix_version": "0.0.19-source-work-in-progress",
-      "ci": "GitHub regression CI 44529023597 SUCCESS at d62d7adace1ea41638da54be36497b4294056f12: source 8-wallet tests, 0.0.19 provenance/chronology unit tests, Android Java compile, dependency governance; no APK signing/real device or retroactive ledger mutation verified",
+      "ci": "GitHub Actions 44533684719 SUCCESS: Python eight-owner original regressions + synthetic replay, coin Reference and stock CW native SQLite atomic fees/cash/P&L, Java compile and dependency governance; full eight-wallet real data and crash-safe witness/replay not proven",
       "device": "UNVERIFIED",
       "nodes": [
         "V019_EIGHT_OWNER_SOURCE_TARGET_DISPLAY",
@@ -1171,15 +1171,19 @@
         "POSITION_UID_V015",
         "EXECUTION",
         "UI_RECORDS",
-        "ANTI_ROLLBACK"
+        "ANTI_ROLLBACK",
+        "V019_PAPER_NATIVE_CHRONOLOGICAL_REPLAY_WIP",
+        "V019_NATIVE_ATOMIC_STAGE_SETTLEMENT_WIP"
       ],
       "tests": [
         "test_v019_native_exit_plan_readonly.py",
         "test_v019_paper_exit_chronology.py",
         "test_v002_eight_virtual_paper_end_to_end.py",
-        "test_v018_rev1_low_close_and_fast_ma.py"
+        "test_v018_rev1_low_close_and_fast_ma.py",
+        "test_v019_strict_paper_replay.py",
+        "test_v019_native_ledger_accounting.py"
       ],
-      "notes": "Read-only six strategy native stage evidence + source GMO/CW target UI and standalone fail-closed chronology audit source committed. CRITICAL GAP: no atomic replay journal, no settled native historical PAPER executions/cash/P&L/witness rollback, no real device test; do not ship 0.0.19 APK/release. Any future source adjustments must preserve exact version number and same signing fingerprint. Source and Java CI read-only passed, but native PAPER catch-up settlement and device not verified. Governance uses OPEN_UNVERIFIED until full implementation."
+      "notes": "0.0.19 SOURCE_WIP. Original 8-owner chronological proof/replay engine not yet fed by a complete authenticated on-device post-BUY event stream. Seven source SQLite wallet atomic adapters exist but only coin general and CW synthetic accounting tests passed; GMO JSON owner, private pre-start backup/crash recovery with independent anti-rollback witness, all seven transaction property tests, same original-signer APK and actual device are UNVERIFIED. No 0.0.19 APK or release. Fail closed; never book HIGH-only TP or mutate live phone."
     }
   ],
   "known_normal": [
@@ -1457,13 +1461,17 @@
     "release_exists": false,
     "signed_apk_exists": false,
     "device_verified": false,
-    "source_status": "CI_VERIFIED_READONLY_ONLY",
+    "source_status": "SOURCE_PARTIAL_UNWIRED",
     "native_historical_chronological_settlement": "NOT_IMPLEMENTED",
     "readonly_exit_plan_ui": "CI_VERIFIED_READONLY",
     "read_only_chronological_audit": "CI_VERIFIED_READONLY",
     "baseline_release": "0.0.18",
     "baseline_release_commit": "2f3b85d0004e16d05e5243af0a038bfc63e3d73c",
     "original_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
-    "ci_run": 44529023597
+    "ci_run": 44533684719,
+    "historical_verified_source_complete": false,
+    "source_native_gmo_json_reconciliation": "NOT_IMPLEMENTED",
+    "source_private_backup_antirollback": "NOT_IMPLEMENTED",
+    "all_original_eight_wallet_native_settlement_regression": "NOT_VERIFIED"
   }
 }
