@@ -28,7 +28,7 @@ jobs:
               files=[x for x in archive.namelist() if x.endswith('.py')]
               print('ORIGINAL_FILES_OF_INTEREST',[x for x in files if 'gmo' in x.lower() or 'live' in x.lower() or 'calendar' in x.lower()])
               for name in files:
-                  if name not in ('d_live.py','d_gmo_runtime.py','projectgmo/engine.py'):
+                  if name not in ('d_live.py','d_gmo_runtime.py','projectgmo/engine.py','android_live_bridge.py','d_calendar.py'):
                       continue
                   src=archive.read(name).decode('utf8')
                   tree=ast.parse(src)
@@ -36,8 +36,8 @@ jobs:
                   print('MODULE',name,'LENGTH',len(lines))
                   for node in ast.walk(tree):
                       if not isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):continue
-                      if node.name in ('live_session','calendar_status','_d1_buy_window_ok','on_live_tick','on_priority_tick','_next_day','open_entry','_session_active','on_tick','start','_patch_gmo'):
-                          snippet='\n'.join(lines[node.lineno-1:min(node.end_lineno,node.lineno+115)])
+                      if node.name in ('live_session','calendar_status','_d1_buy_window_ok','on_live_tick','on_priority_tick','_next_day','open_entry','_session_active','on_tick','start','_patch_gmo','record_open','subscribe','live_session','get_session','place_order','submit_order','place_sell','send','buy','sell','create_sell','_submit','_buy','_sell','_confirm','_find_fill','order','put_order','_buy_if_touch','_sell_position'):
+                          snippet='\n'.join(lines[node.lineno-1:min(node.end_lineno,node.lineno+55)])
                           print('FUNCTION',name,node.name,node.lineno,'\n',snippet)
                   for i,line in enumerate(lines):
                       if '2026-11-19' in line or 'SPECIAL_SESSIONS' in line or '09:00' in line or '10:00' in line or '08:50' in line or '1530' in line or '0900' in line or 'session_clock' in line:
