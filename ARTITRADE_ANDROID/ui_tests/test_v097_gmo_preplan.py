@@ -62,6 +62,39 @@ class PreplanTests(unittest.TestCase):
         self.assertIsNone(p["opening_price"])
         self.assertEqual(self.svc.engine.buy_fills,[])
 
+    def test_late_recovery_can_rebuild_real_d1_with_no_official_open(self):
+        from projectgmo.engine import Quote
+        at=dt.datetime(2026,11,17,11,7,0,tzinfo=KST)
+        # No plan exists after a simulated app restart. This must NOT be
+        # mistaken for an absence of the completed D-day signal.
+        self.assertEqual(self.p.plans,{})
+        self.assertEqual(self.p.prepare("KRX",at),())
+        self.assertEqual(self.p.prepare("KRX",at,recovery=True),("005930",))
+        plan=self.p.plans[("2026-11-17","005930","KRX")]
+        self.assertTrue(plan["late_recovery"])
+        self.assertIsNone(plan["opening_price"])
+        # A genuinely received current KRX trade+ask below VERIFIED D close
+        # may trigger the native owner even though today's open is unknown.
+        q=Quote("005930",at.isoformat(),1,9870,9880,9860,100,100,"KRX",0)
+        self.p._step(plan,at,9870,9880,100,"KRX",q=q)
+        self.assertEqual(plan["entry_reference_source"],"VERIFIED_D_CLOSE_ONLY")
+        self.assertTrue(self.svc.engine.orders)
+        self.assertLessEqual(max(o.limit for o in self.svc.engine.orders.values()),9900)
+
+    def test_late_recovery_must_not_invent_open_or_buy_above_d_close(self):
+        at=dt.datetime(2026,11,17,11,7,0,tzinfo=KST)
+        self.p.prepare("KRX",at,recovery=True)
+        plan=self.p.plans[("2026-11-17","005930","KRX")]
+        self.p._step(plan,at,10100,10100,100,"KRX")
+        self.assertEqual(plan["status"],"WAIT_OFFICIAL_OPEN_OR_D_CLOSE_TOUCH")
+        self.assertIsNone(plan["opening_price"])
+        self.assertEqual(self.svc.engine.orders,{})
+
+    def test_no_new_entry_after_d_plus_one(self):
+        at=dt.datetime(2026,11,18,11,7,0,tzinfo=KST)
+        self.assertEqual(self.p.prepare("KRX",at,recovery=True),())
+        self.assertFalse(self.svc.engine.buy_fills)
+
     def test_exact_preflight_times_and_nxt_vs_krx(self):
         self.assertTrue(_valid_phase("NXT",dt.datetime(2026,11,17,7,58,tzinfo=KST),True))
         self.assertFalse(_valid_phase("NXT",dt.datetime(2026,11,17,8,0,tzinfo=KST),True))
