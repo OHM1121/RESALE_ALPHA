@@ -1774,8 +1774,8 @@ def install(core):
     core.Runtime.snapshot=runtime_snapshot
 
     original_hub=core.Runtime.hub_records
-    def runtime_hub(self):
-        raw=original_hub(self)
+    def runtime_hub(self,for_ui=False):
+        raw=original_hub(self,for_ui=for_ui)
         trend=getattr(self,"market_trend",None)
         return trend.attach_history(raw) if trend is not None else raw
     core.Runtime.hub_records=runtime_hub
