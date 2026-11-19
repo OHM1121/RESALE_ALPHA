@@ -54,7 +54,16 @@ class SixAbnormal(unittest.TestCase):
             row=c.execute('SELECT * FROM v19_orders WHERE signal_id=?',(sid,)).fetchone()
             self.assertEqual(row['status'],'PENDING')
             owner.book._items[(code,'KRX')]=(2600,2580,10000,STOCK)
-            with patch('d_v19_portfolio.live_session',return_value=True),patch.object(ref,'_market_score',return_value=10):
+            # Genuine 11.18 BUY requires the signed-score source, not
+            # the old synthetic ref._market_score shortcut alone.
+            class SyntheticSignedWorker:
+                def snapshot(self):return {"stock":{"score":10.,"stale":False}}
+            publisher_key=str(__import__('at_market_score_gate_v107')._score_worker_root(
+                store.root,"stock"))
+            with patch.dict(score._WORKERS,{publisher_key:SyntheticSignedWorker()},
+                            clear=True),\
+                patch('d_v19_portfolio.live_session',return_value=True),\
+                patch.object(ref,'_market_score',return_value=10):
                 ok=owner._buy_limit_depth(c,row,STOCK,'KRX',2600,1000)
             self.assertTrue(ok[0],ok)
             pid=c.execute('SELECT id FROM positions WHERE code=?',(code,)).fetchone()[0]
