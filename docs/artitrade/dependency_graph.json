@@ -21,7 +21,8 @@
       "issues": [
         53,
         55,
-        60
+        60,
+        96
       ],
       "contract": "No source-ready proof from a zero-length array; UI snapshot != original execution DB."
     },
@@ -76,7 +77,8 @@
         "FRESH_EPOCH"
       ],
       "issues": [
-        60
+        60,
+        95
       ],
       "contract": "Monotonic fills cannot regress; fail closed only after consistent proof, no automatic reset."
     },
@@ -160,7 +162,8 @@
         53,
         55,
         63,
-        65
+        65,
+        96
       ],
       "contract": "No full JSON on order lock, source errors not masked; zero ledger data != missing source."
     },
@@ -230,7 +233,8 @@
         80,
         91,
         92,
-        94
+        94,
+        95
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -255,7 +259,8 @@
         79,
         80,
         92,
-        94
+        94,
+        95
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -386,7 +391,8 @@
         75,
         79,
         92,
-        94
+        94,
+        95
       ],
       "contract": "Missing source high/low rejected; never abort other eligible book work."
     },
@@ -453,7 +459,8 @@
         80,
         90,
         92,
-        94
+        94,
+        95
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },
@@ -828,6 +835,42 @@
         94
       ],
       "contract": "GMO and CLOSE/CW are exempt. No old V2.6/SR1/MA V061/V067 bearish/old MT exit can auto trade; missing NEW LEGACY sidecars fail closed without erasing or reclassifying prior actual fills. Full verified migration of pre-policy open holdings remains open."
+    },
+    {
+      "id": "NL1118_PAPER_LEGACY_PURGE_V012",
+      "kind": "java+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java",
+        "ARTITRADE_ANDROID/app/src/main/python/ledger_rollback_guard_v002.py"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "ANTI_ROLLBACK",
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_MA",
+        "NL1118_OLD_POLICY_RETIRE_V011"
+      ],
+      "issues": [
+        95
+      ],
+      "contract": "Explicit user-authorized one-time PAPER historical removal for six owned wallets and legacy MA archives; no mutation to GMO or CW database. Validate old immutable execution and fresh epoch before rebasing independent witness only for declared affected files, restore exact SQLite backups on interruption, reverse legacy cash/realized and remove linked position receipts. Broker/unknown histories fail closed; device unverified."
+    },
+    {
+      "id": "HOLDING_FRAME_BADGE_V012",
+      "kind": "java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "ACTIVITY_UI",
+        "UI_RECORDS"
+      ],
+      "issues": [
+        96
+      ],
+      "contract": "Left holding status square renders original wallet timeframe 5분/30분/60분/일봉; remove duplicate timeframe from stock/coin symbol text. Nonframe GMO/CW categories shown only as grounded source strategy category. Pending/SELL UI unchanged."
     }
   ],
   "audit_scope": {
@@ -849,7 +892,8 @@
       "0.0.7 actual phone JSON+ZIP 15 original records, read-only local analysis, counts only committed",
       "0.0.9 phone 12:50 actual 15-source ZIP+SQLite forensic, 8 PAPER regression; new exact error signature 12:23 gmo_paper_tick",
       "0.0.10 code132 old-signature signed original 82-module same-day KRX/GMO/AT regression, actual Samsung orderbook and live broker fill unverified",
-      "0.0.11 source candidate: 11.18 original workbook physical cell audit, sanitized 2026-11-19 stock+coin SQLite exports, local PAPER-resting + old policy retirement; signed APK and real broker order verification PENDING"
+      "0.0.11 source candidate: 11.18 original workbook physical cell audit, sanitized 2026-11-19 stock+coin SQLite exports, local PAPER-resting + old policy retirement; signed APK and real broker order verification PENDING",
+      "0.0.12 verified schema audit for generated native SQLite wallets, original-account refund logic, explicit user-authorized legacy PAPER purge and left timeframe badge; real device and actual source P&L correction pending CI"
     ],
     "not_a_completeness_claim": true
   }
