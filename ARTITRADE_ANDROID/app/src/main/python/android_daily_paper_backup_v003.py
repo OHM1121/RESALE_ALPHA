@@ -9,12 +9,11 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
-from zoneinfo import ZoneInfo
 from android_ledger_backup import make_backup, validate_backup
 from krx_session_v041 import CLOSED
 from ledger_rollback_guard_v002 import verify_and_checkpoint
 
-KST=ZoneInfo("Asia/Seoul")
+KST=dt.timezone(dt.timedelta(hours=9))  # Modern KRX/Upbit KST; no Android tzdata dependency
 MARKER="ARTITRADE_FRESH_EPOCH_V106.json"
 MAX_LOOKBACK_DAYS=15
 

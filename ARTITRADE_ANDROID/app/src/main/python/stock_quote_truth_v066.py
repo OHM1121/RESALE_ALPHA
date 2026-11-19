@@ -523,14 +523,17 @@ def install(_core):
     old=_core.Runtime.hub_records
     if getattr(old,'_v066_stock_quote_installed',False):return
 
-    def hub_with_verified_prices(self):
+    def hub_with_verified_prices(self,for_ui=False):
         runner=getattr(self,'stock_runner',None)
         try:
             if runner is not None:
                 install_ui_quote_tap(runner)
         except (AttributeError,TypeError,RuntimeError):
             pass
-        raw=old(self)
+        # Every hub wrapper must preserve the full/UI contract. An
+        # outer display quote overlay silently dropped for_ui in v005,
+        # crashing every UI records refresh before the source ledger loaded.
+        raw=old(self,for_ui=for_ui)
         try:
             is_string=isinstance(raw,str)
             packet=json.loads(raw) if is_string else raw

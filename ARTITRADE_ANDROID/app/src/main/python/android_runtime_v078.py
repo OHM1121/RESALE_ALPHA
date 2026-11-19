@@ -2097,8 +2097,7 @@ def _stock_at_ledger_v19(self):
         from phone_buy_evidence_v035 import (
             attach_buy_evidence,read_at_open_buy_fills,queue_phone_buy_evidence)
         from at_hold_diagnostic_v035 import diagnose_at_position
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+        from datetime import datetime, timezone, timedelta
         stock_db=Path(self.root)/'stock'/'ARTITRADE_D.sqlite3'
         from phone_buy_evidence_v035 import read_open_signal_evidence
         source_signals=read_open_signal_evidence(stock_db,'stock','at')
@@ -2108,7 +2107,8 @@ def _stock_at_ledger_v19(self):
         buy_records=attach_buy_evidence(positions,read_at_open_buy_fills(stock_db),
                         source_signals,market='stock',strategy='at',linked_ids=link_map)
         queue_phone_buy_evidence(self.root,buy_records)
-        now=datetime.now(ZoneInfo("Asia/Seoul"))
+        # Android Chaquopy may not package IANA tzdata. KRX uses KST +09:00.
+        now=datetime.now(timezone(timedelta(hours=9)))
         for position in positions:
             # Saved hold_days is authoritative; these diagnostics are not
             # scheduled sell actions and never imply a broker fill.

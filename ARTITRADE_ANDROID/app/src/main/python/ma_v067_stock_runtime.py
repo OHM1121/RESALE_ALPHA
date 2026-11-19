@@ -20,6 +20,53 @@ KST=dt.timezone(dt.timedelta(hours=9))
 MAX_QUEUE=512
 MAX_ACTIVE_SECONDS=3
 
+
+class _LatestVerifiedMAQueue:
+    """Bound queue by unique stock, not raw KRX 0B messages.
+
+    v005 logged MA_V067_UP_5S_QUEUE_FULL because dozens of same-symbol
+    ticks piled up behind SQLite/MA work. Keep the latest *received genuine*
+    event per symbol. Workers still independently check its exchange time,
+    session and 0D depth before asking the unmodified native wallet.
+    """
+    def __init__(self,maxsize=MAX_QUEUE):
+        self._queue=queue.Queue(maxsize=maxsize)
+        self._latest={}
+        self._pending=set()
+        self._lock=threading.Lock()
+
+    def offer(self,tick):
+        if not isinstance(tick,(tuple,list)) or len(tick)<9:
+            return False
+        code=str(tick[0])
+        with self._lock:
+            if code not in self._pending:
+                try:self._queue.put_nowait(code)
+                except queue.Full:return False
+                self._pending.add(code)
+            prior=self._latest.get(code)
+            # Never roll a verified symbol backward to a delayed older print.
+            if prior is None or str(tick[6])>=str(prior[6]):
+                self._latest[code]=tuple(tick)
+        return True
+
+    def get(self,timeout=None):
+        code=self._queue.get(timeout=timeout)
+        with self._lock:
+            tick=self._latest.pop(code,None)
+            self._pending.discard(code)
+        return tick
+
+    def task_done(self):
+        self._queue.task_done()
+
+    def qsize(self):
+        return self._queue.qsize()
+
+    def empty(self):
+        return self._queue.empty()
+
+
 def _table(c):
     c.execute("""CREATE TABLE IF NOT EXISTS ma_v067_positions(
         position_id INTEGER PRIMARY KEY,
@@ -468,7 +515,7 @@ def _up_worker(runner):
         try:tick=runner._ma_v067_up_queue.get(timeout=.15)
         except queue.Empty:continue
         try:
-            if len(tick)<9 or tick[7]!='KRX' or not exchange_stamp_is_fresh(tick[8],tick[6]):continue
+            if tick is None or len(tick)<9 or tick[7]!='KRX' or not exchange_stamp_is_fresh(tick[8],tick[6]):continue
             now=dt.datetime.fromisoformat(str(tick[6]))
             if not live_session(now,'KRX'):continue
             service=runner.ma
@@ -682,7 +729,7 @@ def install():
                        for frame in ('5m','30m','60m','day')):
                     q=getattr(self,'_ma_v067_up_queue',None)
                     if q is None:
-                        q=queue.Queue(maxsize=MAX_QUEUE)
+                        q=_LatestVerifiedMAQueue(maxsize=MAX_QUEUE)
                         self._ma_v067_up_queue=q
                     worker=getattr(self,'_ma_v067_up_worker',None)
                     if worker is None or not worker.is_alive():
@@ -690,9 +737,13 @@ def install():
                             daemon=True,name='artitrade-ma-v067-stock-preclose')
                         self._ma_v067_up_worker=worker
                         worker.start()
-                    try:q.put_nowait(tuple(tick))
-                    except queue.Full:self.store.write_runtime_error(
-                        RuntimeError('MA_V067_UP_5S_QUEUE_FULL'),'MA_V067_STOCK_ENTRY_DROP')
+                    # A symbol already pending is UPDATED, not enqueued
+                    # hundreds of times. Genuine latest timestamps remain
+                    # mandatory; the consumer performs another freshness check.
+                    if not q.offer(tuple(tick)):
+                        self.store.write_runtime_error(
+                            RuntimeError('MA_V067_UP_UNIQUE_SYMBOL_QUEUE_FULL'),
+                            'MA_V067_STOCK_ENTRY_DROP')
         except (TypeError,ValueError,AttributeError):
             pass
         return orig_feed(self,tick)

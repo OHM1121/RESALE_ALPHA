@@ -1,0 +1,311 @@
+{
+  "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
+  "baseline": "0.0.5",
+  "working_branch": "fix-artitrade-007-v005-errorlog-rootcause-governance-20261119",
+  "last_review": "2026-11-19",
+  "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
+  "status_levels": [
+    "REPORTED",
+    "LOG_CONFIRMED",
+    "ROOT_CAUSE_CONFIRMED",
+    "SOURCE_FIXED",
+    "CI_VERIFIED",
+    "DEVICE_VERIFIED",
+    "OPEN_UNVERIFIED",
+    "LATENT_UNOBSERVED",
+    "NON_ERROR_POLICY_BLOCK"
+  ],
+  "entries": [
+    {
+      "id": "AT-005-01",
+      "issue": 53,
+      "found": "0.0.5",
+      "category": "USER_LOG",
+      "title": "Python hub for_ui keyword missing",
+      "evidence": "29 of latest 30 Android runtime faults; TypeError and exact stack",
+      "root": "CONFIRMED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.7-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "HUB_DECORATORS",
+        "UI_RECORDS",
+        "ACTIVITY_UI"
+      ],
+      "tests": [
+        "test_v007_error_history_root_contracts.py"
+      ],
+      "notes": "All six hub decorators forward for_ui; empty/failed source must be distinguished."
+    },
+    {
+      "id": "AT-005-02",
+      "issue": 54,
+      "found": "0.0.5",
+      "category": "AUTO_DISCOVERED_LOG",
+      "title": "Android ZoneInfo tzdata missing",
+      "evidence": "daily_backup_stock ZoneInfoNotFoundError",
+      "root": "CONFIRMED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.7-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "BACKUP",
+        "PYTHON_RUNTIME"
+      ],
+      "tests": [
+        "test_v007_error_history_root_contracts.py"
+      ],
+      "notes": "Modern KST UTC+09:00; no IANA module asset dependency."
+    },
+    {
+      "id": "AT-005-03",
+      "issue": 55,
+      "found": "0.0.5",
+      "category": "USER_REPORTED",
+      "title": "Empty GMO fresh ledger falsely labelled unreadable",
+      "evidence": "0.0.5 Java UI warns based only on empty arrays; exported GMO JSON has zero orders/positions",
+      "root": "CONFIRMED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.7-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "ACTIVITY_UI",
+        "UI_RECORDS"
+      ],
+      "tests": [
+        "test_v007_error_history_root_contracts.py"
+      ],
+      "notes": "Separate healthy zero, not ready and actually failed states."
+    },
+    {
+      "id": "AT-005-04",
+      "issue": 56,
+      "found": "0.0.5",
+      "category": "AUTO_DISCOVERED_SQLITE",
+      "title": "Coin MA high KeyError leaks through legacy candidate fast path",
+      "evidence": "MA_BOOK_PROCESS_FAIL=231; MA_BOOK_KEYERROR_SOURCE_V088=77",
+      "root": "CONFIRMED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.7-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_MA",
+        "COIN_FEED"
+      ],
+      "tests": [
+        "test_v007_error_history_root_contracts.py"
+      ],
+      "notes": "Validate any candidate high/low before original range; no fabrication."
+    },
+    {
+      "id": "AT-005-05",
+      "issue": 57,
+      "found": "0.0.5",
+      "category": "AUTO_DISCOVERED_LOG",
+      "title": "Stock MA 5-second queue duplicate storm",
+      "evidence": "MA_V067_UP_5S_QUEUE_FULL three recent exception records",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.7-source",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "MA_TICK_QUEUE",
+        "STOCK_MA",
+        "STOCK_FEED"
+      ],
+      "tests": [
+        "test_v007_error_history_root_contracts.py"
+      ],
+      "notes": "Latest-genuine-per-symbol queue; native time/book/slot checks unchanged."
+    },
+    {
+      "id": "AT-005-06",
+      "issue": 58,
+      "found": "0.0.5",
+      "category": "AUTO_DISCOVERED_LOG",
+      "title": "Kiwoom DNS unavailable across official frame repair",
+      "evidence": "401 runtime_errors.jsonl entries from DNS name lookup failure; FIX5_FRAME_UNVERIFIED warnings",
+      "root": "ENVIRONMENT_UNVERIFIED",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_FEED",
+        "STOCK_AT"
+      ],
+      "tests": [],
+      "notes": "Do not claim fix; need on-device DNS and broker realtime verification; missing candles cannot be synthesized."
+    },
+    {
+      "id": "AT-005-07",
+      "issue": 59,
+      "found": "0.0.5",
+      "category": "AUTO_DISCOVERED_SQLITE",
+      "title": "Upbit websocket event queue pressure and book freshness",
+      "evidence": "UPBIT_WS_EVENT_QUEUE_PRESSURE 23 events; no isolated root cause yet",
+      "root": "INFERRED",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_FEED",
+        "COIN_GENERAL",
+        "COIN_MA",
+        "COIN_TREND"
+      ],
+      "tests": [],
+      "notes": "Can coexist with valid no-buy policy reasons; needs freshness/backlog tests."
+    },
+    {
+      "id": "AT-005-08",
+      "issue": 60,
+      "found": "0.0.5",
+      "category": "USER_REPORTED",
+      "title": "Eight strategy full buy/wait/sell integration after epoch reset",
+      "evidence": "User reports no execution; runtime logs show UI failure and some coin PAPER records; cannot prove all engines disabled",
+      "root": "UNKNOWN",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "PARTIAL_EIGHT_WALLET_PAPER_CI",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "SERVICE",
+        "PYTHON_RUNTIME",
+        "EXECUTION",
+        "STOCK_FEED",
+        "COIN_FEED"
+      ],
+      "tests": [
+        "test_v002_eight_virtual_paper_end_to_end.py",
+        "test_v004_abnormal_reconnect_six.py"
+      ],
+      "notes": "No Android on-device broker proof. Do not force live execution or bypass fail-closed gates."
+    },
+    {
+      "id": "AT-006-01",
+      "issue": 61,
+      "found": "0.0.6",
+      "category": "USER_REPORTED",
+      "title": "MarketTrend 5m retirement must cover stock and coin",
+      "evidence": "Source policy allowed 30m/60m/day but native wallets/UI still accepted 5m",
+      "root": "CONFIRMED",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.6-source",
+      "ci": "PASSED_RUN_44435893899",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_TREND",
+        "COIN_TREND",
+        "OPERATION_CONFIG",
+        "ACTIVITY_UI"
+      ],
+      "tests": [
+        "test_v006_trend_5m_retirement_and_startup.py"
+      ],
+      "notes": "Retain nontrend 5m and exit recovery from earlier holdings."
+    },
+    {
+      "id": "AT-003-004-HIST",
+      "issue": 62,
+      "found": "0.0.3→0.0.4",
+      "category": "USER_HANDOFF_HISTORICAL",
+      "title": "Six restart/quote/recovery/score abnormal scenarios",
+      "evidence": "User-supplied v004 handoff: native PAPER CI 44344459965 and signed APK CI 44344860422, phone unverified",
+      "root": "PARTIAL_HISTORICAL",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.0.4-source",
+      "ci": "HISTORICAL_CI_REPORTED",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_FEED",
+        "COIN_FEED",
+        "EXECUTION",
+        "SERVICE"
+      ],
+      "tests": [
+        "test_v004_abnormal_reconnect_six.py"
+      ],
+      "notes": "User handoff only, device live/auth not verified; historical regression retained."
+    },
+    {
+      "id": "AT-004-005-HIST",
+      "issue": 63,
+      "found": "0.0.4→0.0.5",
+      "category": "USER_HANDOFF_HISTORICAL",
+      "title": "Independent UI score plane and zero-holding score continuity",
+      "evidence": "User-supplied v005 handoff: APK CI 44349415950, native E2E 44349205802, public source probe 44349533568",
+      "root": "PARTIAL_HISTORICAL",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "0.0.5-source",
+      "ci": "HISTORICAL_CI_REPORTED",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "MARKET_SCORE",
+        "UI_RECORDS",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v005_market_score_empty_wallet.py"
+      ],
+      "notes": "UI score plane is not execution score_events; later v005 errors recorded separately #53-60."
+    }
+  ],
+  "known_normal": [
+    {
+      "id": "NORMAL-EPOCH",
+      "status": "SOURCE_CONFIRMED",
+      "found": "0.0.5",
+      "description": "Fresh PAPER marker was COMMITTED on 2026-11-18; this alone does not prove all engines started."
+    },
+    {
+      "id": "NORMAL-GMO-EMPTY",
+      "status": "SOURCE_CONFIRMED",
+      "found": "0.0.5",
+      "description": "GMO wallet state exported with zero positions/orders and original cash seed. Verified empty is not a ledger fault."
+    },
+    {
+      "id": "NORMAL-PREWATCH",
+      "status": "NON_ERROR_POLICY_BLOCK",
+      "found": "0.0.5",
+      "description": "Many MA_PREWATCH_NO_VERIFIED_TICK or RSI policy no-buy reasons are intentional blocks, not system exceptions."
+    }
+  ],
+  "latent_unobserved": [
+    {
+      "id": "LATENT-POSTEXIT",
+      "status": "LATENT_UNOBSERVED",
+      "nodes": [
+        "POST_EXIT",
+        "EXECUTION"
+      ],
+      "description": "No device validation of post-sale future-high tracking and AI followup continuity after new epoch."
+    },
+    {
+      "id": "LATENT-AI",
+      "status": "LATENT_UNOBSERVED",
+      "nodes": [
+        "AI_RESEARCH",
+        "MARKET_SCORE"
+      ],
+      "description": "AI analysis_runs=0 in exported stock/coin SQLite; lack of activity is NOT proof of broken AI but requires trigger and dataflow audit."
+    },
+    {
+      "id": "LATENT-LIVE",
+      "status": "LATENT_UNOBSERVED",
+      "nodes": [
+        "SERVICE",
+        "STRATEGY_BRIDGE",
+        "EXECUTION"
+      ],
+      "description": "Live brokerage actions not verified; do not enable as a means of proving the PAPER release."
+    }
+  ]
+}
