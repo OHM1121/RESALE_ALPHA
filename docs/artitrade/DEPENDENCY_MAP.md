@@ -65,3 +65,32 @@ Static references are not equivalent to a validated real broker execution flow. 
   UID display enrichment and Java holdings/execution view. Saved stock mark
   is labelled LAST SAVED NOT LIVE and never controls native SELL orders.
   Original SQLite positions, funds, quantities and policy remain unchanged.
+
+## 0.0.17 native KRX PENDING retry and stock-symbol loading count (Issue #104)
+- `STOCK_PENDING_NATIVE_RETRY_V017`: original Kiwoom ONE client →
+  verified native `d_multiframe_recovery_fix14.recover_frame` →
+  source `v19_higher_frame_audit14` per original pending ID →
+  original PAPER D19 BUY and NEW LEGACY signed score/orderbook gate.
+  The 0.0.15 phone export showed original PENDING 181 and original
+  `LIVE_PARENT_GAP` blocked audits 204. 0.0.16 original retry worker
+  dropped DNS exceptions, could lose work before its own 55s throttle,
+  and starved retries behind the nonempty scan queue. Fix adds bounded
+  retries, pending-priority and preserves actual already VERIFIED
+  per-position audits against a delayed global checkpoint; a
+  `VERIFIED_RESTORED` frame response with blocked pending audits still
+  retries. No original wallet, trade or quote policy changes; never
+  turn REST history into a buy or create a synthetic fill.
+- `PRELOAD_STOCK_SYMBOLS_V017`: original selected KRX universe `N`
+  (459 only when native universe really has 459) →
+  one-time native `VERIFIED_RESTORED` historical response per unique code →
+  monotonic `loaded/N` Android progress. Variable network audit
+  checklists are separate from displayed stock-symbol %; stable count
+  persists through Activity recreation. Stock-loaded 100% is NOT a
+  working same-venue 0B/0D quote, an eligible market-score BUY, nor
+  authenticated broker fill. The pre-existing 40-second bounded UI
+  escape may show incomplete background work without falsely saying 100%.
+- Regressions: `test_v017_native_pending_retry.py`,
+  `test_v017_stock_preload_progress.py`,
+  `test_v013_stock_at_pending_to_native_buy.py`, original eight
+  wallet PAPER suites and Java compile. CI and original keystore sign
+  validation do not prove DEVICE_VERIFIED real buy/market session.
