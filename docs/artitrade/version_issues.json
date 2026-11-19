@@ -24,9 +24,9 @@
       "title": "Python hub for_ui keyword missing",
       "evidence": "29 of latest 30 Android runtime faults; TypeError and exact stack",
       "root": "CONFIRMED",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.7-source",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44438752719",
       "device": "UNVERIFIED",
       "nodes": [
         "HUB_DECORATORS",
@@ -36,7 +36,7 @@
       "tests": [
         "test_v007_error_history_root_contracts.py"
       ],
-      "notes": "All six hub decorators forward for_ui; empty/failed source must be distinguished."
+      "notes": "All six hub decorators forward for_ui; empty/failed source must be distinguished. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
     },
     {
       "id": "AT-005-02",
@@ -46,9 +46,9 @@
       "title": "Android ZoneInfo tzdata missing",
       "evidence": "daily_backup_stock ZoneInfoNotFoundError",
       "root": "CONFIRMED",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.7-source",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44438752719",
       "device": "UNVERIFIED",
       "nodes": [
         "BACKUP",
@@ -57,7 +57,7 @@
       "tests": [
         "test_v007_error_history_root_contracts.py"
       ],
-      "notes": "Modern KST UTC+09:00; no IANA module asset dependency."
+      "notes": "Modern KST UTC+09:00; no IANA module asset dependency. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
     },
     {
       "id": "AT-005-03",
@@ -67,9 +67,9 @@
       "title": "Empty GMO fresh ledger falsely labelled unreadable",
       "evidence": "0.0.5 Java UI warns based only on empty arrays; exported GMO JSON has zero orders/positions",
       "root": "CONFIRMED",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.7-source",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44438752719",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -79,7 +79,7 @@
       "tests": [
         "test_v007_error_history_root_contracts.py"
       ],
-      "notes": "Separate healthy zero, not ready and actually failed states."
+      "notes": "Separate healthy zero, not ready and actually failed states. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
     },
     {
       "id": "AT-005-04",
@@ -89,9 +89,9 @@
       "title": "Coin MA high KeyError leaks through legacy candidate fast path",
       "evidence": "MA_BOOK_PROCESS_FAIL=231; MA_BOOK_KEYERROR_SOURCE_V088=77",
       "root": "CONFIRMED",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.7-source",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44438752719",
       "device": "UNVERIFIED",
       "nodes": [
         "COIN_MA",
@@ -100,7 +100,7 @@
       "tests": [
         "test_v007_error_history_root_contracts.py"
       ],
-      "notes": "Validate any candidate high/low before original range; no fabrication."
+      "notes": "Validate any candidate high/low before original range; no fabrication. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
     },
     {
       "id": "AT-005-05",
@@ -110,9 +110,9 @@
       "title": "Stock MA 5-second queue duplicate storm",
       "evidence": "MA_V067_UP_5S_QUEUE_FULL three recent exception records",
       "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.7-source",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44438752719",
       "device": "UNVERIFIED",
       "nodes": [
         "MA_TICK_QUEUE",
@@ -122,7 +122,7 @@
       "tests": [
         "test_v007_error_history_root_contracts.py"
       ],
-      "notes": "Latest-genuine-per-symbol queue; native time/book/slot checks unchanged."
+      "notes": "Latest-genuine-per-symbol queue; native time/book/slot checks unchanged. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
     },
     {
       "id": "AT-005-06",
@@ -265,9 +265,9 @@
       "title": "Original-signer in-place update APK after root-cause fixes",
       "evidence": "0.0.5 real device log and v007 source changes, 0.0.6/128 packaging required",
       "root": "TRACKED_REPAIR",
-      "status": "OPEN_UNVERIFIED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.0.6-source",
-      "ci": "PENDING_SIGNED_APK_VERIFICATION",
+      "ci": "PASSED_RUN_44438752719",
       "device": "UNVERIFIED",
       "nodes": [
         "SERVICE",
@@ -281,7 +281,7 @@
         "test_v006_trend_5m_retirement_and_startup.py",
         "test_v002_eight_virtual_paper_end_to_end.py"
       ],
-      "notes": "No data reset, no automatic LIVE; exact installed signer required; actual phone fills unverified."
+      "notes": "No data reset, no automatic LIVE; exact installed signer required; actual phone fills unverified. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
     }
   ],
   "known_normal": [
@@ -333,5 +333,18 @@
       ],
       "description": "Live brokerage actions not verified; do not enable as a means of proving the PAPER release."
     }
-  ]
+  ],
+  "release_candidate": {
+    "versionName": "0.0.6",
+    "versionCode": 128,
+    "package": "com.artitrade.unified.s21dex",
+    "source_commit": "478b5d19bc186168b26b232ff5e149c3695d359e",
+    "signed_ci_run": 44438752719,
+    "artifact_id": 14489524775,
+    "apk_sha256": "47e98de3457c544b23960553011afb2913459ca62ecf3142392d75a98f0de2c0",
+    "old_signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false,
+    "live_broker_verified": false,
+    "original_ledger_reset_performed": false
+  }
 }
