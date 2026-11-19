@@ -259,9 +259,22 @@ def preview(owner,row,runtime=None,native_stages=None):
         pending=str(getattr(p,"pending_sell_id","") or "")
         order_state=("NATIVE_SELL_INTENT_ID_PRESENT_BROKER_ACK_UNVERIFIED"
             if pending else "NO_BROKER_ORDER_ACK")
-        return _make_plan(entry,qty,first,second,q1,q2,owner,
+        plan=_make_plan(entry,qty,first,second,q1,q2,owner,
             "ORIGINAL_GMO_SCORE_TIER_4_5_7_FIRST20_SECOND40",
             order_state=order_state,score=int(round(tier*100)))
+        if plan is None:return None
+        # Display ORIGINAL engine-reconciled stage quantities. An intent or
+        # historical candle observation is not itself a native SELL receipt.
+        filled1=_decimal(getattr(p,"first_filled_qty",0))
+        filled2=_decimal(getattr(p,"second_filled_qty",0))
+        if str(getattr(p,"first_filled_qty",0)) in ("0","0.0"):filled1=Decimal(0)
+        if str(getattr(p,"second_filled_qty",0)) in ("0","0.0"):filled2=Decimal(0)
+        if (filled1 is not None and filled2 is not None and
+            filled1<=q1 and filled2<=q2 and filled1+filled2<=qty):
+            plan["first_filled_qty"]=float(filled1)
+            plan["second_filled_qty"]=float(filled2)
+            plan["native_stage_quantity_source"]="ORIGINAL_GMO_ENGINE"
+        return plan
 
     qty=_original_qty(row,market)
     # CW original full-position target can be observed only when its native
