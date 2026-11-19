@@ -949,6 +949,47 @@
         100
       ],
       "contract": "User-authorized exactly-one historic KRW-CFG coin MA 5m PAPER failed-exit exception only; require unique source BUY/sidecar/entry evidence. Back up original wallet, reverse only target cash/realized and linked records, rebase independent witness; no other CFG, GMO/CW/REAL, guessed fills or bulk ticker deletion. Real device unverified."
+    },
+    {
+      "id": "PRELOAD_VERIFIED_V016",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/preload_audit_v016.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "COIN_FEED",
+        "UI_RECORDS",
+        "SERVICE",
+        "TREND_SHARED_OWNERSHIP"
+      ],
+      "issues": [
+        102
+      ],
+      "contract": "Display true original engine preflight: 21 continuous official closes latest including Upbit UPBIT_CLOSED, original quote+0B/0D book and WS, source gate/wallet, measured percent/ETA. Never duplicate socket, order or mark missing as ready; bounded 40s UI escape keeps source recovery."
+    },
+    {
+      "id": "TREND_COST_PROVENANCE_V016",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "STOCK_TREND",
+        "COIN_TREND",
+        "EXECUTION",
+        "UI_RECORDS",
+        "POSITION_UID_V015"
+      ],
+      "issues": [
+        103
+      ],
+      "contract": "Original MT54 native position.entry/BUY receipts/source position_id alone establish cost/return across holdings and SELL fills; proportional original buy fees, net_pnl/percent and independent per-frame PnL; missing linkage labelled not fabricated. Non-live stock saved-mark valued with explicit provenance; ZERO source wallet mutation, thresholds and GMO/CW unchanged."
     }
   ],
   "audit_scope": {
