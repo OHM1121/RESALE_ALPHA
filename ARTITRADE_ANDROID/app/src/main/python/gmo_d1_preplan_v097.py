@@ -10,7 +10,7 @@ import datetime as dt
 import math
 import os
 import threading
-from projectgmo.prices import plus_ticks, up_tick
+from projectgmo.prices import plus_ticks, up_tick, minus_ticks
 from buy_execution_recovery_v082 import Intent
 
 KST=dt.timezone(dt.timedelta(hours=9))
@@ -323,28 +323,55 @@ class Preplanner:
             if q is None:return
             ask=int(q.ask)
             last=int(q.last)
-            if ask<=0:return
-            # KRX PAPER fill is delegated back to its original 0B+0D matcher.
+            # A genuine fresh 0B print may support a clearly labelled
+            # volume-bounded PAPER proxy when 0D is missing. Never substitute
+            # it for a verified broker ask or a LIVE execution.
             self._step(plan,at,last,ask,max(0,int(q.ask_size)),venue,q=q,tick=tick)
 
     def _step(self,plan,at,last,ask,depth,venue,q=None,tick=None,bid=None):
         svc=self.service;engine=svc.engine
         code=plan["code"];signal=engine.signals.get(code)
         if not signal or not _d1_verified(svc,signal,at):return
+        # This wrapper creates original PAPER wallet intents ONLY. The user's
+        # real broker toggles/permissions are not activated here.
+        if os.environ.get("ARTITRADE_REAL_MODE")=="1":return
+        paper_print=False
+        if venue=="KRX" and q is not None and int(depth)<=0 and tick is not None and len(tick)>=9:
+            recv=_stamp(tick[6]);exchange=_stamp(tick[8])
+            try:
+                valid=(recv is not None and exchange is not None and
+                    int(tick[5])>0 and int(tick[4])==int(last) and
+                    str(tick[0])==code and tick[7]=="KRX" and
+                    abs((at-recv).total_seconds())<=3 and
+                    abs((at-exchange).total_seconds())<=3)
+            except (TypeError,ValueError,OverflowError):
+                valid=False
+            paper_print=bool(valid)
+        if venue=="KRX" and int(depth)<=0 and int(ask)<=0 and not paper_print:
+            plan["status"]="WAIT_FRESH_KRX_0B_OR_0D"
+            return
         opener=plan.get("opening_price")
+        close_value=int(getattr(signal,"event_close",0) or 0)
         if opener is not None and int(opener)>0:
             reference=int(opener)
             caps=(reference,plus_ticks(reference,1),plus_ticks(reference,2))
             plan["entry_reference_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+            # Original D+1 trading policy is OR. The strict-below D close
+            # condition must not disappear just because an official open
+            # was verified below the D close.
+            if venue=="KRX" and close_value>0:
+                strict_cap=int(minus_ticks(close_value,1))
+                if strict_cap>caps[2]:
+                    caps=(caps[0],caps[1],strict_cap)
+                    plan["entry_reference_source"]="VERIFIED_D_CLOSE_STRICT_BELOW"
         elif venue=="KRX":
-            # Genuine previously verified D close is an INDEPENDENT
-            # permission to buy below D close, even after missing first open.
-            reference=int(getattr(signal,"event_close",0) or 0)
-            if reference<=0 or max(int(last),int(ask))>reference:
-                plan["status"]="WAIT_OFFICIAL_OPEN_OR_D_CLOSE_TOUCH"
+            reference=close_value
+            if reference<=0:
+                plan["status"]="WAIT_VERIFIED_D_CLOSE"
                 return
-            caps=(reference,reference,reference)
-            plan["entry_reference_source"]="VERIFIED_D_CLOSE_ONLY"
+            strict_cap=int(minus_ticks(reference,1))
+            caps=(strict_cap,strict_cap,strict_cap)
+            plan["entry_reference_source"]="VERIFIED_D_CLOSE_STRICT_BELOW"
         else:return
         # Only a real same-venue verified 0B exchange timestamp may drive
         # the recovery command. A missing/expired quote leaves the original
@@ -357,7 +384,11 @@ class Preplanner:
                 proof={"symbol":code,"exchange_ms":int(stamp.timestamp()*1000),
                        "ask":int(ask),"bid":int(best_bid or 0),
                        "ask_size":max(0,int(depth))}
-        if proof is not None:
+        if paper_print:
+            plan["entry_quote_proof"]="KRX_0B_VOLUME_BOUNDED_PAPER_PROXY_NOT_BROKER"
+            plan["v082_recovery"]={"action":"PAPER_ONLY_PRINT_PROXY",
+                "broker_ack_verified":False,"volume_source":"VERIFIED_KRX_0B"}
+        if proof is not None and not paper_print:
             intent_key=(plan["entry_date"],code,venue)
             intent=self._v082_intents.get(intent_key)
             if intent is None:
@@ -382,9 +413,14 @@ class Preplanner:
         # opening reference; preflight NEVER substitutes a prior close.
         for template,price in zip(plan.get("scenario_templates",()),caps):
             template["limit_price"]=int(price)
-        touch=max(int(last),int(ask))
+        # A verified same-session trade PRINT is not an executable ASK.
+        # Only the original paper_match_krx_print_proxy can consume it,
+        # capped at <=10% of actual print volume. Never route to broker.
+        touch=max(int(last),int(ask) if int(ask)>0 else int(last))
         scenario=next((i+1 for i,cap in enumerate(caps) if touch<=cap),0)
-        if not scenario:return
+        if not scenario:
+            plan["status"]="WAIT_BELOW_ALLOWED_CEILING"
+            return
         cap=caps[scenario-1]
         changed=False
         with self.lock,svc._lock,engine._lock:
@@ -472,7 +508,9 @@ class Preplanner:
                 # Original KRX PAPER matcher uses actual 0B+0D or bounded genuine
                 # 0B trade proxy. Never call the broker adapter.
                 engine.paper_match(q)
-                if int(getattr(q,"ask_size",0))<=0 and tick is not None and int(tick[5])>0:
+                if int(getattr(q,"ask_size",0))<=0 and paper_print:
+                    # This is an explicitly labelled PAPER approximation from
+                    # a fresh real 0B print, NOT a broker order/fill or 0D.
                     engine.paper_match_krx_print_proxy(q,int(tick[5]),
                         buy_missing_book=True,sell_missing_book=False)
             actual=engine.orders.get(active.id)
