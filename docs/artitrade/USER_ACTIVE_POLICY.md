@@ -57,6 +57,28 @@ a new instruction appears different. Cross-check original
 - Do not edit private historical ZIP/SQLite user exports in a public repo.
   Keep independent owner audit and signed-migration integrity protocol.
 
+## 2026-11-19: Additional explicit PAPER-only invalid-exit cleanup authorization
+- The user additionally authorizes removing an individually **proven invalid
+  NEW LEGACY PAPER** cycle from active holdings, executions, P&L, research and
+  ordinary UI when a genuine NEW LEGACY sell should have executed but a
+  confirmed software malfunction prevented the native PAPER sell.
+- This is an explicit narrowly scoped exception to the earlier preservation
+  of genuine NEW LEGACY receipts. It does NOT authorize deleting all new
+  positions, erasing an otherwise valid BUY, or reclassifying missing
+  metadata as an old-rule trade. For historical SELL failure, prove a
+  verified post-BUY trade sequence, actual executable contemporary bid/depth,
+  correct sell stage, original wallet/native sell decision, and error/absence
+  of receipt. Historical candle highs or ticker-only price touches are not
+  sufficient evidence that SELL liquidity existed.
+- Before any such cleanup, keep a *private* independent immutable forensic
+  record, original-wallet backup, exact rollback witness and cash/realized
+  reversal; reconcile duplicate/partial fills, restarts and linked research.
+  Unknown provenance or REAL/broker orders remain protected and PARTIAL.
+  No retroactive synthetic SELL and no private trade data in this public repo.
+- No on-device per-position delete is claimed without the actual private
+  source wallet and event evidence. This dated authorization alone is not
+  evidence that a device cleanup has executed. GMO/CW owners remain excluded.
+
 ## 2026-11-19: Holdings screen layout
 - In the holding-card **left rectangular badge**, show actual timeframe
   `5분`, `30분`, `60분`, `일봉` rather than `보유`. Remove redundant

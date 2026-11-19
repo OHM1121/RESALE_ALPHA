@@ -198,7 +198,8 @@
       "kind": "python",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
-        "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py"
+        "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_held_depth_v014.py"
       ],
       "depends_on": [],
       "issues": [
@@ -207,7 +208,8 @@
         60,
         62,
         67,
-        78
+        78,
+        98
       ],
       "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified."
     },
@@ -236,7 +238,8 @@
         92,
         94,
         95,
-        97
+        97,
+        98
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -262,7 +265,8 @@
         80,
         92,
         94,
-        95
+        95,
+        98
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -351,7 +355,8 @@
         73,
         78,
         79,
-        80
+        80,
+        98
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -369,7 +374,8 @@
       "issues": [
         59,
         60,
-        79
+        79,
+        98
       ],
       "contract": "Four original reference wallets 5m/30m/60m/day, verified ticker/book."
     },
@@ -394,7 +400,8 @@
         79,
         92,
         94,
-        95
+        95,
+        98
       ],
       "contract": "Missing source high/low rejected; never abort other eligible book work."
     },
@@ -417,7 +424,8 @@
         72,
         73,
         78,
-        79
+        79,
+        98
       ],
       "contract": "New BUY 30m/60m/day only; prior 5m sells intact. Coin MarketTrend RSI20 requires actual latest continuous official completed bars and durable verified <=30 within 24h before Bollinger MID angle/touch."
     },
@@ -444,7 +452,8 @@
       "kind": "python+java",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
-        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java"
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java",
+        "ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py"
       ],
       "depends_on": [
         "ANTI_ROLLBACK"
@@ -464,7 +473,8 @@
         92,
         94,
         95,
-        97
+        97,
+        98
       ],
       "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },

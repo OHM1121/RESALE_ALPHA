@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "fix-artitrade-010-v009-cross-strategy-rootcause-20261119",
+  "working_branch": "audit-artitrade-014-cfg-sell-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -946,6 +946,35 @@
       "source_commit": "17d47cf53411182fb717d362950d6d437ad75d2a",
       "release": "https://github.com/OHM1121/RESALE_ALPHA/releases/tag/0.0.13",
       "apk_sha256": "57858287c8d1c8ff9896c9f1ad2ab30e1dac7436058c1320b43954b0d0177a13"
+    },
+    {
+      "id": "AT-014-22",
+      "issue": 98,
+      "found": "0.0.13",
+      "category": "SOURCE_AUDIT",
+      "title": "CFG native PAPER missing depth, silent SELL, and legacy attribution safeguards",
+      "evidence": "Confirmed existing silent native SELL/book gates and OLD-marker absence misattribution; missing depth during CFG observed, exact physical subscription transport failure inferred.",
+      "root": "CONFIRMED_IN_CODE_WITH_DEVICE_UNVERIFIED",
+      "status": "CI_VERIFIED",
+      "fix_version": "0.0.14-source",
+      "ci": "PASSED_RUN_44483423126",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_FEED",
+        "COIN_MA",
+        "EXECUTION",
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_GENERAL",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v014_cfg_native_sell_quote_regression.py",
+        "test_v002_eight_virtual_paper_end_to_end.py",
+        "test_v012_legacy_purge_and_holding_frame.py"
+      ],
+      "notes": "Coin MA held tick+book inclusion, private rate-limited no-book/native-sell diagnostics, and explicit old-rule BUY/SELL evidence requirement before migration. Real device, broker and original CFG ledger remain UNVERIFIED. Additional related causes from earlier entries retained in issue #98. CI PASS for synthetic native CFG recovery, original 8 strategy regression, strict quote, ledger provenance, governance and Android Java compile on 2026-11-19; device quotes, original CFG sale proof and actual on-phone cleanup still unverified."
     }
   ],
   "known_normal": [
