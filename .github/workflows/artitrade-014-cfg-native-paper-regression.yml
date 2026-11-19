@@ -14,6 +14,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  issues: write
 jobs:
   native-paper-validation:
     runs-on: ubuntu-latest
@@ -87,6 +88,7 @@ jobs:
           set -euo pipefail
           python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-014-vendor-native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          exec > >(tee /tmp/artitrade014_ci_tests.log) 2>&1
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
           for testfile in \
             test_v014_cfg_native_sell_quote_regression.py \
@@ -99,6 +101,31 @@ jobs:
             echo "REPLAY $testfile"
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$testfile" -v
           done
+      - name: Publish short synthetic-only failure diagnostic in issue 98
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('/tmp/artitrade014_ci_tests.log')
+          original=p.read_text(errors='replace').splitlines() if p.exists() else []
+          # All inputs to these tests are synthetic. Do not post private
+          # device exports, accounts, tokens, raw SQLite or vendor code.
+          chosen=[line[:250] for line in original if re.search(
+              r'^(FAIL|ERROR|FAILED|Ran |ImportError|ModuleNotFoundError|AssertionError|'
+              r'AttributeError|TypeError|ValueError|Traceback|  File |test_|\*\*\* )',
+              line)]
+          short='\n'.join(chosen[-60:])[:8500]
+          Path('/tmp/artitrade014_ci_issue.md').write_text(
+              '0.0.14 branch native synthetic-only CI; run '+__import__('os').environ.get('GITHUB_RUN_ID','')+
+              '\n\nNo real account / actual phone / public trade data.\n\n'+
+              '```text\n'+(short or '(no matching Python assertion lines)')+'\n```\n',
+              encoding='utf8')
+          PY
+          gh issue comment 98 --repo OHM1121/RESALE_ALPHA --body-file /tmp/artitrade014_ci_issue.md || true
       - name: Source graph and provenance contract validation
         shell: bash
         run: |
