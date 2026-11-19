@@ -978,7 +978,7 @@
     },
     {
       "id": "AT-015-23",
-      "issue": 100,
+      "issue": 101,
       "found": "0.0.14",
       "category": "STABLE_GLOBAL_NATIVE_POSITION_ID",
       "title": "Eight-wallet open and historical closed positions can collide on native integer ID or omit UI-linked position reference",
