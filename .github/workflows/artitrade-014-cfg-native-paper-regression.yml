@@ -1,16 +1,24 @@
-name: ARTITRADE 0.0.14 CFG native PAPER quote and exit regression
+name: ARTITRADE continuous native PAPER candidate, depth and exit regression
 on:
   push:
-    branches: [audit-artitrade-014-cfg-sell-20261119]
+    branches: ['audit-artitrade-*', 'fix-artitrade-*']
     paths:
       - .github/workflows/artitrade-014-cfg-native-paper-regression.yml
-      - ARTITRADE_ANDROID/app/src/main/python/coin_held_depth_v014.py
-      - ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py
-      - ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py
-      - ARTITRADE_ANDROID/ui_tests/test_v014_cfg_native_sell_quote_regression.py
-      - ARTITRADE_ANDROID/ui_tests/test_v012_legacy_purge_and_holding_frame.py
+      - 'ARTITRADE_ANDROID/app/src/main/python/**'
+      - 'ARTITRADE_ANDROID/ui_tests/**'
+      - docs/artitrade/USER_ACTIVE_POLICY.md
       - docs/artitrade/dependency_graph.json
       - docs/artitrade/version_issues.json
+      - AGENTS.md
+  pull_request:
+    branches: ['fix-artitrade-*']
+    paths:
+      - 'ARTITRADE_ANDROID/app/src/main/python/**'
+      - 'ARTITRADE_ANDROID/ui_tests/**'
+      - docs/artitrade/USER_ACTIVE_POLICY.md
+      - docs/artitrade/dependency_graph.json
+      - docs/artitrade/version_issues.json
+      - AGENTS.md
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,12 +45,19 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re,json
           p=Path('ARTITRADE_ANDROID/app/build.gradle')
           s=p.read_text('utf8')
-          original="versionCode 135\n            versionName '0.0.13'"
-          prior="versionCode 97\n            versionName '0.7.91-MA-STAGE-LEDGER'"
-          assert s.count(original)==1
-          p.write_text(s.replace(original,prior,1),'utf8')
+          versions=list(re.finditer(
+              r"versionCode ([0-9]+)\n([ \t]+)versionName '([0-9]+\.[0-9]+\.[0-9]+)'",s))
+          assert versions,'NUMERIC_UNIFIED_VERSION_NOT_FOUND'
+          selected=max(versions,key=lambda x:int(x.group(1)))
+          code=int(selected.group(1)); indent=selected.group(2); name=selected.group(3)
+          assert code>=135,'BASELINE_TOO_OLD_FOR_0_0_13_PATCH'
+          Path('/tmp/artitrade014_identity.json').write_text(
+              json.dumps({'code':code,'name':name,'indent':indent}),encoding='utf8')
+          prior="versionCode 97\n"+indent+"versionName '0.7.91-MA-STAGE-LEDGER'"
+          p.write_text(s[:selected.start()]+prior+s[selected.end():],'utf8')
           PY
           python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
           python3 ARTITRADE_ANDROID/ui_tests/patch_v093_strategy_priority_metadata.py
@@ -52,15 +67,15 @@ jobs:
           python3 ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py
           python3 - <<'PY'
           from pathlib import Path
+          import json
           p=Path('ARTITRADE_ANDROID/app/build.gradle')
           s=p.read_text('utf8')
-          assert s.count('versionCode 99')==1
-          assert s.count("versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'")==1
-          s=s.replace('versionCode 99','versionCode 135').replace(
-              "versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'",
-              "versionName '0.0.13'")
-          assert s.count("versionName '0.0.13'")==1
-          p.write_text(s,'utf8')
+          original=json.loads(Path('/tmp/artitrade014_identity.json').read_text('utf8'))
+          temporary="versionCode 99\n"+original['indent']+"versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'"
+          restored=("versionCode "+str(original['code'])+"\n"+original['indent']+
+                    "versionName '"+original['name']+"'")
+          assert s.count(temporary)==1
+          p.write_text(s.replace(temporary,restored,1),'utf8')
           PY
       - name: Decode exact previously signed 82-module native core
         shell: bash
