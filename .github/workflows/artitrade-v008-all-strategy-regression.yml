@@ -2,6 +2,15 @@ name: ARTITRADE v008 all-strategy root cause + shared feed/wallet regression - N
 on:
   push:
     branches: [audit-artitrade-v007-all-strategies-antigravity-gemini-20261119]
+    paths:
+      - ARTITRADE_ANDROID/app/src/main/**
+      - ARTITRADE_ANDROID/ui_tests/**
+      - docs/artitrade/**
+      - tools/artitrade/**
+      - AGENTS.md
+      - GEMINI.md
+      - .agents/rules/**
+      - .github/workflows/artitrade-v008-all-strategy-regression.yml
   pull_request:
     branches: [fix-artitrade-006-trend5m-retire-rootcause-audit-20261119]
   workflow_dispatch:
