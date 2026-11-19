@@ -120,7 +120,68 @@ def _on_real_buy(self,c,p):
                if kind=='REVERSAL_UP' else qty*Decimal('.30'))
         c.execute('UPDATE positions SET first_qty=?,target=? WHERE id=?',
                   (str(first),str(target),p['id']))
+        if kind=='REVERSAL_UP':
+            deadline=_ma_hold_deadline(p['tf'],p['entry_at'])
+            if deadline:
+                c.execute('UPDATE positions SET hold_until=? WHERE id=?',
+                          (deadline,p['id']))
+            held=getattr(self,'_ma_v067_up_hold_symbols',None)
+            if held is not None:held.add(str(p['market']))
     except (ValueError,TypeError,KeyError):pass
+
+
+def _persist_verified_up_ascent(self,market,trade,now):
+    """Latch a genuine WS ticker excursion without claiming a SELL fill.
+
+    A book can be absent throughout a rally; keep the ascent in the original
+    MA sidecar so a later REAL fresh bid/book can enforce entry retrace.
+    Runs ONLY on the bounded background ticker worker, never WS callback.
+    """
+    px=policy.number(trade)
+    if px is None or px<=0 or not isinstance(now,dt.datetime) or now.tzinfo is None:
+        return
+    with self.lock,self.connect() as c:
+        _table(c)
+        rows=c.execute("""SELECT p.id,p.entry,p.qty,s.state_json
+            FROM positions p JOIN ma_v067_positions s ON s.position_id=p.id
+            WHERE p.market=? AND p.status='OPEN' AND s.kind='REVERSAL_UP'""",
+            (market,)).fetchall()
+        for p in rows:
+            entry=policy.number(p['entry'])
+            if entry is None or px<=entry:continue
+            try:state=json.loads(p['state_json'] or '{}')
+            except (TypeError,ValueError):continue
+            if state.get('seen_above_entry') or (
+                    policy.number(state.get('first_sold')) or Decimal(0))>0:
+                continue
+            state['seen_above_entry']=True
+            state['verified_above_entry_at']=now.isoformat()
+            state['verified_above_entry_price']=str(px)
+            state['verified_above_entry_source']='UPBIT_VERIFIED_WS_TICKER'
+            c.execute("""UPDATE ma_v067_positions SET state_json=?,updated_at=?
+                WHERE position_id=?""",
+                (json.dumps(state,ensure_ascii=False),now.isoformat(),p['id']))
+
+
+def _ma_hold_deadline(frame,entry_at):
+    hours={'5m':48,'30m':80,'60m':120,'day':360}.get(str(frame))
+    if hours is None:return None
+    try:
+        when=dt.datetime.fromisoformat(str(entry_at))
+        return (when+dt.timedelta(hours=hours)).isoformat() if when.tzinfo is not None else None
+    except (TypeError,ValueError):return None
+
+
+def _sync_existing_ma_hold_deadlines(c):
+    """Correct MA-only prior 24h native expiry, not other strategy wallets."""
+    rows=c.execute("""SELECT p.id,p.entry_at,p.hold_until,p.tf
+        FROM positions p JOIN ma_v067_positions s ON s.position_id=p.id
+        WHERE p.status='OPEN' AND s.kind='REVERSAL_UP'""").fetchall()
+    for p in rows:
+        deadline=_ma_hold_deadline(p['tf'],p['entry_at'])
+        if deadline and str(p['hold_until'] or '')!=deadline:
+            c.execute('UPDATE positions SET hold_until=? WHERE id=?',
+                      (deadline,p['id']))
 
 
 def _recent_trade(self,market,now):
@@ -199,7 +260,14 @@ def _v074_coin_tick_worker(runner):
             now=dt.datetime.now(KST)
             due=[(tf,end) for tf in ('5m','30m','60m','day')
                  for remain,end in [_bar_close(now,tf)] if 2<=remain<=30]
-            if not due:continue
+            ledger=getattr(runner,'ma_ledger',None)
+            hold=ledger is not None and code in getattr(
+                ledger,'_ma_v067_up_hold_symbols',set())
+            if not due and not hold:continue
+            if hold:
+                trade=_recent_trade(ledger,code,now)
+                if trade is not None:
+                    _persist_verified_up_ascent(ledger,code,trade,now)
             lock=getattr(runner,'_lock',None)
             if lock is not None:
                 with lock:
@@ -218,7 +286,6 @@ def _v074_coin_tick_worker(runner):
                         ('MA_PREWATCH_BOOK_STALE' if policy.in_ma_prewatch_window(_bar_close(now,tf)[0])
                          else 'UP_CACHED_BOOK_STALE_AFTER_TICKER'))
                 continue
-            ledger=getattr(runner,'ma_ledger',None)
             if ledger is not None:
                 # Same native book and original FOK; never assume a fill.
                 ledger.process_book(dict(book),now)
@@ -595,6 +662,7 @@ def install():
     old_init=ma.MACoinLedger.__init__
     def init(self,*a,**kw):
         old_init(self,*a,**kw)
+        self._ma_v067_up_hold_symbols=set()
         with self.lock,self.connect() as c:
             _table(c)
             joined=c.execute("""SELECT p.* FROM positions p JOIN candidates x
@@ -603,6 +671,11 @@ def install():
                 WHERE p.status='OPEN' AND s.position_id IS NULL
                 AND x.features LIKE '%"ma_v067_kind"%'""").fetchall()
             for row in joined:_on_real_buy(self,c,row)
+            _sync_existing_ma_hold_deadlines(c)
+            held=c.execute("""SELECT DISTINCT p.market FROM positions p
+                JOIN ma_v067_positions s ON s.position_id=p.id
+                WHERE p.status='OPEN' AND s.kind='REVERSAL_UP'""").fetchall()
+            self._ma_v067_up_hold_symbols.update(str(x[0]) for x in held)
         self._ma_v067_live_ticks={}
     ma.MACoinLedger.__init__=init
 
@@ -685,7 +758,8 @@ def install():
             ledger._ma_v067_live_ticks[str(code)]=(price,time.monotonic())
             try:
                 now=dt.datetime.now(KST)
-                if any(2<=_bar_close(now,tf)[0]<=30
+                held=(str(code) in getattr(ledger,'_ma_v067_up_hold_symbols',set()))
+                if held or any(2<=_bar_close(now,tf)[0]<=30
                        for tf in ('5m','30m','60m','day')):
                     pending=getattr(runner,'_ma_v074_tick_queue',None)
                     if pending is None:
@@ -704,9 +778,11 @@ def install():
                         gate=getattr(runner,'_ma_v079_ws_queue_gate',None)
                         if gate is None:
                             gate={};runner._ma_v079_ws_queue_gate=gate
-                        remaining=min(_bar_close(now,tf)[0] for tf in ('5m','30m','60m','day')
-                                      if 2<=_bar_close(now,tf)[0]<=30)
-                        cooldown=.25 if policy.in_up_entry_window(remaining) else 5.0
+                        remaining=[_bar_close(now,tf)[0] for tf in ('5m','30m','60m','day')
+                                   if 2<=_bar_close(now,tf)[0]<=30]
+                        cooldown=(.5 if held else
+                                  .25 if remaining and policy.in_up_entry_window(min(remaining))
+                                  else 5.0)
                         stamped=time.monotonic()
                         permitted=stamped-gate.get(str(code),0)>cooldown
                         if permitted:gate[str(code)]=stamped
