@@ -1,0 +1,30 @@
+name: ARTITRADE original installation certificate scope probe (NO APK)
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths: [.github/workflows/artitrade-019-signer-owner-probe.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify-installed-fingerprint-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Restore cached original installed signer
+        id: signer
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Reject any certificate different from original installed app
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signer.outputs.cache-hit }}" = "true"
+          test -s "$HOME/.android/debug.keystore"
+          fp="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "ORIGINAL_BRANCH_PUBLIC_CERT_SHA256=$fp"
+          test "$fp" = "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6"
+          echo "ORIGINAL_INSTALLATION_CERT_AVAILABLE_WITHOUT_PRIVATE_KEY_EXPORT"
