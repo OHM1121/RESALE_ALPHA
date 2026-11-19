@@ -123,8 +123,8 @@ def _proven_retired_rule(c,kind,p):
 
 def _old_positions(c,kind):
     positions=_rows(c,"SELECT * FROM positions ORDER BY id") if _has(c,"positions") else []
-    if kind.startswith("old_"):
-        return positions,[]
+    # Even archived MA wallets require original BUY and SELL rule evidence;
+    # an archive path alone cannot authorize irreversible ledger deletion.
     new=set()
     if kind in ("stock_at","coin_at") and _has(c,"nl1118_reference_positions"):
         new={int(r["position_id"]) for r in _rows(c,
