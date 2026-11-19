@@ -10,6 +10,9 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_CEILING, ROUND_DOWN, InvalidOperation
 import json
 import math
+import sqlite3
+from pathlib import Path
+from urllib.parse import quote
 
 _TAG="V019_ORIGINAL_OWNER_BUY_PRICE_TARGET_PLAN_VIEW_ONLY"
 _NON_EXECUTABLE="PLAN_ONLY_NO_BROKER_ORDER_OR_PAPER_FILL"
@@ -80,6 +83,118 @@ def _gmo_native(runtime,row):
     except (AttributeError,TypeError,ValueError,RuntimeError):
         return None,None
 
+
+def _read_native_resting(root,owner,positions):
+    """Read only original committed stages; never open or create a writable DB.
+
+    An old holding without a native persisted plan is NOT silently assigned a
+    newly calculated NEW LEGACY limit. Each wallet has its own native owner.
+    """
+    if root is None or not positions:return {}
+    try:
+        from position_uid_v015 import _DB_PATHS
+        rel=_DB_PATHS.get(owner)
+        if not rel:return {}
+        path=Path(root)/rel
+        if not path.is_file():return {}
+        ids=set()
+        for p in positions:
+            if not isinstance(p,dict):continue
+            raw=p.get("id") or p.get("position_id")
+            if isinstance(raw,bool):continue
+            try:
+                pid=int(str(raw))
+                if pid>0 and str(pid)==str(raw).strip():ids.add(pid)
+            except (TypeError,ValueError,OverflowError):continue
+        if not ids:return {}
+        link="file:"+quote(str(path.resolve()),safe="/")+"?mode=ro"
+        plans={}
+        with sqlite3.connect(link,uri=True,timeout=1.5) as c:
+            c.row_factory=sqlite3.Row
+            c.execute("PRAGMA query_only=ON")
+            table=c.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nl1118_resting_sells'""").fetchone()
+            if table is None:return {}
+            # SQLite's bound-variable limit is lower on some phone builds.
+            sorted_ids=sorted(ids)
+            for start in range(0,len(sorted_ids),400):
+                part=sorted_ids[start:start+400]
+                marks=",".join("?" for _ in part)
+                sql=("SELECT * FROM nl1118_resting_sells WHERE position_id IN ("
+                     +marks+") ORDER BY position_id,stage")
+                for item in c.execute(sql,part):
+                    v=dict(item)
+                    if v.get("policy")!="NEW_LEGACY_1118":continue
+                    pid=int(v["position_id"])
+                    stage=int(v["stage"])
+                    if stage not in (1,2):continue
+                    plans.setdefault(pid,{})[stage]=v
+        return plans
+    except (OSError,sqlite3.Error,ValueError,TypeError,OverflowError):
+        # Optional UI evidence cannot block any authentic native SELL.
+        return {}
+
+def _native_staged(owner,row,entry,market,stages):
+    """Show a limit only if the matching original BUY persisted the stages."""
+    if not isinstance(stages,dict) or 1 not in stages:return None
+    first=stages[1]
+    second=stages.get(2)
+    if first.get("market")!=market or first.get("policy")!="NEW_LEGACY_1118":
+        return None
+    frame=str(row.get("tf") or row.get("frame") or "")
+    if frame not in ("5m","30m","60m","day") or first.get("frame")!=frame:
+        return None
+    # Retired 5m Trend is only an old held SELL recovery, not a new plan.
+    if owner.endswith("/trend") and frame=="5m":return None
+    symbol=str(row.get("code") or row.get("market") or row.get("symbol") or "")
+    if not symbol or symbol!=str(first.get("symbol") or ""):return None
+    initial=_original_qty(row,market)
+    original=_decimal(first.get("original_qty"))
+    current=_decimal(row.get("qty"))
+    if original is None or initial is None or current is None:
+        return None
+    if original!=initial or current>original:return None
+    at=str(row.get("entry_at") or row.get("entry_ts") or "")
+    stored_at=str(first.get("created_at") or "")
+    if at and stored_at and at!=stored_at:return None
+    if second is not None:
+        if (second.get("market")!=market or
+            second.get("policy")!="NEW_LEGACY_1118" or
+            second.get("frame")!=frame or
+            second.get("symbol")!=symbol or
+            _decimal(second.get("original_qty"))!=original or
+            str(second.get("created_at") or "")!=stored_at):
+            return None
+    t1=_decimal(first.get("limit_price"))
+    q1=_decimal(first.get("order_qty"))
+    q1filled=_decimal(first.get("filled_qty")) if str(
+        first.get("filled_qty") or "") not in ("0","0.0") else Decimal(0)
+    t2=_decimal(second.get("limit_price")) if second else None
+    q2=_decimal(second.get("order_qty")) if second else None
+    q2filled=(_decimal(second.get("filled_qty")) if second and str(
+        second.get("filled_qty") or "") not in ("0","0.0") else Decimal(0))
+    if any(x is None for x in (t1,q1,q1filled,q2filled)) or (
+        second is not None and (t2 is None or q2 is None)):
+        return None
+    if q1filled>q1 or q2filled>(q2 or Decimal(0)):return None
+    if q1filled+q2filled>original-current:return None
+    # The original policy grants GMO/CW no NEW LEGACY stage ownership.
+    plan=_make_plan(entry,original,t1,t2,q1,q2,owner,
+        "NEW_LEGACY_1118_PERSISTED_NATIVE_PLAN",
+        order_state=str(first.get("status") or "UNKNOWN"))
+    if plan is None:return None
+    plan.update({
+        "source":"ORIGINAL_OWNER_SQLITE_NL1118_RESTING",
+        "plan_durable_at_buy":True,
+        "first_filled_qty":float(q1filled),
+        "second_filled_qty":float(q2filled),
+        "first_stage_status":str(first.get("status") or "UNKNOWN"),
+        "second_stage_status":str(second.get("status") or "NOT_APPLICABLE")
+            if second else "NONE",
+        "entry_at":at or stored_at,
+    })
+    return plan
+
 def _make_plan(entry,q,first,second,q1,q2,owner,policy,
                *,order_state="NO_BROKER_ORDER_ACK",score=None):
     if any(v is None or not v.is_finite() or v<=0
@@ -103,7 +218,7 @@ def _make_plan(entry,q,first,second,q1,q2,owner,policy,
         "historic_candle_high_fill_assumed":False,
     }
 
-def preview(owner,row,runtime=None):
+def preview(owner,row,runtime=None,native_stages=None):
     """Plan from an ORIGINAL position and its ORIGINAL wallet policy only.
 
     Fail closed when original BUY size, frame, score, ownership or entry price
@@ -163,29 +278,9 @@ def preview(owner,row,runtime=None):
         return _make_plan(entry,qty,first,None,qty,None,owner,
             "ORIGINAL_CW_FIRST_PLUS_1_2_FULL_EXIT_NO_SECOND")
 
-    frame=str(row.get("tf") or row.get("frame") or "")
-    if market=="coin" and strategy=="general":kind="reference"
-    else:kind=strategy
-    if kind not in ("reference","at","ma","trend"):return None
-    if kind=="trend" and frame=="5m":
-        # Preserve historical retired Trend-5m exit; never invent a new
-        # NEW-LEGACY entry/plan from old 5m position without native intents.
-        return None
-    try:
-        from new_legacy_1118_policy import FIRST_GAIN,SECOND_GAIN
-        f=Decimal(str(FIRST_GAIN[frame]))
-        s=Decimal(str(SECOND_GAIN[frame]))
-    except (KeyError,ImportError,ValueError,TypeError):
-        return None
-    # Parent MA bear/recovery holds belong to a different original policy.
-    kind_hint=str(row.get("ma_v067_kind") or row.get("kind") or "")
-    if kind=="ma" and kind_hint in ("REVERSAL_BEAR","BEAR"):
-        return None
-    first=entry*(1+f)
-    second=first*(1+s)
-    q1,q2=_nl_quantities(qty,market)
-    return _make_plan(entry,qty,first,second,q1,q2,owner,
-            "NEW_LEGACY_1118_ORIGINAL_BUY_PRICE_30_35")
+    # The six workbook strategies must use their native BUY-persisted plans,
+    # not a fresh target computed from a possibly old/partial holding.
+    return _native_staged(owner,row,entry,market,native_stages)
 
 def decorate(packet,runtime=None):
     """Add visual projections across the eight exact owner paths.
@@ -206,10 +301,26 @@ def decorate(packet,runtime=None):
         seen.add(key)
         positions=ledger.get("positions")
         if not isinstance(positions,list):continue
+        committed=_read_native_resting(getattr(runtime,"root",None),owner,positions)
         for row in positions:
             if not isinstance(row,dict):continue
-            planned=preview(owner,row,runtime=runtime)
+            try:
+                source_id=int(row.get("id") or row.get("position_id") or 0)
+            except (ValueError,TypeError,OverflowError):source_id=0
+            planned=preview(owner,row,runtime=runtime,
+                native_stages=committed.get(source_id))
             if planned:
+                planned["position_id"]=row.get("id") or row.get("position_id")
+                planned["position_uid"]=row.get("position_uid") or ""
+                planned["entry_at"]=planned.get("entry_at") or str(
+                    row.get("buy_at") or row.get("entry_at") or
+                    row.get("entry_ts") or row.get("entry_date") or "")
+                if owner=="stock/gmo":
+                    planned["source"]="ORIGINAL_GMO_NATIVE_ENGINE"
+                    planned["plan_durable_at_buy"]=bool(planned["entry_at"])
+                elif owner=="stock/cw":
+                    planned["source"]="ORIGINAL_CW_NATIVE_POSITION_POLICY"
+                    planned["plan_durable_at_buy"]=bool(planned["entry_at"])
                 row["v019_exit_plan"]=planned
                 counts[owner]+=1
             else:
