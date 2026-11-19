@@ -25,7 +25,7 @@ import java.util.zip.GZIPInputStream;
 final class StrategyRuntimeBridge {
     private static final int PARTS=22;
     private static final int LIVE_BRIDGE_PARTS=8; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
-    private static final String CORE_SHA256="b8e7c131f854ba05c97ee2a291a9370445589fc7421b573a6b51333e7d72da01";
+    private static final String CORE_SHA256="5285721f3eda241b6f80e5ef804d3ba98144f537ae78993733173eda58e7dbe3";
     private static final String LIVE_BRIDGE_SHA256="e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e";
     private final Context context;
     private final RuntimeCrashStore crashes;
@@ -208,6 +208,15 @@ final class StrategyRuntimeBridge {
         catch(Throwable e){crashes.add("operation_apply",e);return error("OPERATION_APPLY",e);}
     }
 
+    /** Paper-wallet-only explicit manual exit; no broker-order adapter is called. */
+    synchronized JSONObject manualPaperSell(JSONObject request){
+        if(module==null||!started)return error("PAPER_SELL_RUNTIME_NOT_READY",null);
+        try{return parse(module.callAttr("manual_paper_sell",
+            request==null?"{}":request.toString()));}
+        catch(Throwable e){crashes.add("python_manual_paper_sell",e);
+            return error("MANUAL_PAPER_SELL_FAILED",e);}
+    }
+
     synchronized JSONObject setTrendManual(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))
             return error("INVALID_TREND_MARKET",null);
@@ -220,6 +229,7 @@ final class StrategyRuntimeBridge {
     synchronized JSONObject setLive(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))
             return error("INVALID_LIVE_MARKET",null);
+        if(enabled)return error("SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS",null);
         if(enabled&&(!started||module==null))
             return error("LIVE_RUNTIME_NOT_READY",null);
         try{

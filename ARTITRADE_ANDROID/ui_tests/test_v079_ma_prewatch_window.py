@@ -75,7 +75,7 @@ class V079MAWatchAndEntry(unittest.TestCase):
         self.assertIn("abs(submit_now.timestamp()-book['timestamp']/1000)>3",coin_src)
         self.assertIn('not str(key[5]).startswith(\'MA_PREWATCH_\')',trend_src)
         self.assertIn('for(int phase=0;phase<2;phase++)',ui_src)
-        self.assertIn('실제 매수대기 · 원본 주문원장',ui_src)
+        self.assertIn('MA 매수대기',ui_src)
         self.assertIn('사전 관측 · 30~10초 전 · 미주문',ui_src)
         self.assertEqual(policy.MAX_UP_FILL_DELAY_SECONDS,15)
 

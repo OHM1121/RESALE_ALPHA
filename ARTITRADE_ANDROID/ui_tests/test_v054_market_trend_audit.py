@@ -139,7 +139,7 @@ class TrendAudit(unittest.TestCase):
         co._candidates['coin']={'KRW-BTC':('CRYPTO','KRW-BTC')}
         co._quote=lambda market,code:{'trade':75,'ask':75,'bid':75,
                                      'ask_size':1000,'bid_size':1000}
-        co._closed_series=lambda m,code,tf,end:[{'close':100-i,'end':end-dt.timedelta(seconds=300*(21-i))}
+        co._closed_series=lambda m,code,tf,end:[{'close':80+i*.2,'end':end-dt.timedelta(seconds=300*(21-i))}
                               for i in range(21)] if tf=='5m' else []
         co.journal.save_latch('coin','KRW-BTC','5m',mt.SignalLatch(True))
         co._prechecked[('coin','KRW-BTC','5m',finish.isoformat())]=25
@@ -271,11 +271,11 @@ class TrendAudit(unittest.TestCase):
     def test_audit_release_increments_versioncode_for_in_place_upgrade(self):
         gradle=(ROOT/'app/build.gradle').read_text('utf8')
         self.assertRegex(gradle,r'versionCode (?:6[2-9]|[7-9][0-9])')
-        self.assertIn("versionName '0.7.82-LAZY-FILL-DETAILS'", gradle)
+        self.assertIn("versionName '0.7.88-ERROR-EXPORT-MA-HIGH-GUARD'", gradle)
 
     def test_trend_ui_is_not_mislabeled_as_actual_broker_account(self):
         ui=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text('utf8')
-        self.assertIn('"trend".equals(strategy)?"● 독립 마켓트렌드":"● 전략별 계좌"',ui)
+        self.assertNotIn('"trend".equals(strategy)?"● 독립 마켓트렌드":"● 전략별 계좌"',ui)
         self.assertIn('"trend".equals(strategy)?"업비트 · KRW TOP40"',ui)
 
     def test_broker_overfill_cannot_exceed_requested_slot_budget(self):

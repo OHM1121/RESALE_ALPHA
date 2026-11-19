@@ -184,6 +184,17 @@ def _phone_runtime_snapshot(self):
         coin_node['connected']=coin_trade
         snapshot['coin']=coin_node
         trend=getattr(self,'market_trend',None)
+        # Read-only TOP40 comparison: requested vs submitted vs genuine frames.
+        # This is diagnostic evidence, not a synthetic quote or execution gate.
+        try:
+            trend_codes=()
+            if trend is not None:
+                with trend.lock:
+                    trend_codes=tuple(trend._candidates.get('coin',{}))
+            if cr is not None and hasattr(cr,'_v084_ws_health'):
+                snapshot['upbit_ws_top40_v084']=cr._v084_ws_health(trend_codes)
+        except Exception as exc:
+            snapshot['upbit_ws_top40_v084']={'diagnostic_error':type(exc).__name__}
         warm={}
         for m in ('stock','coin'):
             required=0
@@ -1233,6 +1244,45 @@ def _research_source_audit(db,primary,evidence):
                 'source_error':type(exc).__name__,'evidence_counts':{}}
 
 
+def _v085_preserve_research(native, upstream):
+    """Preserve independently persisted strategy decisions attached to the core.
+
+    Legacy hub builds attached V074 MA decision evidence and then discarded it
+    by replacing the entire research object. This is a read-only merge: neither
+    simulated balances nor confirmed fills are modified or synthesized.
+    """
+    if not isinstance(native,dict):native={}
+    if not isinstance(upstream,dict):return native
+    merged=dict(native)
+    def identity(row):
+        if not isinstance(row,dict):return ('invalid',str(row))
+        eid=row.get('id') or row.get('event_key')
+        if eid:return ('event',str(eid))
+        return ('case',str(row.get('strategy') or ''),str(row.get('tf') or row.get('frame') or ''),
+                str(row.get('code') or row.get('symbol') or ''),
+                str(row.get('at') or row.get('ts') or row.get('created_at') or ''),
+                str(row.get('ref_ts') or row.get('ref_at') or ''),
+                str(row.get('reason') or row.get('decision') or ''))
+    preserved=0
+    for bucket in ('items','score_items'):
+        fresh=list(native.get(bucket) or [])
+        existing={identity(row) for row in fresh}
+        for row in upstream.get(bucket) or []:
+            if not isinstance(row,dict):continue
+            key=identity(row)
+            if key in existing:continue
+            fresh.append(row.copy())
+            existing.add(key)
+            preserved+=1
+        if fresh:
+            fresh.sort(key=lambda row:str(row.get('at') or row.get('ts') or ''),reverse=True)
+        merged[bucket]=fresh
+    merged['loaded_items']=len(merged.get('items') or [])
+    merged['upstream_decisions_preserved_v085']=preserved
+    # Preserve diagnostic error state even when upstream evidence is displayed.
+    return merged
+
+
 def _research_history(self, out):
     """Read every strategy independently: one legacy table failure must not mask other research.
 
@@ -1284,15 +1334,72 @@ def _research_history(self, out):
             result.update(audit)
             return result
     stock=out.setdefault('stock',{}).setdefault('at',{})
-    stock['research']=read('AT',lambda:_stock_at_research(self.root))
-    stock['research']['ma']=read('MA',lambda:_stock_ma_research(self.root))
+    prior_stock=stock.get('research') or {}
+    original_ma=prior_stock.get('ma') if isinstance(prior_stock,dict) else None
+    stock['research']=_v085_preserve_research(
+        read('AT',lambda:_stock_at_research(self.root)),prior_stock)
+    stock['research']['ma']=_v085_preserve_research(
+        read('MA',lambda:_stock_ma_research(self.root)),original_ma)
     out.setdefault('stock',{}).setdefault('cw',{})['research']=read(
         'CLOSE',lambda:_close_research(self.root))
     out.setdefault('coin',{}).setdefault('general',{})['research']=read(
         'COIN_BASE',lambda:_coin_research(self.root,'base'))
-    out.setdefault('coin',{}).setdefault('ma',{})['research']=read(
-        'COIN_MA',lambda:_coin_research(self.root,'ma'))
+    coin_ma=out.setdefault('coin',{}).setdefault('ma',{})
+    coin_ma['research']=_v085_preserve_research(
+        read('COIN_MA',lambda:_coin_research(self.root,'ma')),
+        coin_ma.get('research'))
     return out
+
+def _v086_enrich_gmo_executions(rows):
+    """Source-only cash/cost evidence for BUY and partial SELL fills.
+
+    Original GMO engine.fill() records net_profit AFTER cost basis, sell fee
+    and stock sell tax. Therefore a SELL lot's exact allocated acquisition
+    cost equals sell gross minus SELL fee/tax minus the recorded net P&L.
+    No candle/high, unfilled order, virtual fill or guessed basis is used.
+    """
+    if not isinstance(rows,list):return rows
+    for fill in rows:
+        if not isinstance(fill,dict):continue
+        try:
+            qty=float(fill.get('qty'))
+            price=float(fill.get('price'))
+        except (TypeError,ValueError,OverflowError):continue
+        if not (math.isfinite(qty) and qty>0 and math.isfinite(price) and price>0):
+            continue
+        side=str(fill.get('side') or '').upper()
+        if side=='BUY':
+            fill['buy_amount']=round(price*qty,2)
+            fill['buy_price']=price
+            fill['buy_qty']=qty
+            fill['gmo_buy_amount_basis']='ORIGINAL_BUY_FILL_PRICE_X_QTY'
+        elif side=='SELL':
+            fill['sell_qty']=qty
+            try:
+                net=float(fill['net_profit'])
+                fees=float(fill['fees'])
+                tax=float(fill['tax'])
+            except (KeyError,ValueError,TypeError,OverflowError):
+                # Missing fee/tax or net evidence must not become a fake ROI.
+                continue
+            if not all(math.isfinite(x) and x>=0 for x in (fees,tax)):
+                continue
+            if not math.isfinite(net):continue
+            allocated_cost=price*qty-fees-tax-net
+            if allocated_cost<=0 or not math.isfinite(allocated_cost):
+                continue
+            fill['buy_amount']=round(allocated_cost,2)
+            fill['gmo_allocated_buy_cost']=round(allocated_cost,2)
+            # If the original linked BUY fill supplied an exact purchase
+            # price, preserve it. Otherwise show effective per-unit cost
+            # WITH buy fees rather than pretend a historical fill price.
+            if fill.get('buy_price') in (None,''):
+                fill['buy_price']=round(allocated_cost/qty,6)
+                fill['gmo_buy_unit_basis']='ALLOCATED_COST_INCLUDES_BUY_FEE'
+            fill['realized_pct']=round(net/allocated_cost*100,5)
+            fill['gmo_realized_pct_basis']='ORIGINAL_NET_PROFIT_OVER_ALLOCATED_COST'
+    return rows
+
 
 def _gmo_original_record(root):
     """Read the unmodified PC GMO SQLite + full JSON state without an engine restart.
@@ -1342,9 +1449,10 @@ def _gmo_original_record(root):
         qty = int(p.get('qty') or 0)
         if qty <= 0: continue
         original_buy=entry_fill(dict(p,code=code),buys) or {}
-        active.append({'tf':'gmo','strategy':'gmo','code':code,
+        active.append({'tf':'gmo','strategy':'gmo','code':code,'gmo':True,
             'name':p.get('name') or names.get(code,code),'qty':qty,
             'entry_price':p.get('entry_price'),'last_price':None,
+            'gmo_cost_basis':p.get('cost_basis'),
             'entry_at':original_buy.get('entry_at'),
             'buy_at':original_buy.get('entry_at'),
             'buy_reason':original_buy.get('buy_reason'),
@@ -1390,6 +1498,7 @@ def _gmo_original_record(root):
             _attach_fill_cost(e,{'entry_price':unique_price})
         elif str(e.get('side') or '').upper()=='BUY':
             _attach_fill_cost(e)
+    _v086_enrich_gmo_executions(executions)
     executions.sort(key=lambda x:str(x.get('ts') or ''),reverse=True)
     # Use exactly the EXE's original 15-session evidence and paper-fill
     # attribution. A candle HIGH is not a broker/paper SELL execution.
@@ -1672,6 +1781,22 @@ def _hub_records_v078(self):
                 queue_phone_buy_evidence(self.root,captured)
             except Exception as evidence_exc:
                 self._err('gmo_phone_buy_evidence',evidence_exc)
+            # Preserve the exact original position cost basis and sell fees
+            # for a consistent net liquidation estimate. This does not
+            # modify GMO engine holdings or turn REST marks into live fills.
+            try:
+                cfg=gmo.engine.cfg
+                for pos in (snap.get('positions') or []):
+                    original=gmo.engine.positions.get(str(pos.get('code') or ''))
+                    if original is None:continue
+                    pos['gmo']=True
+                    pos['strategy']='gmo'
+                    pos['gmo_cost_basis']=float(original.cost_basis)
+                    pos['gmo_sell_fee_rate']=float(cfg.sell_fee)
+                    pos['gmo_sell_tax_rate']=float(cfg.sell_tax)
+            except Exception as cost_exc:
+                self._err('gmo_original_cost_basis_v086',cost_exc)
+            _v086_enrich_gmo_executions(snap.get('executions') or [])
             wallet=snap.get('wallet') or {}
             sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']
             wins=sum(1 for x in sells if float(x.get('net_profit') or 0)>0)
@@ -2181,6 +2306,18 @@ start = _core.start
 stop = _core.stop
 snapshot = _core.snapshot
 hub_records = _core.hub_records
-set_live = _core.set_live
+# This APK has ONLY real-quote simulated fills and shadow/PAPER research.
+# Its original LIVE switch is a broker-order adapter, never the user-facing
+# "실거래" simulated-wallet label. A future real-account APK is separate.
+def set_live(market,enabled):
+    if enabled:
+        return json.dumps({'ok':False,'error':'SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS',
+            'live_enabled':{'stock':False,'coin':False}},ensure_ascii=False)
+    return _core.set_live(market,False)
+
+def manual_paper_sell(request):
+    from android_manual_paper_sell_v085 import perform
+    return perform(request)
+
 # v045 explicit score-independent market trend entry selection.
 from market_trend_runtime_v043 import set_manual_mode as set_trend_manual

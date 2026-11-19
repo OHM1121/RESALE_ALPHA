@@ -63,8 +63,56 @@ def _put_plan_item(pieces,capacity,used,record,size):
     return pieces,used
 
 
+
+def _deflated_bytes(source: Path, offset: int, size: int) -> int:
+    """Measure actual raw DEFLATE bytes without holding sensitive DB in RAM."""
+    import zlib
+    obj=zlib.compressobj(level=6,method=zlib.DEFLATED,wbits=-15)
+    total=0
+    with source.open("rb") as stream:
+        stream.seek(offset)
+        remaining=size
+        while remaining:
+            data=stream.read(min(1024*1024,remaining))
+            if not data:raise IOError("Snapshot changed during compression planning")
+            remaining-=len(data)
+            total+=len(obj.compress(data))
+    return total+len(obj.flush())
+
+
+def _put_compressed_error_item(pieces,used,capacity,record,source,limit):
+    """Pack independently decodable ZIP pieces by measured compressed bytes.
+
+    This avoids splitting a 2GB highly-compressible database into unnecessary
+    500MB RAW parts: only the actual resulting compressed part size matters.
+    Each source fragment has the same lossless index schema as RESEARCH bundles.
+    """
+    size=record["size"]
+    raw_chunk=min(100_000_000,max(16_384,capacity//2))
+    offset=0
+    index=0
+    while offset<size or (size==0 and index==0):
+        amount=min(raw_chunk,size-offset) if size else 0
+        predicted=_deflated_bytes(source,offset,amount)
+        # Header+descriptor+entry central-dir overhead is covered by reserve.
+        if predicted>capacity:
+            raise ValueError("Compressed fragment exceeds part capacity")
+        if used[-1]+predicted>capacity:
+            pieces.append([]);used.append(0)
+        entry=(record["path"] if size<=raw_chunk else
+               f'fragments/{record["serial"]:05d}/{index:05d}.bin')
+        fragment={"part":len(pieces),"entry":entry,"offset":offset,
+                  "size":amount}
+        record["fragments"].append(fragment)
+        pieces[-1].append((record["path"],fragment))
+        used[-1]+=predicted
+        offset+=amount
+        index+=1
+    return pieces,used
+
+
 def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
-                progress_path=None):
+                progress_path=None, bundle_kind="research", native_errors_json=None):
     progress=Path(progress_path).resolve() if progress_path else None
     def announce(pct,stage,done=0,total=0,detail=''):
         if progress is None:return
@@ -77,7 +125,10 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 encoding='utf8')
             os.replace(tmp,progress)
         except (OSError,TypeError,ValueError):pass
-    announce(4,'연구원장 검사',detail='스냅샷 대상 조사')
+    if bundle_kind not in ("research","errors"):
+        raise ValueError("Bundle kind must be research or errors")
+    announce(4,'오류원장 검사' if bundle_kind=="errors" else '연구원장 검사',
+             detail='스냅샷 대상 조사')
     if scope not in ("stock","coin","all"):
         raise ValueError("Research scope must be stock, coin or all")
     max_part_bytes=int(max_part_bytes)
@@ -109,7 +160,9 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
     if shutil.disk_usage(folder).free < total*2+MIN_FREE:
         raise OSError("Insufficient temporary storage for verified research export")
 
-    prefix="ARTITRADE_"+scope.upper()+"_RESEARCH_"+time.strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:6]
+    prefix=("ARTITRADE_"+scope.upper()+
+            ("_ERROR_HISTORY_" if bundle_kind=="errors" else "_RESEARCH_")+
+            time.strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:6])
     reserve=max(8192,min(4_000_000,max_part_bytes//20))
     capacity=max_part_bytes-reserve
     pieces=[[]]
@@ -153,6 +206,26 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 "암호·API 키는 제외하며 원본 DB와 자동매매 엔진은 변경하지 않음.\n"
             ).encode("utf8")
         }
+        if bundle_kind=="errors":
+            # Capture Java/Android system process-exit diagnoses in addition
+            # to original source SQLite issues. Never expose saved API keys.
+            if native_errors_json is not None:
+                native=str(native_errors_json)
+                if len(native)>250_000:
+                    raise ValueError("Android error report exceeds safe bound")
+                report=json.loads(native)
+                if not isinstance(report,dict):
+                    raise ValueError("Android error report must be an object")
+                reports["analysis/error_history_summary.json"]=json.dumps(
+                    report,ensure_ascii=False,indent=2).encode("utf8")
+            reports["analysis/README_ko.txt"]=(
+                "ARTITRADE 주식·코인 오류 원본 — "+scope+"\n"
+                "오류화면은 표시하지 않지만 원본 SQLite/JSON/JSONL은 유지됨.\n"
+                "각 ZIP은 독립적으로 열 수 있음. 원본 fragment 복원 시 모든 PART 필요.\n"
+                "각 파트 500,000,000바이트 이하, bundle_index.json에 원본 해시 수록.\n"
+                "Android OS 종료 이유는 수집된 경우 error_history_summary.json에 포함.\n"
+                "코인·주식 원본 계좌·주문·체결은 수정하지 않음.\n"
+            ).encode("utf8")
         for name,blob in reports.items():
             path=staged/name
             path.parent.mkdir(parents=True,exist_ok=True)
@@ -164,10 +237,15 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
         announce(56,'분할 ZIP 구성',len(originals),len(originals),
                  '원본 SHA 및 분할계획 계산')
         for record in all_records.values():
-            _put_plan_item(pieces,capacity,used,record,record["size"])
+            if bundle_kind=="errors":
+                _put_compressed_error_item(pieces,used,capacity,record,
+                                           staged/record["path"],max_part_bytes)
+            else:
+                _put_plan_item(pieces,capacity,used,record,record["size"])
         for record in all_records.values():
             record.pop("serial",None)
-        index={"schema":SCHEMA,"scope":scope,"created_at_epoch_ms":int(time.time()*1000),
+        index={"schema":SCHEMA,"scope":scope,"bundle_kind":bundle_kind,
+               "created_at_epoch_ms":int(time.time()*1000),
                "part_count":len(pieces),"max_part_bytes":max_part_bytes,
                "sources":source_records,"reports":report_records,
                "all_original_rows_preserved":True,
@@ -183,7 +261,10 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                          '파트 '+str(i)+'/'+str(len(pieces)))
                 name=f"{prefix}_PART_{i:03d}_OF_{len(pieces):03d}.zip"
                 intermediate=stage/name
-                with zipfile.ZipFile(intermediate,"w",compression=zipfile.ZIP_STORED,
+                compression=(zipfile.ZIP_DEFLATED if bundle_kind=="errors"
+                             else zipfile.ZIP_STORED)
+                with zipfile.ZipFile(intermediate,"w",compression=compression,
+                                     compresslevel=6 if bundle_kind=="errors" else None,
                                      allowZip64=True) as z:
                     z.writestr("analysis/bundle_index.json",encoded)
                     for rel,fragment in entries:
@@ -208,7 +289,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
             raise
     announce(92,'분할 ZIP 검증 완료',len(results),len(results),
              'Android 저장소 전송 준비')
-    return json.dumps({"ok":True,"schema":SCHEMA,"scope":scope,
+    return json.dumps({"ok":True,"schema":SCHEMA,"scope":scope,"bundle_kind":bundle_kind,
         "parts":len(results),"files":results,
         "source_files":len(source_records),"source_bytes":total,
         "max_part_bytes":max_part_bytes},ensure_ascii=False)
