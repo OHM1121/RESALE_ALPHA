@@ -60,6 +60,7 @@ jobs:
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v008_special_session_trend_proof.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_new_legacy_1118_workbook.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_eight_virtual_paper_end_to_end.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_post_reset_trend_and_top50.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v006_trend_5m_retirement_and_startup.py' -v
       - name: Enforce issue register and dependency map
         run: |
