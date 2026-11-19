@@ -1,4 +1,4 @@
-name: ARTITRADE 0.0.12 legacy PAPER purge + 11.18 holdings + signer TEST APK
+name: ARTITRADE 0.0.12 fix1 legacy PAPER purge + 11.18 holdings + signer TEST APK
 on:
   push:
     branches: [artitrade-phone-main-v070-live-orders-20261112]
@@ -17,12 +17,12 @@ jobs:
     env:
       CI: 'true'
       ARTIFACT: ARTITRADE_0.0.12
-      TAG: ARTITRADE-0.0.12-signed-test-20261119
-      SOURCE: a40a2b4e99bfd1edb57bfea8d6225051800dd22b
+      TAG: ARTITRADE-0.0.12-signed-test-20261119-fix1
+      SOURCE: f2fab98c1a9b00f2c8e8a80c56f917e1aecfa792
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: a40a2b4e99bfd1edb57bfea8d6225051800dd22b
+          ref: f2fab98c1a9b00f2c8e8a80c56f917e1aecfa792
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -202,7 +202,7 @@ jobs:
       - name: Upload verified APK as GitHub Actions download
         uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_0_0_12_FORENSIC_FIXED_SIGNED_APK
+          name: ARTITRADE_0_0_12_FIX1_SIGNED_APK
           path: |
             ARTITRADE_0.0.12.apk
             ARTITRADE_0.0.12.sha256
@@ -218,6 +218,6 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE"
           sha256sum -c "$ARTIFACT.sha256"
-          echo "ARTITRADE 0.0.12 PAPER TEST APK, same package com.artitrade.unified.s21dex, same previously installed signing certificate, versionCode134. User-authorized old-PAPER trade removal with original cash/PnL correction and independent rollback-guard rebasing at startup. Keeps NEW LEGACY(11.18) entries, removes identified old buy/sell/holdings/related research only for AT/MA/Trend stock+coin. GMO and CW excluded entirely. Ambiguous broker or orphaned old records remain untouched rather than inventing accounting. Holding badge shows 5분/30분/60분/일봉 and removes duplicate timeframe after name. All 8 paper strategy regressions. Real broker disabled and live resting broker orders not placed; Samsung-device validation and stock AT pending→fill unresolved. Do not uninstall existing app." > /tmp/artitrade-v012-notes
+          echo "ARTITRADE 0.0.12 FIX1 signed PAPER-only test APK, same com.artitrade.unified.s21dex, same old verified certificate and code134. Explicit user-requested old PAPER purchase/sale deletion from AT/MA/Trend six wallets plus old MA archives with source-record cash/PnL reversal and independent antirollback witness update. NEW LEGACY source positions and receipts stay, GMO/CW databases never mutated. If old broker/import records are ambiguous migration reports PARTIAL rather than inventing cash. Tested pre-reboot witness crash recovery and old scanner retirement; integrated and per-strategy holdings show the timeframe on the left and remove duplicate from symbol. Real exchange broker orders remain disabled; phone device cleanup and stock pending-to-buy remain unverified. Install over prior version without deleting data." > /tmp/artitrade-v012-notes
           gh release create "$TAG" "$ARTIFACT.apk" "$ARTIFACT.sha256" "$ARTIFACT.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE 0.0.12 signed TEST APK (PAPER)" --notes-file /tmp/artitrade-v012-notes --prerelease
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,tagName --jq '{tagName:.tagName,assets:[.assets[].name]}'
