@@ -11,6 +11,8 @@ on:
       - ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py
       - ARTITRADE_ANDROID/ui_tests/test_v010_native_market_clock.py
       - ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py
+      - ARTITRADE_ANDROID/app/src/main/python/entry_plan_hooks_v107.py
+      - ARTITRADE_ANDROID/ui_tests/test_v010_gmo_capture_recovery_signature.py
       - ARTITRADE_ANDROID/app/src/main/python/artitrade_history_dns_circuit_v009.py
       - ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py
   workflow_dispatch:
