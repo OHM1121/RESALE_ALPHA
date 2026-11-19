@@ -310,8 +310,27 @@ public final class UnifiedTradingService extends Service {
             return;
         }
         JSONObject started=strategy.start();
-        if(!started.optBoolean("ok",true))
-            crashes.add("strategy_start_reply",new IllegalStateException(started.toString()));
+        if(!started.optBoolean("ok",false)||!started.optBoolean("started",false)){
+            // A failed Python engine must not masquerade as a successful
+            // fresh-epoch startup merely because the UI service is alive.
+            // Preserve SQLite and the committed epoch marker unchanged.
+            IllegalStateException failure=new IllegalStateException(
+                "PAPER_ENGINE_NOT_STARTED:"+started.toString());
+            crashes.add("strategy_start_reply",failure);
+            JSONObject blocked=new JSONObject();
+            try{
+                blocked.put("ok",false).put("status","ENGINE_START_FAILED")
+                    .put("reason","PYTHON_RUNTIME_NOT_STARTED")
+                    .put("startup",started);
+            }catch(org.json.JSONException ignored){}
+            saveMigrationResult(blocked);
+            getSharedPreferences("artitrade_preload_v081",MODE_PRIVATE).edit()
+                .putString("stage","ENGINE_START_FAILED")
+                .putBoolean("complete",false).commit();
+            stopSafely();
+            stopSelf();
+            return;
+        }
         JSONObject records=strategy.hubRecordsUi();
         // Make verified source ledgers available to the initial dashboard
         // without waiting for the MSERVER monitor's separate network request.
