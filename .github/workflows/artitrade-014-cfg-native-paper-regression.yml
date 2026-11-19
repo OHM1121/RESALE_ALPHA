@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/artitrade-014-cfg-native-paper-regression.yml
       - 'ARTITRADE_ANDROID/app/src/main/python/**'
+      - 'ARTITRADE_ANDROID/app/src/main/java/**'
+      - ARTITRADE_ANDROID/app/build.gradle
       - 'ARTITRADE_ANDROID/ui_tests/**'
       - docs/artitrade/USER_ACTIVE_POLICY.md
       - docs/artitrade/dependency_graph.json
@@ -14,6 +16,8 @@ on:
     branches: ['fix-artitrade-*']
     paths:
       - 'ARTITRADE_ANDROID/app/src/main/python/**'
+      - 'ARTITRADE_ANDROID/app/src/main/java/**'
+      - ARTITRADE_ANDROID/app/build.gradle
       - 'ARTITRADE_ANDROID/ui_tests/**'
       - docs/artitrade/USER_ACTIVE_POLICY.md
       - docs/artitrade/dependency_graph.json
