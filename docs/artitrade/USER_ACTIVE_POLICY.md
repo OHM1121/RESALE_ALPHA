@@ -153,3 +153,36 @@ a new instruction appears different. Cross-check original
 - Never claim a real phone position was erased or IDs were already indexed
   solely because a synthetic CI suite or Android APK built. Record exact
   DELETE_ONE / SKIPPED result privately on the phone.
+
+
+## 2026-11-19: Visible and verified native preload on a new UI entry
+- Show the existing source-data verification screen again on every new
+  Activity entry even when the existing service is already healthy; do not
+  create a second Kiwoom/Upbit login, reset original candles, duplicate
+  market subscriptions or interrupt held-position SELLs.
+- Preserve original mandatory native preflight: verified closed bars (including
+  missing/reconnect newest parent), verified exchange ticker/0B and genuine
+  executable bid/ask book/0D, market trend RSI20/MA frame coverage and original
+  eight wallet ledger integrity. Historical REST bars must never create fills.
+- Show evidence-count-based 0..100% and measured ETA. Unknown/stalled progress
+  must be labelled 'cannot estimate', not an invented deadline or false 100%.
+  The existing 40-second bounded UI escape remains: an outage/holiday cannot
+  block all holdings/UI indefinitely, while missing checks stay visible and
+  original background recovery continues. UI dismiss is not trading readiness.
+- Actual venue quote, orderbook and official bar source provenance must be
+  preserved. Coin UPBIT_CLOSED from original REST verified completed candles
+  is accepted after high/low/close and timestamp validation; stale newest
+  completed coin candles remain missing.
+
+## 2026-11-19: MarketTrend native BUY cost/returns source
+- For stock and coin MarketTrend, show each original MT54 position's committed
+  BUY execution entry price, quantity, source execution ID and source-position
+  matched SELL net PnL and realized % across holdings, executions and research.
+  Calculate SELL return from original confirmed buy unit price and proportional
+  original buy fee, never inferred candles or symbol-only joins.
+- For stock Trend holdings lacking fresh 0B display, source SQLite saved MARK
+  may be shown only if clearly labelled LAST SAVED (NOT LIVE/EXECUTABLE).
+  Never substitute this for native quote/book SELL permission or broker fill.
+- No changes to the original trend 30m/60m/day entry rules, original broker
+  live/PAPER fill ownership, GMO/CW wallets or cash accounting; old Trend 5m
+  entry remains retired, and legacy held 5m SELL recovery stays available.
