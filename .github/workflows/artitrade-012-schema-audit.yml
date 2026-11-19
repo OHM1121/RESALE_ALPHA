@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: b772aa382be173610cd4120e3e93b4c7a112fdd6
+          ref: 029e7bfdc951bf1f2cdf69e05adec2ba50050c36
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -36,3 +36,9 @@ jobs:
           set -euo pipefail
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade012_native:$PWD/ARTITRADE_ANDROID/ui_tests"
           python3 ARTITRADE_ANDROID/ui_tests/probe_v012_ledger_schemas.py
+
+      - name: Inspect original stock AT candidate to pending to buy receipt and DB history lock
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade012_native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 ARTITRADE_ANDROID/ui_tests/probe_v013_stock_pending_native.py
