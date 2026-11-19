@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "fix-artitrade-007-v005-errorlog-rootcause-governance-20261119",
+  "source_baseline": "0.0.7 signed test APK source 901ce172; 0.0.8 branch source audit (not yet packaged)",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -180,7 +180,8 @@
         62,
         68,
         71,
-        72
+        72,
+        77
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D."
     },
@@ -197,7 +198,8 @@
         59,
         60,
         62,
-        67
+        67,
+        78
       ],
       "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified."
     },
@@ -219,7 +221,8 @@
         60,
         68,
         71,
-        75
+        75,
+        79
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -240,7 +243,8 @@
         57,
         60,
         68,
-        73
+        73,
+        79
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -275,9 +279,11 @@
         55,
         60,
         65,
-        68
+        68,
+        77,
+        79
       ],
-      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet."
+      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy."
     },
     {
       "id": "STOCK_CLOSE",
@@ -294,7 +300,8 @@
       "issues": [
         60,
         68,
-        69
+        69,
+        79
       ],
       "contract": "Original CW/close betting engine and native source; no duplicative WS login."
     },
@@ -317,7 +324,9 @@
         68,
         70,
         72,
-        73
+        73,
+        78,
+        79
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -334,7 +343,8 @@
       ],
       "issues": [
         59,
-        60
+        60,
+        79
       ],
       "contract": "Four original reference wallets 5m/30m/60m/day, verified ticker/book."
     },
@@ -355,7 +365,8 @@
         60,
         67,
         73,
-        75
+        75,
+        79
       ],
       "contract": "Missing source high/low rejected; never abort other eligible book work."
     },
@@ -376,9 +387,11 @@
         60,
         70,
         72,
-        73
+        73,
+        78,
+        79
       ],
-      "contract": "New BUY 30m/60m/day only; prior 5m sells intact."
+      "contract": "New BUY 30m/60m/day only; prior 5m sells intact. Coin MarketTrend RSI20 requires actual latest continuous official completed bars and durable verified <=30 within 24h before Bollinger MID angle/touch."
     },
     {
       "id": "MARKET_SCORE",
@@ -413,9 +426,12 @@
         63,
         65,
         67,
-        75
+        75,
+        77,
+        78,
+        79
       ],
-      "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative."
+      "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },
     {
       "id": "OPERATION_CONFIG",
@@ -496,9 +512,10 @@
         "STOCK_FEED"
       ],
       "issues": [
-        68
+        68,
+        77
       ],
-      "contract": "Exactly one Kiwoom 0B/0D subscription owner for all 5 stock strategies. GMO prewarm may use scheduled opening selection but cannot replace protected/priority symbols or exceed 200."
+      "contract": "Exactly one Kiwoom 0B/0D subscription owner for all 5 stock strategies. GMO prewarm may use scheduled opening selection but cannot replace protected/priority symbols or exceed 200. On delayed KRX open preserve existing held/pending and all-strategy subscription pins while GMO D+1 gets highest preopen candidate protection."
     },
     {
       "id": "CLOSE_FOLLOWUP_ASOF",
