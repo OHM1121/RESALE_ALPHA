@@ -14,6 +14,8 @@ on:
       - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java
       - ARTITRADE_ANDROID/ui_tests/test_v019_native_exit_plan_readonly.py
       - .github/workflows/artitrade-019-integrated-regression.yml
+      - docs/artitrade/dependency_graph.json
+      - docs/artitrade/version_issues.json
   workflow_dispatch:
 permissions:
   contents: read
