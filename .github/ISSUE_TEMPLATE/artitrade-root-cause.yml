@@ -1,0 +1,45 @@
+name: "ARTITRADE — 버전별 근본 원인 및 검증 이력"
+description: "버전·기능 의존관계·실증 근거·수정·회귀검증을 한 이슈에서 관리"
+title: "ARTITRADE [버전][발견/미검증][영역] 문제 요약"
+body:
+  - type: input
+    id: version
+    attributes:
+      label: "발견 버전과 비교 기준"
+      description: "예: 0.0.5, 0.0.6 / 원장 초기화 전 마지막 정상 APK/EXE"
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: "증거 수준"
+      options: ["LOG_CONFIRMED","REPRODUCED","SOURCE_CONFIRMED","INFERRED","LATENT_UNOBSERVED","UNKNOWN"]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "재현/오류 증거(비밀 정보·원본 원장 업로드 금지)"
+      description: "실제 로그의 오류 종류, 함수, 시간 범위, 발생건수만 안전하게 기술"
+    validations:
+      required: true
+  - type: textarea
+    id: rootcause
+    attributes:
+      label: "근본 원인과 대안 검토"
+      description: "표시 숨김/예외 무시가 아닌 구조적 원인을 명시"
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: "상호 연결 기능·영향 범위"
+      description: "producer → policy → wallet → storage → UI → AI/research, graph node ID"
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: "수정 commit / 테스트 / 여전히 검증 불가한 사항"
+    validations:
+      required: true
