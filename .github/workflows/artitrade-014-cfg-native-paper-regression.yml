@@ -11,6 +11,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  issues: write
 jobs:
   original-native-paper:
     runs-on: ubuntu-latest
@@ -48,11 +49,26 @@ jobs:
           set -euo pipefail
           python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-014-original:$PWD/ARTITRADE_ANDROID/ui_tests"
-          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v014_cfg_native_paper_exit_replay.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v014_cfg_native_paper_exit_replay.py' -v 2>&1 | tee /tmp/artitrade_014_test.log
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_eight_virtual_paper_end_to_end.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v011_new_legacy_resting_and_legacy_retirement.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v012_legacy_purge_and_holding_frame.py' -v
           python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v004_abnormal_reconnect_six.py' -v
+      - name: Persist sanitized SYNTHETIC-only failure trace to tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "0.0.14 synthetic native PAPER CI failure: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo 'No private financial/user data; fixture symbol KRW-SIMCFG only.'
+            echo '~~~'
+            tail -n 85 /tmp/artitrade_014_test.log 2>/dev/null | sed -E 's#/home/runner/work/[^ ]+#<CI_WORKSPACE>#g' || true
+            echo '~~~'
+          } > /tmp/artitrade_014_failure.md
+          gh issue comment 98 --repo "$GITHUB_REPOSITORY" --body-file /tmp/artitrade_014_failure.md
       - name: Confirm no real broker call, Android device, or APK is claimed
         shell: bash
         run: |
