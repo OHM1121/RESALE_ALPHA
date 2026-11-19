@@ -13,6 +13,7 @@ import threading
 import time
 from decimal import Decimal
 import ma_v067_policy as policy
+import new_legacy_1118_resting as resting
 
 _INSTALLED=False
 KST=dt.timezone(dt.timedelta(hours=9))
@@ -121,6 +122,10 @@ def _on_real_buy(self,c,p):
         c.execute('UPDATE positions SET first_qty=?,target=? WHERE id=?',
                   (str(first),str(target),p['id']))
         if kind=='REVERSAL_UP':
+            one,two=policy.up_targets(p['entry'],p['tf'])
+            first_goal,second_goal=policy.up_stage_quantities(state,qty)
+            resting.place(c,int(p['id']),'coin',str(p['market']),str(p['tf']),
+                str(p['entry_at']),qty,one,two,first_goal,second_goal,paper=True)
             deadline=_ma_hold_deadline(p['tf'],p['entry_at'])
             if deadline:
                 c.execute('UPDATE positions SET hold_until=? WHERE id=?',
@@ -566,13 +571,19 @@ def _process_v067_exits(self,book,now):
                      reason+':'+str(int(book['timestamp'])))
                 if not self._sell(c,p,desired,bid,now.isoformat(),reason,event_key=key):
                     break
-                executed=c.execute("""SELECT qty,price FROM executions
+                executed=c.execute("""SELECT id,qty,price FROM executions
                     WHERE event_key=? AND side='SELL' AND position_id=?""",
                     (key,p['id'])).fetchone()
                 if executed is None:break
                 actually=policy.number(executed['qty'])
                 if actually is None or actually<=0:break
                 px=executed['price']
+                if reason in ('MA_V1118_UP_FIRST_30PCT','MA_V1118_UP_SECOND_35PCT'):
+                    resting.confirmed_fill(c,int(p['id']),
+                        1 if reason=='MA_V1118_UP_FIRST_30PCT' else 2,
+                        int(executed['id']))
+                else:
+                    resting.cancel_remaining(c,int(p['id']),reason)
                 if p['kind']=='REVERSAL_BEAR':
                     applied=policy.apply_bear_fill(updated,reason,actually,now)
                     applied=policy.mark_stage_completion(applied,p['qty0'],now,px)
@@ -675,6 +686,19 @@ def install():
                 AND x.features LIKE '%"ma_v067_kind"%'""").fetchall()
             for row in joined:_on_real_buy(self,c,row)
             _sync_existing_ma_hold_deadlines(c)
+            existing=c.execute("""SELECT p.*,s.state_json FROM positions p
+                JOIN ma_v067_positions s ON s.position_id=p.id
+                WHERE p.status='OPEN' AND s.kind='REVERSAL_UP'""").fetchall()
+            for p in existing:
+                try:
+                    state=json.loads(p['state_json'] or '{}')
+                    one,two=policy.up_targets(p['entry'],p['tf'])
+                    q1,q2=policy.up_stage_quantities(state,p['qty0'])
+                    resting.place(c,int(p['id']),'coin',str(p['market']),
+                        str(p['tf']),str(p['entry_at']),p['qty0'],
+                        one,two,q1,q2,paper=True)
+                except (ValueError,TypeError,KeyError):
+                    continue
             held=c.execute("""SELECT DISTINCT p.market FROM positions p
                 JOIN ma_v067_positions s ON s.position_id=p.id
                 WHERE p.status='OPEN' AND s.kind='REVERSAL_UP'""").fetchall()
