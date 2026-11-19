@@ -44,3 +44,16 @@ scan('d_storage.py',[
     "def transaction",
     "def __enter__",
 ],before=3,after=28,max_hits=17)
+
+def focus(file,start,end):
+    lines=(native/file).read_text('utf8').splitlines()
+    print('V013_FOCUS',file,start,end,'BEGIN',flush=True)
+    for i in range(start-1,min(len(lines),end)):
+        print('V013_DETAIL %04d %s'%(i+1,lines[i]),flush=True)
+    print('V013_FOCUS',file,start,end,'END',flush=True)
+
+focus('d_live.py',623,680)
+focus('d_live.py',911,1005)
+focus('d_v19_portfolio.py',1089,1265)
+focus('d_v19_portfolio.py',1438,1520)
+focus('d_storage.py',110,176)
