@@ -13,6 +13,12 @@ on:
       - docs/artitrade/**
       - AGENTS.md
       - .github/workflows/artitrade-016-preload-trend-ledger-regression.yml
+  pull_request:
+    branches: [artitrade-016-preload-trend-ledger-20261119]
+    paths:
+      - ARTITRADE_ANDROID/app/src/main/**
+      - ARTITRADE_ANDROID/ui_tests/**
+      - .github/workflows/artitrade-017-stock-preload-regression.yml
   workflow_dispatch:
 permissions:
   contents: read
