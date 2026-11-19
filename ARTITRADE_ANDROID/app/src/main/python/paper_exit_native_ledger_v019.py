@@ -129,12 +129,14 @@ def _validate_native_plan(c,owner,p,stage,limit,qty,epoch):
         raise UnsafeRecovery("PERSISTED_STAGE_TABLE_MISSING")
     s=_row(c,"SELECT * FROM nl1118_resting_sells WHERE position_id=? AND stage=?",
            (int(p["id"]),stage))
-    if (s["policy"]!="NEW_LEGACY_1118" or
+    filled=Decimal(str(s["filled_qty"]))
+    if (not filled.is_finite() or filled<0 or
+        s["policy"]!="NEW_LEGACY_1118" or
         str(s["status"]) not in ("PAPER_RESTING","PAPER_PARTIAL") or
         str(s["broker_order_id"] or "") or
         _d(s["limit_price"])!=limit or
         _d(s["original_qty"])!=_initial_qty(owner,p) or
-        _d(s["order_qty"])<_d(s["filled_qty"]) if str(s["filled_qty"]) not in ("0","0.0") else False):
+        filled>_d(s["order_qty"])):
         raise UnsafeRecovery("NATIVE_ORIGINAL_PLAN_CONFLICT")
     if owner.startswith("coin") and s["market"]!="coin":
         raise UnsafeRecovery("NATIVE_PLAN_MARKET_CONFLICT")
@@ -485,7 +487,8 @@ def apply_inside_transaction(c,owner,proof,epoch,observed_prices):
         results.append({"stage":stage,"receipt_id":recid,
                         "assumed_qty":str(qty),"assumed_price":str(price)})
     after=_row(c,"SELECT qty FROM positions WHERE id=?",(p["id"],))
-    if _d(after["qty"])!=remain if remain>0 else Decimal(str(after["qty"]))!=0:
+    actual=Decimal(str(after["qty"]))
+    if not actual.is_finite() or actual!=remain:
         raise UnsafeRecovery("NATIVE_REMAINING_QUANTITY_MISMATCH")
     return {"status":"PAPER_NATIVE_RECONCILED","owner":owner,"position_id":p["id"],
             "receipt_count":len(results),"receipts":results,
