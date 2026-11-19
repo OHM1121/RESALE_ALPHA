@@ -41,6 +41,7 @@ class MAOriginalNativePaperSimulation(unittest.TestCase):
         detected=policy.upward_transition_on_forming(bars,114,5)
         self.assertEqual(detected["kind"],"REVERSAL_UP")
         details=dict(ma_v067_kind="REVERSAL_UP",ma_v061_kind="TURNPOINT",
+            source="UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK",
             ma_v067_bar_start="2026-11-18T09:25:00+09:00",
             ma_v067_submit_at=ENTRY.isoformat(),
             ma_v067_120_delta=detected["ma_120_delta"],
