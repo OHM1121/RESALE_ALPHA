@@ -949,9 +949,9 @@
       "issue": 98,
       "found": "0.0.13",
       "category": "SOURCE_AUDIT",
-      "title": "MA held-only coin quote may be absent or stale due to unpinned vendor ticker/book cohorts",
-      "evidence": "Issue #92 observed post-BUY verified ticker but no matching fresh bid; source held-only worker silently had no book. Exact device subscription failure not yet proven.",
-      "root": "INFERRED",
+      "title": "CFG native PAPER missing depth, silent SELL, and legacy attribution safeguards",
+      "evidence": "Confirmed existing silent native SELL/book gates and OLD-marker absence misattribution; missing depth during CFG observed, exact physical subscription transport failure inferred.",
+      "root": "CONFIRMED_IN_CODE_WITH_DEVICE_UNVERIFIED",
       "status": "SOURCE_FIXED",
       "fix_version": "0.0.14-source-candidate",
       "ci": "PENDING",
@@ -959,61 +959,19 @@
       "nodes": [
         "COIN_FEED",
         "COIN_MA",
-        "EXECUTION"
-      ],
-      "tests": [
-        "test_v014_cfg_native_sell_quote_regression.py",
-        "test_v002_eight_virtual_paper_end_to_end.py"
-      ],
-      "notes": "Held MA pinned ahead of ranked symbols in existing Upbit subscription API, without adding sockets or relaxing 3s depth freshness. Need phone WS evidence for definitive root cause."
-    },
-    {
-      "id": "AT-014-23",
-      "issue": 98,
-      "found": "0.0.13",
-      "category": "SILENT_FAILURE",
-      "title": "Native coin MA held exit misses book/depth and failed sell without durable rejection",
-      "evidence": "ma_v067_coin_runtime._process_v067_exits returned/broke without reason for stale/zero book, timeout and native SELL rejection.",
-      "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
-      "fix_version": "0.0.14-source-candidate",
-      "ci": "PENDING",
-      "device": "UNVERIFIED",
-      "nodes": [
-        "COIN_MA",
-        "COIN_FEED",
-        "EXECUTION"
-      ],
-      "tests": [
-        "test_v014_cfg_native_sell_quote_regression.py"
-      ],
-      "notes": "Throttle original private issue + original MA decision evidence per held symbol/gate. No synthetic fills. Continue checking stock AT/MA/Trend and coin AT/Trend silent exits."
-    },
-    {
-      "id": "AT-014-24",
-      "issue": 98,
-      "found": "0.0.13",
-      "category": "LEDGER_PROVENANCE",
-      "title": "Legacy purge treats missing NEW sidecar as old buy, regardless historical buy and sell conditions",
-      "evidence": "_old_positions returned all positions without recognized NEW sidecar as OLD; _select_safe verified receipts/cash but not historical rule attribution.",
-      "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
-      "fix_version": "0.0.14-source-candidate",
-      "ci": "PENDING",
-      "device": "UNVERIFIED",
-      "nodes": [
         "EXECUTION",
         "STOCK_AT",
         "STOCK_MA",
         "COIN_GENERAL",
-        "COIN_MA",
         "STOCK_TREND",
         "COIN_TREND"
       ],
       "tests": [
+        "test_v014_cfg_native_sell_quote_regression.py",
+        "test_v002_eight_virtual_paper_end_to_end.py",
         "test_v012_legacy_purge_and_holding_frame.py"
       ],
-      "notes": "Conservative explicit retired BUY policy + every historical SELL reason; unknown source remains PARTIAL. No user-phone deleted; earlier one-time DONE marker cannot prove actual cleanup or re-run. Proven invalid NEW PAPER exit cycle requires independent device proof before future scoped migration."
+      "notes": "Coin MA held tick+book inclusion, private rate-limited no-book/native-sell diagnostics, and explicit old-rule BUY/SELL evidence requirement before migration. Real device, broker and original CFG ledger remain UNVERIFIED. Additional related causes from earlier entries retained in issue #98."
     }
   ],
   "known_normal": [
