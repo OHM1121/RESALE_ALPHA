@@ -49,7 +49,7 @@ def _v014_exit_block(self, symbol, now, reason, details=None):
         self.write_issue('MA_V014_HELD_EXIT_BLOCK',
             str(symbol)+' '+str(reason)+' at='+stamp+
             ' evidence='+json.dumps(fields,ensure_ascii=False,default=str)[:350],
-            severity='WARNING')
+            severity='ERROR')
     except Exception:
         # Fall back to the separate original research decision journal.
         pass
