@@ -21,6 +21,7 @@ _INSTALLED = False
 _ORIGINAL_GUARD = None
 _ORIGINAL_QUEUE = None
 _ORIGINAL_LOOP = None
+_ORIGINAL_BOOT = None
 _PRIORITY_LOCK = RLock()
 _ALLOWED = frozenset(("5m", "30m", "60m", "day"))
 _RETRYABLE = frozenset((
@@ -29,6 +30,79 @@ _RETRYABLE = frozenset((
     "OFFICIAL_CACHED_OHLCV_CONFLICT", "OFFICIAL_REVISION_REQUIRES_REVIEW",
     "OFFICIAL_REVISION_PENDING_CONFIRMATION", "FRAME_NOT_CLOSED",
 ))
+
+
+def _freeze_symbol_loading_universe(runner):
+    """Capture the actual native KRX scan universe, never hardcode 459."""
+    with _PRIORITY_LOCK:
+        ready=getattr(runner,"_v017_loading_universe",None)
+        if ready is not None:
+            return ready
+        mapping=(getattr(runner,"krx_market_map",None) or
+                 getattr(runner,"market_map",None) or {})
+        if not mapping:
+            return frozenset()
+        ready=frozenset(str(code) for code in mapping
+                         if str(code).isdigit() and len(str(code))==6)
+        if ready:
+            runner._v017_loading_universe=ready
+            runner._v017_loading_completed=set()
+        return ready
+
+
+def _native_boot_recheck(self,clock):
+    # Only original native symbols and the original boot work queue.
+    # A reconnect keeps the same denominator, preventing backward jumps.
+    _freeze_symbol_loading_universe(self)
+    return _ORIGINAL_BOOT(self,clock)
+
+
+def _record_native_history_success(runner,code):
+    # Called ONLY after original recover_frame returns VERIFIED_RESTORED;
+    # no REST fetch, cache-based increment or fabricated completed symbol.
+    active=_freeze_symbol_loading_universe(runner)
+    if str(code) in active:
+        with _PRIORITY_LOCK:
+            runner._v017_loading_completed.add(str(code))
+
+
+def loading_snapshot(runner):
+    """Read-only count of unique fully authenticated history responses.
+
+    This is SYMBOLS LOADED, not an orderable quote or all-frame readiness gate.
+    No counter can exceed its fixed native universe.
+    """
+    if runner is None:
+        return {"done":0,"total":0,"source":"NATIVE_UNAVAILABLE"}
+    universe=_freeze_symbol_loading_universe(runner)
+    with _PRIORITY_LOCK:
+        completed=set(getattr(runner,"_v017_loading_completed",set()))
+    return {"done":len(universe & completed),"total":len(universe),
+            "source":"NATIVE_KIWOOM_VERIFIED_HISTORY_PER_SYMBOL" if universe
+                     else "NATIVE_UNIVERSE_NOT_READY"}
+
+
+def _pending_unverified_after_original_recovery(runner,code,tf):
+    """VERIFIED_RESTORED means candle work finished, not every BUY is cleared.
+
+    Never skip a second native audit merely because the frame-level status
+    returned successfully. A PENDING trade can still have BLOCKED audit.
+    """
+    if (str(code),str(tf)) not in _native_pending_priorities(runner):
+        return 0
+    try:
+        with runner.store.lock, runner.store.connect() as db:
+            return int(db.execute("""SELECT COUNT(*)
+                FROM v19_orders o
+                LEFT JOIN v19_higher_frame_audit14 a
+                ON a.signal_id=o.signal_id
+                WHERE o.code=? AND o.tf=? AND o.venue='KRX'
+                  AND o.status='PENDING'
+                  AND (a.state IS NULL OR a.state!='VERIFIED')""",
+                  (str(code),str(tf))).fetchone()[0])
+    except Exception:
+        # Unknown is NOT a verified buy: retry must be retained.
+        return -1
 
 
 def _retry(runner, key, seconds):
@@ -203,7 +277,24 @@ def _reliable_original_frame_loop(self):
             result=recover_frame(self.store,self.engine,self.api,code,tf)
             state=str(result.get("state") or "")
             if state=="VERIFIED_RESTORED":
-                self._frame_repair_retry.pop(key,None)
+                _record_native_history_success(self,code)
+                pending_unverified=_pending_unverified_after_original_recovery(
+                    self,code,tf)
+                if pending_unverified:
+                    # First repair can succeed while the exact PENDING signal
+                    # remains UNVERIFIABLE. Do not lose its future retries.
+                    _retry(self,key,90.0)
+                    try:
+                        self.store.issue("V017_PENDING_AUDIT_NOT_VERIFIED",
+                            "공식봉 복구 후 원본 매수대기 검증 미완료 · 자동 재시도",
+                            key="v017-pending:"+str(code)+":"+tf+":"+
+                                  now_kst().strftime("%Y%m%d%H"),
+                            details={"frame":tf,"unverified_count":pending_unverified,
+                                     "native_restored":True,
+                                     "no_buy_or_fill_inferred":True})
+                    except Exception:pass
+                else:
+                    self._frame_repair_retry.pop(key,None)
                 if result.get("new_pending") or result.get("expired_pending"):
                     self._ledger_changed()
                 if result.get("selected"):
@@ -266,7 +357,7 @@ def _reliable_original_frame_loop(self):
 
 
 def install():
-    global _INSTALLED, _ORIGINAL_GUARD, _ORIGINAL_QUEUE, _ORIGINAL_LOOP
+    global _INSTALLED, _ORIGINAL_GUARD, _ORIGINAL_QUEUE, _ORIGINAL_LOOP, _ORIGINAL_BOOT
     if _INSTALLED:
         return
     import d_live
@@ -275,7 +366,9 @@ def install():
     _ORIGINAL_GUARD = native.guard_missing_live_parent
     _ORIGINAL_QUEUE = runner._queue_frame_repair
     _ORIGINAL_LOOP = runner._frame_repair_loop
+    _ORIGINAL_BOOT = runner._queue_boot_historical_frame_recheck
     native.guard_missing_live_parent = _guard_after_verified_native_parent
     runner._queue_frame_repair = _prioritized_queue
+    runner._queue_boot_historical_frame_recheck = _native_boot_recheck
     runner._frame_repair_loop = _reliable_original_frame_loop
     _INSTALLED = True
