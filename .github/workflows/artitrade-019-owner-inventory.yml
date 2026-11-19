@@ -28,3 +28,21 @@ jobs:
               z.extractall("/tmp/artitrade-v019-native")
           PY
           python3 ARTITRADE_ANDROID/ui_tests/audit_v019_native_owner.py
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("/tmp/artitrade-v019-native")
+          targets={
+            "d_v19_portfolio.py":[(1384,1435)],
+            "d_upbit.py":[(708,745),(2090,2135)],
+            "stock_ma_engine.py":[(130,153),(268,282)],
+            "at_close_engine.py":[(185,210)],
+            "projectgmo/engine.py":[(533,608)],
+            "d_gmo_runtime.py":[(1100,1160)],
+          }
+          for name,ranges in targets.items():
+              ls=(root/name).read_text("utf8").splitlines()
+              for a,b in ranges:
+                  print("SOURCE",name,a,b)
+                  for i in range(a-1,min(b,len(ls))):
+                      print("  %04d:"%(i+1),ls[i])
+          PY
