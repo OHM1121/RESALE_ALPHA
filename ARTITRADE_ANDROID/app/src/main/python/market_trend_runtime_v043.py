@@ -263,10 +263,13 @@ class Coordinator:
                     "mode":self.mode(market),"score":self.scores.get(market)}
 
     def active_symbol(self,market,code):
-        return (any(p.market==market and p.symbol==code and p.qty>0
-                    for p in tuple(self._positions.values())) or
-                self.wallet.trend_owned(market,code) or
-                self.standalone_wallet.owned(market,code))
+        # A fresh quote can update positions concurrently with a different
+        # strategy's BUY guard. Snapshot only ownership under the same lock.
+        with self.lock:
+            held=any(p.market==market and p.symbol==code and p.qty>0
+                     for p in tuple(self._positions.values()))
+        return (held or self.wallet.trend_owned(market,code)
+                or self.standalone_wallet.owned(market,code))
 
     def _start_score_worker(self):
         from market_research_v033 import offer_records
@@ -640,17 +643,23 @@ class Coordinator:
         for key,rows in histories:
             _,code,frame=key
             if len(rows)<21:continue
+            # Both stock/coin strategy workers may register BUYs in
+            # parallel. Copy the ownership registries under ONE lock before
+            # iterating; never hold it across SQLite/REST/PAPER fills.
+            with self.lock:
+                owned_snapshot=tuple(self._positions.values())
+                virtual_snapshot=tuple(self._virtual.items())
             # Candidate history can remain cached for minutes. Avoid 400
             # unnecessary file transactions per scheduling cycle.
             if (self._last_closed.get(key)==max(x["end"] for x in rows)
                 and not any(p.market==market and p.symbol==code and
                             p.frame==frame and (not p.__dict__.get("bar_finalized")
                                 or p.last_closed_bar!=rows[-1]["end"].isoformat())
-                            for p in self._positions.values())
+                            for p in owned_snapshot)
                 and not any(v.market==market and v.symbol==code and v.frame==frame
                             and (not v.__dict__.get("bar_finalized")
                                 or v.last_closed_bar!=rows[-1]["end"].isoformat())
-                            for v in self._virtual.values())):
+                            for _,v in virtual_snapshot)):
                 continue
             rows=sorted(rows,key=lambda x:x["end"])
             last=self._last_closed.get(key)
@@ -666,7 +675,7 @@ class Coordinator:
                 self.journal.save_latch(market,code,frame,latch)
                 self._last_closed[key]=row["end"]
 
-            held=[p for p in tuple(self._positions.values())
+            held=[p for p in owned_snapshot
                   if p.market==market and p.symbol==code and
                      p.frame==frame and p.qty>0]
             for p in held:
@@ -697,7 +706,7 @@ class Coordinator:
                 if changed:
                     if p.strategy=='trend':self.standalone_wallet.save_position(p)
                     else:self.journal.save_position(p,p.position_id)
-            for virtual_key,v in tuple(self._virtual.items()):
+            for virtual_key,v in virtual_snapshot:
                 if v.market!=market or v.symbol!=code or v.frame!=frame:
                     continue
                 virtual_changed=False
@@ -940,7 +949,8 @@ class Coordinator:
                     market,frame,code,name,verified["ask"],
                     verified["ask_size"],at,barid,signal["rsi20_closed"])
                 if p is not None:
-                    self._positions[(market,"trend",frame,code)]=p
+                    with self.lock:
+                        self._positions[(market,"trend",frame,code)]=p
                     result=p
             except Exception as exc:
                 disposition="UNSAFE:"+type(exc).__name__
@@ -978,14 +988,19 @@ class Coordinator:
                     v=mt.TrendPosition(
                         market,"trend",frame,code,at,verified["ask"],1,barid)
                     vkey=(market,"trend",frame,code,barid)
-                    self._virtual[vkey]=v
+                    with self.lock:
+                        self._virtual[vkey]=v
                     self.journal.save_virtual(
                         json.dumps(vkey,ensure_ascii=False),v)
                 except (ValueError,TypeError):
                     pass
 
     def _process_holds(self,market,now):
-        for key,p in list(self._positions.items()):
+        # Snapshot under the same ownership lock used by all BUY writers.
+        # Do not hold it while executing the native wallet/SQLite SELL.
+        with self.lock:
+            held_snapshot=list(self._positions.items())
+        for key,p in held_snapshot:
             if p.market!=market or p.qty<=0:continue
             q=self._quote(market,p.symbol)
             if q is None:continue
@@ -1027,7 +1042,10 @@ class Coordinator:
                                 self.standalone_wallet.save_position(p)
                                 self.journal.record_stop_fill(p.market,p.symbol,now)
                             else:self.journal.save_position(p,p.position_id)
-                        if p.qty<=0:self._positions.pop(key,None)
+                        if p.qty<=0:
+                            with self.lock:
+                                if self._positions.get(key) is p:
+                                    self._positions.pop(key,None)
                 except Exception as exc:
                     self._last_fetch_error[market]="SELL:"+type(exc).__name__
             else:
@@ -1039,7 +1057,9 @@ class Coordinator:
                     if p.strategy=='trend':self.standalone_wallet.save_position(p)
                     else:self.journal.save_position(p,p.position_id)
                     self._position_snapshot_at[key]=now_mono
-        for key,v in list(self._virtual.items()):
+        with self.lock:
+            virtual_snapshot=list(self._virtual.items())
+        for key,v in virtual_snapshot:
             if v.market!=market:continue
             q=self._quote(market,v.symbol)
             if q is None:continue
@@ -1061,7 +1081,10 @@ class Coordinator:
                v.market,v.strategy,v.frame,v.symbol,"VIRTUAL",action[0],price=q["bid"],
                qty=amount,payload={"hypothetical_entry":v.entry,
                                    "hypothetical_pct":100*(q["bid"]/v.entry-1)})
-            if v.qty<=0:self._virtual.pop(key,None)
+            if v.qty<=0:
+                with self.lock:
+                    if self._virtual.get(key) is v:
+                        self._virtual.pop(key,None)
 
     def _loop(self,market):
         while not self.stop_event.is_set():
@@ -1689,7 +1712,9 @@ def install(core):
         rt=getattr(core,"_RUNTIME",None)
         co=getattr(rt,"market_trend",None) if rt else None
         if co is not None:
-            for p in tuple(co._positions.values()):
+            with co.lock:
+                current=tuple(co._positions.values())
+            for p in current:
                 if p.market!="stock" or p.qty<=0:continue
                 identity=(self.market_map or {}).get(p.symbol)
                 if identity is None:
@@ -1738,19 +1763,33 @@ def install(core):
 
     original_start=core.Runtime.start
     def runtime_start(self):
-        self.market_trend=Coordinator(self)
-        result=original_start(self)
-        # The original core init installs the MA connection proxy. Wrap the
-        # effective connector only after that setup, not its earlier source.
-        if not hasattr(stock_ma_engine,"_mt43_connect"):
-            stock_ma_engine._mt43_connect=stock_ma_engine._connect
-            @contextlib.contextmanager
-            def gated_connect(*a,**kw):
-                with stock_ma_engine._mt43_connect(*a,**kw) as raw:
-                    yield _NoBuyConnection(raw)
-            stock_ma_engine._connect=gated_connect
-        self.market_trend.start()
-        return result
+        # core.Runtime.start() is idempotent. All outer decorators MUST
+        # preserve that contract or a second start silently replaces an
+        # active Coordinator (and its 14+ quote/score worker threads).
+        if getattr(self,"started",False):
+            return original_start(self)
+        previous=getattr(self,"market_trend",None)
+        if previous is not None:
+            previous.stop()
+        coordinator=Coordinator(self)
+        self.market_trend=coordinator
+        try:
+            result=original_start(self)
+            # The original core init installs the MA connection proxy. Wrap
+            # the effective connector only after that setup.
+            if not hasattr(stock_ma_engine,"_mt43_connect"):
+                stock_ma_engine._mt43_connect=stock_ma_engine._connect
+                @contextlib.contextmanager
+                def gated_connect(*a,**kw):
+                    with stock_ma_engine._mt43_connect(*a,**kw) as raw:
+                        yield _NoBuyConnection(raw)
+                stock_ma_engine._connect=gated_connect
+            coordinator.start()
+            return result
+        except Exception:
+            coordinator.stop()
+            self.market_trend=None
+            raise
     core.Runtime.start=runtime_start
 
     original_stop=core.Runtime.stop

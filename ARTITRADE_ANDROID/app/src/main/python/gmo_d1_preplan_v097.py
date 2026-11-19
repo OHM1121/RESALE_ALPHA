@@ -29,7 +29,11 @@ def _stamp(raw):
         return None
 
 def _verified(tick,clock):
-    if len(tick)<9 or tick[7] not in ("NXT","KRX"):
+    # GMO runs on the ONE Kiwoom shared 0B dispatcher. A malformed value
+    # from a partial/out-of-order frame must not raise into the dispatcher
+    # and starve unrelated AT/CW/MA/Trend tick processing.
+    if (not isinstance(tick,(tuple,list)) or len(tick)<9
+            or tick[7] not in ("NXT","KRX")):
         return None
     t=_stamp(tick[6])
     if t is None or not -.5<=(clock-t).total_seconds()<=3:
@@ -37,7 +41,12 @@ def _verified(tick,clock):
     from d_minute_repair_fast import exchange_stamp_is_fresh
     if not exchange_stamp_is_fresh(tick[8],tick[6]):
         return None
-    if str(tick[0]).strip()=="" or float(tick[4])<=0 or float(tick[5])<=0:
+    try:
+        price=float(tick[4]);volume=float(tick[5])
+    except (TypeError,ValueError,OverflowError):
+        return None
+    if (not str(tick[0]).strip() or not math.isfinite(price)
+            or not math.isfinite(volume) or price<=0 or volume<=0):
         return None
     return t
 
@@ -527,21 +536,20 @@ def install(core):
         return out
 
     def subscriptions(self,at=None):
+        # V097 formerly replaced EVERY other strategy's shared Kiwoom 0B/0D
+        # subscriptions with GMO-only names during the 07:58 NXT prewarm.
+        # V093 is the SOLE venue/entitlement/priority selector for all five
+        # strategies, but its ordinary NXT clock opens at 08:00 and would
+        # return [] if called at 07:58. Prewarm the SAME original selector
+        # using the exact scheduled venue opening clock (never an executable
+        # trade timestamp). This preserves both early GMO pre-subscriptions
+        # AND AT/CW/MA/Trend/held exit pins within the hard 200-symbol cap.
         now=at or d_live.now_kst()
         p=getattr(self.gmo,"_v097_planner",None)
         if p is not None:p.runner=self
         if "075800"<=now.strftime("%H%M%S")<"080000":
-            codes=list(self.gmo.priority_watchlist(now))
-            eligible=[]
-            for code in codes:
-                ident=self.market_map.get(code)
-                if ident is None or ident[0] not in ("KOSPI","KOSDAQ"):
-                    continue
-                if d_live.is_etf_or_etn(ident[1]):
-                    continue
-                if self.nxt_snapshot.allows(code,now.strftime("%Y%m%d")):
-                    eligible.append(str(code)+"_NX")
-            return eligible[:200]
+            opening=now.replace(hour=8,minute=0,second=0,microsecond=0)
+            return original_subscriptions(self,opening)
         return original_subscriptions(self,at)
 
     def no_extra_topup(engine,q):

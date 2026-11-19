@@ -479,8 +479,21 @@ def install(core):
 
     original_start=core.Runtime.start
     def start(self):
-        self._v092_recovery=RecoveryObserver(self.root)
-        return original_start(self)
+        # A duplicate start is a NO-OP in the original Runtime. Keep the
+        # existing recovery observer and its lifecycle/quote evidence too.
+        if getattr(self,"started",False):
+            return original_start(self)
+        prior=getattr(self,"_v092_recovery",None)
+        if prior is not None:
+            prior.stopped()
+        observer=RecoveryObserver(self.root)
+        self._v092_recovery=observer
+        try:
+            return original_start(self)
+        except Exception:
+            observer.stopped()
+            self._v092_recovery=None
+            raise
     core.Runtime.start=start
 
     original_stop=core.Runtime.stop

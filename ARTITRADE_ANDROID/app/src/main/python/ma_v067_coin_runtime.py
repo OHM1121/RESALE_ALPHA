@@ -562,15 +562,32 @@ def install():
     def verified_or_fail_closed_range(f):
         if not isinstance(f,dict):
             return False
-        # v005: MA_BOOK_PROCESS_FAIL KeyError('high') persisted because
-        # records WITH ma_v061_kind were exempt from the OHLC check.
-        # Every source, including legacy candidates, must prove its own
-        # native high/low before invoking the unchanged price-range rule.
-        if 'high' not in f or 'low' not in f:
+        # MA TURNPOINT / sustained-bear candidates carry their OWN verified
+        # signal metadata, not the reference-bar high/low schema. V006
+        # accidentally required reference OHLC from all MA 5m candidates,
+        # blocking actual V079 MA orders and cancelling legitimate pending.
+        # Never apply the 2% reference-bar range rule to a proven MA origin.
+        kind=str(f.get('ma_v067_kind') or '')
+        legacy=str(f.get('ma_v061_kind') or '')
+        src=str(f.get('source') or '')
+        if kind=='REVERSAL_UP' and legacy=='TURNPOINT':
+            return bool(src=='UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK' and
+                        f.get('ma_v067_bar_start') and
+                        policy.number(f.get('ma_v067_120_delta')) is not None)
+        if kind=='REVERSAL_BEAR' and legacy=='DOWN_BEAR':
+            high=policy.number(f.get('ma_v067_high'))
+            low=policy.number(f.get('ma_v067_low'))
+            return bool(src=='UPBIT_MA_V067_SUSTAINED_ALIGNMENT' and
+                        high is not None and low is not None
+                        and 0<low<high)
+        if kind or legacy:
+            # Unknown/partial MA features are not executable proof.
             return False
+        # Legacy *reference* records still require their original range
+        # evidence; missing/bad fields fail closed without KeyError.
         hi=policy.number(f.get('high'))
         lo=policy.number(f.get('low'))
-        if hi is None or lo is None or hi<=0 or lo<=0 or hi<lo:
+        if hi is None or lo is None or hi<=0 or lo<=0 or hi<=lo:
             return False
         return previous_range(f)
     ma.MACoinLedger._enough_5m_range=staticmethod(verified_or_fail_closed_range)

@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
-  "working_branch": "release-artitrade-006-v005-errorfix-20261119",
+  "working_branch": "audit-artitrade-v007-all-strategies-antigravity-gemini-20261119",
   "last_review": "2026-11-19",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
@@ -282,6 +282,162 @@
         "test_v002_eight_virtual_paper_end_to_end.py"
       ],
       "notes": "No data reset, no automatic LIVE; exact installed signer required; actual phone fills unverified. Signed 0.0.6 APK + native/Java test pipeline verified 2026-11-19; on-device remains unverified."
+    },
+    {
+      "issue": 67,
+      "id": "AT-006-CROSS-01",
+      "title": "Coin MA V079 valid 5m UP signal wrongly subject to reference-bar OHLC",
+      "evidence": "v005 native SQLite 14 MA 5m positions; MA source feature schema has no reference high/low",
+      "root": "CONFIRMED_SOURCE_SCHEMA_CONFLATION",
+      "status": "SOURCE_FIXED",
+      "nodes": [
+        "COIN_MA",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "tests": [
+        "test_v008_all_strategy_rootcause.py"
+      ],
+      "notes": "Signal-specific verified origin proof for MA UP/BEAR, while reference OHLC 2% gate retained; previously issued 0.0.6 APK does not include this correction.",
+      "found": "0.0.6",
+      "category": "CROSS_STRATEGY_SOURCE_AUDIT",
+      "fix_version": "0.0.7-unreleased-source",
+      "ci": "V008_IN_PROGRESS",
+      "device": "UNVERIFIED"
+    },
+    {
+      "issue": 68,
+      "id": "AT-006-CROSS-02",
+      "title": "GMO 07:58 prewarm replaced shared 200 Kiwoom subscription owner",
+      "evidence": "gmo_d1_preplan_v097 and stock_priority_runtime_v093 source analysis",
+      "root": "CONFIRMED_SUBSCRIPTION_OWNER_BYPASS",
+      "status": "SOURCE_FIXED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "STOCK_CLOSE"
+      ],
+      "tests": [
+        "test_v008_all_strategy_rootcause.py",
+        "test_v093_strategy_subscription_priority.py"
+      ],
+      "notes": "Calls shared authorized ranking at actual opening clock for pre-registration; no prices/orders created.",
+      "found": "0.0.6",
+      "category": "CROSS_STRATEGY_SOURCE_AUDIT",
+      "fix_version": "0.0.7-unreleased-source",
+      "ci": "V008_IN_PROGRESS",
+      "device": "UNVERIFIED"
+    },
+    {
+      "issue": 69,
+      "id": "AT-006-CROSS-03",
+      "title": "CLOSE post-close research falsely marked due with stale/future last price",
+      "evidence": "at_close_runner._process_followups accepts late live as fallback without event timestamp proof",
+      "root": "CONFIRMED_ASOF_CONTRACT_GAP",
+      "status": "SOURCE_FIXED",
+      "nodes": [
+        "STOCK_CLOSE",
+        "POST_EXIT",
+        "AI_RESEARCH"
+      ],
+      "tests": [
+        "test_v008_all_strategy_rootcause.py",
+        "test_v075_gmo_cw_original_failure_audit.py"
+      ],
+      "notes": "Research-only verified same-day 3m as-of or near-due genuine quote. Not executable order evidence. Unverified on phone.",
+      "found": "0.0.6",
+      "category": "CROSS_STRATEGY_SOURCE_AUDIT",
+      "fix_version": "0.0.7-unreleased-source",
+      "ci": "V008_IN_PROGRESS",
+      "device": "UNVERIFIED"
+    },
+    {
+      "issue": 70,
+      "id": "AT-006-CROSS-04",
+      "title": "Duplicate Runtime.start replaces active Trend/PostExit/Recovery worker owners",
+      "evidence": "market_trend_runtime_v043.runtime_start and post_exit_runtime_v053/unified_recovery_v092 decorators",
+      "root": "CONFIRMED_IDEMPOTENCE_WRAPPER_BYPASS",
+      "status": "SOURCE_FIXED",
+      "nodes": [
+        "SERVICE",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "POST_EXIT"
+      ],
+      "tests": [
+        "test_v008_all_strategy_rootcause.py"
+      ],
+      "notes": "Preserved original idempotency contract; cleanup on restart only where appropriate.",
+      "found": "0.0.6",
+      "category": "CROSS_STRATEGY_SOURCE_AUDIT",
+      "fix_version": "0.0.7-unreleased-source",
+      "ci": "V008_IN_PROGRESS",
+      "device": "UNVERIFIED"
+    },
+    {
+      "issue": 71,
+      "id": "AT-006-CROSS-05",
+      "title": "AT higher-frame REST DNS failures logged but not scheduled for bounded retry",
+      "evidence": "v005 401 fix14_higher_frame_repair errors and original d_live._frame_repair_loop catch has no retry set",
+      "root": "PARTIAL_ENV_AND_EXCEPTION_RECOVERY",
+      "status": "OPEN_UNVERIFIED",
+      "nodes": [
+        "STOCK_FEED",
+        "STOCK_AT"
+      ],
+      "tests": [],
+      "notes": "Do not fabricate completed candles or hide DNS errors. Needs safe original native-core retry patch and environment observation.",
+      "found": "0.0.6",
+      "category": "CROSS_STRATEGY_SOURCE_AUDIT",
+      "fix_version": null,
+      "ci": "V008_IN_PROGRESS",
+      "device": "UNVERIFIED"
+    },
+    {
+      "issue": 72,
+      "id": "AT-006-CROSS-06",
+      "title": "Trend held/virtual dictionaries modified during concurrent stock/coin iteration",
+      "evidence": "source confirms some writers lacked Coordinator.lock while stock_priority_v093 readers assumed it",
+      "root": "CONFIRMED_SHARED_MEMORY_OWNERSHIP_GAP",
+      "status": "SOURCE_FIXED",
+      "nodes": [
+        "STOCK_TREND",
+        "COIN_TREND",
+        "STOCK_FEED"
+      ],
+      "tests": [
+        "test_v008_all_strategy_rootcause.py"
+      ],
+      "notes": "Short registry snapshot/assign/pop protected by Coordinator.lock, no lock held over broker/SQLite calls. Device race occurrence unverified.",
+      "found": "0.0.6",
+      "category": "CROSS_STRATEGY_SOURCE_AUDIT",
+      "fix_version": "0.0.7-unreleased-source",
+      "ci": "V008_IN_PROGRESS",
+      "device": "UNVERIFIED"
+    },
+    {
+      "issue": 73,
+      "id": "AT-006-LEGACY-01",
+      "title": "Old v067 MA expectations conflict with 11/18 strategy policies",
+      "evidence": "test_v067_ma_system.py eight expected-value failures reproduce on unmodified 0.0.6 baseline as well as v008",
+      "root": "LEGACY_TEST_EXPECTATION_DRIFT_UNRESOLVED",
+      "status": "OPEN_UNVERIFIED",
+      "nodes": [
+        "STOCK_MA",
+        "COIN_MA",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [],
+      "notes": "Do not overwrite original test expectations. Separate historical vs current NEW LEGACY 11.18 decision rules, tests and device evidence.",
+      "found": "0.0.6",
+      "category": "CROSS_STRATEGY_SOURCE_AUDIT",
+      "fix_version": null,
+      "ci": "V008_IN_PROGRESS",
+      "device": "UNVERIFIED"
     }
   ],
   "known_normal": [
@@ -346,5 +502,14 @@
     "device_verified": false,
     "live_broker_verified": false,
     "original_ledger_reset_performed": false
+  },
+  "pending_release": {
+    "name": "0.0.7-source-audit",
+    "versionCodeTarget": 129,
+    "apk_built": false,
+    "device_verified": false,
+    "baseline_apk": "0.0.6 (128)",
+    "source_status": "IN_PROGRESS",
+    "notes": "Do not silently replace 0.0.6 installed app; CI source tests are not order/fill proof."
   }
 }
