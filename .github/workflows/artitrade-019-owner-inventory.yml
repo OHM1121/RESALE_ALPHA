@@ -36,8 +36,8 @@ jobs:
             "d_upbit.py":[(708,745),(2090,2135),(696,708)],
             "stock_ma_engine.py":[(130,153),(268,282)],
             "at_close_engine.py":[(185,210)],
-            "projectgmo/engine.py":[(533,608)],
-            "d_gmo_runtime.py":[(1100,1160)],
+            "projectgmo/engine.py":[(118,140),(355,427),(428,533),(533,608),(700,743)],
+            "d_gmo_runtime.py":[(80,115),(289,314),(1100,1160)],
           }
           from pathlib import Path
           for source in root.rglob("*.py"):
