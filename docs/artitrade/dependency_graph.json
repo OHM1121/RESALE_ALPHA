@@ -1092,6 +1092,52 @@
         107
       ],
       "contract": "One ORIGINAL Upbit WS; held-first independent polling of new original orderbook at ~120ms best-effort, dedupe genuine timestamp/BID/depth, 3s max age, perform existing MA _process_v067_exits with original ledger, no fabricated fill from candle high or ASK. All native 8 wallet protections and single worker owner unchanged."
+    },
+    {
+      "id": "V019_EIGHT_OWNER_SOURCE_TARGET_DISPLAY",
+      "kind": "python+java readonly",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/staged_exit_preview_v019.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/position_uid_v015.py",
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_resting.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
+        "ARTITRADE_ANDROID/ui_tests/test_v019_native_exit_plan_readonly.py"
+      ],
+      "depends_on": [
+        "UI_RECORDS",
+        "POSITION_UID_V015",
+        "EXECUTION",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_MA",
+        "COIN_TREND",
+        "COIN_FEED",
+        "STOCK_FEED"
+      ],
+      "issues": [
+        109
+      ],
+      "contract": "Eight owner-specific original BUY target previews. For six NEW LEGACY wallets, read original per-position persisted native stages using SQLite read-only. GMO score-tier 20/40 and CW +1.2% full exit remain independent. Mark plans no broker submission and no inferred native SELL. Missing verified original quantity/position/stages fails closed; no wallet writes. Regression CI and device verification must be tracked separately."
+    },
+    {
+      "id": "V019_PAPER_EXIT_CHRONOLOGICAL_AUDIT_ONLY",
+      "kind": "python pure audit no ledger write",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/paper_exit_chronology_v019.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v019_paper_exit_chronology.py"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "POSITION_UID_V015",
+        "NL1118_REV1_VERIFIED_LOW_STOP_V018",
+        "MA_COIN_HELD_EXIT_PRIORITY_V018"
+      ],
+      "issues": [
+        109
+      ],
+      "contract": "Fail-closed PAPER-only chronology audit of source-linked native stop/force/expiry/trailing and original target events. Strict-overshoot ticks are shadow candidates only; equal touch needs book proof; OHLC cannot prove intrabar sequence; stop-first terminates position; no native SELL, cash, fees, or antirollback writes. Crucially historical atomic PAPER ledger catch-up remains NOT IMPLEMENTED and never DEVICE_VERIFIED."
     }
   ],
   "audit_scope": {
