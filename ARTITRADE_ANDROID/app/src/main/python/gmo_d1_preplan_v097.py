@@ -29,7 +29,11 @@ def _stamp(raw):
         return None
 
 def _verified(tick,clock):
-    if len(tick)<9 or tick[7] not in ("NXT","KRX"):
+    # GMO runs on the ONE Kiwoom shared 0B dispatcher. A malformed value
+    # from a partial/out-of-order frame must not raise into the dispatcher
+    # and starve unrelated AT/CW/MA/Trend tick processing.
+    if (not isinstance(tick,(tuple,list)) or len(tick)<9
+            or tick[7] not in ("NXT","KRX")):
         return None
     t=_stamp(tick[6])
     if t is None or not -.5<=(clock-t).total_seconds()<=3:
@@ -37,7 +41,12 @@ def _verified(tick,clock):
     from d_minute_repair_fast import exchange_stamp_is_fresh
     if not exchange_stamp_is_fresh(tick[8],tick[6]):
         return None
-    if str(tick[0]).strip()=="" or float(tick[4])<=0 or float(tick[5])<=0:
+    try:
+        price=float(tick[4]);volume=float(tick[5])
+    except (TypeError,ValueError,OverflowError):
+        return None
+    if (not str(tick[0]).strip() or not math.isfinite(price)
+            or not math.isfinite(volume) or price<=0 or volume<=0):
         return None
     return t
 
