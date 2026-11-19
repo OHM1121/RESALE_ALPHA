@@ -51,3 +51,17 @@ Static references are not equivalent to a validated real broker execution flow. 
   witness. Zero or multiple matches are SKIPPED; never bulk ticker deletion.
 - Both features require original native regression and Java CI; a GitHub CI
   pass does not prove phone-side migration ran or that any live fill exists.
+
+
+## 0.0.16 verified preflight visibility and Trend original value provenance
+- **PRELOAD_VERIFIED_V016**: original service startup + shared, existing
+  Kiwoom/Upbit WS → native preload_gate + KRX 0B/0D / Upbit ticker/book
+  + verified completed candle/RSI history → read-only 0.0.16 audit and
+  work-item counts → Android status/%/ETA. No new socket/order. 40s UI
+  escape leaves original background repair active and never declares ready.
+- **TREND_COST_PROVENANCE_V016**: original MT54 position.entry/entry_fee/mark,
+  exact native execution.position_id and SELL net_pnl → read-only snapshot
+  joined buy unit price/source cost/realized_pct, per-frame PnL → original
+  UID display enrichment and Java holdings/execution view. Saved stock mark
+  is labelled LAST SAVED NOT LIVE and never controls native SELL orders.
+  Original SQLite positions, funds, quantities and policy remain unchanged.
