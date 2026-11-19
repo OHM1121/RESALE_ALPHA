@@ -9,7 +9,7 @@ position or wallet. Original source is checked by the independent rollback
 guard before applying a signed one-time ledger migration.
 """
 from __future__ import annotations
-from collections import defaultdict
+from collections import defaultdict,Counter
 from decimal import Decimal, ROUND_HALF_UP
 import datetime as dt
 import hashlib
@@ -476,6 +476,8 @@ def _apply_one(path,kind,root):
                       (TAG,_clock(),len(removed),total_fills,0))
         return {"kind":kind,"removed":len(removed),
                 "fills":total_fills,"skipped":len(skipped)+int(orphan_count),
+                "skip_reasons":dict(Counter(reason for _,reason in skipped)),
+                "orphan_fills":int(orphan_count),
                 "fully_done":not bool(skipped or orphan_count)}
 
 def _digest(path):
