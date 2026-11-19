@@ -4,8 +4,10 @@ on:
     branches: [artitrade-016-preload-trend-ledger-20261119]
     paths:
       - ARTITRADE_ANDROID/app/src/main/**
+      - ARTITRADE_ANDROID/app/build.gradle
       - ARTITRADE_ANDROID/ui_tests/test_v016_global_position_uid_and_cfg_single.py
       - ARTITRADE_ANDROID/ui_tests/test_v016_preload_trend_ledger.py
+      - ARTITRADE_ANDROID/ui_tests/test_v081_both_feed_preload.py
       - ARTITRADE_ANDROID/ui_tests/test_v016_position_uid_cfg_single.py
       - docs/artitrade/**
       - AGENTS.md
@@ -58,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-015-original:$PWD/ARTITRADE_ANDROID/ui_tests"
-          for suite in test_v002_eight_virtual_paper_end_to_end.py test_v014_cfg_native_sell_quote_regression.py test_v012_legacy_purge_and_holding_frame.py test_v002_ledger_rollback_guard.py test_v013_stock_at_pending_to_native_buy.py test_v004_abnormal_reconnect_six.py test_v092_scenarios_8_wallets.py test_v089_fast_prices_rotation.py test_v006_trend_5m_retirement_and_startup.py; do
+          for suite in test_v002_eight_virtual_paper_end_to_end.py test_v014_cfg_native_sell_quote_regression.py test_v012_legacy_purge_and_holding_frame.py test_v002_ledger_rollback_guard.py test_v013_stock_at_pending_to_native_buy.py test_v004_abnormal_reconnect_six.py test_v092_scenarios_8_wallets.py test_v089_fast_prices_rotation.py test_v081_both_feed_preload.py test_v006_trend_5m_retirement_and_startup.py; do
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$suite" -v 2>&1 | tee -a /tmp/artitrade-v016-tests.log
           done
       - name: Verify dependency graph
