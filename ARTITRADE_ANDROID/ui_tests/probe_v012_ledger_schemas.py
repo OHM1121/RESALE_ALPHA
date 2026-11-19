@@ -29,6 +29,18 @@ def inspect(label,c):
                 json.dumps([dict(row) for row in c.execute(
                     'SELECT * FROM "'+name+'" LIMIT 8')],sort_keys=True,default=str),flush=True)
     print('V012_SCHEMA '+label+' '+json.dumps(found,ensure_ascii=True,sort_keys=True),flush=True)
+native_root=Path('/tmp/artitrade012_native')
+for name in ('d_engine.py','d_v19_portfolio.py','d_upbit.py','stock_ma_engine.py'):
+    f=native_root/name
+    if not f.is_file():continue
+    lines=f.read_text('utf8').splitlines()
+    idxs=[i for i,line in enumerate(lines) if (
+        'UPDATE v19_accounts' in line or 'UPDATE wallets' in line or
+        'UPDATE accounts' in line or 'realized_pnl=realized_pnl' in line or
+        'realized=realized' in line)]
+    for i in idxs[:20]:
+        print('V012_WALLET_ACCOUNT_SQL '+name+':'+str(i+1)+' '+json.dumps(
+            lines[max(0,i-8):min(len(lines),i+14)]),flush=True)
 with tempfile.TemporaryDirectory() as temp:
     root=Path(temp)
     stock=DStore(root/'stock')
