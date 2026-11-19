@@ -792,6 +792,81 @@
         "test_v009_forensic_krx_gmo_ma_dns.py"
       ],
       "notes": "Current 2026-11-19 KRX 10:00~16:30 only, future holidays need official calendar ingestion; no synthetic completed bars or after-close PAPER fills."
+    },
+    {
+      "id": "AT-010-16",
+      "issue": 92,
+      "found": "0.0.10-20261119-coin-original-ZIP",
+      "category": "PHONE_SQLITE_CONFIRMED",
+      "title": "CFG MA 5m tick crossed TP1 after buy, never sold; high-time confirmed by user; NEW LEGACY unplaced resting orders / 24h expiry",
+      "evidence": "Sanitized: 13:04:55 KST BUY 96.4; 13:06:40 verified ticker 98.5 versus TP1 98.328; 13:10:46 ticker 95; MA sidecar seen_above_entry false and no SELL, PAPER target descriptors only; user confirms 13:05-13:09 official 5m candle high 104.",
+      "root": "CONFIRMED_LOST_TICKER_RALLY_WITHOUT_CONTEMPORANEOUS_FRESH_BOOK_AND_PREPLACED_ORDER_NOT_IMPLEMENTED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.11-source-candidate",
+      "ci": "PENDING_GITHUB_ACTIONS_SIGNED_ALL_STRATEGY",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_MA",
+        "COIN_FEED",
+        "EXECUTION",
+        "NL1118_PAPER_RESTING_V011"
+      ],
+      "tests": [
+        "test_v011_new_legacy_resting_and_legacy_retirement.py",
+        "test_new_legacy_1118_workbook.py"
+      ],
+      "notes": "0.0.11 source preserves genuine ticker ascent and 48h MA 5m expiry, creates persistent two-target PAPER resting rows after native BUY and reconciles only true native PAPER SELL receipts. No physical broker LIMIT submitted; absent contemporaneous executable depth cannot prove missed actual sale. 104 official candle high is post-buy per user; target touched != broker fill."
+    },
+    {
+      "id": "AT-010-17",
+      "issue": 93,
+      "found": "0.0.10-20261119-stock-original-ZIP",
+      "category": "PHONE_SQLITE_CONFIRMED",
+      "title": "Stock non-GMO pending→native buy zero under incomplete KRX official parent and SQL history DB gate",
+      "evidence": "Sanitized: original AT wallet v19_orders count 105, original positions/executions zero, pending 5m reconnect audits 20, prior bars LIVE_PARENT_GAP, 166 DB gate warnings and long critical section wait; no fabricated broker BUY receipts.",
+      "root": "PARTIALLY_CONFIRMED_SHARED_SCHEDULER_QUOTE_STALENESS_AND_OFFICIAL_PARENT_GAP",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "",
+      "ci": "NOT_VERIFIED",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_FEED",
+        "EXECUTION",
+        "MA_TICK_QUEUE"
+      ],
+      "tests": [
+        "test_v108_native_ma_trend_entry_paths.py"
+      ],
+      "notes": "NEW LEGACY entry candidate gating updated; shared KRX feed/history/DB contention systemic fix and actual phone execution still require independent E2E verification. GMO/CW policy excluded as user instructed."
+    },
+    {
+      "id": "AT-010-18",
+      "issue": 94,
+      "found": "0.0.10-20261119-workbook-and-original-ledgers",
+      "category": "USER_WORKBOOK_ORIGINAL_POLICY",
+      "title": "Only NEW LEGACY(11.18) may auto-trade AT/MA/Trend; GMO and CW retain their own strategies",
+      "evidence": "Original single-sheet XLSX C5:H7 and C11 read including comments; coin base historical V2.6/SR1 SELLs at 2026-11-18~19 from unplanned old holdings; caller forbids any future old automatic route except GMO/CW. C11 pre-place 30%/35% target sell orders at entry.",
+      "root": "CONFIRMED_FALLBACK_TO_NATIVE_OLD_EXIT_ON_MISSING_SIDECAR_AND_OLD_MA_ENTRY_SIGNALS",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.11-source-candidate",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_MA",
+        "EXECUTION",
+        "NL1118_PAPER_RESTING_V011",
+        "NL1118_OLD_POLICY_RETIRE_V011"
+      ],
+      "tests": [
+        "test_v011_new_legacy_resting_and_legacy_retirement.py",
+        "test_new_legacy_1118_workbook.py",
+        "test_v002_eight_virtual_paper_end_to_end.py"
+      ],
+      "notes": "Old automatic fallback paths blocked and old MA bearish/next-bar candidate retired; existing old portfolio records preserved and unplanned holdings fail closed pending audited migration. New PAPER resting targets are local SQLite orders, not live broker orders. NEW LEGACY full policy and physical phone verification still open, especially original broker resting/day-rollover implementation."
     }
   ],
   "known_normal": [
