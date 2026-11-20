@@ -25,7 +25,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
-SCHEMA = "ARTITRADE_AT_PENDING_STALL_AUDIT_V1"
+SCHEMA = "ARTITRADE_AT_PENDING_STALL_AUDIT_V2"
+# Per-symbol budget = timeframe seed / max positions (user configurable in the
+# app). These are the engine defaults; override with --caps when yours differ.
+DEFAULT_CAPS = {"5m": 200_000, "30m": 200_000, "60m": 250_000, "day": 500_000}
+REASON_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,80}$")
 TIMEFRAMES = ("5m", "30m", "60m", "day")
 AGE_BUCKETS = (("lt_1h", 3600), ("lt_6h", 6 * 3600), ("lt_1d", 86400),
                ("lt_3d", 3 * 86400), ("ge_3d", None))
@@ -94,17 +98,30 @@ def _latest_reference_time(conn) -> dt.datetime | None:
     return best
 
 
-def audit(path, now: dt.datetime | None = None, window_hours: int = 24) -> dict:
+def _reason_code(detail) -> str | None:
+    """Pull ONLY the machine reason code out of an event detail JSON."""
+    try:
+        data = json.loads(detail) if isinstance(detail, str) else detail
+        reason = str(data.get("reason", "")) if isinstance(data, dict) else ""
+    except (ValueError, TypeError):
+        return None
+    return reason if REASON_RE.match(reason) else None
+
+
+def audit(path, now: dt.datetime | None = None, window_hours: int = 24,
+          caps: dict | None = None) -> dict:
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError("database file not found")
+    caps = dict(DEFAULT_CAPS if caps is None else caps)
     conn = _connect(path)
     try:
         reference = now or _latest_reference_time(conn)
         report: dict = {"schema": SCHEMA, "read_only": True,
                         "contains_symbols_prices_or_messages": False,
                         "reference_time_known": reference is not None,
-                        "window_hours": window_hours}
+                        "window_hours": window_hours,
+                        "per_symbol_caps_assumed": caps}
 
         # 1. Orders ---------------------------------------------------------
         if _has(conn, "v19_orders"):
@@ -124,6 +141,14 @@ def audit(path, now: dt.datetime | None = None, window_hours: int = 24) -> dict:
             report["pending_age_buckets_by_tf"] = ages
             report["pending_age_unknown"] = unknown_age
             report["pending_total"] = len(pending)
+            # A pending order whose limit price is above the per-symbol budget
+            # is rejected by the engine as BELOW_ONE_SHARE on every touch.
+            over: dict = {}
+            for r in conn.execute("SELECT tf,limit_won FROM v19_orders WHERE status='PENDING'"):
+                cap = caps.get(r["tf"])
+                if cap is not None and int(r["limit_won"] or 0) > int(cap):
+                    over[r["tf"]] = over.get(r["tf"], 0) + 1
+            report["pending_above_per_symbol_cap_by_tf"] = over
         else:
             report["orders_by_status_tf"] = ABSENT
             report["pending_total"] = ABSENT
@@ -165,6 +190,14 @@ def audit(path, now: dt.datetime | None = None, window_hours: int = 24) -> dict:
                     recent[name] = recent.get(name, 0) + 1
             top = lambda d: dict(sorted(d.items(), key=lambda kv: -kv[1])[:20])
             report["events_all_time_top"] = top(total)
+            # Why a touched limit was NOT bought: the engine writes the exact
+            # rejected stage into the event detail. Reason codes only.
+            touch: dict = {}
+            for r in conn.execute("SELECT detail FROM v19_events "
+                                  "WHERE event='LIMIT_TOUCH_NOT_BOUGHT_FIX6'"):
+                code = _reason_code(r["detail"]) or "REASON_UNPARSEABLE"
+                touch[code] = touch.get(code, 0) + 1
+            report["limit_touch_not_bought_reasons"] = top(touch)
             report["events_recent_window_top"] = top(recent) if cutoff else "REFERENCE_TIME_UNKNOWN"
         else:
             report["events_all_time_top"] = ABSENT
@@ -225,6 +258,15 @@ def _hints(report: dict) -> list:
     if pending and blocked:
         hints.append("PARENT_CONTINUITY_BLOCKS_PRESENT: higher-frame audit BLOCKED=%d "
                      "(official parent bars unproven; compare with feed errors below)" % blocked)
+    over = report.get("pending_above_per_symbol_cap_by_tf")
+    if pending and isinstance(over, dict) and sum(over.values()):
+        hints.append("UNAFFORDABLE_PENDING_PRESENT: %d of %d pending orders have a limit price above the "
+                     "per-symbol budget and can never fill (assumed caps in report)"
+                     % (sum(over.values()), pending))
+    reasons = report.get("limit_touch_not_bought_reasons")
+    if isinstance(reasons, dict) and reasons:
+        lead = next(iter(reasons))
+        hints.append("TOUCH_REJECT_TOP_REASON: %s (%d events)" % (lead, reasons[lead]))
     events = report.get("events_all_time_top")
     if isinstance(events, dict):
         touch = sum(v for k, v in events.items() if "LIMIT_TOUCH_NOT_BOUGHT" in k)
@@ -251,13 +293,18 @@ def main(argv=None) -> int:
     parser.add_argument("database", help="copy of the exported stock AT SQLite (opened read-only)")
     parser.add_argument("--now", help="reference time YYYYMMDDHHMMSS (default: newest row in the file)")
     parser.add_argument("--window-hours", type=int, default=24)
+    parser.add_argument("--caps", help="per-symbol budget per timeframe, e.g. "
+                        "5m=200000,30m=200000,60m=250000,day=500000 (default: engine defaults)")
     args = parser.parse_args(argv)
     now = _stamp(args.now) if args.now else None
     if args.now and now is None:
         parser.error("--now must look like YYYYMMDDHHMMSS")
     try:
-        result = audit(args.database, now, args.window_hours)
-    except (OSError, sqlite3.DatabaseError) as error:
+        caps = None
+        if args.caps:
+            caps = {k: int(v) for k, v in (x.split("=") for x in args.caps.split(","))}
+        result = audit(args.database, now, args.window_hours, caps)
+    except (OSError, ValueError, sqlite3.DatabaseError) as error:
         print(json.dumps({"schema": SCHEMA, "ok": False, "error": type(error).__name__}))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

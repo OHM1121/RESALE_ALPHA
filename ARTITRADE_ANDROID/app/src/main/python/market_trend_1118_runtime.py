@@ -1,4 +1,9 @@
-"""11/18 RSI20 watch 24h + verified Bollinger MID-touch MarketTrend.
+"""RSI20 watch 24h + completed-bar close above Bollinger MIDDLE MarketTrend.
+
+11.20 workbook (supersedes the 11.19 "live price reaches MIDDLE" trigger):
+condition 2 is Bollinger(20,1.5) MIDDLE slope strictly in (-15,+20) degrees
+AND the just-COMPLETED bar closed above the MIDDLE. Condition 1 (RSI20<=30
+watch, 24h) is unchanged.
 
 This replaces the earlier closed-RSI-first-10/next-open-10sec BUY worker,
 NOT the native exchange quote validation, TrendWallet ledger, 0B/0D, FOK,
@@ -17,7 +22,7 @@ import time
 import market_trend_v043 as mt
 from new_legacy_1118_policy import (
     POLICY,TREND_FRAMES,RSI_TRACK_HOURS,bollinger,
-    actual_middle_touch,targets,holding_deadline)
+    closed_bar_entry_condition,TREND_ENTRY_RULE_1120,targets,holding_deadline)
 
 _INSTALLED=False
 _KST=mt.KST
@@ -247,10 +252,15 @@ def _entry_window(self,market,now):
                     not isinstance(evidence.get("rsi20"),(int,float)) or
                     evidence["rsi20"]>30):
                 continue
-            condition=bollinger(closes[-20:]+[trade])
-            if condition is None or not condition["angle_allowed"]:continue
-            if previous is None or not actual_middle_touch(
-                    previous,trade,condition["middle"]):continue
+            # 11.20: decided on COMPLETED bars only. The forming price never
+            # enters Bollinger; a bar that ended before the RSI watch began
+            # is not "the bar at that time".
+            try:
+                watch_started=dt.datetime.fromisoformat(old["observed_at"])
+            except (KeyError,TypeError,ValueError):continue
+            condition=closed_bar_entry_condition(
+                closes,closed[-1]["end"],watch_started)
+            if condition is None:continue
             if not (now<dt.datetime.fromisoformat(old["expires_at"])):continue
             choices.append((frame,rsi,condition,old))
         if choices:
@@ -288,7 +298,7 @@ def _entry_window(self,market,now):
                 observed_tick!=(trade,self._nl1118_quote_stamps.get((market,code))) or
                 time.monotonic()-observed_tick[1]>(10 if market=="coin" else 3) or
                 not boll["angle_allowed"] or
-                not actual_middle_touch(previous,trade,boll["middle"])):
+                boll.get("close_above_middle") is not True):
             continue
         finish=__import__("market_trend_runtime_v043")._end_clock(at,market,frame)
         if finish is None:continue
@@ -317,6 +327,7 @@ def _entry_window(self,market,now):
                      "rsi_at_buy":rsi,"bollinger":boll,
                       "rsi_watch_evidence":watch.get("evidence"),
                      "top50":True,"verified_trade":trade,
+                     "entry_rule":TREND_ENTRY_RULE_1120,
                      "native_wallet":"TrendWalletV054",
                      "original_fill_mode":position.execution_mode})
 
@@ -416,7 +427,10 @@ def install():
             p.nl1118_policy=POLICY
             p.nl1118_sell_intents=d["sell_intents"]
             p.nl1118_stop=p.entry*.85
+            # Kept EXACTLY: legacy_purge_v012 identifies protected NEW LEGACY
+            # positions by this value. The 11.20 rule is recorded separately.
             p.entry_signal_policy="NL1118_RSI20_24H_BOLL_20_1_5"
+            p.entry_rule=TREND_ENTRY_RULE_1120
             p.bar_finalized=True
             self.save_position(p)
             # Two durable, independent PAPER resting sell orders immediately

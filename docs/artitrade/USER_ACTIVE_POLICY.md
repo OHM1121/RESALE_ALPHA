@@ -191,3 +191,12 @@ a new instruction appears different. Cross-check original
 - No changes to the original trend 30m/60m/day entry rules, original broker
   live/PAPER fill ownership, GMO/CW wallets or cash accounting; old Trend 5m
   entry remains retired, and legacy held 5m SELL recovery stays available.
+
+## 2026-11-20: MarketTrend entry condition 2 superseded by workbook sheet `11.20` (issue #114)
+- **Source:** user-provided `NEW LEGACY(11.18)_rev1.xlsx`, sheets `11.19` vs `11.20`. The only red-marked change is the stock+coin MarketTrend second buy condition. The workbook file itself is not stored in this public repository.
+- **Superseded (kept above, dated 2026-11-18):** Bollinger(20,1.5) MIDDLE slope strictly (-20,+30) degrees and a genuine live price reaching the MIDDLE line.
+- **Now active:** slope strictly (-15,+20) degrees AND the just-COMPLETED bar closes strictly ABOVE the Bollinger MIDDLE. RSI20<=30 watch (24h), 30m/60m/day only, TOP50 candidates, -15% hard stop, holding periods and every sell rule are unchanged. GMO/CW/AT/MA are not affected.
+- **Scope:** stock and coin MarketTrend, new BUYs only. Existing holdings keep their exits. `entry_signal_policy` stays `NL1118_RSI20_24H_BOLL_20_1_5` (the purge guard identifies protected NEW LEGACY positions by it); the new rule is recorded as `entry_rule=NL1120_BAR_CLOSE_ABOVE_BOLL_MID`.
+- **Interpretation recorded as an assumption (INFERRED):** "the bar formed at that time closes above the MIDDLE" = a completed bar; only bars that ended after the RSI watch began qualify; equality is not "above"; the signal is valid right after that bar and the BUY still needs a fresh verified quote/book, fees, slot and wallet fill. Ask the user to confirm if the intended reading is the forming bar's current price instead.
+- **Observed but NOT applied:** in the MA cell the sentence "remove the older five-MA-down / long-bearish-bar trades; only case 1 is the MA strategy" disappeared in `11.20`. It is not red-marked and was already in force, so MA behaviour is unchanged.
+- **Verification:** SOURCE_FIXED + local regression only (`test_nl1120_trend_close_above_mid.py`); not CI, not device.

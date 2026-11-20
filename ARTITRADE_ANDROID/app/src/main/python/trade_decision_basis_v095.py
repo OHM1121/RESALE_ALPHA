@@ -146,9 +146,17 @@ def _trend_entry(pos,fill,frame):
     rsi=_num(p.get('rsi20_live'))
     if rsi is None or not str(fill['reason'] or '').startswith('MARKET_TREND_RSI20_BUY'):
         return None,None,{}
-    if str(p.get('entry_signal_policy') or '').startswith('NL1118_'):
-        # Workbook source. RSI watch lasted <=24h, Bollinger MID 20/1.5
-        # slope strictly (-20,+30) and genuine exchange ticker crossed MID.
+    if (str(p.get('entry_signal_policy') or '').startswith('NL1118_') and
+            p.get('entry_rule')=='NL1120_BAR_CLOSE_ABOVE_BOLL_MID'):
+        # 11.20 workbook: RSI watch <=24h, Bollinger MID 20/1.5 slope strictly
+        # (-15,+20) and the COMPLETED signal bar closed above the MID.
+        reason=(FRAMES.get(frame,frame)+' 급락 전환봉: Wilder RSI(20) '
+                +_price(rsi)+' (30 이하 관측 후 최대 24시간 추적), '
+                '볼린저밴드(20,1.5) 중앙선 기울기 -15° 초과/+20° 미만, '
+                '확정된 봉의 종가가 중앙선 위에서 형성되어 검증된 PAPER 매수')
+    elif str(p.get('entry_signal_policy') or '').startswith('NL1118_'):
+        # Positions bought under the 11.19 rule keep their original evidence:
+        # slope strictly (-20,+30) and a genuine exchange print crossed MID.
         reason=(FRAMES.get(frame,frame)+' 급락 전환봉: Wilder RSI(20) '
                 +_price(rsi)+' (30 이하 관측 후 최대 24시간 추적), '
                 '볼린저밴드(20,1.5) 중앙선 기울기 -20° 초과/+30° 미만, '

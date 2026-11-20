@@ -14,6 +14,8 @@ on:
       - 'ARTITRADE_ANDROID/app/build.gradle'
       - 'ARTITRADE_ANDROID/ui_tests/test_at_pending_stall_audit.py'
       - 'tools/artitrade/at_pending_stall_audit.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_nl1120_trend_close_above_mid.py'
       - '.github/workflows/artitrade-service-monitor-tests.yml'
 permissions:
   contents: read
@@ -35,6 +37,7 @@ jobs:
           (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_v089_verified_exits_ma.ManualAndErrorProvenance -v)
           (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_release_packaging_contract -v)
           (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_at_pending_stall_audit -v)
+          (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_nl1120_trend_close_above_mid.PolicyConstantsAndPureRule -v)
       - name: JVM behaviour tests (org.json 20240303 from Maven Central)
         run: |
           set -euo pipefail

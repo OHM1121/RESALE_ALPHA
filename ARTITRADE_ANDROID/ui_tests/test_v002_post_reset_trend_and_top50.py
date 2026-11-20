@@ -47,59 +47,57 @@ class _Journal:
 
 class NewLegacyV002RestoredBuy(unittest.TestCase):
     def test_independent_trend_buy_not_blocked_by_original_at_ma_mode(self):
+        """Intent unchanged: native ORIGINAL mode must not veto MarketTrend.
+
+        Updated for the 11.20 workbook (explicit user supersession): the BUY
+        trigger is now the COMPLETED bar closing above the Bollinger MIDDLE
+        with slope in (-15,+20), not a live price crossing the MIDDLE. See
+        test_nl1120_trend_close_above_mid.py for the full rule matrix.
+        """
         with tempfile.TemporaryDirectory() as root:
-            now = dt.datetime(2026,11,18,10,5,0,tzinfo=mt.KST)
-            end = now.replace(minute=0,second=0,microsecond=0)
-            bars = [{"close":120.0-0.05*i,
-                     "end":end-dt.timedelta(minutes=(20-i)*30),
-                     "source":"UPBIT_CLOSED"} for i in range(21)]
-            # This is the ORIGINAL-mode routing test, not a steep visual
-            # Bollinger slope test. Make the source 21-bar price viewport
-            # broad while retaining the same midline and 120->118 crossover:
-            # the new executable -20..+30 visual-angle limit must ALSO pass.
-            bars[5]["close"]=110.0
-            bars[6]["close"]=129.45
+            t1 = dt.datetime(2026,11,18,10,5,0,tzinfo=mt.KST)
+            t2 = dt.datetime(2026,11,18,10,30,5,tzinfo=mt.KST)
+            closes=[100.0]*21
+            closes[3],closes[7]=95.0,105.0
+            for i in range(10,21):closes[i]=100.0+(i-10)*0.3   # ~16 deg, last>MID
+            def bars(last_end):
+                return [{"close":c,"end":last_end-dt.timedelta(minutes=(20-i)*30),
+                         "source":"UPBIT_CLOSED"} for i,c in enumerate(closes)]
             co=SimpleNamespace()
             co.rt=SimpleNamespace(root=root,coin_runner=SimpleNamespace(preload_gate=None))
             co.lock=threading.RLock()
             co.stop_event=threading.Event()
-            co._quotes={"coin":{"KRW-TEST":(120.0,time.monotonic())},"stock":{}}
+            co._quotes={"coin":{"KRW-TEST":(103.0,time.monotonic())},"stock":{}}
             co._candidates={"coin":{"KRW-TEST":("CRYPTO","TEST")},"stock":{}}
-            co._history={("coin","KRW-TEST","30m"):bars}
-            co._decision_clock=lambda:now
+            co._history={("coin","KRW-TEST","30m"):bars(t1.replace(minute=0))}
+            co._decision_clock=lambda:t1
             co.mode=lambda market:"ORIGINAL"  # native MT54 independent mode!
             co._positions={}
             co.journal=_Journal()
             co.standalone_wallet=_Wallet()
             co._quote=lambda market,code:{"trade":co._quotes[market][code][0],
-                                         "bid":117.0,"ask":119.0,
+                                         "bid":102.0,"ask":104.0,
                                          "ask_size":1000.0,"bid_size":1000.0}
             co._last_fetch_error={}
             with patch.object(nl,"_ready_market",return_value=True), \
                  patch.object(mt,"rsi20",return_value=25.0):
-                # First genuine observed price arms the 24h WATCH; it does
-                # not authorize a BUY without a second middle-line touch.
-                nl._entry_window(co,"coin",now)
+                # First genuine print arms the 24h WATCH; a bar that ended
+                # BEFORE the watch began cannot be the signal bar.
+                nl._entry_window(co,"coin",t1)
                 self.assertEqual(len(co.standalone_wallet.buys),0)
                 self.assertEqual(len(co._nl1118_watches),1)
-                co._quotes["coin"]["KRW-TEST"]=(118.0,time.monotonic()+0.001)
-                nl._entry_window(co,"coin",now)
-            detail={
-                "watch":co._nl1118_watches,
-                "quote_stamps":co._nl1118_quote_stamps,
-                "previous":co._nl1118_previous_trade,
-                "last_error":co._last_fetch_error,
-                "bollinger":nl.bollinger(
-                    [r["close"] for r in bars][-20:]+[118.0]),
-                "cross":nl.actual_middle_touch(120.,118.,
-                    nl.bollinger([r["close"] for r in bars][-20:]+[118.0])["middle"]),
-                "history_valid":len(nl._confirmed_recent(bars,now,"coin","30m")),
-            }
+                # The 10:30 bar completes above its Bollinger MIDDLE.
+                co._decision_clock=lambda:t2
+                co._history[("coin","KRW-TEST","30m")]=bars(t2.replace(second=0))
+                co._quotes["coin"]["KRW-TEST"]=(103.0,time.monotonic()+0.001)
+                nl._entry_window(co,"coin",t2)
             self.assertEqual(len(co.standalone_wallet.buys),1,
-                             "native ORIGINAL mode must NOT veto RSI+BB; "+repr(detail))
+                             "native ORIGINAL mode must NOT veto RSI+BB; "+
+                             repr({"watch":co._nl1118_watches,
+                                   "last_error":co._last_fetch_error}))
             market,frame,code,price,qty,barid,rsi=co.standalone_wallet.buys[0]
             self.assertEqual((market,frame,code),("coin","30m","KRW-TEST"))
-            self.assertEqual(price,119.0)
+            self.assertEqual(price,104.0)
             self.assertEqual(rsi,25.0)
             self.assertEqual(len(co.journal.events),1)
             self.assertEqual(co._nl1118_watches[("coin","KRW-TEST","30m")]["status"],"BOUGHT")

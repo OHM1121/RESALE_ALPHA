@@ -57,24 +57,35 @@ def build(path, buys=0, with_tables=True):
     if with_tables:
         db.executescript(DDL)
         n = 0
+        # 30m: 11 above the 200k cap; 60m: 3 above 250k (and one exactly AT the
+        # cap, which is affordable); day: none above 500k.
+        above = {"30m": 11, "60m": 3, "day": 0}
         for tf, count in (("30m", 111), ("60m", 26), ("day", 44)):
-            for _ in range(count):
+            for i in range(count):
                 n += 1
+                limit = {"30m": 200_001, "60m": 250_001, "day": 500_001}[tf] if i < above[tf] else \
+                        {"30m": 150_000, "60m": 250_000, "day": 400_000}[tf]
                 db.execute("INSERT INTO v19_orders VALUES(?,?,?,?,?,?,?,?)",
-                           (n, SYMBOL, tf, "KRX", 55.0, int(PRICE), "20261119083000", "PENDING"))
+                           (n, SYMBOL, tf, "KRX", 55.0, limit, "20261119083000", "PENDING"))
         for _ in range(23):
             n += 1
             db.execute("INSERT INTO v19_orders VALUES(?,?,?,?,?,?,?,?)",
-                       (n, SYMBOL, "30m", "KRX", 55.0, int(PRICE), "20261118090000", "EXPIRED_FIX13_SESSION"))
+                       (n, SYMBOL, "30m", "KRX", 55.0, 900_000, "20261118090000", "EXPIRED_FIX13_SESSION"))
         for i in range(204):
             db.execute("INSERT INTO v19_higher_frame_audit14 VALUES(?,?,?,?,?,?)",
                        (i + 1, SYMBOL, "30m", "BLOCKED", NOW, "LIVE_PARENT_GAP"))
         for i in range(1534):
             db.execute("INSERT INTO v19_events(at,code,event,detail) VALUES(?,?,?,?)",
                        ("20261119095000", SYMBOL, "FIX14_LIVE_HIGHER_FRAME_GAP_GUARDED", "p=" + PRICE))
-        for i in range(306):
-            db.execute("INSERT INTO v19_events(at,code,event,detail) VALUES(?,?,?,?)",
-                       ("20261119100000", SYMBOL, "LIMIT_TOUCH_NOT_BOUGHT_FIX6", "p=" + PRICE))
+        reasons = ([("BELOW_ONE_SHARE", 200), ("FIX14_HIGHER_FRAME_REST_UNVERIFIED", 70),
+                    ("LIMIT_TOUCH_INSUFFICIENT_EXECUTED_QUANTITY", 36)])
+        for reason, count in reasons:
+            for i in range(count):
+                detail = json.dumps({"tf": "30m", "venue": "KRX", "reason": reason,
+                                     "observed_trade_price": int(PRICE), "code_hint": SYMBOL,
+                                     "pending_limit_price": int(PRICE), "paper_only": True})
+                db.execute("INSERT INTO v19_events(at,code,event,detail) VALUES(?,?,?,?)",
+                           ("20261119100000", SYMBOL, "LIMIT_TOUCH_NOT_BOUGHT_FIX6", detail))
         db.execute("INSERT INTO runtime_error_summary VALUES(?,?,?,?,?,?,?,?)",
                    ("sig", "KIWOOM_REST_" + SYMBOL, "gaierror", "name resolution " + SYMBOL, 401, "a", "b", "tb"))
         for i in range(buys):
@@ -106,11 +117,18 @@ class AtPendingStallAudit(unittest.TestCase):
         self.assertEqual(r["higher_frame_audit_state_tf"]["BLOCKED"], {"30m": 204})
         self.assertEqual(r["executions_side_tf"], {})
         self.assertEqual(r["events_all_time_top"]["FIX14_LIVE_HIGHER_FRAME_GAP_GUARDED"], 1534)
+        self.assertEqual(r["events_all_time_top"]["LIMIT_TOUCH_NOT_BOUGHT_FIX6"], 306)
+        self.assertEqual(r["pending_above_per_symbol_cap_by_tf"], {"30m": 11, "60m": 3})
+        self.assertEqual(r["limit_touch_not_bought_reasons"], {
+            "BELOW_ONE_SHARE": 200, "FIX14_HIGHER_FRAME_REST_UNVERIFIED": 70,
+            "LIMIT_TOUCH_INSUFFICIENT_EXECUTED_QUANTITY": 36})
         hints = " | ".join(r["verdict_hints_INFERRED"])
         self.assertIn("PENDING_WITHOUT_ANY_BUY", hints)
         self.assertIn("PARENT_CONTINUITY_BLOCKS_PRESENT", hints)
         self.assertIn("GAP_GUARD_DOMINANT", hints)
         self.assertIn("FEED_ERRORS_COEXIST", hints)
+        self.assertIn("UNAFFORDABLE_PENDING_PRESENT: 14 of 181", hints)
+        self.assertIn("TOUCH_REJECT_TOP_REASON: BELOW_ONE_SHARE (200 events)", hints)
 
     def test_age_buckets_use_the_exported_file_time_not_the_wall_clock(self):
         build(self.db)
@@ -127,6 +145,28 @@ class AtPendingStallAudit(unittest.TestCase):
         self.assertNotIn(PRICE, text)
         self.assertNotIn("name resolution", text)
         self.assertFalse(audit.audit(self.db)["contains_symbols_prices_or_messages"])
+
+    def test_caps_override_changes_the_unaffordable_count(self):
+        build(self.db)
+        r = audit.audit(self.db, caps={"5m": 1, "30m": 100_000, "60m": 250_000, "day": 500_000})
+        self.assertEqual(r["pending_above_per_symbol_cap_by_tf"]["30m"], 111)
+        r = audit.audit(self.db, caps={"30m": 10**9, "60m": 10**9, "day": 10**9})
+        self.assertEqual(r["pending_above_per_symbol_cap_by_tf"], {})
+        done = subprocess.run([sys.executable, "-I", str(TOOL), str(self.db), "--caps",
+                               "30m=200000,60m=250000,day=500000"], capture_output=True, text=True)
+        self.assertEqual(json.loads(done.stdout)["pending_above_per_symbol_cap_by_tf"], {"30m": 11, "60m": 3})
+        bad = subprocess.run([sys.executable, "-I", str(TOOL), str(self.db), "--caps", "oops"],
+                             capture_output=True, text=True)
+        self.assertEqual(bad.returncode, 2)
+
+    def test_reason_extraction_never_leaks_other_detail_fields(self):
+        build(self.db)
+        text = json.dumps(audit.audit(self.db))
+        self.assertNotIn("code_hint", text)
+        self.assertNotIn("observed_trade_price", text)
+        self.assertEqual(audit._reason_code('{"reason":"lower case free text 990013"}'), None)
+        self.assertEqual(audit._reason_code("not json"), None)
+        self.assertEqual(audit._reason_code({"reason": "BELOW_ONE_SHARE"}), "BELOW_ONE_SHARE")
 
     def test_strictly_read_only(self):
         build(self.db)

@@ -1221,6 +1221,51 @@
         "test_at_pending_stall_audit.py"
       ],
       "notes": "Not a fix. Gate chain mapped from the shipped engine in issue #113. Engine-enabled suite (APK engine, Python 3.11): 1018 tests, 134 failing; 8 failing modules pass in isolation (global monkeypatch contamination), 48 fail in isolation (largely legacy-policy expectations, issue #73; individually unclassified)."
+    },
+    {
+      "id": "AT-020-01",
+      "issue": 114,
+      "found": "11.20 workbook",
+      "category": "USER_POLICY_SUPERSESSION",
+      "title": "MarketTrend condition 2: slope (-15,+20) and completed-bar close above Bollinger MIDDLE (replaces live MIDDLE touch)",
+      "evidence": "Workbook sheets 11.19 vs 11.20; one red-marked change. No private data.",
+      "root": "CONFIRMED_POLICY_CHANGE; INTERPRETATION_INFERRED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.18-source-follow-up",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "TREND_ENTRY_RULE_1120",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_nl1120_trend_close_above_mid.py",
+        "test_v002_post_reset_trend_and_top50.py"
+      ],
+      "notes": "New tests fail 12/13 on the 11.19 code. 38 related modules: no new failure. entry_signal_policy kept for the purge guard. Interpretation (completed bar) needs user confirmation."
+    },
+    {
+      "id": "AT-020-02",
+      "issue": 115,
+      "found": "0.0.18 (code audit)",
+      "category": "STRUCTURAL_UNFILLABLE_PENDING",
+      "title": "Stock AT pending orders priced above the per-symbol budget can never fill",
+      "evidence": "d_v19_portfolio._buy_limit_depth BELOW_ONE_SHARE vs _enqueue_signals without a cap check; cap = seed/max_positions in android_operation_bridge. Prevalence on device UNVERIFIED.",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_AT_PER_SYMBOL_CAP_V0183",
+        "STOCK_AT",
+        "OPERATION_CONFIG"
+      ],
+      "tests": [
+        "test_at_pending_stall_audit.py"
+      ],
+      "notes": "Not changed: order eligibility is a user policy decision (issue #115). Diagnostic counts it."
     }
   ],
   "known_normal": [

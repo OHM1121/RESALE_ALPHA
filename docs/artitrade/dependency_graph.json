@@ -366,7 +366,8 @@
         79,
         80,
         98,
-        107
+        107,
+        114
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -437,7 +438,8 @@
         78,
         79,
         98,
-        107
+        107,
+        114
       ],
       "contract": "New BUY 30m/60m/day only; prior 5m sells intact. Coin MarketTrend RSI20 requires actual latest continuous official completed bars and durable verified <=30 within 24h before Bollinger MID angle/touch."
     },
@@ -1140,6 +1142,38 @@
         113
       ],
       "contract": "Manual, strictly read-only (mode=ro, query_only) aggregate-only classifier of an exported stock AT SQLite. No symbols, prices, quantities, message text or absolute timestamps in its output. Missing table is TABLE_ABSENT, never zero. Verdicts are INFERRED hints, never proof of root cause. It does not touch any runtime, wallet or order path."
+    },
+    {
+      "id": "TREND_ENTRY_RULE_1120",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py"
+      ],
+      "depends_on": [
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "issues": [
+        114
+      ],
+      "contract": "MarketTrend entry condition 2 (11.20): Bollinger(20,1.5) MIDDLE slope strictly in (-15,+20) degrees AND a COMPLETED bar that ended after the RSI20<=30 watch began closed strictly above its MIDDLE. No live/forming price takes part. entry_signal_policy value is unchanged because legacy_purge_v012 protects NEW LEGACY positions by it; the rule is recorded in entry_rule. Sells, stops, holding periods and other strategies unchanged."
+    },
+    {
+      "id": "STOCK_AT_PER_SYMBOL_CAP_V0183",
+      "kind": "python",
+      "files": [
+        "tools/artitrade/at_pending_stall_audit.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "OPERATION_CONFIG"
+      ],
+      "issues": [
+        115
+      ],
+      "contract": "Stock AT per-symbol budget (seed / max positions) is not checked when a PENDING order is created, so an order priced above it is rejected as BELOW_ONE_SHARE on every touch. Diagnostic only here (pending_above_per_symbol_cap_by_tf); changing order eligibility needs an explicit user policy decision."
     }
   ],
   "audit_scope": {

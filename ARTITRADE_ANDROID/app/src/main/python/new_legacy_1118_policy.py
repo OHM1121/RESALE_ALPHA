@@ -23,8 +23,11 @@ RSI_THRESHOLD=30.0
 RSI_TRACK_HOURS=24
 BOLL_PERIOD=20
 BOLL_MULT=1.5
-BOLL_ANGLE_MIN=-20.0
-BOLL_ANGLE_MAX=30.0
+# NEW LEGACY 11.20 (explicit user supersession of 11.19): MarketTrend Bollinger
+# MIDDLE slope must be strictly inside (-15, +20) degrees. 11.19 was (-20, +30).
+BOLL_ANGLE_MIN=-15.0
+BOLL_ANGLE_MAX=20.0
+TREND_ENTRY_RULE_1120="NL1120_BAR_CLOSE_ABOVE_BOLL_MID"
 TREND_FRAMES=("30m","60m","day")
 
 def valid_num(x):
@@ -151,15 +154,50 @@ def bollinger(closes,chart_view=None):
             "angle_allowed":BOLL_ANGLE_MIN<angle<BOLL_ANGLE_MAX}
 
 def actual_middle_touch(previous_trade,current_trade,middle):
-    """Only two genuinely observed trade prices can establish a cross.
+    """RETIRED for MarketTrend entry by the 11.20 workbook (kept for history).
 
-    Not a historical candle high-low and not a synthetic broker fill.
+    Two genuinely observed trade prices straddling the MIDDLE line. The
+    11.19 entry rule; superseded by ``closed_bar_entry_condition``.
     """
     old,new,mid=[valid_num(x) for x in
                  (previous_trade,current_trade,middle)]
     return (old is not None and new is not None and mid is not None
             and old>0 and new>0 and mid>0 and
             min(old,new)<=mid<=max(old,new))
+
+def closed_bar_entry_condition(closed_closes,signal_bar_end=None,
+                               watch_started_at=None):
+    """11.20 MarketTrend condition 2, evaluated on COMPLETED bars only.
+
+    Bollinger(20, 1.5) MIDDLE slope strictly inside (-15, +20) degrees AND the
+    close of the bar that just completed is strictly ABOVE that bar's MIDDLE.
+    It replaces the 11.19 rule "a live price reached the MIDDLE line" (see
+    ``actual_middle_touch``). No live/forming price takes part, so a missing
+    completed bar can never be replaced by a print. The caller still owns RSI
+    watch, fresh quote/book, fees, slots and the wallet fill.
+
+    ``signal_bar_end`` / ``watch_started_at`` (aware datetimes): a bar that
+    completed BEFORE the RSI<=30 watch began is not "the bar at that time".
+    """
+    try:
+        closes=list(closed_closes)
+    except TypeError:
+        return None
+    if len(closes)<21:return None
+    result=bollinger(closes[-21:])
+    if result is None or not result["angle_allowed"]:return None
+    last=valid_num(closes[-1])
+    if last is None or not last>result["middle"]:return None
+    if (signal_bar_end is not None and watch_started_at is not None and
+            signal_bar_end<watch_started_at):
+        return None
+    out=dict(result)
+    out.update({"close_above_middle":True,"signal_close":last,
+                "entry_rule":TREND_ENTRY_RULE_1120,
+                "signal_bar_end":(signal_bar_end.isoformat()
+                                  if signal_bar_end is not None else "")})
+    return out
+
 
 def stage_quantity(initial,market,stage):
     v=valid_num(initial)
