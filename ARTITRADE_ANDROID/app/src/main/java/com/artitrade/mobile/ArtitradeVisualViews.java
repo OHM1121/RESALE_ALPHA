@@ -54,18 +54,24 @@ final class HorizontalStrategyBarsView extends View {
         super.onDraw(c);if(items.isEmpty())return;
         p.setTextSize(sp(14));p.setFakeBoldText(true);
         float labelMax=0;for(Item i:items)labelMax=Math.max(labelMax,p.measureText(i.label));p.setFakeBoldText(false);
-        float left=Math.min(getWidth()*.40f,Math.max(sp(82),labelMax+sp(12))),right=getWidth()-sp(78),top=sp(8),row=Math.max(sp(34),(getHeight()-sp(16))/items.size()),mid=(left+right)/2;
+        p.setTextSize(sp(13));
+        float valueW=0;for(Item i:items)if(!Double.isNaN(i.value))valueW=Math.max(valueW,p.measureText(won(i.value)));
+        valueW=Math.min(getWidth()*.42f,Math.max(sp(52),valueW+sp(8)));
+        float left=Math.min(getWidth()*.34f,Math.max(sp(60),labelMax+sp(12))),right=getWidth()-valueW-sp(6),top=sp(8),row=Math.max(sp(34),(getHeight()-sp(16))/items.size()),mid=(left+right)/2;
         double max=1;for(Item i:items)if(!Double.isNaN(i.value))max=Math.max(max,Math.abs(i.value));
         p.setStrokeWidth(1);p.setColor(PremiumUi.LINE);c.drawLine(mid,5,mid,getHeight()-5,p);
         for(int n=0;n<items.size();n++){
             Item it=items.get(n);float y=top+n*row+row*.5f;
-            p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));p.setColor(Color.rgb(200,218,238));p.setFakeBoldText(true);c.drawText(it.label,left-sp(8),y+sp(4),p);p.setFakeBoldText(false);
+            p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));p.setColor(Color.rgb(200,218,238));p.setFakeBoldText(true);c.drawText(ChartStyle.ellipsize(p,it.label,left-sp(8)),left-sp(8),y+sp(4),p);p.setFakeBoldText(false);
             if(Double.isNaN(it.value))continue;
             float span=(float)(Math.abs(it.value)/max*((right-left)*.47));
             p.setColor(ChartStyle.TRACK);c.drawRoundRect(new RectF(left,y-sp(7),right,y+sp(7)),sp(7),sp(7),p);
             RectF bar=it.value>=0?new RectF(mid,y-sp(7),mid+Math.max(span,sp(2)),y+sp(7)):new RectF(mid-Math.max(span,sp(2)),y-sp(7),mid,y+sp(7));
             ChartStyle.barPaint(p,bar,it.value>=0?ChartStyle.UP:ChartStyle.DOWN,it.value>=0);c.drawRoundRect(bar,sp(7),sp(7),p);ChartStyle.clear(p);
-            p.setTextAlign(it.value>=0?Paint.Align.LEFT:Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(225,236,248));float tx=it.value>=0?Math.min(right-sp(2),mid+span+sp(7)):Math.max(left+sp(2),mid-span-sp(7));c.drawText(won(it.value),tx,y+sp(4),p);
+            // Amounts live in their own right-hand column so they can never overlap a bar or a label.
+            p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(13));p.setFakeBoldText(true);
+            p.setColor(it.value>0?ChartStyle.UP:it.value<0?ChartStyle.DOWN:Color.rgb(225,236,248));
+            c.drawText(ChartStyle.ellipsize(p,won(it.value),valueW),getWidth()-sp(2),y+sp(4),p);p.setFakeBoldText(false);
         }
     }
 }
@@ -107,7 +113,7 @@ final class PnlSparklineView extends View {
         return left+(right-left)*index/(count-1f);
     }
     private void drawXAxisLabels(Canvas c,float left,float right,float bottom){
-        p.setStyle(Paint.Style.FILL);
+        p.setStyle(Paint.Style.FILL);p.setShader(null);
         p.setTextSize(sp(12));p.setColor(PremiumUi.MUTED);
         p.setTextAlign(Paint.Align.LEFT);
         String first=timestamps.length>0?tickDate(timestamps[0]):"날짜";
@@ -117,32 +123,46 @@ final class PnlSparklineView extends View {
             c.drawText(tickDate(timestamps[timestamps.length-1]),right,bottom+sp(16),p);
         }
     }
+    /** Smooth line through the points (horizontal-tangent cubic segments: never overshoots the data). */
+    private Path smooth(float[] xs,float[] ys,int n){
+        Path path=new Path();
+        path.moveTo(xs[0],ys[0]);
+        for(int i=1;i<n;i++){
+            float mid=(xs[i-1]+xs[i])/2f;
+            path.cubicTo(mid,ys[i-1],mid,ys[i],xs[i],ys[i]);
+        }
+        return path;
+    }
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);
         final float w=getWidth(),h=getHeight();
         if(w<=0||h<=0)return;
-        p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);
-        p.setTextSize(sp(12));p.setColor(Color.rgb(215,226,239));
-        c.drawText(label,sp(4),sp(15),p);
-        // Allocate y-axis width from the *real entire KRW strings*, not an abbreviated value.
         double axisMin=0d,axisMax=0d;
         for(double v:values)if(Double.isFinite(v)){axisMin=Math.min(axisMin,v);axisMax=Math.max(axisMax,v);}
+        boolean hasData=values.length>0;
+        double last=hasData?values[values.length-1]:0d;
+        int lineColor=!hasData?Color.rgb(255,194,91):last<0?ChartStyle.DOWN:last>0?ChartStyle.UP:Color.rgb(255,194,91);
+        // Header: the headline gets the room it needs, the caption takes only what is left (never overlaps).
+        p.setStyle(Paint.Style.FILL);p.setShader(null);p.setTextAlign(Paint.Align.RIGHT);p.setFakeBoldText(true);
+        String headline=hasData?WonFormat.signed(last):"—";
+        p.setTextSize(sp(15));
+        while(p.measureText(headline)>w*.60f&&p.getTextSize()>sp(12))p.setTextSize(p.getTextSize()-sp(.5f));
+        float headWidth=p.measureText(headline);
+        p.setColor(lineColor);c.drawText(headline,w-sp(7),sp(17),p);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(12));p.setColor(Color.rgb(215,226,239));
+        c.drawText(ChartStyle.ellipsize(p,label,Math.max(0f,w-headWidth-sp(24))),sp(6),sp(16),p);
+        // Plot area: y-axis width from the real KRW strings (never abbreviated).
         p.setTextSize(sp(12));
         float axisText=Math.max(p.measureText(compactMoney(axisMin)),p.measureText(compactMoney(axisMax)));
         float left=Math.min(w*.56f,Math.max(sp(75f),axisText+sp(13f)));
-        float right=w-sp(9),top=sp(35),bottom=h-sp(24);
+        float right=w-sp(10),top=sp(35),bottom=h-sp(24);
         if(right<=left||bottom<=top)return;
-        p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));
-        String headline=values.length>0?WonFormat.signed(values[values.length-1]):"—";
-        while(p.measureText(headline)>w*.57f&&p.getTextSize()>sp(12))p.setTextSize(p.getTextSize()-sp(.5f));
-        p.setColor(values.length>0&&values[values.length-1]<0?Color.rgb(255,119,133):Color.rgb(62,224,181));
-        c.drawText(headline,w-sp(7),sp(17),p);
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.7f));p.setColor(PremiumUi.LINE);
-        c.drawLine(left,top,left,bottom,p);
-        c.drawLine(left,bottom,right,bottom,p);
-        p.setStyle(Paint.Style.FILL);
-        if(values.length==0){
-            p.setTextSize(sp(12));p.setColor(Color.rgb(255,194,91));
+        if(!hasData){
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.8f));p.setColor(PremiumUi.LINE);
+            c.drawLine(left,bottom,right,bottom,p);
+            p.setStyle(Paint.Style.FILL);p.setTextSize(sp(12));p.setColor(Color.rgb(255,194,91));
+            p.setTextAlign(Paint.Align.LEFT);
             c.drawText("실현손익 체결기록 없음",left+sp(3),top+(bottom-top)/2f,p);
             drawXAxisLabels(c,left,right,bottom);
             return;
@@ -150,40 +170,52 @@ final class PnlSparklineView extends View {
         double min=Math.min(values[0],0d),max=Math.max(values[0],0d);
         for(double v:values){min=Math.min(min,v);max=Math.max(max,v);}
         if(max<=min){max=min+1;min-=1;}
+        double pad=(max-min)*.08;min-=pad;max+=pad;
+        // Grid + y labels (3 ticks), dashed hairlines.
+        android.graphics.DashPathEffect dash=new android.graphics.DashPathEffect(new float[]{sp(3),sp(4)},0);
         for(int k=0;k<3;k++){
             double tick=min+(max-min)*k/2.0;
             float y=(float)(bottom-(tick-min)/(max-min)*(bottom-top));
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.5f));p.setColor(PremiumUi.LINE);
-            c.drawLine(left,y,right,y,p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.6f));p.setColor(PremiumUi.LINE);
+            p.setPathEffect(dash);c.drawLine(left,y,right,y,p);p.setPathEffect(null);
             p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.RIGHT);
             p.setTextSize(sp(12));p.setColor(PremiumUi.MUTED);
             while(p.measureText(compactMoney(tick))>left-sp(7)&&p.getTextSize()>sp(10))p.setTextSize(p.getTextSize()-sp(.4f));
             c.drawText(compactMoney(tick),left-sp(3),y+sp(3),p);
         }
         int n=values.length;
-        Path curve=new Path();
+        float[] xs=new float[n],ys=new float[n];
         for(int i=0;i<n;i++){
-            float x=pointX(i,n,left,right);
-            float y=(float)(bottom-(values[i]-min)/(max-min)*(bottom-top));
-            if(i==0)curve.moveTo(x,y);else curve.lineTo(x,y);
+            xs[i]=pointX(i,n,left,right);
+            ys[i]=(float)(bottom-(values[i]-min)/(max-min)*(bottom-top));
         }
-        int lineColor=values[n-1]<0?ChartStyle.DOWN:values[n-1]>0?ChartStyle.UP:Color.rgb(255,194,91);
-        if(n>1){
-            float zeroY=(float)(bottom-(0-min)/(max-min)*(bottom-top));
-            Path area=new Path(curve);
-            area.lineTo(pointX(n-1,n,left,right),zeroY);area.lineTo(pointX(0,n,left,right),zeroY);area.close();
-            p.setStyle(Paint.Style.FILL);ChartStyle.areaPaint(p,top,bottom,lineColor);c.drawPath(area,p);ChartStyle.clear(p);
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.8f));p.setColor(ChartStyle.withAlpha(lineColor,110));
-            c.drawLine(left,zeroY,right,zeroY,p);
+        float zeroY=(float)(bottom-(0-min)/(max-min)*(bottom-top));
+        // Zero baseline (profit / loss boundary) in the line's own tint.
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.9f));p.setColor(ChartStyle.withAlpha(lineColor,120));
+        c.drawLine(left,zeroY,right,zeroY,p);
+        if(n==1){
+            p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.BG);c.drawCircle(xs[0],ys[0],sp(5.2f),p);
+            p.setColor(lineColor);c.drawCircle(xs[0],ys[0],sp(3.4f),p);
+            drawXAxisLabels(c,left,right,bottom);return;
         }
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(2.3f));
-        p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
-        p.setColor(lineColor);
+        Path curve=smooth(xs,ys,n);
+        Path area=new Path(curve);
+        area.lineTo(xs[n-1],zeroY);area.lineTo(xs[0],zeroY);area.close();
+        p.setStyle(Paint.Style.FILL);ChartStyle.areaPaint(p,Math.min(top,zeroY),Math.max(bottom,zeroY),lineColor);
+        c.drawPath(area,p);ChartStyle.clear(p);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(2.4f));
+        p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setColor(lineColor);
         c.drawPath(curve,p);
-        float x=pointX(n-1,n,left,right);
-        float y=(float)(bottom-(values[n-1]-min)/(max-min)*(bottom-top));
-        p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.BG);c.drawCircle(x,y,sp(4.6f),p);
-        p.setColor(lineColor);c.drawCircle(x,y,sp(3),p);
+        // Best and worst point markers (small rings) so the swing is readable without text.
+        int hi=0,lo=0;
+        for(int i=1;i<n;i++){if(values[i]>values[hi])hi=i;if(values[i]<values[lo])lo=i;}
+        p.setStyle(Paint.Style.FILL);
+        if(hi!=n-1&&values[hi]>0){p.setColor(PremiumUi.BG);c.drawCircle(xs[hi],ys[hi],sp(3.8f),p);p.setColor(ChartStyle.UP);c.drawCircle(xs[hi],ys[hi],sp(2.2f),p);}
+        if(lo!=n-1&&values[lo]<0){p.setColor(PremiumUi.BG);c.drawCircle(xs[lo],ys[lo],sp(3.8f),p);p.setColor(ChartStyle.DOWN);c.drawCircle(xs[lo],ys[lo],sp(2.2f),p);}
+        // Latest value: halo + dot.
+        p.setColor(ChartStyle.withAlpha(lineColor,60));c.drawCircle(xs[n-1],ys[n-1],sp(7f),p);
+        p.setColor(PremiumUi.BG);c.drawCircle(xs[n-1],ys[n-1],sp(4.6f),p);
+        p.setColor(lineColor);c.drawCircle(xs[n-1],ys[n-1],sp(3f),p);
         drawXAxisLabels(c,left,right,bottom);
     }
 }
@@ -195,7 +227,7 @@ final class MetricProgressView extends View {
     MetricProgressView(Context c){super(c);}
     void setMetric(String label,double value){this.label=label;this.value=value;invalidate();}
     @Override protected void onDraw(Canvas c){
-        super.onDraw(c);float w=getWidth(),h=getHeight();p.setTextSize(sp(13));p.setTextAlign(Paint.Align.LEFT);p.setColor(PremiumUi.MUTED);c.drawText(label,0,sp(13),p);
+        super.onDraw(c);float w=getWidth(),h=getHeight();String valueText=Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.1f%%",value);p.setTextSize(sp(13));float valueWidth=p.measureText(valueText);p.setTextAlign(Paint.Align.LEFT);p.setColor(PremiumUi.MUTED);c.drawText(ChartStyle.ellipsize(p,label,Math.max(0f,w-valueWidth-sp(8))),0,sp(13),p);
         float by=h-sp(11),bh=sp(6);p.setColor(PremiumUi.LINE);RectF bg=new RectF(0,by,w,by+bh);c.drawRoundRect(bg,bh,bh,p);
         if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;RectF fg=new RectF(0,by,Math.max(bh,w*f),by+bh);ChartStyle.barPaint(p,fg,ChartStyle.zone(value),true);c.drawRoundRect(fg,bh,bh,p);ChartStyle.clear(p);}
         p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(232,235,244));c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.1f%%",value),w,sp(13),p);

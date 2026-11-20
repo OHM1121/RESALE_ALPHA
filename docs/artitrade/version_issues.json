@@ -1470,6 +1470,26 @@
       "root": "PRESENTATION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.6",
+      "ci": "PASSED_RUN_44760501786",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "UI_REDESIGN_V0160"
+      ],
+      "tests": [
+        "test_ui_redesign_v0160.py"
+      ],
+      "notes": "0.1.6 delivered CI_VERIFIED; owner feedback handled in UI-0170-01."
+    },
+    {
+      "id": "UI-0170-01",
+      "issue": 126,
+      "found": "owner feedback on 0.1.6, 2026-11-20",
+      "category": "UX_PRESENTATION",
+      "title": "Overlapping text, footnotes, per-strategy dashboards/holdings, premium P&L line, trade history grouped by unique trade id",
+      "evidence": "Sparkline caption and headline shared one baseline; bar amounts could cover labels; renderList listed each fill separately (buy far from sell); footnote lines in holdings/history.",
+      "root": "PRESENTATION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.7",
       "ci": "PENDING",
       "device": "UNVERIFIED",
       "nodes": [
@@ -1478,7 +1498,7 @@
       "tests": [
         "test_ui_redesign_v0160.py"
       ],
-      "notes": "Look, readability and speed on the phone are not verified. No trading/ledger code changed."
+      "notes": "Overlap/readability and speed on the phone not verified. Trade grouping is display only."
     }
   ],
   "known_normal": [
@@ -1717,21 +1737,12 @@
     "original_sqlite_preserved_by_source": true
   },
   "candidate_017": {
-    "versionName": "0.0.17",
-    "versionCode": 139,
-    "package": "com.artitrade.unified.s21dex",
-    "baseline_release": "0.0.16",
-    "baseline_sha": "4645788692f7f855400927fc2d4a3569f53ef81a",
-    "issue": 104,
-    "pr": 105,
-    "stock_pending_device_verified": false,
-    "stock_native_buy_device_verified": false,
-    "preload_device_verified": false,
-    "original_wallets_protected": true,
-    "original_kiwoom_rest_only": true,
-    "original_signer_to_be_verified_by_ci": true,
-    "notes": "Source candidate, not completed release. Original D19 native PAPER BUY verified only under deterministic fresh score and orderbook fixture. Live phone quote/session and actual buy unverified; never promise arbitrary trades.",
-    "issue_preload": 106
+    "version": "0.1.7",
+    "versionCode": 150,
+    "base": "0.1.6",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.1.8"
   },
   "candidate_018": {
     "versionName": "0.0.18",
@@ -1838,8 +1849,12 @@
     "version": "0.1.6",
     "versionCode": 149,
     "base": "0.1.5",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.1.7"
+    "next_version": "0.1.7",
+    "source_commit": "58dffea02b9c5366948c3e8477dca38334c18ea8",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44760501786",
+    "apk_sha256": "12271b95d39d8d27b8a79e0fe27efbb204f7fafb92c0c895392cbdb2c34aeed2",
+    "release_publish": "GitHub release 0.1.6 published."
   }
 }

@@ -177,3 +177,87 @@ final class SignedAmountBarView extends View {
         p.setColor(Color.rgb(120,132,150));c.drawRect(mid-dp(.5f),y-dp(1),mid+dp(.5f),y+th+dp(1),p);
     }
 }
+
+/**
+ * Buy -> sell timeline of ONE trade (one unique trade id): where the buy happened, where the
+ * sells happened, how long it was held and whether it ended in profit or loss. Display only.
+ */
+final class TradeCycleView extends View {
+    private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private String buyTime="",sellTime="",buyPrice="",sellPrice="",duration="";
+    private long buyAt,firstSellAt,lastSellAt;
+    private long[] sellAts=new long[0];
+    private int state;           // 0 open, 1 partly closed, 2 closed
+    private double rate=Double.NaN;
+    TradeCycleView(Context c){super(c);}
+    void set(String buyTime,String buyPrice,String sellTime,String sellPrice,String duration,
+             long buyAt,long[] sellAts,int state,double rate){
+        this.buyTime=buyTime==null?"":buyTime;this.buyPrice=buyPrice==null?"":buyPrice;
+        this.sellTime=sellTime==null?"":sellTime;this.sellPrice=sellPrice==null?"":sellPrice;
+        this.duration=duration==null?"":duration;this.buyAt=buyAt;
+        this.sellAts=sellAts==null?new long[0]:sellAts;this.state=state;this.rate=rate;
+        long first=Long.MAX_VALUE,last=0;
+        for(long t:this.sellAts)if(t>0){first=Math.min(first,t);last=Math.max(last,t);}
+        firstSellAt=first==Long.MAX_VALUE?0:first;lastSellAt=last;
+        invalidate();
+    }
+    private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
+    private float dp(float v){return v*getResources().getDisplayMetrics().density;}
+    @Override protected void onDraw(Canvas c){
+        super.onDraw(c);
+        float w=getWidth(),h=getHeight();if(w<=0||h<=0)return;
+        float left=dp(8),right=w-dp(8),y=h*.50f;
+        int buyColor=Color.rgb(112,166,255);
+        int tone=state==0?Color.rgb(255,201,94):Double.isNaN(rate)?Color.rgb(160,172,190):rate>=0?ChartStyle.UP:ChartStyle.DOWN;
+        p.setShader(null);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeWidth(dp(4));p.setColor(ChartStyle.TRACK);
+        c.drawLine(left,y,right,y,p);
+        if(state==0){
+            // Still holding: dashed run towards an open end.
+            p.setStrokeWidth(dp(2));p.setColor(ChartStyle.withAlpha(buyColor,150));
+            p.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(5),dp(5)},0));
+            c.drawLine(left,y,right,y,p);p.setPathEffect(null);
+        }else{
+            p.setStrokeWidth(dp(4));
+            p.setShader(new LinearGradient(left,0,right,0,buyColor,tone,Shader.TileMode.CLAMP));
+            c.drawLine(left,y,right,y,p);p.setShader(null);
+        }
+        p.setStyle(Paint.Style.FILL);
+        // Intermediate sells, placed by time between the buy and the last sell.
+        if(state!=0&&buyAt>0&&lastSellAt>buyAt)
+            for(long t:sellAts){
+                if(t<=0||t==lastSellAt)continue;
+                float f=(float)Math.min(1d,Math.max(0d,(t-buyAt)/(double)(lastSellAt-buyAt)));
+                float x=left+(right-left)*f;
+                p.setColor(PremiumUi.BG);c.drawCircle(x,y,dp(5),p);p.setColor(tone);c.drawCircle(x,y,dp(3.2f),p);
+            }
+        // Buy node.
+        p.setColor(PremiumUi.BG);c.drawCircle(left,y,dp(8),p);p.setColor(buyColor);c.drawCircle(left,y,dp(5.5f),p);
+        // Sell node (hollow while still open).
+        p.setColor(PremiumUi.BG);c.drawCircle(right,y,dp(8),p);
+        if(state==0){
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(2));p.setColor(tone);c.drawCircle(right,y,dp(5),p);
+            p.setStyle(Paint.Style.FILL);
+        }else{p.setColor(tone);c.drawCircle(right,y,dp(5.5f),p);}
+        float half=(right-left)*.50f-dp(4);
+        p.setTextSize(sp(11));p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.LEFT);p.setColor(buyColor);
+        c.drawText(ChartStyle.ellipsize(p,"매수  "+buyTime,half),left-dp(4),y-dp(14),p);
+        p.setColor(PremiumUi.TEXT);p.setFakeBoldText(true);
+        c.drawText(ChartStyle.ellipsize(p,buyPrice,half),left-dp(4),y+dp(26),p);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.RIGHT);p.setColor(tone);
+        String sellHead=state==0?"보유 중":(state==1?"일부 매도  ":"매도  ")+sellTime;
+        c.drawText(ChartStyle.ellipsize(p,sellHead,half),right+dp(4),y-dp(14),p);
+        p.setColor(PremiumUi.TEXT);p.setFakeBoldText(true);
+        c.drawText(ChartStyle.ellipsize(p,sellPrice,half),right+dp(4),y+dp(26),p);
+        p.setFakeBoldText(false);
+        if(!duration.isEmpty()){
+            p.setTextAlign(Paint.Align.CENTER);p.setTextSize(sp(11));
+            float tw=p.measureText(duration)+dp(14);
+            RectF pill=new RectF(w/2f-tw/2f,y-dp(9),w/2f+tw/2f,y+dp(9));
+            p.setColor(PremiumUi.SURFACE_HIGH);c.drawRoundRect(pill,dp(9),dp(9),p);
+            p.setColor(PremiumUi.MUTED);c.drawText(duration,w/2f,y+dp(4),p);
+        }
+    }
+}

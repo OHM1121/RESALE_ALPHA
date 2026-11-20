@@ -44,6 +44,15 @@ final class ChartStyle {
             Shader.TileMode.CLAMP));
     }
     static void clear(Paint p){p.setShader(null);}
+    /** Text that never runs past maxWidth: cut with an ellipsis instead of overlapping its neighbour. */
+    static String ellipsize(Paint p,String text,float maxWidth){
+        if(text==null||text.isEmpty()||maxWidth<=0)return "";
+        if(p.measureText(text)<=maxWidth)return text;
+        String dots="…";
+        int end=text.length();
+        while(end>0&&p.measureText(text.substring(0,end)+dots)>maxWidth)end--;
+        return end<=0?"":text.substring(0,end)+dots;
+    }
     /** Threshold colour shared by every 0..100 gauge (60+ good, 40+ caution). */
     static int zone(double value){
         return value>=60?UP:value>=40?WARN:DOWN;

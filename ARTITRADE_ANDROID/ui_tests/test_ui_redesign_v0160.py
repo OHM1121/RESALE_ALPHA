@@ -27,10 +27,13 @@ class UiRedesignV0160(unittest.TestCase):
     def test_integrated_holdings_are_visual_and_grouped(self):
         ui = read("UnifiedVisualActivity.java")
         body = ui[ui.index("private void renderIntegratedPositions()"):ui.index("private void renderHome()")]
-        for token in ("SegmentBarView", "ReturnGaugeView", "SignedAmountBarView",
-                      "IntegratedPalette.strategy", "holdingStat(stats1,\"매수가\"",
-                      "holdingStat(stats2,\"평가손익\"", "bindFastVisiblePrice(p,holding.scopeMarket,nowValue"):
+        for token in ("SegmentBarView", "SignedAmountBarView", "IntegratedPalette.strategy",
+                      "buildHoldingCard(p,holding.scopeMarket,holding.scopeStrategy"):
             self.assertIn(token, body)
+        card = ui[ui.index("private LinearLayout buildHoldingCard"):ui.index("private String positionBuyReason")]
+        for token in ("ReturnGaugeView", 'holdingStat(row1,"매수가"', 'holdingStat(row2,"평가손익"',
+                      "bindFastVisiblePrice(p,scopeMarket,nowValue,dot"):
+            self.assertIn(token, card)
         # every strategy of both markets gets its own section
         self.assertIn("for(String[] def:strategyList(m))", body)
 
@@ -70,6 +73,55 @@ class UiRedesignV0160(unittest.TestCase):
         # original pinned strings stay
         self.assertIn("WonFormat.signed(v)", v)
         self.assertIn("WonFormat.won(v)", v)
+
+    def test_footnotes_removed_from_visible_lists(self):
+        ui = read("UnifiedVisualActivity.java")
+        for body_start, body_end in (("private void buildHoldingCard", "private String positionBuyReason"),
+                                     ("private LinearLayout buildTradeGroupCard", "private void renderList")):
+            pass
+        holding = ui[ui.index("private LinearLayout buildHoldingCard"):ui.index("private String positionBuyReason")]
+        group = ui[ui.index("private LinearLayout buildTradeGroupCard"):ui.index("private void renderList")]
+        for body in (holding, group):
+            for gone in ("고유 거래 ID", "공식 REST", "화면 전용", "원장 손익은 별도", "재확인 중"):
+                self.assertNotIn(gone, body)
+        # the live state is a coloured dot, not a sentence
+        self.assertIn("private TextView quoteDot()", ui)
+        self.assertIn("setQuoteDot(item.status", ui)
+        self.assertNotIn('"고유 거래 ID"', ui)
+
+    def test_every_strategy_holdings_page_uses_the_visual_card(self):
+        ui = read("UnifiedVisualActivity.java")
+        body = ui[ui.index("private void renderList("):ui.index("private void openPolicyForPosition")]
+        self.assertIn("buildHoldingCard(r,market,source,holdPnl", body)
+        self.assertIn('if("positions".equals(kind)){', body)
+
+    def test_execution_history_is_grouped_by_unique_trade_id(self):
+        ui = read("UnifiedVisualActivity.java")
+        self.assertIn('r.optString("position_uid","")', ui)
+        key = ui[ui.index("private String tradeGroupKey"):ui.index("private java.util.ArrayList<TradeGroup> groupExecutions")]
+        # uid first, then wallet position id, never a shared fallback that could merge two trades
+        self.assertLess(key.index('"uid|"'), key.index('"pid|"'))
+        self.assertIn('"row|"+tradeEvidenceKey(item)', key)
+        lst = ui[ui.index("private void renderList("):ui.index("private void openPolicyForPosition")]
+        self.assertIn("groupExecutions(fullHistory,history)", lst)
+        self.assertIn("buildTradeGroupCard(tradeGroups.get(i))", lst)
+        # filters decide which trades show, but a trade always shows all of its fills
+        grp = ui[ui.index("private java.util.ArrayList<TradeGroup> groupExecutions"):ui.index("private String shortKst")]
+        self.assertIn("for(HistoryRow row:full)", grp)
+        self.assertIn("for(HistoryRow row:filtered)", grp)
+        card = ui[ui.index("private LinearLayout buildTradeGroupCard"):ui.index("private void addTradeFillLine")]
+        self.assertIn("TradeCycleView", card)
+        self.assertIn("state=sells.isEmpty()?0", card)       # no sell -> still holding, never a fake exit
+        self.assertIn('"일부 청산"', card)
+
+    def test_trade_cycle_view_and_smooth_trend_line(self):
+        v = read("IntegratedVisualViews.java")
+        self.assertIn("final class TradeCycleView", v)
+        art = read("ArtitradeVisualViews.java")
+        self.assertIn("private Path smooth(", art)
+        self.assertIn("cubicTo", art)
+        self.assertIn("ChartStyle.ellipsize(p,label", art)   # caption can never overlap the headline
+        self.assertIn("valueW", art)                           # bar amounts live in their own column
 
 
 if __name__ == "__main__":

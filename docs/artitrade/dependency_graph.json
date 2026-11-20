@@ -1357,9 +1357,10 @@
       ],
       "depends_on": [],
       "issues": [
-        125
+        125,
+        126
       ],
-      "contract": "Presentation only. Integrated dashboard/holdings and chart views draw values the activity already computed (tradePnL/tradeReturnPct/stats); unknown values stay unknown (never drawn as 0). One shader per shape, no blur/shadow/software layers. bindFastVisiblePrice still only rewrites displayed price text. No ledger, order, quote, policy or reset code is read or written by the new views.",
+      "contract": "Presentation only. Integrated dashboard/holdings and chart views draw values the activity already computed (tradePnL/tradeReturnPct/stats); unknown values stay unknown (never drawn as 0). One shader per shape, no blur/shadow/software layers. bindFastVisiblePrice still only rewrites displayed price text. No ledger, order, quote, policy or reset code is read or written by the new views. 0.1.7: execution history groups fills by unique trade id (position_uid, else wallet position id+source+frame+code, else the single fill) for DISPLAY only - the ledger rows, evidence keys and filters are unchanged; a trade with no sell is shown as holding, never as exited. Footnote text replaced by a freshness colour dot (live/last/unknown).",
       "tests": [
         "test_ui_redesign_v0160.py"
       ]

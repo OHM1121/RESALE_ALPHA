@@ -325,3 +325,14 @@ Based on 0.1.5 (versionCode 149 for 0.1.6). Presentation only.
 4. Unknown P&L is counted as "미확인" and drawn as an empty gauge; it is never summed or drawn as 0.
 
 Status: SOURCE_FIXED, local source-level tests passed; CI, look and speed on the phone not verified.
+
+
+## 0.1.7 — how the changed parts connect (issue #126)
+Based on 0.1.6 (versionCode 150 for 0.1.7). Presentation only.
+
+1. `UnifiedVisualActivity.buildHoldingCard` is the single holding card for the integrated page and every strategy page (`renderList` kind `positions`). It reads `tradePnL`, `tradeReturnPct`, `positionBuyPrice`, `positionMark` and draws via `ReturnGaugeView`.
+2. `renderList` kind `executions` calls `groupExecutions(fullHistory, filteredHistory)` and `buildTradeGroupCard`. Group key = `position_uid`, else `market|source|frame|code|position_id`, else the single fill (`tradeEvidenceKey`). Filters/sort still run on individual fills; a group is shown when one of its fills passes and always lists all its fills. `TradeCycleView` draws buy -> sell timeline. Evidence query/keys (`queryTradeHistoryEvidence`, `tradeEvidenceKey`) are unchanged.
+3. `bindFastVisiblePrice` still rewrites only displayed text; its status view is now a colour dot (`setQuoteDot`). Freshness (live/last/unknown) stays distinguishable; sentences are only in the accessibility description.
+4. `PnlSparklineView` (realized P&L line), `HorizontalStrategyBarsView`, `MetricProgressView` measure text through `ChartStyle.ellipsize` so captions cannot overlap values.
+
+Status: SOURCE_FIXED, local source-level tests passed; CI, overlap/readability and speed on the phone not verified.
