@@ -1502,7 +1502,7 @@
     },
     {
       "id": "TR-0170-01",
-      "issue": 126,
+      "issue": 127,
       "found": "CI run 44767412879 (0.1.7 build), 2026-11-20",
       "category": "SILENT_FAILURE_LATENT",
       "title": "Trend lookback-stop observer skipped its first deep-history read when host uptime was below 60 s",
