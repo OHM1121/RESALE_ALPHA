@@ -69,3 +69,16 @@ class UnusedClassRemoved(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NetworkSecurityConfigLintContract(unittest.TestCase):
+    """Non-debuggable builds run Android lintVital; it fails the build on a <domain>
+    without includeSubdomains. Exact-host (false) keeps the cleartext scope unchanged."""
+
+    def test_every_domain_declares_includeSubdomains_false(self):
+        import xml.etree.ElementTree as ET
+        path = Path(__file__).resolve().parents[1] / "app/src/main/res/xml/network_security_config.xml"
+        domains = list(ET.parse(path).getroot().iter("domain"))
+        self.assertEqual(sorted(d.text for d in domains), ["127.0.0.1", "localhost"])
+        for d in domains:
+            self.assertEqual(d.get("includeSubdomains"), "false", d.text)

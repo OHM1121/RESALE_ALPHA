@@ -182,7 +182,8 @@ jobs:
             test_v020_limit_exclusion_and_trend_universe.py \
             test_monitor_loop_contract.py \
             test_release_packaging_contract.py \
-            test_at_pending_stall_audit.py; do
+            test_at_pending_stall_audit.py \
+            test_next_version_rule.py; do
             echo "TESTING $pattern"
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
           done

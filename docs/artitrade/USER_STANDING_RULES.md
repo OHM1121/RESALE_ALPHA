@@ -19,6 +19,12 @@ rule headings disappear.
 - `versionCode` stays an increasing integer; package `com.artitrade.unified.s21dex`
   and the existing signing certificate never change (the app must update in place).
 - Enforced in the release workflow (`^[0-9]+(\.[0-9]+){2}$`).
+- **Version sequence (owner instruction 2026-11-20):** `0.0.20` is the last
+  `0.0.x` version. After it the versions go `0.1.0`, `0.1.1`, ... `0.1.9`, then
+  `0.2.0`, ... `0.2.9`, then `0.3.0`, and so on: the last number counts 0 to 9
+  and then the middle number increases by one and the last number restarts at 0.
+  Never skip, never repeat, never add text. `tools/artitrade/next_version.py`
+  computes the next version; the release workflow and CI use it.
 
 ## R2 — After every fix or improvement, build and hand over the APK (2026-11-20)
 - When the owner asks for a fix or improvement, finish it, build a signed APK
@@ -28,6 +34,8 @@ rule headings disappear.
   pass as a phone/broker verification (see AGENTS.md).
 - If the signed build cannot be produced, say so and say why. Do not substitute
   an unsigned or differently signed APK.
+- **Automatic delivery (owner confirmation 2026-11-20):** the APK is handed over as
+  soon as the signed build finishes. The owner does not have to ask for it.
 
 ## R3 — After the APK is delivered, update the GitHub feature-connection docs (2026-11-20)
 - In the same piece of work, update how functions connect to each other:
