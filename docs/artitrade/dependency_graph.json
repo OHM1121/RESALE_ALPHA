@@ -1327,6 +1327,24 @@
       "tests": [
         "test_history_reset_v0140.py"
       ]
+    },
+    {
+      "id": "CANDIDATE_RESET_V0150",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/candidate_reset_v0150.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java"
+      ],
+      "depends_on": [
+        "HISTORY_RESET_V0140"
+      ],
+      "issues": [
+        124
+      ],
+      "contract": "One-time row deletion of candidate / signal-linked research and buy-pending tables (stock AT signals/pending/v19 order+audit/candidate_*/stock_shadow_*; stock MA candidates/research; coin orders/candidates/scan+shadow research; close-betting signals/research_*; MarketTrend virtual_position_state). Never positions, executions, accounts/wallets, bars, stocks, market score, gap holds, audit dedupe keys, MarketTrend latch/stop-reentry or any GMO file. Safe because normal discovery is incremental (discover(min_event=complete_at)) and the engine tolerates empty pending/signals; candidate_snapshots is back-filled from signals so both are cleared together. Once per process before engines start, per-database transactions, retried until all succeeded, caught in Java.",
+      "tests": [
+        "test_candidate_reset_v0150.py"
+      ]
     }
   ],
   "audit_scope": {

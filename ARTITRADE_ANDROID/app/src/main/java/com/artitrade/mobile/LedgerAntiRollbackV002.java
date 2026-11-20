@@ -18,6 +18,7 @@ final class LedgerAntiRollbackV002 {
     private static boolean cfgSingleCleanupAttemptedV015=false;
     private static boolean ledgerResetAttemptedV0130=false;
     private static boolean historyResetAttemptedV0140=false;
+    private static boolean candidateResetAttemptedV0150=false;
 
     static synchronized JSONObject verify(Context c)throws Exception{
         JSONObject epoch=FreshEpochGateV106.read(c);
@@ -124,6 +125,29 @@ final class LedgerAntiRollbackV002 {
                 c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
                     .putString("history_reset_v0140_status",
                         "FAILED:"+historyFailure.getClass().getSimpleName()).commit();
+            }
+        }
+        // Phase 3 of the owner's reset (0.1.5): clear candidate / signal-linked
+        // research and buy-pending rows (stock AT, close-betting, MA, coin). Rows
+        // only: engine code, schemas, bars, market score, accounts and every GMO
+        // file stay. Once per process before any engine starts; caught so it can
+        // never block trading.
+        if(!candidateResetAttemptedV0150&&root.isDirectory()){
+            candidateResetAttemptedV0150=true;
+            try{
+                JSONObject candidates=new JSONObject(Python.getInstance()
+                    .getModule("candidate_reset_v0150")
+                    .callAttr("run_json",root.getAbsolutePath()).toString());
+                c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+                    .putString("candidate_reset_v0150_status",
+                        candidates.optString("status",candidates.optString("skipped","UNVERIFIED")))
+                    .commit();
+            }catch(Throwable candidateFailure){
+                android.util.Log.w("ARTITRADE_RESET_V0150",
+                    "Candidate reset not applied: "+candidateFailure.getClass().getSimpleName());
+                c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+                    .putString("candidate_reset_v0150_status",
+                        "FAILED:"+candidateFailure.getClass().getSimpleName()).commit();
             }
         }
         String raw=Python.getInstance()

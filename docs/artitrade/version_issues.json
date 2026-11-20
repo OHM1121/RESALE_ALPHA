@@ -1430,7 +1430,7 @@
       "root": "OWNER_DECISION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.4",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44753055761",
       "device": "UNVERIFIED",
       "nodes": [
         "HISTORY_RESET_V0140"
@@ -1439,6 +1439,26 @@
         "test_history_reset_v0140.py"
       ],
       "notes": "Candidate/signal-linked research and pending buys are not cleared (owner decision pending)."
+    },
+    {
+      "id": "AT-0150-01",
+      "issue": 124,
+      "found": "owner decision 2026-11-20 (answer to #123)",
+      "category": "USER_POLICY_DECISION",
+      "title": "Reset phase 3: clear candidate/signal-linked research and buy-pending rows",
+      "evidence": "Vendor source: discover(min_event=complete_at) is incremental, restore_offline_references is never called, pending is deleted by the engine in many branches.",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.5",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "CANDIDATE_RESET_V0150"
+      ],
+      "tests": [
+        "test_candidate_reset_v0150.py"
+      ],
+      "notes": "Rows only; schemas and sequences kept. A new gap-repair may legitimately recreate a still-valid reference."
     }
   ],
   "known_normal": [
@@ -1775,8 +1795,20 @@
     "version": "0.1.4",
     "versionCode": 147,
     "base": "0.1.3 (c179612)",
+    "status": "DELIVERED_CI_VERIFIED",
+    "device_verified": false,
+    "next_version": "0.1.5",
+    "source_commit": "5346ddf40497ba50edbdfb042ec69ed19aa952d6",
+    "apk_sha256": "0a02aea7f64732e559aeeecbdced97e9f87fd7c3572204a1e0c1fa45c7e929e4",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44753055761",
+    "release_publish": "GitHub release 0.1.4 published."
+  },
+  "candidate_015": {
+    "version": "0.1.5",
+    "versionCode": 148,
+    "base": "0.1.4",
     "status": "SOURCE_FIXED_CI_PENDING",
     "device_verified": false,
-    "next_version": "0.1.5"
+    "next_version": "0.1.6"
   }
 }

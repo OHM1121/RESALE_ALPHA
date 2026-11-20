@@ -302,3 +302,15 @@ Based on 0.1.3 (versionCode 147). 0.1.3 was delivered: source `c179612`, CI run 
 3. The anti-rollback witness is unaffected (no execution table is touched).
 
 Status: SOURCE_FIXED, local regression passed; CI and device not verified.
+
+
+## 0.1.5 — how the changed parts connect (issue #124)
+Based on 0.1.4 (versionCode 148). 0.1.4 was delivered: CI run 44753055761, APK SHA256 `0a02aea7…929e4`, release 0.1.4 published; CI_VERIFIED only.
+
+1. `LedgerAntiRollbackV002.verify` also calls `candidate_reset_v0150.run_json` once per process (after the history reset, before the guard check) and clears candidate / signal-linked research and
+   buy-pending rows (list in the contract of `CANDIDATE_RESET_V0150`). Rows only; schemas, ids, positions, executions, accounts, bars, market score and GMO stay.
+2. Why safe: vendor `discover(complete_at, min_event=complete_at, ...)` handles only the just-completed bar, `restore_offline_references` is never called, the engine deletes `pending` itself in many branches and
+   `candidate_snapshots` is back-filled from `signals` (so both go together).
+3. Remaining behaviour: a NEW gap-repair may recreate a still-valid reference for one symbol (normal engine behaviour).
+
+Status: SOURCE_FIXED, local regression on the real native stores passed; CI and device not verified.
