@@ -1198,6 +1198,29 @@
         "test_release_packaging_contract.py"
       ],
       "notes": "Gradle/AGP could not be run (Google Maven and Chaquopy repositories blocked in the authoring sandbox): Groovy syntax and the debuggable expression were evaluated, full Java tree compiles. Packaged APK manifest NOT inspected. MainActivity/HubService/HubServer/SyncStore intentionally kept: live for hub/stock/coin flavors and CI. adb run-as no longer works on the unified APK unless built with ARTITRADE_DEBUGGABLE=1."
+    },
+    {
+      "id": "AT-018-32",
+      "issue": 113,
+      "found": "0.0.15 (device aggregate); re-check pending for 0.0.17/0.0.18",
+      "category": "USER_REPORTED_STALL_DIAGNOSTIC",
+      "title": "Stock AT PENDING without BUY: root cause not established; read-only sanitized diagnostic added",
+      "evidence": "Sanitized aggregate in issue #104 comment (0.0.15 device): PENDING 181, BUY 0, higher-frame BLOCKED 204, GAP_GUARDED 1534, LIMIT_TOUCH_NOT_BOUGHT 306. No 0.0.17/0.0.18 device data in the repository.",
+      "root": "UNKNOWN",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": null,
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "AT_PENDING_STALL_AUDIT_TOOL",
+        "STOCK_AT",
+        "AT_HISTORY_RECOVERY",
+        "STOCK_FEED"
+      ],
+      "tests": [
+        "test_at_pending_stall_audit.py"
+      ],
+      "notes": "Not a fix. Gate chain mapped from the shipped engine in issue #113. Engine-enabled suite (APK engine, Python 3.11): 1018 tests, 134 failing; 8 failing modules pass in isolation (global monkeypatch contamination), 48 fail in isolation (largely legacy-policy expectations, issue #73; individually unclassified)."
     }
   ],
   "known_normal": [

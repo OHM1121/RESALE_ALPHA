@@ -1125,6 +1125,21 @@
         112
       ],
       "contract": "Shipped signed APK (debug build type + ciStable signer) is NOT debuggable. debuggable only via ARTITRADE_DEBUGGABLE=1 or the emulator smoke env (ARTITRADE_EMULATOR_ABI=x86_64 / ARTITRADE_EMULATOR_FIXTURE=1). applicationId, signer and numeric version identity unchanged so the APK upgrades in place."
+    },
+    {
+      "id": "AT_PENDING_STALL_AUDIT_TOOL",
+      "kind": "python",
+      "files": [
+        "tools/artitrade/at_pending_stall_audit.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "AT_HISTORY_RECOVERY"
+      ],
+      "issues": [
+        113
+      ],
+      "contract": "Manual, strictly read-only (mode=ro, query_only) aggregate-only classifier of an exported stock AT SQLite. No symbols, prices, quantities, message text or absolute timestamps in its output. Missing table is TABLE_ABSENT, never zero. Verdicts are INFERRED hints, never proof of root cause. It does not touch any runtime, wallet or order path."
     }
   ],
   "audit_scope": {
