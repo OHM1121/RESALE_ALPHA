@@ -90,7 +90,7 @@ jobs:
           python3 ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py
           python3 ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py
           python3 ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py | tee /tmp/artitrade-native.txt
-          grep '^NEW_SHA256=' /tmp/artitrade-native.txt
+          grep '^NEW_SHA256=' /tmp/artitrade-native.txt | sed 's/^NEW_SHA256=/ARTITRADE_APPROVED_VENDOR_PATCHED_SHA256=/' >> "$GITHUB_ENV"
           python3 - <<'PY'
           import os
           from pathlib import Path
