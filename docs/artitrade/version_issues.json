@@ -1253,19 +1253,20 @@
       "title": "Stock AT pending orders priced above the per-symbol budget can never fill",
       "evidence": "d_v19_portfolio._buy_limit_depth BELOW_ONE_SHARE vs _enqueue_signals without a cap check; cap = seed/max_positions in android_operation_bridge. Prevalence on device UNVERIFIED.",
       "root": "CONFIRMED_IN_CODE",
-      "status": "OPEN_UNVERIFIED",
-      "fix_version": null,
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.20",
       "ci": "NOT_APPLICABLE",
       "device": "UNVERIFIED",
       "nodes": [
-        "STOCK_AT_PER_SYMBOL_CAP_V0183",
+        "STOCK_PENDING_LIMIT_EXCLUSION_V0200",
         "STOCK_AT",
         "OPERATION_CONFIG"
       ],
       "tests": [
+        "test_v020_limit_exclusion_and_trend_universe.py",
         "test_at_pending_stall_audit.py"
       ],
-      "notes": "Not changed: order eligibility is a user policy decision (issue #115). Diagnostic counts it."
+      "notes": "Owner decision (#117): unaffordable pending orders are excluded with a reason event. Prevalence on device UNVERIFIED."
     },
     {
       "id": "AT-020-03",
@@ -1281,17 +1282,38 @@
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_SUBSCRIPTION_PLANNER_V0200",
-        "STOCK_CANDIDATE_SYMBOL_MAP_V0200",
+        "STOCK_TREND_AT_UNIVERSE_V0200",
         "STOCK_FEED",
         "STOCK_MA",
         "STOCK_TREND"
       ],
       "tests": [
         "test_v020_subscription_candidate_coverage.py",
-        "test_v020_trend_candidates_in_market_map.py",
+        "test_v020_limit_exclusion_and_trend_universe.py",
         "test_v093_strategy_subscription_priority.py"
       ],
-      "notes": "CLOSE (CW) cause not found: it is a protected subscription and reads raw shared messages. Whole-market AT keeps a 5/15 slot floor (owner weights unchanged). Not device verified."
+      "notes": "CLOSE (CW) cause not found: it is a protected subscription and reads raw shared messages. Whole-market AT keeps a 5/15 slot floor (owner weights unchanged). Not device verified. Second cause removed by owner decision #117: stock Trend candidates are the AT universe."
+    },
+    {
+      "id": "AT-020-04",
+      "issue": 117,
+      "found": "owner decision 2026-11-20",
+      "category": "USER_POLICY_DECISION",
+      "title": "Unaffordable AT pending orders are excluded; stock MarketTrend uses the AT universe (TOP50 stays coin-only)",
+      "evidence": "Owner instruction. Defect replayed with the real engine (BELOW_ONE_SHARE on every touch while PENDING).",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.20",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_PENDING_LIMIT_EXCLUSION_V0200",
+        "STOCK_TREND_AT_UNIVERSE_V0200"
+      ],
+      "tests": [
+        "test_v020_limit_exclusion_and_trend_universe.py"
+      ],
+      "notes": "Stock Trend candidate count grows (about 100 -> up to 200): load not measured."
     }
   ],
   "known_normal": [

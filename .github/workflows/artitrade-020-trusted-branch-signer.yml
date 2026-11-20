@@ -179,7 +179,7 @@ jobs:
             test_v018_rev1_low_close_and_fast_ma.py \
             test_nl1120_trend_close_above_mid.py \
             test_v020_subscription_candidate_coverage.py \
-            test_v020_trend_candidates_in_market_map.py \
+            test_v020_limit_exclusion_and_trend_universe.py \
             test_monitor_loop_contract.py \
             test_release_packaging_contract.py \
             test_at_pending_stall_audit.py; do

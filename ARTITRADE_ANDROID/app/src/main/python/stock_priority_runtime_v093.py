@@ -204,7 +204,10 @@ def install(core):
             trend = getattr(runtime, "market_trend", None) if runtime else None
             if trend is not None:
                 with trend.lock:
-                    trend_codes = list(trend._candidates.get("stock", {}))
+                    # 0.0.20: stock Trend candidates are the whole AT universe,
+                    # which the whole-market band already carries.
+                    trend_codes = ([] if getattr(trend, "_v020_stock_universe_candidates", False)
+                                   else list(trend._candidates.get("stock", {})))
                     trend_active = [
                         str(position.symbol)
                         for position in tuple(trend._positions.values())

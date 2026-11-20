@@ -17,9 +17,11 @@ flowchart TD
  K[KRX Kiwoom 0B/0D, ONE socket, 200 slots] --> PARSE[parse_venue_real: drops codes not in market_map]
  PARSE --> F
  PLAN[Subscription planner: candidates first, whole-market floor 5/15] --> K
- RANK[KRX rank by trading value, every 30 min] --> MAP[market_map identities]
- TREND_RANK[MarketTrend TOP50 x2 candidates, every 5 min] --> MAP
- TREND_RANK --> PLAN
+ RANK[KRX rank by trading value, every 30 min: AT universe] --> MAP[market_map identities]
+ MAP --> TREND_STOCK[Stock MarketTrend candidates = AT universe]
+ COIN_RANK[Coin MarketTrend TOP50 by 24h value] --> TREND_COIN[Coin MarketTrend candidates]
+ TREND_STOCK --> PLAN
+ AT_PEND[AT pending orders] --> LIMITX[Per-symbol budget check: unaffordable pending is excluded]
  MA_CAND[MA pending + watched codes] --> PLAN
  CW_CAND[CLOSE pinned + top40] --> PLAN
  MAP --> PARSE
@@ -149,30 +151,38 @@ Delivered as APK `0.0.20` (versionCode 142), based on the released 0.0.18.
 Status: `SOURCE_FIXED`; CI result and device result are recorded in
 `version_issues.json` (`candidate_020`). Nothing here is `DEVICE_VERIFIED`.
 
-### Live stock quotes: who gets a price, and why a candidate could be missing (#116)
-1. **Symbol map** (`LivePaperRunner.market_map` / `krx_market_map`): the list of
-   stocks the feed is allowed to process. Built from the KRX trading-value rank
-   (rebuilt every 30 min) plus pinned holdings. `parse_venue_real` **drops any
-   0B print whose code is not in this map**; the subscription planner also only
-   considers stocks the map can identify.
-2. **MarketTrend candidates** (TOP50 per market by trading value, refreshed every
-   5 min in `market_trend_runtime_v043._refresh_rank`): used to be absent from the
-   map when they entered the TOP50 between two map rebuilds, so they received no
-   price. `stock_candidate_universe_v020` now adds their identity (market, name)
-   to the map right after each Trend rank refresh and whenever the map is rebuilt.
-   Identity only; no price, order or fill is ever created there.
+### Live stock quotes: who gets a price (#116, #117)
+1. **Symbol map** (`LivePaperRunner.market_map` / `krx_market_map`): the stocks the
+   feed is allowed to process = the **AT universe** (top-N per market by trading
+   value, ETF/ETN excluded, plus pinned holdings), rebuilt every 30 min.
+   `parse_venue_real` drops any 0B print whose code is not in it.
+2. **Stock MarketTrend candidates = the AT universe** (owner decision, #117).
+   `stock_trend_universe_v020` replaces the stock branch of
+   `market_trend_runtime_v043._refresh_rank` (no separate Kiwoom ranking request,
+   no mismatch with the map). The trading-value TOP50 list remains **coin only**.
+   Identity only; no price, order or fill is created there.
 3. **Subscription planner** (`stock_priority_runtime_v093.allocate_priority`):
    one Kiwoom socket, at most 200 live slots shared by AT (whole market),
-   CLOSE, MA, MarketTrend and GMO with weights 5:4:3:2:1. Order of claims is now
+   CLOSE, MA, MarketTrend and GMO with weights 5:4:3:2:1. Order of claims is
    *candidate lists first, whole-market list last*; the whole-market list keeps a
-   floor of 5/15 of the free slots and takes whatever the candidate lists do not
-   need. Held/pending symbols stay protected and first. Before 0.0.20 the
+   floor of 5/15 of the free slots and takes the remainder. Held/pending symbols
+   stay protected and first. Because stock Trend candidates are the whole
+   universe, the Trend band carries only held symbols. Before 0.0.20 the
    whole-market list claimed everything first, so the CLOSE/MA/Trend/GMO lists
-   became empty and their candidates were live only ~42% of the time.
+   became empty and their candidates were live only ~42% of the time (#116).
 4. Who consumes the prices: MarketTrend (`observe_stock_tick`, fresh-quote gate 3 s),
    MA (`ma.watched_codes()` / pending), CLOSE (raw shared messages via
    `at_close_bridge`), AT/GMO (`_new_tick` chain). Market score gates **only**
-   AT/reference buys; MA, MarketTrend and CLOSE do not depend on it.
+   AT/reference buys.
+
+### Unaffordable AT pending orders (#115, #117)
+`D19PaperEngine._enqueue_signals` creates `v19_orders` (PENDING) →
+`stock_limit_exclusion_v020.sweep` (same transaction) compares the one-share cost
+(limit + buy fee) with `symbol_limit_won(tf)` (= timeframe seed / max positions,
+set by `android_operation_bridge._apply_at`) → too expensive: order status
+`EXCLUDED_ABOVE_SYMBOL_LIMIT`, signal `REJECTED`, audit event
+`PENDING_EXCLUDED_ABOVE_SYMBOL_LIMIT`. Such orders leave the "buy pending" list and
+the 0.0.17 history-repair priority set. Nothing else is touched.
 
 ### MarketTrend entry rule (workbook sheet 11.20, issue #114)
 `RSI20 <= 30` starts a 24 h watch (unchanged) → Bollinger(20,1.5) MIDDLE slope
