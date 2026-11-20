@@ -1336,6 +1336,27 @@
         "test_v101_zip95_analysis_ready.py"
       ],
       "notes": "Load of the larger protected set not measured. AT / MA / Trend order-level reasons still need PART_001."
+    },
+    {
+      "id": "AT-0110-01",
+      "issue": 119,
+      "found": "owner 2026-11-20 (0.1.0 history export checked on phone)",
+      "category": "EXPORT_SIZE_CONTRACT",
+      "title": "전체 원장 백업 and AI deep export still wrote one ZIP above 30 MB; now split into <=29 MB parts",
+      "evidence": "Code trace: only the research/error paths called make_bundle; requestFullLedgerBackup and requestAiEvidenceExport called make_backup (single ZIP of the whole ledger). Owner reported >30 MB ZIP.",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.1",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "LEDGER_BACKUP_SPLIT_V0110",
+        "HISTORY_EXPORT_PART_LIMIT_V0100"
+      ],
+      "tests": [
+        "test_v101_zip95_analysis_ready.py"
+      ],
+      "notes": "Old single-ZIP writers removed. PC verify_phone_backup does not read split backups (use restore_parts.py). Not tested on a phone with a >70 MB ledger."
     }
   ],
   "known_normal": [
@@ -1631,5 +1652,14 @@
     "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44718800394",
     "release_publish": "GitHub release step returned HTTP 403 again; APK handed over from the workflow artifact. Likely cause: the repository's Actions token is read-only (X-Accepted-Github-Permissions contents=read); owner can allow it under Settings > Actions > General > Workflow permissions > Read and write.",
     "next_version": "0.1.1"
+  },
+  "candidate_011": {
+    "version": "0.1.1",
+    "versionCode": 144,
+    "base": "0.1.0 (79c0280)",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.1.2",
+    "note": "Signing run needs the trusted-branch workflow; not yet built."
   }
 }

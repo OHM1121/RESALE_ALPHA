@@ -4719,245 +4719,7 @@ public final class UnifiedVisualActivity extends Activity {
         }
     }
 
-    private void discardPreparedLedger(){
-        android.content.SharedPreferences p=getSharedPreferences(EXPORT_READY_PREF,MODE_PRIVATE);
-        String raw=p.getString("path","");
-        try{
-            File candidate=new File(raw).getCanonicalFile();
-            File cache=getCacheDir().getCanonicalFile();
-            if(candidate.getParentFile()!=null&&candidate.getParentFile().equals(cache)
-                &&candidate.getName().startsWith("artitrade_export_ready_v076_")
-                &&candidate.getName().endsWith(".zip")){
-                if(candidate.exists()&&!candidate.delete())
-                    new RuntimeCrashStore(this).add("v076_export_cache_cleanup",
-                        new IOException("Unable to delete staged export"));
-            }
-        }catch(Exception ignored){}
-        p.edit().clear().apply();
-        File progress=new File(getCacheDir(),PY_EXPORT_PROGRESS);
-        if(progress.exists())progress.delete();
-    }
-
-    private void removeFailedSafDocument(Uri uri){
-        if(uri==null)return;
-        try{
-            if(DocumentsContract.deleteDocument(getContentResolver(),uri))return;
-        }catch(Exception ignored){}
-        try{getContentResolver().delete(uri,null,null);}
-        catch(Exception e){
-            new RuntimeCrashStore(this).add("v076_export_empty_document_cleanup",e);
-        }
-    }
-
-    /** A ZIP is completely assembled and integrity-checked BEFORE SAF picker
-      * creates a document. Therefore missing engine data cannot leave a 0B ZIP.
-      */
-    private void beginPreparedLedgerExport(int request,String filename,
-                                           String reports,String kind){
-        if(!fullExportRunning.compareAndSet(false,true)){
-            new AlertDialog.Builder(this).setTitle("ZIP 추출 진행 중")
-                .setMessage("기존 추출이 완료된 뒤 다시 실행하십시오.")
-                .setPositiveButton("확인",null).show();
-            return;
-        }
-        discardPreparedLedger();
-        exportStage(kind,"PREPARE","원본 사전 검증",1,
-            "내보낼 원장과 SQLite 무결성 확인",true,false);
-        new Thread(()->{
-            File archive=new File(getCacheDir(),
-                "artitrade_export_ready_v076_"+System.nanoTime()+".zip");
-            try{
-                if(!Python.isStarted())
-                    throw new IllegalStateException("전략엔진이 시작되지 않아 원장 ZIP을 만들 수 없습니다.");
-                File originalRoot=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
-                File progress=new File(getCacheDir(),PY_EXPORT_PROGRESS);
-                String resultText=Python.getInstance()
-                    .getModule("android_ledger_backup")
-                    .callAttr("make_backup",originalRoot.getAbsolutePath(),
-                        archive.getAbsolutePath(),reports,progress.getAbsolutePath()).toString();
-                JSONObject result=new JSONObject(resultText);
-                String hash=result.optString("sha256","");
-                long bytes=result.optLong("bytes",-1L);
-                if(!result.optBoolean("ok",false)||!archive.isFile()||
-                    bytes<=128||bytes!=archive.length()||!hash.matches("[0-9a-f]{64}"))
-                    throw new IOException("원본 ZIP이 생성되지 않았거나 파일 크기가 올바르지 않습니다.");
-                exportStage(kind,"CHECK","ZIP 내부 검증",93,
-                    "원본 ZIP·매니페스트 SHA-256 확인",true,false);
-                JSONObject checked=new JSONObject(Python.getInstance()
-                    .getModule("android_ledger_backup")
-                    .callAttr("validate_backup_json",archive.getAbsolutePath()).toString());
-                if(!checked.optBoolean("ok",false))
-                    throw new IOException("ZIP 내부 매니페스트와 원본 해시 검사 실패");
-                try(java.util.zip.ZipFile zipped=new java.util.zip.ZipFile(archive)){
-                    if(zipped.getEntry("manifest.json")==null||
-                        zipped.size()<2)
-                        throw new IOException("ZIP 원장 내용이 비어 있습니다.");
-                }
-                android.content.SharedPreferences.Editor edit=
-                    getSharedPreferences(EXPORT_READY_PREF,MODE_PRIVATE).edit();
-                if(!edit.putString("path",archive.getCanonicalPath())
-                    .putString("sha",hash).putLong("bytes",bytes)
-                    .putInt("request",request).putString("kind",kind)
-                    .putInt("originals",result.optInt("file_count",0)).commit())
-                    throw new IOException("검증된 ZIP 임시경로 저장 실패");
-                exportStage(kind,"PICKER","저장 위치 선택",94,
-                    String.format(Locale.KOREA,"검증된 ZIP %,d바이트 준비 완료",bytes),
-                    true,false);
-                main.post(()->{
-                    if(isFinishing()||isDestroyed()){
-                        discardPreparedLedger();
-                        exportStage(kind,"FAILED","내보내기 실패",0,
-                            "화면이 종료되어 임시 ZIP을 정리함",false,true);
-                        fullExportRunning.set(false);
-                        return;
-                    }
-                    try{
-                        Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-                        picker.addCategory(Intent.CATEGORY_OPENABLE);
-                        picker.setType("application/zip");
-                        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
-                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                        picker.putExtra(Intent.EXTRA_TITLE,filename);
-                        startActivityForResult(picker,request);
-                    }catch(Exception e){
-                        discardPreparedLedger();
-                        exportStage(kind,"FAILED","저장 위치 열기 실패",0,
-                            String.valueOf(e.getMessage()),false,true);
-                        fullExportRunning.set(false);
-                        fullLedgerExportResult(false,"파일 선택창을 열지 못했습니다: "+
-                            String.valueOf(e.getMessage()),true);
-                    }
-                });
-            }catch(Throwable e){
-                if(archive.isFile())archive.delete();
-                discardPreparedLedger();
-                new RuntimeCrashStore(this).add("v076_export_prepared_failed",e);
-                exportStage(kind,"FAILED","ZIP 사전 생성 실패",0,
-                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
-                    false,true);
-                fullExportRunning.set(false);
-                fullLedgerExportResult(false,
-                    "저장 위치에 빈 파일을 만들지 않았습니다.\n"+
-                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
-                    true,"errors".equals(kind)?"오류이력 ZIP 추출":"연구이력 ZIP 추출");
-            }
-        },"artitrade-v076-prepare-zip-before-saf").start();
-    }
-
-    /** Only a prevalidated private archive is copied to user-owned storage.
-      * Every output byte is SHA-checked twice. On failure delete the newly
-      * created document rather than leaving a misleading 0-byte placeholder.
-      */
-    private void finishPreparedLedgerExport(int request,Uri uri){
-        android.content.SharedPreferences prepared=getSharedPreferences(
-            EXPORT_READY_PREF,MODE_PRIVATE);
-        String kind=prepared.getString("kind","research");
-        fullExportRunning.set(true);
-        new Thread(()->{
-            try{
-                if(uri==null||!"content".equals(uri.getScheme()))
-                    throw new SecurityException("Android 파일 저장 위치가 유효하지 않습니다.");
-                if(prepared.getInt("request",-1)!=request)
-                    throw new IOException("ZIP 파일 선택 요청과 사전 준비 기록 불일치");
-                File cached=new File(prepared.getString("path","")).getCanonicalFile();
-                File parent=getCacheDir().getCanonicalFile();
-                if(!parent.equals(cached.getParentFile())||
-                    !cached.getName().startsWith("artitrade_export_ready_v076_"))
-                    throw new SecurityException("검증되지 않은 임시 백업 경로");
-                long expectedSize=prepared.getLong("bytes",0L);
-                String expectedSha=prepared.getString("sha","");
-                if(!cached.isFile()||expectedSize<=128||
-                    cached.length()!=expectedSize||
-                    !expectedSha.matches("[0-9a-f]{64}"))
-                    throw new IOException("사용자 파일 선택 중 준비된 ZIP 원본이 사라졌습니다.");
-                exportStage(kind,"COPY","저장소로 복사",95,
-                    "검증된 ZIP 파일 복사 중",true,false);
-                MessageDigest streamDigest=MessageDigest.getInstance("SHA-256");
-                long copied=0;
-                OutputStream destination;
-                try{
-                    destination=getContentResolver().openOutputStream(uri,"wt");
-                }catch(Exception unsupported){
-                    destination=getContentResolver().openOutputStream(uri,"w");
-                }
-                if(destination==null)throw new IOException("선택한 위치의 출력 스트림 없음");
-                try(InputStream input=new FileInputStream(cached);
-                    OutputStream output=destination){
-                    byte[] buffer=new byte[1024*1024];
-                    int n,lastPercent=-1;
-                    while((n=input.read(buffer))!=-1){
-                        if(n==0)continue;
-                        output.write(buffer,0,n);
-                        copied+=n;
-                        streamDigest.update(buffer,0,n);
-                        int pct=95+(int)(2.0*copied/Math.max(1,expectedSize));
-                        if(pct>lastPercent){
-                            lastPercent=pct;
-                            exportStage(kind,"COPY","저장소로 복사",pct,
-                                String.format(Locale.KOREA,"%,d / %,d바이트",copied,expectedSize),
-                                true,false);
-                        }
-                    }
-                    output.flush();
-                }
-                if(copied!=expectedSize||
-                    !expectedSha.equalsIgnoreCase(hex(streamDigest.digest())))
-                    throw new IOException("ZIP 복사 원본 크기 또는 SHA-256 불일치");
-                exportStage(kind,"VERIFY","저장된 ZIP 다시 읽기",98,
-                    "외부 저장소 파일을 열어 바이트·해시 대조",true,false);
-                long read=0;
-                MessageDigest check=MessageDigest.getInstance("SHA-256");
-                int first=-1,second=-1;
-                try(InputStream verify=getContentResolver().openInputStream(uri)){
-                    if(verify==null)throw new IOException("저장소 ZIP을 재열 수 없습니다.");
-                    byte[] buf=new byte[1024*1024];int n;
-                    while((n=verify.read(buf))!=-1){
-                        if(n==0)continue;
-                        if(first<0){first=buf[0]&255;second=n>1?(buf[1]&255):-1;}
-                        check.update(buf,0,n);read+=n;
-                    }
-                }
-                if(read!=expectedSize||first!=0x50||second!=0x4b||
-                    !expectedSha.equalsIgnoreCase(hex(check.digest())))
-                    throw new IOException("저장소 ZIP이 0바이트이거나 원본과 불일치합니다.");
-                exportStage(kind,"DONE","ZIP 내보내기 완료",100,
-                    String.format(Locale.KOREA,"재검증 완료 · %,d바이트",read),
-                    false,false);
-                fullLedgerExportResult(true,
-                    "ZIP 원본과 저장된 파일 크기·SHA-256 일치\n"+
-                    "저장된 용량 "+String.format(Locale.KOREA,"%,d",read)+"바이트\n"+
-                    "ZIP SHA-256 "+expectedSha,
-                    true,"errors".equals(kind)?"오류이력 ZIP 추출":"연구이력 ZIP 추출");
-            }catch(Throwable e){
-                removeFailedSafDocument(uri);
-                new RuntimeCrashStore(this).add("v076_export_saf_copy_failed",e);
-                exportStage(kind,"FAILED","ZIP 저장 실패",0,
-                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
-                    false,true);
-                fullLedgerExportResult(false,
-                    "불완전한 저장소 파일 삭제를 요청했습니다.\n"+
-                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
-                    true,"errors".equals(kind)?"오류이력 ZIP 추출":"연구이력 ZIP 추출");
-            }finally{
-                discardPreparedLedger();
-                fullExportRunning.set(false);
-            }
-        },"artitrade-v076-copy-verify-user-zip").start();
-    }
-
-    private void cancelPreparedLedgerExport(int request){
-        android.content.SharedPreferences p=getSharedPreferences(
-            EXPORT_READY_PREF,MODE_PRIVATE);
-        String kind=p.getString("kind","research");
-        if(p.getInt("request",-1)==request){
-            discardPreparedLedger();
-            exportStage(kind,"CANCELLED","추출 취소",0,
-                "저장 위치 선택이 취소되어 임시 ZIP 삭제",false,false);
-        }
-        fullExportRunning.set(false);
-    }
-
-    /** User chooses a SAF file; no automatic email, upload or scheduled action. */
+    /** User chooses a SAF folder; no automatic email, upload or scheduled action. */
     private void requestFullLedgerBackup(){
         if(fullExportRunning.get()){
             new AlertDialog.Builder(this).setTitle("원장 백업 진행 중")
@@ -4965,10 +4727,20 @@ public final class UnifiedVisualActivity extends Activity {
                 .setPositiveButton("확인",null).show();
             return;
         }
-        String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
-        beginPreparedLedgerExport(REQUEST_EXPORT_FULL_LEDGER,
-            "ARTITRADE_FULL_LEDGER_"+stamp+".zip",null,"research");
+        // Owner rule 2026-11-20: no exported ZIP may reach 30 MB, so the whole-ledger
+        // backup is written as split parts into a chosen folder, never one big ZIP.
+        pendingFullLedgerBackup=true;
+        getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE).edit()
+            .putBoolean("ledger_backup",true).commit();
+        exportStage("research","SELECT_DIR","저장 폴더 선택",0,
+            "선택한 폴더에 29MB 이하 ZIP 파트로 전체 원장 저장",true,false);
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(picker,REQUEST_EXPORT_FULL_LEDGER);
     }
+    private boolean pendingFullLedgerBackup=false;
 
     private static String hex(byte[] bytes){
         StringBuilder b=new StringBuilder(bytes.length*2);
@@ -4993,105 +4765,6 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private void fullLedgerExportResult(boolean success,String message){
         fullLedgerExportResult(success,message,false);
-    }
-
-    private void exportFullLedgerToDocument(Uri target){
-        exportFullLedgerToDocument(target,null);
-    }
-    private void exportFullLedgerToDocument(Uri target,String reportsJson){
-        exportFullLedgerToDocument(target,reportsJson,null);
-    }
-    private void exportFullLedgerToDocument(Uri target,String reportsJson,String aiScope){
-        final boolean research=reportsJson!=null;
-        final boolean aiExport=aiScope!=null;
-        final boolean errorExport=reportsJson!=null&&reportsJson.contains("ARTITRADE_ERROR_HISTORY_V071");
-        if(!fullExportRunning.compareAndSet(false,true))return;
-        new Thread(()->{
-            File archive=new File(getCacheDir(),"artitrade_full_ledger_"+System.nanoTime()+".zip");
-            try{
-                if(target==null||!"content".equals(target.getScheme()))
-                    throw new SecurityException("지원되는 Android 파일 저장 위치가 아닙니다.");
-                if(!Python.isStarted())
-                    throw new IllegalStateException("전략엔진 시작 후 전체 원장을 백업할 수 있습니다.");
-                File rootDir=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
-                com.chaquo.python.PyObject backup=
-                    Python.getInstance().getModule("android_ledger_backup");
-                String metadata=reportsJson;
-                if(aiExport){
-                    // Small explicit runtime telemetry, not credential/secret stores.
-                    UiSnapshot current=uiSnapshot;
-                    JSONObject perf=new JSONObject()
-                        .put("ui_model_preload_ms",current.preloadMs)
-                        .put("ui_prepared_rows",current.preloadRows)
-                        .put("ui_cached_model_reused",current.reused);
-                    JSONObject engine=current.packet.optJSONObject("strategy_runtime");
-                    JSONObject modes=engine==null?null:
-                        engine.optJSONObject("market_trend_status");
-                    // Stable trade-record snapshots intentionally omit volatile
-                    // profiler counters; fetch diagnostics from runtime instead.
-                    if(modes!=null)perf.put("market_trend_runtime",modes);
-                    metadata=Python.getInstance()
-                        .getModule("android_ai_evidence_export_v046")
-                        .callAttr("build_reports",rootDir.getAbsolutePath(),
-                            aiScope,reportsJson,perf.toString()).toString();
-                }
-                String raw=(metadata==null
-                    ?backup.callAttr("make_backup",rootDir.getAbsolutePath(),
-                        archive.getAbsolutePath())
-                    :backup.callAttr("make_backup",rootDir.getAbsolutePath(),
-                        archive.getAbsolutePath(),metadata)).toString();
-                JSONObject result=new JSONObject(raw);
-                if(!result.optBoolean("ok")||!archive.isFile()||
-                    result.optLong("bytes",-1)!=archive.length())
-                    throw new IOException("SQLite 원장 스냅샷 생성/크기 검사 실패");
-                String expected=result.optString("sha256","");
-                long length=0;
-                MessageDigest written=MessageDigest.getInstance("SHA-256");
-                try(InputStream in=new FileInputStream(archive);
-                    OutputStream out=getContentResolver().openOutputStream(target,"w")){
-                    if(out==null)throw new IOException("백업 저장 위치에 쓰기 불가");
-                    byte[] buf=new byte[1024*1024];int n;
-                    while((n=in.read(buf))!=-1){
-                        out.write(buf,0,n);written.update(buf,0,n);length+=n;
-                    }
-                    out.flush();
-                }
-                if(length!=archive.length()||!expected.equalsIgnoreCase(hex(written.digest())))
-                    throw new IOException("저장 중 원장 백업 크기 또는 SHA-256 불일치");
-                // Content providers can fail after a write appears complete.
-                // Read the picked destination back and verify every saved byte.
-                MessageDigest saved=MessageDigest.getInstance("SHA-256");
-                long confirmed=0;
-                try(InputStream verify=getContentResolver().openInputStream(target)){
-                    if(verify==null)throw new IOException("저장된 백업 재조회 불가");
-                    byte[] buf=new byte[1024*1024];int n;
-                    while((n=verify.read(buf))!=-1){saved.update(buf,0,n);confirmed+=n;}
-                }
-                if(confirmed!=length||!expected.equalsIgnoreCase(hex(saved.digest())))
-                    throw new IOException("선택한 저장 위치에서 백업 재검증 불일치");
-                fullLedgerExportResult(true,
-                    "원본 파일 "+result.optInt("file_count",0)+"개 (SQLite "+
-                    result.optInt("sqlite_count",0)+"개)\n"+
-                    "읽기용 분석자료 "+result.optInt("report_count",0)+"개\n"+
-                    "용량 "+String.format(Locale.KOREA,"%,d",confirmed)+"바이트\n"+
-                    "ZIP SHA-256 "+expected+"\n"+
-                    "과거·현재 실제/가상매매 원본 SQLite 전체 및 저장본을 검증했습니다.",
-                    research,aiExport?"AI 심층 정량자료 추출":
-                        errorExport?"오류이력 ZIP 추출":null);
-            }catch(Throwable e){
-                new RuntimeCrashStore(this).add(research?"research_full_export":"full_ledger_backup",e);
-                fullLedgerExportResult(false,
-                    "기존 원장 데이터는 변경되지 않았습니다.\n"+e.getClass().getSimpleName()+
-                    ": "+String.valueOf(e.getMessage()),research,
-                    aiExport?"AI 심층 정량자료 추출":
-                        errorExport?"오류이력 ZIP 추출":null);
-            }finally{
-                if(archive.exists()&&!archive.delete())
-                    new RuntimeCrashStore(this).add("full_ledger_backup_cache_cleanup",
-                        new IOException("Temporary archive cleanup failed"));
-                fullExportRunning.set(false);
-            }
-        },"artitrade-full-ledger-export").start();
     }
 
     /** Legacy research button shares the verified multipart SAF-folder path. */
@@ -5210,7 +4883,7 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject meta=info.optJSONObject("analysis_file");
         if(meta==null)throw new IOException("분석용 JSON 파일 목록 누락");
         String name=meta.getString("name");
-        if(!name.matches("ARTITRADE_[A-Z]+_(ERROR_HISTORY|RESEARCH)_[A-Za-z0-9_]+_ANALYSIS_READY\\.json"))
+        if(!name.matches("ARTITRADE_[A-Z]+_(ERROR_HISTORY|RESEARCH|LEDGER_BACKUP|AI_DEEP)_[A-Za-z0-9_]+_ANALYSIS_READY\\.json"))
             throw new SecurityException("분석용 JSON 파일명 형식 오류");
         File source=new File(folder,name).getCanonicalFile();
         if(!source.getParentFile().equals(folder.getCanonicalFile()))
@@ -5252,7 +4925,22 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void exportCombinedResearchToFolder(Uri tree,String scope){
+        exportBundleToFolder(tree,scope,"research",null,null);
+    }
+
+    /** One split-ZIP exporter for research history, the whole-ledger backup and the
+      * AI deep export. No ZIP part may exceed GPT_SAFE_ZIP_PART_BYTES (owner rule
+      * 2026-11-20). kind: research | ledger | ai. For ai, reportsJson is the finished
+      * AI analysis and aiScope its strategy; the evidence reports are built in Python.
+      */
+    private void exportBundleToFolder(Uri tree,String scope,String kind,
+                                      String reportsJson,String aiScope){
         if(!fullExportRunning.compareAndSet(false,true))return;
+        final String what="ledger".equals(kind)?"전체 원장 백업":
+            "ai".equals(kind)?"AI 정량자료":
+            ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+" 연구이력";
+        final String dialogTitle="ledger".equals(kind)?"전체 원장 백업":
+            "ai".equals(kind)?"AI 심층 정량자료 추출":null;
         exportStage("research","PREPARE","원본 연구자료 준비",2,
             "SQLite/WAL 스냅샷·ZIP 생성",true,false);
         File progressFile=new File(getCacheDir(),PY_EXPORT_PROGRESS);
@@ -5273,10 +4961,29 @@ public final class UnifiedVisualActivity extends Activity {
                         Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                 }catch(SecurityException ignored){}
                 File runtime=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                String metadata=null;
+                if("ai".equals(kind)){
+                    if(reportsJson==null||aiScope==null)
+                        throw new IllegalStateException("AI 분석자료가 없습니다.");
+                    // Small explicit runtime telemetry, not credential/secret stores.
+                    UiSnapshot current=uiSnapshot;
+                    JSONObject perf=new JSONObject()
+                        .put("ui_model_preload_ms",current.preloadMs)
+                        .put("ui_prepared_rows",current.preloadRows)
+                        .put("ui_cached_model_reused",current.reused);
+                    JSONObject engine=current.packet.optJSONObject("strategy_runtime");
+                    JSONObject modes=engine==null?null:
+                        engine.optJSONObject("market_trend_status");
+                    if(modes!=null)perf.put("market_trend_runtime",modes);
+                    metadata=Python.getInstance()
+                        .getModule("android_ai_evidence_export_v046")
+                        .callAttr("build_reports",runtime.getAbsolutePath(),
+                            aiScope,reportsJson,perf.toString()).toString();
+                }
                 String raw=Python.getInstance().getModule("android_research_bundle")
                     .callAttr("make_bundle",runtime.getAbsolutePath(),
                         folder.getAbsolutePath(),scope,GPT_SAFE_ZIP_PART_BYTES,
-                        progressFile.getAbsolutePath()).toString();
+                        progressFile.getAbsolutePath(),kind,null,null,metadata).toString();
                 JSONObject info=new JSONObject(raw);
                 if(!info.optBoolean("ok")||info.optInt("parts")<=0)
                     throw new IOException("분할 리서치 생성 검증 실패");
@@ -5291,7 +4998,7 @@ public final class UnifiedVisualActivity extends Activity {
                 for(int i=0;i<parts.length();i++){
                     JSONObject item=parts.getJSONObject(i);
                     String filename=item.getString("name");
-                    if(!filename.matches("ARTITRADE_[A-Z]+_RESEARCH_[A-Za-z0-9_]+_PART_[0-9]{3}_OF_[0-9]{3}\\.zip"))
+                    if(!filename.matches("ARTITRADE_[A-Z]+_(RESEARCH|LEDGER_BACKUP|AI_DEEP)_[A-Za-z0-9_]+_PART_[0-9]{3}_OF_[0-9]{3}\\.zip"))
                         throw new SecurityException("안전하지 않은 출력 파일명");
                     File source=new File(folder,filename);
                     if(!source.isFile()||source.length()!=item.getLong("bytes")||
@@ -5333,24 +5040,24 @@ public final class UnifiedVisualActivity extends Activity {
                     String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
                     false,false);
                 fullLedgerExportResult(true,
-                    ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
-                    " 연구이력 "+parts.length()+"개 ZIP 저장 완료\n"+
+                    what+" "+parts.length()+"개 ZIP 저장 완료\n"+
                     "각 ZIP 29MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
                     "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
-                    "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",true);
+                    "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",true,dialogTitle);
             }catch(Throwable e){
                 // A failed multi-file transfer must not masquerade as a complete export.
                 for(Uri created:newDocuments){
                     try{DocumentsContract.deleteDocument(getContentResolver(),created);}
                     catch(Exception ignored){}
                 }
-                new RuntimeCrashStore(this).add("combined_research_export",e);
+                new RuntimeCrashStore(this).add("combined_"+kind+"_export",e);
                 exportStage("research","FAILED","연구 ZIP 저장 실패",0,
                     e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
                     false,true);
                 fullLedgerExportResult(false,
-                    "통합 연구이력 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\\n"+
-                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),true);
+                    what+" 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\n"+
+                    "기존 원장 데이터는 변경되지 않았습니다.\n"+
+                    e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),true,dialogTitle);
             }finally{
                 File[] files=folder.listFiles();
                 if(files!=null)for(File file:files)if(file.isFile())file.delete();
@@ -5563,17 +5270,19 @@ public final class UnifiedVisualActivity extends Activity {
             pendingAiExportScope=null;pendingAiExportReport=null;
             if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null
                 &&scope!=null&&report!=null)
-                exportFullLedgerToDocument(data.getData(),report,scope);
+                exportBundleToFolder(data.getData(),"all","ai",report,scope);
             return;
         }
-        if(requestCode==REQUEST_EXPORT_ERRORS||
-           requestCode==REQUEST_EXPORT_RESEARCH||
-           requestCode==REQUEST_EXPORT_FULL_LEDGER){
-            pendingErrorsReports=null;pendingResearchReports=null;
-            pendingResearchExport=null;
-            if(resultCode==RESULT_OK&&data!=null&&data.getData()!=null)
-                finishPreparedLedgerExport(requestCode,data.getData());
-            else cancelPreparedLedgerExport(requestCode);
+        if(requestCode==REQUEST_EXPORT_FULL_LEDGER){
+            android.content.SharedPreferences picker=getSharedPreferences(
+                "artitrade_picker_scope_v088",MODE_PRIVATE);
+            boolean wanted=pendingFullLedgerBackup||picker.getBoolean("ledger_backup",false);
+            pendingFullLedgerBackup=false;
+            picker.edit().remove("ledger_backup").apply();
+            if(resultCode==RESULT_OK&&wanted&&data!=null&&data.getData()!=null)
+                exportBundleToFolder(data.getData(),"all","ledger",null,null);
+            else exportStage("research","CANCELLED","전체 원장 백업 취소",0,
+                "저장 폴더 선택이 취소됨",false,false);
             return;
         }
     }
@@ -6115,17 +5824,11 @@ public final class UnifiedVisualActivity extends Activity {
         }
         pendingAiExportScope=chosenScope;
         pendingAiExportReport=aiAnalysisReport.toString();
-        String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA)
-            .format(new Date());
-        Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        picker.addCategory(Intent.CATEGORY_OPENABLE);
-        picker.setType("application/zip");
+        // Split parts (<30 MB each) go into a chosen folder, never one big ZIP.
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
-            Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        picker.putExtra(Intent.EXTRA_TITLE,
-            "ARTITRADE_AI_DEEP_"+market.toUpperCase(Locale.ROOT)+"_"+
-            strategy.toUpperCase(Locale.ROOT)+
-            "_"+stamp+".zip");
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(picker,REQUEST_EXPORT_AI_EVIDENCE);
     }
 

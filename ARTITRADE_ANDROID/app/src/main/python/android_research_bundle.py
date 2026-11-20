@@ -19,13 +19,18 @@ from pathlib import Path
 
 from android_ledger_backup import (
     MAX_EXPANDED, MAX_FILES, MIN_FREE, _candidate, _copy_checked,
-    _db_snapshot, _sha256, _source_catalog
+    _db_snapshot, _reports_from_json, _sha256, _source_catalog
 )
 
 SCHEMA="ARTITRADE_RESEARCH_BUNDLE_V1"
 DEFAULT_PART_BYTES=29_000_000  # owner rule 2026-11-20: the analysis tool accepts <30 MB per file
 MAX_LEGACY_ALLOWED_PART_BYTES=500_000_000  # old archive test/compatibility cap
 ANALYSIS_SIDECAR_MAX_BYTES=2_000_000
+# bundle_kind -> file-name tag. "ledger" is the menu "전체 원장 백업" and "ai" is the
+# AI deep-evidence export; both used to be ONE ZIP of the whole ledger (owner rule
+# 2026-11-20: no exported file may reach 30 MB, so they are split like research).
+KIND_TAGS={"research":"_RESEARCH_","errors":"_ERROR_HISTORY_",
+           "ledger":"_LEDGER_BACKUP_","ai":"_AI_DEEP_"}
 
 RESTORE_PARTS_PY = "#!/usr/bin/env python3\n\"\"\"Reassemble only this ARTITRADE export bundle; original ZIPs stay read-only.\n\nUsage: python restore_parts.py FIRST_PART.zip DESTINATION_FOLDER\nStandard-library only; no broker login, network or order execution.\n\"\"\"\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport sys\nimport zipfile\n\nCHUNK = 1024 * 1024\n\ndef recover(first, output):\n    first = Path(first).expanduser().resolve()\n    output = Path(output).expanduser().resolve()\n    with zipfile.ZipFile(first) as z:\n        index = json.loads(z.read(\"analysis/bundle_index.json\"))\n    number = int(index[\"part_count\"])\n    if number < 1 or number > 999:\n        raise ValueError(\"Invalid bundle part count\")\n    if \"_PART_\" not in first.name:\n        raise ValueError(\"Select a PART_001_OF_... ZIP\")\n    prefix = first.name.rsplit(\"_PART_\", 1)[0]\n    parts = [\n        first.with_name(\"%s_PART_%03d_OF_%03d.zip\" % (prefix, i, number))\n        for i in range(1, number + 1)\n    ]\n    if first.name != parts[0].name:\n        raise ValueError(\"Select the first ZIP part\")\n    encoded = json.dumps(index, sort_keys=True, ensure_ascii=False)\n    for item in parts:\n        with zipfile.ZipFile(item) as z:\n            other = json.loads(z.read(\"analysis/bundle_index.json\"))\n            if json.dumps(other, sort_keys=True, ensure_ascii=False) != encoded:\n                raise ValueError(\"Wrong part or mismatched index: \" + item.name)\n            bad = z.testzip()\n            if bad is not None:\n                raise ValueError(\"ZIP CRC error: \" + bad)\n    output.mkdir(parents=True, exist_ok=True)\n    root = str(output)\n    recovered = 0\n    for rel, row in {\n        **index.get(\"sources\", {}), **index.get(\"reports\", {})\n    }.items():\n        name = Path(rel)\n        if name.is_absolute() or not rel or \"..\" in name.parts:\n            raise ValueError(\"Unsafe output path: \" + rel)\n        target = output.joinpath(*name.parts)\n        if os.path.commonpath([root, str(target.resolve())]) != root:\n            raise ValueError(\"Output escapes destination\")\n        target.parent.mkdir(parents=True, exist_ok=True)\n        expected_size = int(row[\"size\"])\n        fragments = sorted(row[\"fragments\"], key=lambda x: int(x[\"offset\"]))\n        copied = 0\n        digest = hashlib.sha256()\n        with target.open(\"wb\") as out:\n            for frag in fragments:\n                part = int(frag[\"part\"])\n                if part < 1 or part > len(parts) or int(frag[\"offset\"]) != copied:\n                    raise ValueError(\"Incomplete source fragments: \" + rel)\n                with zipfile.ZipFile(parts[part - 1]) as z:\n                    with z.open(frag[\"entry\"]) as stream:\n                        received = 0\n                        while True:\n                            data = stream.read(CHUNK)\n                            if not data:\n                                break\n                            out.write(data)\n                            digest.update(data)\n                            copied += len(data)\n                            received += len(data)\n                        if received != int(frag[\"size\"]):\n                            raise ValueError(\"Incorrect fragment size: \" + rel)\n        if copied != expected_size or digest.hexdigest() != row[\"sha256\"]:\n            target.unlink(missing_ok=True)\n            raise ValueError(\"Source SHA-256 mismatch: \" + rel)\n        recovered += 1\n    print(\"ARTITRADE_RESTORED_VERIFIED\", recovered, \"files\", output)\n\nif __name__ == \"__main__\":\n    if len(sys.argv) != 3:\n        raise SystemExit(\"Usage: python restore_parts.py PART_001_OF_NNN.zip DIR\")\n    recover(sys.argv[1], sys.argv[2])\n"
 
@@ -163,7 +168,7 @@ def _put_compressed_error_item(pieces,used,capacity,record,source,limit,check_ca
 
 def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 progress_path=None, bundle_kind="research", native_errors_json=None,
-                cancel_path=None):
+                cancel_path=None, reports_json=None):
     progress=Path(progress_path).resolve() if progress_path else None
     cancel=Path(cancel_path).resolve() if cancel_path else None
     def check_cancel():
@@ -181,8 +186,9 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 encoding='utf8')
             os.replace(tmp,progress)
         except (OSError,TypeError,ValueError):pass
-    if bundle_kind not in ("research","errors"):
-        raise ValueError("Bundle kind must be research or errors")
+    if bundle_kind not in KIND_TAGS:
+        raise ValueError("Bundle kind must be research, errors, ledger or ai")
+    extra_reports=_reports_from_json(reports_json) if reports_json is not None else {}
     announce(4,'오류원장 검사' if bundle_kind=="errors" else '연구원장 검사',
              detail='스냅샷 대상 조사')
     if scope not in ("stock","coin","all"):
@@ -226,7 +232,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                       str(total+MIN_FREE)+" free bytes for original snapshots")
 
     prefix=("ARTITRADE_"+scope.upper()+
-            ("_ERROR_HISTORY_" if bundle_kind=="errors" else "_RESEARCH_")+
+            KIND_TAGS[bundle_kind]+
             time.strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:6])
     reserve=max(8192,min(4_000_000,max_part_bytes//20))
     capacity=max_part_bytes-reserve
@@ -274,7 +280,10 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
             source_records[rel]=record
             all_records[rel]=record
         catalog=_source_catalog({"strategy_files":source_records})
-        reports={
+        # Caller reports (AI deep evidence) first; the generated catalog and README
+        # below take the same precedence they have in make_backup().
+        reports=dict(extra_reports)
+        reports.update({
             "analysis/source_table_catalog.json":json.dumps(
                 catalog,ensure_ascii=False,indent=2).encode("utf8"),
             "analysis/README_ko.txt":(
@@ -286,7 +295,18 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 "실제 체결과 가상관측은 각 원본 테이블에서 구분할 것.\n"
                 "암호·API 키는 제외하며 원본 DB와 자동매매 엔진은 변경하지 않음.\n"
             ).encode("utf8")
-        }
+        })
+        if bundle_kind in ("ledger","ai"):
+            reports["analysis/README_ko.txt"]=(
+                "ARTITRADE "+("전체 원장 백업" if bundle_kind=="ledger" else "AI 정량자료")+
+                " — "+scope+"\n"
+                "모든 원본 SQLite와 JSON을 백업 시점의 무손실 스냅샷으로 포함함.\n"
+                "ZIP 1개당 "+str(max_part_bytes)+"바이트 이하로 분할됨. 각 파트에 동일한 "
+                "analysis/bundle_index.json이 들어 있음.\n"
+                "복원: analysis/restore_parts.py FIRST_PART.zip OUTPUT_DIR "
+                "(같은 묶음의 모든 PART 필요, 원본 SHA-256 검증).\n"
+                "암호·API 키는 제외하며 원본 DB와 자동매매 엔진은 변경하지 않음.\n"
+            ).encode("utf8")
         if bundle_kind=="errors":
             # Capture Java/Android system process-exit diagnoses in addition
             # to original source SQLite issues. Never expose saved API keys.
@@ -320,7 +340,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                  '원본 SHA 및 분할계획 계산')
         for record in all_records.values():
             check_cancel()
-            if bundle_kind in ("errors","research"):
+            if bundle_kind in ("errors","research","ledger","ai"):
                 # Plan by real level-1 compressed bytes, not uncompressed DB
                 # page count. 300MB of compressed evidence must be ONE ZIP,
                 # regardless of how many GB its live WAL snapshots occupy.

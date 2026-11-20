@@ -108,6 +108,81 @@ class SafePortableExport(unittest.TestCase):
             self.assertLessEqual(size,29_000_000)
         self.assertLessEqual(result["analysis_file"]["bytes"],29_000_000)
 
+    # --- 0.1.1: whole-ledger backup and AI deep export are split too ----------
+    def _big_ledger(self):
+        for i in range(3):
+            (self.coin/("big%d_errors.jsonl"%i)).write_bytes(os.urandom(23_000_000))
+        (self.root/"ANDROID_OPERATION_V074.json").write_text('{"mode":"PAPER"}',"utf8")
+
+    def test_whole_ledger_backup_is_split_below_30mb_and_restores_exactly(self):
+        """Owner rule 2026-11-20: the menu 'full ledger backup' must never write one ZIP
+        of 30 MB or more. ~70 MB of incompressible data -> at least 3 parts."""
+        self._big_ledger()
+        result=json.loads(make_bundle(str(self.root),str(self.out),"all",
+                                      bundle_kind="ledger"))
+        self.assertGreaterEqual(result["parts"],3)
+        self.assertTrue(all(f["bytes"]<=29_000_000 for f in result["files"]))
+        self.assertTrue(all("_ALL_LEDGER_BACKUP_" in f["name"] for f in result["files"]))
+        self.assertLess(result["analysis_file"]["bytes"],29_000_000)
+        # every original (including the root operation file) is restorable bit-exact
+        import importlib.util
+        first=self.out/result["files"][0]["name"]
+        with zipfile.ZipFile(first) as z:
+            restorer=self.base/"restore_parts.py"
+            restorer.write_bytes(z.read("analysis/restore_parts.py"))
+        spec=importlib.util.spec_from_file_location("restore_parts_under_test",restorer)
+        mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+        dest=self.base/"restored"
+        mod.recover(str(first),str(dest))
+        for rel in ("coin/base/big0_errors.jsonl","coin/base/runtime_errors.jsonl",
+                    "ANDROID_OPERATION_V074.json"):
+            src=self.root/rel
+            self.assertEqual(hashlib.sha256(src.read_bytes()).hexdigest(),
+                             hashlib.sha256((dest/rel).read_bytes()).hexdigest(),rel)
+        with sqlite3.connect(dest/"coin/base/upbit_paper.sqlite3") as c:
+            self.assertEqual(c.execute("SELECT reason FROM executions").fetchone()[0],
+                             "KNOWN_ORIGINAL_TEST_BUY")
+
+    def test_ai_deep_export_keeps_reports_and_is_split(self):
+        self._big_ledger()
+        reports=json.dumps({"analysis/AI_FULL_REPORT_V046.json":'{"ok":true}'})
+        result=json.loads(make_bundle(str(self.root),str(self.out),"all",
+                                      bundle_kind="ai",reports_json=reports))
+        self.assertGreaterEqual(result["parts"],3)
+        self.assertTrue(all(f["bytes"]<=29_000_000 for f in result["files"]))
+        self.assertTrue(all("_ALL_AI_DEEP_" in f["name"] for f in result["files"]))
+        with zipfile.ZipFile(self.out/result["files"][0]["name"]) as z:
+            index=json.loads(z.read("analysis/bundle_index.json"))
+        self.assertIn("analysis/AI_FULL_REPORT_V046.json",index["reports"])
+        self.assertIn("analysis/source_table_catalog.json",index["reports"])
+
+    def test_bad_ai_report_path_is_rejected_not_exported(self):
+        with self.assertRaises(ValueError):
+            make_bundle(str(self.root),str(self.out),"all",bundle_kind="ai",
+                        reports_json=json.dumps({"../evil.json":"{}"}))
+        self.assertEqual([x for x in self.out.iterdir() if x.suffix==".zip"],[])
+
+    def test_android_backup_and_ai_export_never_write_a_single_zip(self):
+        """Boundary contract in the Java caller: the three menu paths use the split
+        bundle and a folder picker; the old single-ZIP writers are gone."""
+        self.assertNotIn("ARTITRADE_FULL_LEDGER_",JAVA)
+        self.assertNotIn("ARTITRADE_AI_DEEP_\"+market",JAVA)
+        self.assertNotIn('callAttr("make_backup"',JAVA)
+        self.assertNotIn("exportFullLedgerToDocument",JAVA)
+        self.assertNotIn("beginPreparedLedgerExport",JAVA)
+        self.assertIn('exportBundleToFolder(data.getData(),"all","ledger",null,null)',JAVA)
+        self.assertIn('exportBundleToFolder(data.getData(),"all","ai",report,scope)',JAVA)
+        a=JAVA.index("private void requestFullLedgerBackup()")
+        self.assertIn("ACTION_OPEN_DOCUMENT_TREE",JAVA[a:a+1800])
+        self.assertNotIn("ACTION_CREATE_DOCUMENT",JAVA[a:a+1800])
+        b=JAVA.index("private void requestAiEvidenceExport()")
+        self.assertIn("ACTION_OPEN_DOCUMENT_TREE",JAVA[b:b+2200])
+        self.assertNotIn("ACTION_CREATE_DOCUMENT",JAVA[b:b+2200])
+        self.assertIn("callAttr(\"make_bundle\"",JAVA)
+        self.assertIn("progressFile.getAbsolutePath(),kind,null,null,metadata",JAVA)
+        self.assertIn("(RESEARCH|LEDGER_BACKUP|AI_DEEP)",JAVA)
+
+
     def test_research_scope_also_has_standalone_overview(self):
         result=json.loads(make_bundle(str(self.root),str(self.out),"coin",
                                      max_part_bytes=120_000,

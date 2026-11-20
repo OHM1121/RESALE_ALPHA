@@ -1248,7 +1248,25 @@
       "issues": [
         118
       ],
-      "contract": "Error/research history ZIP parts are at most 29,000,000 bytes each (owner rule: the analysis tool accepts less than 30 MB per file). DEFAULT_PART_BYTES and GPT_SAFE_ZIP_PART_BYTES must stay equal; the part count scales with data size; each part is independently valid and carries the same bundle_index.json.",
+      "contract": "Error/research history ZIP parts are at most 29,000,000 bytes each (owner rule: the analysis tool accepts less than 30 MB per file). DEFAULT_PART_BYTES and GPT_SAFE_ZIP_PART_BYTES must stay equal; the part count scales with data size; each part is independently valid and carries the same bundle_index.json. 0.1.1: the same limit now also covers the 전체 원장 백업 menu and the AI deep export (see LEDGER_BACKUP_SPLIT_V0110).",
+      "tests": [
+        "test_v101_zip95_analysis_ready.py"
+      ]
+    },
+    {
+      "id": "LEDGER_BACKUP_SPLIT_V0110",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "HISTORY_EXPORT_PART_LIMIT_V0100"
+      ],
+      "issues": [
+        119
+      ],
+      "contract": "Every user-facing ledger export (research history, errors, 전체 원장 백업, AI deep export) goes through android_research_bundle.make_bundle (kinds research/errors/ledger/ai) and UnifiedVisualActivity.exportBundleToFolder, so no exported file reaches 30 MB (parts <= 29,000,000 bytes). No single-ZIP writer (make_backup from Java, ACTION_CREATE_DOCUMENT zip) may exist in the three menu paths. Originals are snapshotted read-only (SQLite backup API, WAL-safe); every part is SHA-256 verified before and after the folder write and partial files are deleted on failure; restore is analysis/restore_parts.py (all PART files needed). The PC verify_phone_backup tool still verifies only the old single-ZIP schema. Never touches orders, wallets or quotes.",
       "tests": [
         "test_v101_zip95_analysis_ready.py"
       ]

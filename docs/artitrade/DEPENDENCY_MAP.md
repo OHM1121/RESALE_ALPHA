@@ -238,3 +238,22 @@ Based on 0.0.20 (versionCode 143).
    databases were in PART_001, not supplied).
 
 Build: source `01d119c`, CI run 44718800394, APK SHA256 `01a8f0b6…8503a9`, signer unchanged. CI-verified only; DEVICE_VERIFIED=false. Release page upload returns HTTP 403 (read-only Actions token); the APK is handed over from the workflow artifact.
+
+
+## 0.1.1 — how the changed parts connect (issue #119)
+Based on 0.1.0 (versionCode 144 for this build).
+
+1. **One export size contract.** 0.1.0 limited only the research/error history exports to 29 MB parts.
+   The menu **전체 원장 백업** and the **AI 심층 정량자료 추출** still wrote one ZIP of the whole ledger
+   (`make_backup`), which exceeds 30 MB. Both now call `android_research_bundle.make_bundle`
+   (new kinds `ledger` and `ai`; AI reports go in via `reports_json`) through
+   `UnifiedVisualActivity.exportBundleToFolder`, which asks for a **folder** and writes
+   `ARTITRADE_ALL_LEDGER_BACKUP_*_PART_nnn_OF_mmm.zip` / `ARTITRADE_ALL_AI_DEEP_*` (each <= 29,000,000 bytes)
+   plus the small `*_ANALYSIS_READY.json`.
+2. The old single-ZIP writers in `UnifiedVisualActivity` were deleted so the route cannot come back.
+3. Downstream: restore is `analysis/restore_parts.py` (needs all parts). The PC tool
+   `verify_phone_backup` still understands only the old single-ZIP schema (not changed).
+4. No trading, wallet, order or quote path is touched.
+
+Status: SOURCE_FIXED, local Python tests passed (`test_v101_zip95_analysis_ready.py`), Java not compiled
+locally (no Android SDK; CI does it), CI and device not yet verified.
