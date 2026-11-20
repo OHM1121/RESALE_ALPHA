@@ -214,8 +214,11 @@ class JavaIntegration(unittest.TestCase):
         runtime=(Path(__file__).resolve().parents[1]/"app/src/main/python/android_runtime_v078.py").read_text()
         self.assertIn('_install_position_uid_v015(_core)',runtime)
         ui=(Path(__file__).resolve().parents[1]/"app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java").read_text()
-        self.assertIn('r.optString("position_uid","연결 검증 필요")',ui)
-        self.assertIn('p.optString("position_uid",',ui)
+        # 0.1.7 (owner request): the unique trade id is no longer printed as a footnote; it is the
+        # key that groups a trade's buy and sell in the execution history.
+        self.assertNotIn('"고유 거래 ID"',ui)
+        self.assertIn('r.optString("position_uid","").trim()',ui)
+        self.assertIn('"uid|"+uid',ui)
 
 if __name__=="__main__":
     unittest.main(verbosity=2)

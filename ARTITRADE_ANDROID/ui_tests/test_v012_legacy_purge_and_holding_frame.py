@@ -199,8 +199,10 @@ class StrictEntryAndHoldingBadge(unittest.TestCase):
     def test_holdings_timeframe_is_left_badge_not_symbol_suffix(self):
         source=(Path(__file__).resolve().parents[1]/
                 'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
-        self.assertIn('holdingFrameBadge(r,source)',source)
-        self.assertIn('holdingFrameBadge(p,holding.scopeStrategy)',source)
+        # 0.1.7: one shared holding card; the timeframe stays the LEFT badge for both pages.
+        self.assertIn('holdingFrameBadge(p,sourceStrategy)',source)
+        self.assertIn('buildHoldingCard(r,market,source,holdPnl',source)
+        self.assertIn('buildHoldingCard(p,holding.scopeMarket,holding.scopeStrategy',source)
         self.assertIn('"5m".equals(frame))return "5분"',source)
         self.assertIn('"30m".equals(frame))return "30분"',source)
         self.assertIn('"60m".equals(frame))return "60분"',source)
