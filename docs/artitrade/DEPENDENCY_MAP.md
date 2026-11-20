@@ -236,3 +236,5 @@ Based on 0.0.20 (versionCode 143).
    parts. Every part is independently valid and restorable with `analysis/restore_parts.py`.
 3. Not yet explained: stock reference-bar (AT), MA and MarketTrend order-level causes (their
    databases were in PART_001, not supplied).
+
+Build: source `01d119c`, CI run 44718800394, APK SHA256 `01a8f0b6…8503a9`, signer unchanged. CI-verified only; DEVICE_VERIFIED=false. Release page upload returns HTTP 403 (read-only Actions token); the APK is handed over from the workflow artifact.

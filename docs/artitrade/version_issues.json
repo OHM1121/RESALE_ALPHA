@@ -1325,7 +1325,7 @@
       "root": "CONFIRMED_IN_CODE",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.0",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44718800394",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_SUBSCRIPTION_PLANNER_V0200",
@@ -1623,8 +1623,13 @@
     "version": "0.1.0",
     "versionCode": 143,
     "base": "0.0.20 (e24c1fb)",
-    "status": "BUILD_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
-    "device_verified": false
+    "device_verified": false,
+    "source_commit": "01d119cee888e1f5bb79c08246d49d3280cbd5a9",
+    "apk_sha256": "01a8f0b6416d23e4311b7e908b92b399a7f78e81998751f9b30168f90d8503a9",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44718800394",
+    "release_publish": "GitHub release step returned HTTP 403 again; APK handed over from the workflow artifact. Likely cause: the repository's Actions token is read-only (X-Accepted-Github-Permissions contents=read); owner can allow it under Settings > Actions > General > Workflow permissions > Read and write.",
+    "next_version": "0.1.1"
   }
 }
