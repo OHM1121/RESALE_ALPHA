@@ -1,4 +1,4 @@
-"""v101: ChatGPT-transfer-safe 95 MB export and independently readable JSON.
+"""v101 (limit lowered to 29 MB per part, owner rule 2026-11-20): transfer-safe export and independently readable JSON.
 
 Temporary SQLite and JSONL fixtures only. Never modify user trading ledgers.
 """
@@ -36,8 +36,8 @@ class SafePortableExport(unittest.TestCase):
         (self.coin/"runtime_errors.jsonl").write_bytes(self.random)
 
     def test_android_routes_no_longer_call_500mb_single_zip(self):
-        self.assertEqual(DEFAULT_PART_BYTES,95_000_000)
-        self.assertIn("GPT_SAFE_ZIP_PART_BYTES=95_000_000L",JAVA)
+        self.assertEqual(DEFAULT_PART_BYTES,29_000_000)
+        self.assertIn("GPT_SAFE_ZIP_PART_BYTES=29_000_000L",JAVA)
         self.assertEqual(JAVA.count("scope,GPT_SAFE_ZIP_PART_BYTES,"),2)
         self.assertEqual(JAVA.count("source.length()>GPT_SAFE_ZIP_PART_BYTES"),2)
         self.assertNotIn("scope,500_000_000,",JAVA)
@@ -90,6 +90,23 @@ class SafePortableExport(unittest.TestCase):
         with sqlite3.connect(self.db) as c:
             self.assertEqual(c.execute("SELECT reason FROM executions").fetchone()[0],
                              "KNOWN_ORIGINAL_TEST_BUY")
+
+    def test_default_parts_are_each_at_most_29_million_bytes(self):
+        """Owner rule 2026-11-20: the analysis tool accepts <30 MB per file, so a
+        large history is split into as many parts as needed (~70 MB -> >=3)."""
+        for i in range(3):
+            (self.coin/("big%d_errors.jsonl"%i)).write_bytes(os.urandom(23_000_000))
+        result=json.loads(make_bundle(str(self.root),str(self.out),"coin",
+                                      bundle_kind="errors"))
+        self.assertEqual(DEFAULT_PART_BYTES,29_000_000)
+        self.assertGreaterEqual(result["parts"],3)
+        sizes=[(self.out/name["name"]).stat().st_size
+               for name in json.loads((self.out/result["analysis_file"]["name"])
+                                      .read_text("utf8"))["zip_parts"]]
+        self.assertEqual(len(sizes),result["parts"])
+        for size in sizes:
+            self.assertLessEqual(size,29_000_000)
+        self.assertLessEqual(result["analysis_file"]["bytes"],29_000_000)
 
     def test_research_scope_also_has_standalone_overview(self):
         result=json.loads(make_bundle(str(self.root),str(self.out),"coin",

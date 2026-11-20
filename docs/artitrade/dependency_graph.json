@@ -1194,9 +1194,13 @@
       ],
       "issues": [
         116,
-        117
+        117,
+        118
       ],
-      "contract": "One Kiwoom socket, max 200 live slots. Held/pending symbols first; strategy candidate lists (CLOSE, MA, TREND, GMO) claim their symbols BEFORE the whole-market list; the whole-market list keeps a 5/15 floor and takes the remainder; candidate lists share by weight 4:3:2:1. A symbol in several lists uses one slot. Never creates a quote, order or fill. Stock MarketTrend candidates equal the whole AT universe, so the Trend band carries only held symbols."
+      "contract": "One Kiwoom socket, max 200 live slots. Held/pending symbols first; strategy candidate lists (CLOSE, MA, TREND, GMO) claim their symbols BEFORE the whole-market list; the whole-market list keeps a 5/15 floor and takes the remainder; candidate lists share by weight 4:3:2:1. A symbol in several lists uses one slot. Never creates a quote, order or fill. Stock MarketTrend candidates equal the whole AT universe, so the Trend band carries only held symbols. 0.1.0: from 14:50 to 15:20 the close-betting universe (at most 100 symbols) is protected like holdings so every scanned symbol has a live book and trade (issue #118).",
+      "tests": [
+        "test_r010_close_window_coverage.py"
+      ]
     },
     {
       "id": "STOCK_TREND_AT_UNIVERSE_V0200",
@@ -1232,6 +1236,22 @@
         117
       ],
       "contract": "Owner decision (#117): an AT pending order whose one-share cost (limit + buy fee) exceeds symbol_limit_won(tf) is moved to EXCLUDED_ABOVE_SYMBOL_LIMIT (signal REJECTED, audit event) right after D19PaperEngine._enqueue_signals, in the same transaction. Budget read at call time. Never creates a quote, order, fill or position; failure never blocks order creation."
+    },
+    {
+      "id": "HISTORY_EXPORT_PART_LIMIT_V0100",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/android_research_bundle.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [],
+      "issues": [
+        118
+      ],
+      "contract": "Error/research history ZIP parts are at most 29,000,000 bytes each (owner rule: the analysis tool accepts less than 30 MB per file). DEFAULT_PART_BYTES and GPT_SAFE_ZIP_PART_BYTES must stay equal; the part count scales with data size; each part is independently valid and carries the same bundle_index.json.",
+      "tests": [
+        "test_v101_zip95_analysis_ready.py"
+      ]
     }
   ],
   "audit_scope": {

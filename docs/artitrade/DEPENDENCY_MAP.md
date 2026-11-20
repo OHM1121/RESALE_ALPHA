@@ -219,3 +219,20 @@ read-only and prints aggregate counts only (blocked audits, touched-but-not-boug
 reasons, pending orders priced above the per-symbol budget). It touches no
 runtime path.
 
+
+## 0.1.0 — how the changed parts connect (issue #118)
+Based on 0.0.20 (versionCode 143).
+
+1. **Close-betting (종가베팅) coverage.** `AtCloseRunner` scans 80 symbols (top 40 KOSPI +
+   40 KOSDAQ) and needs a fresh 0D book (<= 3 s) and 0B trade for each at the same time.
+   `stock_priority_runtime_v093.close_window_codes` now protects that universe from 14:50 to
+   15:20 (cap 100, like held symbols) inside `prioritized()` before `allocate_priority`.
+   Outside the window nothing changes. The freshness gates in `at_close_engine.evaluate` and
+   `at_close_runner` are untouched (no quote is ever invented).
+   Evidence: 0.0.18 history, 70/90 `NO_FRESH_ORDERBOOK`, 157 live/trade skips, 0 signals.
+2. **History export.** `android_research_bundle.DEFAULT_PART_BYTES` and
+   `UnifiedVisualActivity.GPT_SAFE_ZIP_PART_BYTES` are 29,000,000 bytes (was 95,000,000):
+   the analysis tool accepts less than 30 MB per file, so a 300 MB history becomes about 11
+   parts. Every part is independently valid and restorable with `analysis/restore_parts.py`.
+3. Not yet explained: stock reference-bar (AT), MA and MarketTrend order-level causes (their
+   databases were in PART_001, not supplied).

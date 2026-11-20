@@ -1314,6 +1314,28 @@
         "test_v020_limit_exclusion_and_trend_universe.py"
       ],
       "notes": "Stock Trend candidate count grows (about 100 -> up to 200): load not measured."
+    },
+    {
+      "id": "AT-0100-01",
+      "issue": 118,
+      "found": "owner error history 2026-11-20 (0.0.18)",
+      "category": "SUBSCRIPTION_COVERAGE",
+      "title": "Close-betting scanned symbols were not live in the 15:10-15:20 window; history export parts lowered to 29 MB",
+      "evidence": "AT_CLOSE_PAPER: 70/90 evaluations NO_FRESH_ORDERBOOK, 157 scan skips NO_LIVE_TRADE/STALE_TRADE_PRE_SCAN, 5 near-signal candidates blocked only by the stale book, 0 signals. Stock AT/MA/Trend order tables were in PART_001 (not supplied): not analysed.",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.0",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_SUBSCRIPTION_PLANNER_V0200",
+        "HISTORY_EXPORT_PART_LIMIT_V0100"
+      ],
+      "tests": [
+        "test_r010_close_window_coverage.py",
+        "test_v101_zip95_analysis_ready.py"
+      ],
+      "notes": "Load of the larger protected set not measured. AT / MA / Trend order-level reasons still need PART_001."
     }
   ],
   "known_normal": [
@@ -1596,5 +1618,13 @@
     "build_history": "run 3 failed at lintVital (network_security_config.xml includeSubdomains, exposed by removing debuggable, #112) -> fixed in e24c1fb; run 4 built, signed (original signer) and verified",
     "release_publish": "GitHub release step returned HTTP 403 (token); APK handed to the owner from the workflow artifact",
     "next_version": "0.1.0"
+  },
+  "candidate_010": {
+    "version": "0.1.0",
+    "versionCode": 143,
+    "base": "0.0.20 (e24c1fb)",
+    "status": "BUILD_PENDING",
+    "signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false
   }
 }

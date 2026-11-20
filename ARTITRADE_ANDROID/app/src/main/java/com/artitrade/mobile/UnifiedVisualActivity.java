@@ -5167,7 +5167,7 @@ public final class UnifiedVisualActivity extends Activity {
         getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE).edit()
             .putString("errors",scope).commit();
         exportStage("errors","SELECT_DIR","오류 ZIP 저장 폴더 선택",0,
-            "원본 주식·코인 오류자료를 파일당 95MB 이하로 분할",true,false);
+            "원본 주식·코인 오류자료를 파일당 29MB 이하로 분할",true,false);
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
@@ -5196,8 +5196,8 @@ public final class UnifiedVisualActivity extends Activity {
         startActivityForResult(picker,REQUEST_EXPORT_COMBINED_RESEARCH);
     }
 
-    /** Every exported ZIP part must be below 100 MB for file transfer tools. */
-    private static final long GPT_SAFE_ZIP_PART_BYTES=95_000_000L;
+    /** Every exported ZIP part must be below 30 MB (owner rule 2026-11-20: 29,000,000 bytes). */
+    private static final long GPT_SAFE_ZIP_PART_BYTES=29_000_000L;
 
 
     /** Store the same small, digest-verified JSON beside all ZIP pieces.
@@ -5296,7 +5296,7 @@ public final class UnifiedVisualActivity extends Activity {
                     File source=new File(folder,filename);
                     if(!source.isFile()||source.length()!=item.getLong("bytes")||
                        source.length()>GPT_SAFE_ZIP_PART_BYTES)
-                        throw new IOException("95MB 한도 또는 원본 파일 크기 검사 실패");
+                        throw new IOException("29MB 한도 또는 원본 파일 크기 검사 실패");
                     Uri saved=DocumentsContract.createDocument(getContentResolver(),
                         parent,"application/zip",filename);
                     if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
@@ -5335,7 +5335,7 @@ public final class UnifiedVisualActivity extends Activity {
                 fullLedgerExportResult(true,
                     ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
                     " 연구이력 "+parts.length()+"개 ZIP 저장 완료\n"+
-                    "각 ZIP 95MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "각 ZIP 29MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
                     "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
                     "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",true);
             }catch(Throwable e){
@@ -5435,7 +5435,7 @@ public final class UnifiedVisualActivity extends Activity {
                     File source=new File(folder,filename);
                     if(!source.isFile()||source.length()!=item.getLong("bytes")||
                        source.length()>GPT_SAFE_ZIP_PART_BYTES)
-                        throw new IOException("95MB 한도 또는 원본 파일 크기 검사 실패");
+                        throw new IOException("29MB 한도 또는 원본 파일 크기 검사 실패");
                     Uri saved=DocumentsContract.createDocument(getContentResolver(),
                         parent,"application/zip",filename);
                     if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
@@ -5487,7 +5487,7 @@ public final class UnifiedVisualActivity extends Activity {
                 fullLedgerExportResult(true,
                     ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
                     " 오류이력 "+parts.length()+"개 ZIP 저장 완료\n"+
-                    "각 ZIP 95MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "각 ZIP 29MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
                     "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
                     "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",false,"오류이력 분할 ZIP 추출");
             }catch(Throwable e){

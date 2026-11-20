@@ -108,6 +108,40 @@ def allocate_priority(bands, protected=(), capacity=KIWOOM_MAX_SUBSCRIPTIONS, ph
     return chosen
 
 
+#: 종가베팅 (close-betting) scan window. AtCloseRunner pins its 80-symbol universe
+#: (top 40 KOSPI + 40 KOSDAQ) from 14:50, scans from 15:00 and may buy 15:10-15:20.
+CLOSE_WINDOW_START = "1450"
+CLOSE_WINDOW_END = "1520"
+CLOSE_WINDOW_MAX = 100
+
+
+def close_window_codes(hhmm, close_band, already=(), cap=CLOSE_WINDOW_MAX):
+    """0.1.0: the whole close-betting universe is connected during its window.
+
+    The 2026-11-20 error history (0.0.18) shows 70 of 90 close-betting
+    evaluations rejected with NO_FRESH_ORDERBOOK (book age 3-300 s) and 157
+    scan skips for missing/stale trades, including candidates whose only
+    blocker was the stale book: the 80 scanned symbols were connected only in
+    rotation, so most of them had no live quote when evaluated. The strategy
+    needs a fresh book AND trade for every scanned symbol at the same time,
+    so inside the window its universe is taken like holdings (never rotated
+    out). Outside the window the unchanged weighted allocation applies. No
+    quote is invented; a symbol still needs a real fresh message to qualify.
+    """
+    if not (CLOSE_WINDOW_START <= str(hhmm) <= CLOSE_WINDOW_END):
+        return []
+    seen = set(str(code) for code in already)
+    result = []
+    for code in close_band:
+        code = str(code)
+        if code and code not in seen:
+            result.append(code)
+            seen.add(code)
+        if len(result) >= cap:
+            break
+    return result
+
+
 def critical_priority_codes(supply_active=(), close_active=(),
                             ma_active=(), trend_active=(), gmo_held=()):
     """Protect actual held/pending subscriptions, not ordinary GMO candidates.
@@ -276,6 +310,9 @@ def install(core):
                                      if valid(code) and str(code) not in eligible_critical)
         eligible = [[str(code) for code in band if valid(code)]
                     for band in raw_bands]
+        # 0.1.0: close-betting needs every scanned symbol live at once.
+        eligible_critical.extend(close_window_codes(hhmm, eligible[1],
+                                                    eligible_critical))
         phase = int(time.monotonic() // OVERFLOW_ROTATION_SECONDS)
         selected = allocate_priority(eligible, protected=eligible_critical,
                                      capacity=KIWOOM_MAX_SUBSCRIPTIONS,

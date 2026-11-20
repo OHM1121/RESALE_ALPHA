@@ -23,7 +23,7 @@ from android_ledger_backup import (
 )
 
 SCHEMA="ARTITRADE_RESEARCH_BUNDLE_V1"
-DEFAULT_PART_BYTES=95_000_000  # Files-service safe: strictly below 100 MB
+DEFAULT_PART_BYTES=29_000_000  # owner rule 2026-11-20: the analysis tool accepts <30 MB per file
 MAX_LEGACY_ALLOWED_PART_BYTES=500_000_000  # old archive test/compatibility cap
 ANALYSIS_SIDECAR_MAX_BYTES=2_000_000
 
@@ -304,7 +304,7 @@ def make_bundle(root_path, output_dir, scope, max_part_bytes=DEFAULT_PART_BYTES,
                 "오류화면은 표시하지 않지만 원본 SQLite/JSON/JSONL은 유지됨.\n"
                 "각 ZIP은 독립적으로 열 수 있음. 원본 fragment 복원 시 모든 PART 필요.\n"
                 "analysis/restore_parts.py FIRST_PART.zip OUTPUT_DIR 로 원본 무결성 복원.\n"
-                "기본 ZIP 1개당 95,000,000바이트 이하. 각 파트에 동일한 bundle_index.json 포함.\n"
+                "기본 ZIP 1개당 29,000,000바이트 이하. 각 파트에 동일한 bundle_index.json 포함.\n"
                 "Android OS 종료 이유는 수집된 경우 error_history_summary.json에 포함.\n"
                 "코인·주식 원본 계좌·주문·체결은 수정하지 않음.\n"
             ).encode("utf8")
