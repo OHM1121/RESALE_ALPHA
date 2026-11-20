@@ -87,3 +87,11 @@ rule headings disappear.
 - No private ledgers, SQLite/ZIP exports, account identifiers, credentials or
   personal trade details are committed. Only sanitized counts, signatures and
   root-cause summaries.
+
+## R9 — Standing permission to start the signed build on the trusted branch (2026-11-20)
+- The signing key cache is visible only on branch `artitrade-phone-main-v070-live-orders-20261112`.
+  The owner **permanently allows** pushing to that branch, for every build, **without asking again**.
+- Scope (unchanged from earlier builds): add only the single workflow file
+  `.github/workflows/artitrade-<digits>-trusted-branch-signer.yml` for the new version, pinned to the
+  exact source commit. No other file, no other branch, no force-push, no history rewrite there.
+- The package, signer and numeric-version rules (R1, R2) are unchanged. CI is not device verification.
