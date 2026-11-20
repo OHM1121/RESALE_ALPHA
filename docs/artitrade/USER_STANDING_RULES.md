@@ -36,6 +36,15 @@ rule headings disappear.
   an unsigned or differently signed APK.
 - **Automatic delivery (owner confirmation 2026-11-20):** the APK is handed over as
   soon as the signed build finishes. The owner does not have to ask for it.
+- **Hand-over path (owner instruction 2026-11-20):** once the APK is downloaded, put
+  it on the owner's computer (attach the computer through Remote Control) and share it
+  from the computer to the owner's phone (Quick Share / Nearby Share), without being
+  asked. If the computer or the share cannot be used, send the file in the chat as
+  before and say which step could not be done and what the owner must enable. Never
+  claim the phone received it unless the share was actually completed.
+- **Release page:** the GitHub release upload needs the repository Actions token to have
+  write access (Settings > Actions > General > Workflow permissions > Read and write
+  permissions). Until it has, the APK comes from the workflow artifact.
 
 ## R3 — After the APK is delivered, update the GitHub feature-connection docs (2026-11-20)
 - In the same piece of work, update how functions connect to each other:
