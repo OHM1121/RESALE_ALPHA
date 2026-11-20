@@ -254,6 +254,16 @@ jobs:
           if ! gh release create "$VERSION" "$VERSION.apk" "$VERSION.sha256" "$VERSION.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE $VERSION" --notes-file /tmp/notes.md --prerelease; then
             echo "RELEASE_PUBLISH_FAILED - diagnostics (the APK is still in the workflow artifact):" >&2
             gh api -i "repos/$GITHUB_REPOSITORY/releases?per_page=1" 2>&1 | grep -iE '^(HTTP|x-accepted-github-permissions|x-github-request-id)' >&2 || true
+            echo "--- DIAG 1: draft release without --target (tests tag/target restriction)" >&2
+            if gh release create "$VERSION-diag" --draft --repo "$GITHUB_REPOSITORY" --title diag --notes diag >&2 2>&1; then
+              echo "DIAG_1_RESULT=draft_without_target_OK" >&2
+              gh release delete "$VERSION-diag" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" >&2 2>&1 || true
+            else echo "DIAG_1_RESULT=draft_without_target_FAILED" >&2; fi
+            echo "--- DIAG 2: rulesets / workflow permission as seen by this token" >&2
+            gh api "repos/$GITHUB_REPOSITORY/rulesets" 2>&1 | head -c 500 >&2 || true
+            gh api "repos/$GITHUB_REPOSITORY/actions/permissions/workflow" 2>&1 | head -c 400 >&2 || true
+            echo "--- DIAG 3: token repository permissions" >&2
+            gh api "repos/$GITHUB_REPOSITORY" --jq '{private:.private,archived:.archived,permissions:.permissions,default_branch:.default_branch}' 2>&1 | head -c 400 >&2 || true
             exit 1
           fi
           gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json assets,tagName --jq '{tagName:.tagName,assets:[.assets[].name]}'
