@@ -251,7 +251,16 @@ jobs:
           set -euo pipefail
           sha256sum -c "$VERSION.sha256"
           printf '%s\n' "ARTITRADE $VERSION (PAPER, not device verified)." "Install over the existing app; same package and signer. Based on 0.1.6." "- Text-overlap fixes, footnotes removed, premium realized-P&L line, visual dashboards and holdings for every strategy, trade history grouped by unique trade id (buy and sell together)." "- Presentation only: trading engine, ledger and reset code unchanged." "DEVICE_VERIFIED=false. Real broker orders remain disabled." > /tmp/notes.md
-          if ! gh release create "$VERSION" "$VERSION.apk" "$VERSION.sha256" "$VERSION.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE $VERSION" --notes-file /tmp/notes.md --prerelease; then
+          # Tag the exact source commit first; if the integration token is refused, say why and fall back to an untargeted release.
+          TARGET_ARGS=(--target "$SOURCE")
+          if gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$SOURCE" > /tmp/tag.json 2> /tmp/tag.err; then
+            echo "TAG_CREATED $VERSION -> $SOURCE"; TARGET_ARGS=(--verify-tag)
+          else
+            echo "TAG_CREATE_FAILED: $(head -c 600 /tmp/tag.err)" >&2
+            echo "Built from source commit $SOURCE (tag could not be placed on it; it points to the default branch)." >> /tmp/notes.md
+            TARGET_ARGS=()
+          fi
+          if ! gh release create "$VERSION" "$VERSION.apk" "$VERSION.sha256" "$VERSION.txt" --repo "$GITHUB_REPOSITORY" "${TARGET_ARGS[@]}" --title "ARTITRADE $VERSION" --notes-file /tmp/notes.md --prerelease; then
             echo "RELEASE_PUBLISH_FAILED - diagnostics (the APK is still in the workflow artifact):" >&2
             gh api -i "repos/$GITHUB_REPOSITORY/releases?per_page=1" 2>&1 | grep -iE '^(HTTP|x-accepted-github-permissions|x-github-request-id)' >&2 || true
             echo "--- DIAG 1: draft release without --target (tests tag/target restriction)" >&2
