@@ -41,6 +41,11 @@ if ($expected -ne $actual) {
     Remove-Item $apk -Force
     throw "SHA-256 mismatch for $version.apk (file deleted). expected=$expected actual=$actual"
 }
-Write-Host "OK  version=$version  sha256=$actual"
-Write-Host "Saved: $apk"
-Start-Process explorer.exe $folder
+Write-Host ""
+Write-Host "OK  version=$version  sha256=$actual" -ForegroundColor Green
+Write-Host "Saved file : $apk" -ForegroundColor Green
+Write-Host "Folder     : $folder" -ForegroundColor Green
+# The folder name contains a space: Start-Process would split it into two arguments and open the
+# wrong place, so open it with Invoke-Item (and select the file when explorer allows it).
+try { Invoke-Item -LiteralPath $folder } catch { Write-Host "Open the folder manually: $folder" -ForegroundColor Yellow }
+try { Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,"' + $apk + '"') } catch { }
