@@ -104,3 +104,17 @@ rule headings disappear.
 - No introductions, no step-by-step narration, no filler. Unverified items are stated inside these two parts
   (never implied as success). Needed decisions are added as one short line at the end of part 2.
 - Still never describe a CI pass as phone/broker verification (AGENTS.md).
+
+
+## R11 — Every APK goes to the owner's phone automatically, in EVERY session (2026-11-20, strengthens R2)
+- After every signed build, in this order and without being asked:
+  1. Try to attach the owner's computer (`list_computer_folders`, then `request_computer_folder` for the shared
+     folder). If attached: download the verified APK into the Desktop folder `artitrade apk` and share it from there to the
+     phone with the Windows app "휴대폰과 연결" (Phone Link). Verify the SHA-256 after saving.
+  2. In every case also send a phone push notification with the GitHub release download link
+     (`https://github.com/OHM1121/RESALE_ALPHA/releases/download/<version>/<version>.apk`) and the APK in the chat.
+  3. Report plainly which step worked and which did not. Never say the phone received the file unless the Phone Link
+     share was actually completed (a push with a link is only a link).
+- If no computer folder is shared, say so in one line and what the owner must enable (Claude desktop app > Settings >
+  Claude Code > Remote Control > share the `artitrade apk` folder); do not stop the delivery.
+- Report format stays R10 (two parts only).
