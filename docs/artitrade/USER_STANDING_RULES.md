@@ -118,3 +118,9 @@ rule headings disappear.
 - If no computer folder is shared, say so in one line and what the owner must enable (Claude desktop app > Settings >
   Claude Code > Remote Control > share the `artitrade apk` folder); do not stop the delivery.
 - Report format stays R10 (two parts only).
+
+- **PC fallback (2026-11-20):** a cloud session cannot see the owner's PC even when Remote Control is set up
+  (`list_computer_folders` is empty unless a computer actively serves a folder to that session). The owner then runs
+  `tools/artitrade/fetch_latest_apk.bat` (or `.ps1`) on the PC: it downloads the newest release APK into
+  Desktop `artitrade apk`, verifies SHA-256 and opens the folder for the "휴대폰과 연결" share. Every delivery report names this
+  script when step 1 could not be done.
