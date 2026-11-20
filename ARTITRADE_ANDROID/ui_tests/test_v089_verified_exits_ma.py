@@ -138,8 +138,13 @@ class ManualAndErrorProvenance(unittest.TestCase):
 
     def test_java_error_records_own_app_version(self):
         text=(JAVA/'RuntimeCrashStore.java').read_text(encoding='utf-8')
-        self.assertIn('"app_version"',text)
+        # Relocated, not weakened: the store still resolves the installed
+        # version itself and hands it to FaultLogPolicy.merge, which writes
+        # the "app_version" key (behaviour covered by FaultLogPolicyTest).
         self.assertIn('getPackageInfo',text)
+        self.assertRegex(text,r'FaultLogPolicy\.merge\([^;]*appVersion\(\)')
+        policy=(JAVA/'FaultLogPolicy.java').read_text(encoding='utf-8')
+        self.assertIn('.put("app_version"',policy)
 
 
 if __name__=='__main__':

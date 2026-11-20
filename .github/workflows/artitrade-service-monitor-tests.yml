@@ -1,0 +1,44 @@
+name: ARTITRADE service monitor loop / fault log regression (no APK)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/RuntimeCrashStore.java'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FaultLogPolicy.java'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ProbeBackoff.java'
+      - 'ARTITRADE_ANDROID/ui_tests/*Backoff*'
+      - 'ARTITRADE_ANDROID/ui_tests/*FaultLog*'
+      - 'ARTITRADE_ANDROID/ui_tests/test_monitor_loop_contract.py'
+      - '.github/workflows/artitrade-service-monitor-tests.yml'
+permissions:
+  contents: read
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Source contract (fail-closed paths, one snapshot per turn)
+        run: |
+          (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_monitor_loop_contract -v)
+          (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_v089_verified_exits_ma.ManualAndErrorProvenance -v)
+      - name: JVM behaviour tests (org.json 20240303 from Maven Central)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/artitrade-monitor /tmp/jars
+          curl -fsSL -o /tmp/jars/json.jar https://repo1.maven.org/maven2/org/json/json/20240303/json-20240303.jar
+          M=ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile
+          javac -d /tmp/artitrade-monitor -cp /tmp/jars/json.jar \
+            $M/FaultLogPolicy.java $M/ProbeBackoff.java \
+            ARTITRADE_ANDROID/ui_tests/FaultLogPolicyTest.java ARTITRADE_ANDROID/ui_tests/ProbeBackoffTest.java
+          java -cp /tmp/artitrade-monitor:/tmp/jars/json.jar com.artitrade.mobile.FaultLogPolicyTest
+          java -cp /tmp/artitrade-monitor com.artitrade.mobile.ProbeBackoffTest
+      - name: Governance registry and graph
+        run: python3 tools/artitrade/validate_governance.py

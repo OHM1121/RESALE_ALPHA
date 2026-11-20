@@ -24,19 +24,22 @@ final class RuntimeCrashStore {
         catch(Exception e){return "UNKNOWN_INSTALLED_VERSION";}
     }
 
+    /**
+     * Identical faults (same stage, exception type and message) are merged into
+     * ONE row that moves to the front and carries {@code count}, {@code first_at}
+     * and the latest {@code at}/{@code stack}. A repeating benign fault can no
+     * longer push every other diagnostic out of the bounded buffer. Existing
+     * keys keep their meaning; {@code count}/{@code first_at} are additive and
+     * rows written by older versions are treated as count=1.
+     */
     synchronized void add(String stage,Throwable error){
         try{
             JSONArray old=new JSONArray(prefs.getString(KEY,"[]"));
-            JSONArray out=new JSONArray();
-            JSONObject row=new JSONObject()
-                .put("at",System.currentTimeMillis())
-                .put("app_version",appVersion())
-                .put("stage",stage==null?"":stage)
-                .put("type",error==null?"":error.getClass().getName())
-                .put("message",safe(error==null?"":String.valueOf(error.getMessage()),600))
-                .put("stack",safe(stack(error),2800));
-            out.put(row);
-            for(int i=0;i<old.length()&&out.length()<30;i++)out.put(old.opt(i));
+            JSONArray out=FaultLogPolicy.merge(old,System.currentTimeMillis(),
+                appVersion(),stage,
+                error==null?"":error.getClass().getName(),
+                safe(error==null?"":String.valueOf(error.getMessage()),600),
+                safe(stack(error),2800));
             prefs.edit().putString(KEY,out.toString()).apply();
         }catch(Exception ignored){}
     }

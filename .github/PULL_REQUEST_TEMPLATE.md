@@ -7,6 +7,7 @@
 - Upstream/downstream 2-hop effect assessment:
 - Code changes and why this *prevents recurrence*:
 - Tests: native PAPER / abnormal restart / stock+coin / Java compile:
+- Regression (test at the boundary that failed; baseline vs modified):
 - Data preservation, idempotent execution and real-order safety:
 - Remaining unverified (especially device, websocket, auth, broker fill):
 - Updated `docs/artitrade/version_issues.json` and Issue:

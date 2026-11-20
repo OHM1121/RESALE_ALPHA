@@ -74,6 +74,15 @@ public final class UnifiedTradingService extends Service {
     private static final long DAILY_RETRY_MS=5*60_000L;
     private final AtomicBoolean dailyBackupRunning=new AtomicBoolean(false);
     private volatile long serviceBootAtMs=System.currentTimeMillis();
+    // The MSERVER (127.0.0.1:8765) is an OPTIONAL separate app. While it is
+    // absent, probing every 2.5 s only burns CPU and fills the fault log.
+    // Healthy => probed every loop turn (unchanged); failing => 2.5s..30s.
+    private final ProbeBackoff hubProbe=new ProbeBackoff(2_500L,30_000L);
+    // Re-post the foreground notification only when its text changes (or at
+    // most once per minute so a user-dismissed notification comes back).
+    private String lastNotificationText="";
+    private long lastNotificationAtMs=0L;
+    private static final long NOTIFICATION_REFRESH_MS=60_000L;
 
     @Override public void onCreate(){
         super.onCreate();
@@ -684,31 +693,42 @@ public final class UnifiedTradingService extends Service {
                     return;
                 }
             }
-            try{
-                JSONObject hs=hub.status();
-                lastMserverAuthOk=hs.optBoolean("ok",false);
-                getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE).edit()
-                    .putLong("at",System.currentTimeMillis())
-                    .putBoolean("ok",lastMserverAuthOk)
-                    .putString("error",hs.optString("error",""))
-                    .putInt("http_status",hs.optInt("http_status",200)).apply();
-                if(lastMserverAuthOk){
-                    stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
-                    coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
-                }else{
-                    // A rejected/expired hub status is not proof of execution ownership.
+            long probeNowMs=android.os.SystemClock.elapsedRealtime();
+            // While a probe is not due, the previous result stays in force:
+            // after a failure lastMserverAuthOk=false and both epochs are 0
+            // (fail-closed), exactly as set below.
+            if(hubProbe.due(probeNowMs)){
+                try{
+                    JSONObject hs=hub.status();
+                    lastMserverAuthOk=hs.optBoolean("ok",false);
+                    getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE).edit()
+                        .putLong("at",System.currentTimeMillis())
+                        .putBoolean("ok",lastMserverAuthOk)
+                        .putString("error",hs.optString("error",""))
+                        .putInt("http_status",hs.optInt("http_status",200)).apply();
+                    if(lastMserverAuthOk){
+                        hubProbe.onSuccess();
+                        stockEpoch=maintain(hub,"stock",hs.optJSONObject("stock"),stockEpoch);
+                        coinEpoch=maintain(hub,"coin",hs.optJSONObject("coin"),coinEpoch);
+                    }else{
+                        // A rejected/expired hub status is not proof of execution ownership.
+                        hubProbe.onFailure(probeNowMs);
+                        stockEpoch=0;coinEpoch=0;
+                        disarmIfAndroidFlagsArmed("MSERVER_STATUS_UNVERIFIED");
+                    }
+                }catch(Throwable e){
+                    hubProbe.onFailure(probeNowMs);
+                    lastMserverAuthOk=false;
                     stockEpoch=0;coinEpoch=0;
-                    disarmUnverifiedMarkets("MSERVER_STATUS_UNVERIFIED");
+                    disarmIfAndroidFlagsArmed("MSERVER_STATUS_UNREACHABLE");
+                    getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE).edit()
+                        .putLong("at",System.currentTimeMillis()).putBoolean("ok",false)
+                        .putString("error","UNREACHABLE:"+e.getClass().getSimpleName()+":"+String.valueOf(e.getMessage()))
+                        .putInt("http_status",0).apply();
+                    // Identical rows are merged by RuntimeCrashStore; report the
+                    // first failure of a streak and then every 10th only.
+                    if(hubProbe.shouldReport())crashes.add("mserver_monitor",e);
                 }
-            }catch(Throwable e){
-                lastMserverAuthOk=false;
-                stockEpoch=0;coinEpoch=0;
-                disarmUnverifiedMarkets("MSERVER_STATUS_UNREACHABLE");
-                getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE).edit()
-                    .putLong("at",System.currentTimeMillis()).putBoolean("ok",false)
-                    .putString("error","UNREACHABLE:"+e.getClass().getSimpleName()+":"+String.valueOf(e.getMessage()))
-                    .putInt("http_status",0).apply();
-                crashes.add("mserver_monitor",e);
             }
             try{
                 // Heartbeat comes from the service thread even when Activity
@@ -765,24 +785,49 @@ public final class UnifiedTradingService extends Service {
                     if(strategy.liveEnabled("coin")&&!enabled.optBoolean("coin",false))strategy.setLive("coin",false);
                 }
                 String orders=(enabled!=null&&enabled.optBoolean("stock")?"S":"-")+(enabled!=null&&enabled.optBoolean("coin")?"C":"-");
-                NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-                if(nm!=null)nm.notify(NOTIFY_ID,notification("주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders));
+                String notificationText="주식 "+(sc?"LIVE":"—")+" · 코인 "+(cc?"LIVE":"—")+" · 실주문 "+orders;
+                long notifyNow=android.os.SystemClock.elapsedRealtime();
+                if(!notificationText.equals(lastNotificationText)
+                        ||notifyNow-lastNotificationAtMs>=NOTIFICATION_REFRESH_MS){
+                    NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+                    if(nm!=null){
+                        nm.notify(NOTIFY_ID,notification(notificationText));
+                        lastNotificationText=notificationText;
+                        lastNotificationAtMs=notifyNow;
+                    }
+                }
                 scheduleMarketScoreV005();
                 scheduleUiRecordsIfDue(hub);
                 scheduleDailyBackupIfReady(hub);
                 ProcessHealthV087.sample(this,"service_heartbeat",0L,0L,false);
+                // Reuse THIS turn's snapshot: a second synchronized Python
+                // snapshot() per turn only re-read the same live flags.
                 if(stockEpoch<=0||coinEpoch<=0)
-                    disarmUnverifiedMarkets("LEASE_UNCONFIRMED");
+                    disarmUnverifiedMarkets("LEASE_UNCONFIRMED",p);
             }catch(Throwable e){crashes.add("strategy_monitor",e);}
             try{Thread.sleep(2500);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
         }
         try{releaseQuietly(hub,"stock",stockEpoch);releaseQuietly(hub,"coin",coinEpoch);}catch(Throwable ignored){}
     }
 
-    private void disarmUnverifiedMarkets(String reason){
+    /**
+     * Early (mid-turn) fail-closed path. It needs a Python snapshot only when
+     * Android's own arm flags say a market might be armed; otherwise it does
+     * nothing. A Python-side arm that Android does not know about is still
+     * caught at the end of the same loop turn from that turn's snapshot (and
+     * this APK cannot arm either side: setLive(true) is refused in Java and
+     * in Python).
+     */
+    private void disarmIfAndroidFlagsArmed(String reason){
+        if(strategy.liveEnabled("stock")||strategy.liveEnabled("coin"))
+            disarmUnverifiedMarkets(reason,null);
+    }
+
+    /** @param knownState a snapshot the caller already holds, or null to fetch one. */
+    private void disarmUnverifiedMarkets(String reason,JSONObject knownState){
         JSONObject enabled=new JSONObject();
         try{
-            JSONObject state=strategy.snapshot();
+            JSONObject state=knownState!=null?knownState:strategy.snapshot();
             JSONObject flags=state.optJSONObject("live_enabled");
             if(flags!=null)enabled=flags;
         }catch(Throwable e){crashes.add("disarm_snapshot_"+reason,e);}

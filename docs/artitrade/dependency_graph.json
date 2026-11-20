@@ -41,7 +41,8 @@
         "UI_RECORDS",
         "BACKUP",
         "STOCK_FEED",
-        "COIN_FEED"
+        "COIN_FEED",
+        "SERVICE_MONITOR_LOOP"
       ],
       "issues": [
         53,
@@ -50,7 +51,8 @@
         62,
         65,
         70,
-        75
+        75,
+        111
       ],
       "contract": "Only STARTED Python engine makes trading live. Failure does not masquerade as healthy heartbeat."
     },
@@ -1092,6 +1094,24 @@
         107
       ],
       "contract": "One ORIGINAL Upbit WS; held-first independent polling of new original orderbook at ~120ms best-effort, dedupe genuine timestamp/BID/depth, 3s max age, perform existing MA _process_v067_exits with original ledger, no fabricated fill from candle high or ASK. All native 8 wallet protections and single worker owner unchanged."
+    },
+    {
+      "id": "SERVICE_MONITOR_LOOP",
+      "kind": "java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ProbeBackoff.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FaultLogPolicy.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/RuntimeCrashStore.java"
+      ],
+      "depends_on": [
+        "STRATEGY_BRIDGE",
+        "ANTI_ROLLBACK"
+      ],
+      "issues": [
+        111
+      ],
+      "contract": "Optional MSERVER (127.0.0.1:8765) is probed every loop turn only while healthy; failures back off 2.5s..30s and stay fail-closed (epochs 0, lastMserverAuthOk=false). Exactly one synchronized Python snapshot() per turn; disarm reuses it. Identical faults merge into one row with count, never evicting other diagnostics. Snapshot prefs cadence is a UI-freshness contract (8.5-10s) and is NOT changed here."
     }
   ],
   "audit_scope": {

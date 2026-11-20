@@ -2,7 +2,7 @@
   "schema": "ARTITRADE_VERSION_ISSUE_REGISTER_V007",
   "baseline": "0.0.5",
   "working_branch": "artitrade-018-newlegacy-rev1-ma-trend-pod-exit-20261119",
-  "last_review": "2026-11-19",
+  "last_review": "2026-11-20",
   "public_repo_note": "No raw user financial records or broker secrets may be committed. All counts were derived read-only.",
   "status_levels": [
     "REPORTED",
@@ -1152,6 +1152,31 @@
         "test_new_legacy_1118_workbook.py"
       ],
       "notes": "On MA/Trend native official authenticated completed candle, touch entry-reference-candle low and strictly below-close permits a full SELL only on subsequent current genuine native BID/depth with receipt. Old pre-first entry retouch removed for MA/Trend only, reference strategy unaffected, GMO/CW unchanged. Coin MA held priority worker watches new original Upbit books up to 120ms best-effort; latency NOT guaranteed, BID/ASK and 1m high never proof of broker fill. Historical user positions and paper resting plans preserved. Full device/market execution not yet verified."
+    },
+    {
+      "id": "AT-018-30",
+      "issue": 111,
+      "found": "0.0.18",
+      "category": "CODE_AUDIT_STATIC",
+      "title": "Service monitor loop: optional MSERVER probe every 2.5s, fault ring buffer flooded by one repeating fault, duplicate synchronized Python snapshot() per turn",
+      "evidence": "Static source audit of the released 0.0.18 APK (pyc byte-identical to 2f3b85d). Runtime frequency and CPU impact are NOT measured. No private device data used.",
+      "root": "CONFIRMED_IN_CODE; RUNTIME_FREQUENCY_INFERRED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.18-source-follow-up",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "SERVICE_MONITOR_LOOP",
+        "SERVICE",
+        "STRATEGY_BRIDGE"
+      ],
+      "tests": [
+        "FaultLogPolicyTest.java",
+        "ProbeBackoffTest.java",
+        "test_monitor_loop_contract.py",
+        "test_v089_verified_exits_ma.py"
+      ],
+      "notes": "Local javac of the whole Java source set against Android 15 API: baseline 0 errors, modified 0 errors. Existing ui_tests: no new failure vs baseline. Not Gradle-packaged, not signed, not device verified. Fail-closed epoch/disarm rules unchanged; strategy, ledger, quote and order code untouched."
     }
   ],
   "known_normal": [
