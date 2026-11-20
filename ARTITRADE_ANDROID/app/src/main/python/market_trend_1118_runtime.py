@@ -441,8 +441,10 @@ def _nl1120_after_closed(self,current,histories,now=None):
         if getattr(p,"nl1120_stop_status",None) not in ("ACTIVE","IGNORED_ABOVE_ENTRY"):
             # Deeper history is needed only until the stop is fixed, and at most
             # once a minute, so a short history cannot hammer the KRX store.
-            asked=p.__dict__.get("nl1120_deep_at",0.0)
-            if time.monotonic()-asked>=60.0:
+            # None = never asked. The old 0.0 default silently skipped the very first read
+            # whenever time.monotonic() (host uptime) was below 60 s, e.g. on a freshly booted runner.
+            asked=p.__dict__.get("nl1120_deep_at")
+            if asked is None or time.monotonic()-asked>=60.0:
                 p.__dict__["nl1120_deep_at"]=time.monotonic()
                 rows=_nl1120_deep_rows(self,p,rows)
         old={k:getattr(p,k) for k in _NL1120_KEYS if hasattr(p,k)}

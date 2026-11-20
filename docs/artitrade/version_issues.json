@@ -1499,6 +1499,26 @@
         "test_ui_redesign_v0160.py"
       ],
       "notes": "Overlap/readability and speed on the phone not verified. Trade grouping is display only."
+    },
+    {
+      "id": "TR-0170-01",
+      "issue": 126,
+      "found": "CI run 44767412879 (0.1.7 build), 2026-11-20",
+      "category": "SILENT_FAILURE_LATENT",
+      "title": "Trend lookback-stop observer skipped its first deep-history read when host uptime was below 60 s",
+      "evidence": "test_deep_history_is_read_only_until_the_stop_is_fixed failed in CI (0 != 1) 45 s after the runner booted; passed 40 minutes earlier. Cause: p.__dict__.get('nl1120_deep_at',0.0) with time.monotonic()-0.0>=60.0 is false while monotonic() < 60.",
+      "root": "SENTINEL_DEFAULT",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.7",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "NL1120_LOOKBACK_STOP_V0120"
+      ],
+      "tests": [
+        "test_nl1120_2_lookback_stop_and_first_close.py"
+      ],
+      "notes": "Never-asked is now None. The stop is only fixed later (not wrongly sold); a phone has uptime above 60 s so the effect was a one-minute delay in fixing the stop right after a device reboot. No order, ledger or threshold changed."
     }
   ],
   "known_normal": [
