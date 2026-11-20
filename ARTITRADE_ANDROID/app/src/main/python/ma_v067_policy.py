@@ -407,6 +407,11 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         if start.tzinfo is not None and now>=start+timedelta(hours=hold):
             return _full(avail,'MA_V1118_HOLD_EXPIRY',state)
     except (ValueError,TypeError,KeyError):pass
+    # NEW LEGACY 11.20(2): a completed bar CLOSED below the lookback-low stop
+    # fixed at the BUY (lowest low of the last 50 completed bars) sells all,
+    # at any stage. Only the closed-bar observer sets this durable flag.
+    if state.get('nl1120') is True and state.get('nl1120_stop_confirmed') is True:
+        return _full(avail,'MA_NL1120_LOOKBACK_LOW_CLOSE_STOP',state)
     first_target,second_target=up_targets(base,frame)
     first_goal,second_goal=up_stage_quantities(state,initial)
     first_sold=number(state.get('first_sold')) or Decimal(0)
@@ -417,7 +422,10 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         # The entry/forming MA candle's verified low must first be touched,
         # then a genuinely CLOSED source bar must close strictly below it.
         # Only the original native closed-bar observer sets this durable flag.
-        if state.get('rev1_below_reference_low_confirmed') is True:
+        # 11.20(2) retires this exit for NEW positions (blue "삭제"); positions
+        # opened before it keep the rule they were bought under.
+        if (state.get('rev1_below_reference_low_confirmed') is True
+                and not state.get('nl1120')):
             return _full(avail,'MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE',state)
         if price>=first_target:
             return state,min(avail,first_goal-first_sold),'MA_V1118_UP_FIRST_30PCT'

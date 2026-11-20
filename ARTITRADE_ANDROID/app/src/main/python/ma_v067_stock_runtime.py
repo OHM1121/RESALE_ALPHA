@@ -157,6 +157,8 @@ def _join_new_positions(self,c,code):
                      'status':'PRESTAGED_PAPER_TARGET'}]
                 state['hard_stop']=str(policy.number(p['entry'])*Decimal('.85'))
                 state['policy_source']='NEW LEGACY(11.18).xlsx'
+                # 11.20(2): lookback-low close stop replaces the rev1 low rule.
+                state['nl1120']=True
             if kind=='REVERSAL_UP':
                 # Set physical stock-share stage targets before the first
                 # sell. 13 shares -> first ceil(1.3)=2, post-first 11 shares
@@ -261,6 +263,45 @@ def _second_followup_bar(self,p,when,forming_trade):
 
 
 def _rev1_stock_closed_bar_state(self,state,position,now):
+    if state.get('nl1120') is True:
+        return _nl1120_stock_stop_state(self,state,position,now)
+    return _rev1_stock_closed_bar_state_old(self,state,position,now)
+
+
+def _nl1120_stock_stop_state(self,state,position,now):
+    """11.20(2): stop = lowest low of the last 50 completed bars before the BUY;
+    a later completed bar CLOSING below it marks a full exit. KRX bars only."""
+    from new_legacy_1120_policy import reconcile
+    import d_engine
+    try:
+        entry=dt.datetime.fromisoformat(str(position['entry_at']))
+        if entry.tzinfo is None:return state
+        frame=str(position['tf'])
+        stamp=entry.astimezone(KST).strftime('%Y%m%d%H%M%S')
+        with self.market_store.connect() as db:
+            older=db.execute("""SELECT ts,low,high,close,source FROM bars
+                WHERE code=? AND frame=? AND ts<? ORDER BY ts DESC LIMIT 60""",
+                (position['code'],frame,stamp)).fetchall()
+            newer=db.execute("""SELECT ts,low,high,close,source FROM bars
+                WHERE code=? AND frame=? AND ts>=? ORDER BY ts LIMIT 250""",
+                (position['code'],frame,stamp)).fetchall()
+        native=[]
+        for row in list(reversed(older))+list(newer):
+            s=str(row['ts'])[:14]
+            if len(s)!=14:continue
+            begins=dt.datetime.strptime(s,'%Y%m%d%H%M%S').replace(tzinfo=KST)
+            close_end=str(d_engine.bar_end(s,frame))[:14]
+            ends=dt.datetime.strptime(close_end,'%Y%m%d%H%M%S').replace(tzinfo=KST)
+            native.append({'start':begins,'end':ends,'low':row['low'],
+                           'high':row['high'],'close':row['close'],
+                           'source':str(row['source'] or '')})
+        return reconcile(state,'ma',frame,native,position['entry_at'],
+                         position['entry'],now)
+    except (ValueError,TypeError,KeyError,AttributeError,sqlite3.Error):
+        return state
+
+
+def _rev1_stock_closed_bar_state_old(self,state,position,now):
     """Original source-verified KRX bars, read-only until native SELL commits."""
     from new_legacy_rev1_low_close import reconcile
     import d_engine
@@ -314,7 +355,11 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     else:
         # MA REV1 F6: a genuine completed KRX bar, NOT the current best bid,
         # may confirm the reference candle LOW-close full stop.
+        before_state=state
         state=_rev1_stock_closed_bar_state(self,state,p,now)
+        if state.get('nl1120') is True and state!=before_state:
+            # Fix the lookback stop ONCE and keep it durable.
+            _store_state(c,p['id'],state,now)
         changed,wanted,reason=policy.up_exit(
             state,bid,p['entry'],available,p['qty0'],now,forced)
     if changed!=state:_store_state(c,p['id'],changed,now)

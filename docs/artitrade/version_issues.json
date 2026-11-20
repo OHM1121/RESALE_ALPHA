@@ -1347,7 +1347,7 @@
       "root": "CONFIRMED_IN_CODE",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.1",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44749126432",
       "device": "UNVERIFIED",
       "nodes": [
         "LEDGER_BACKUP_SPLIT_V0110",
@@ -1357,6 +1357,28 @@
         "test_v101_zip95_analysis_ready.py"
       ],
       "notes": "Old single-ZIP writers removed. PC verify_phone_backup does not read split backups (use restore_parts.py). Not tested on a phone with a >70 MB ledger."
+    },
+    {
+      "id": "AT-0120-01",
+      "issue": 120,
+      "found": "owner workbook sheet 11.20(2), 2026-11-20",
+      "category": "USER_POLICY_DECISION",
+      "title": "MA/MarketTrend: lookback-low close stop added, reference-low close exit deleted, MarketTrend first-close-above-MIDDLE entry",
+      "evidence": "Owner workbook (red=add, blue=delete). Old rev1 rule located in new_legacy_1118_policy.exit_signal, ma_v067_policy.up_exit and the rev1 observers; Trend entry loop accepted any close above MIDDLE during the 24 h watch.",
+      "root": "POLICY_SUPERSESSION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.2",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "NL1120_LOOKBACK_STOP_V0120",
+        "STOCK_SUBSCRIPTION_PLANNER_V0200"
+      ],
+      "tests": [
+        "test_nl1120_2_lookback_stop_and_first_close.py",
+        "test_v014_cfg_native_sell_quote_regression.py"
+      ],
+      "notes": "New BUYs only. Old holdings keep their exit. Stock Trend 200-bar history depth in the local KRX store unknown (partial window recorded). One-time Upbit candle fetch for coin Trend 30m in the observer thread."
     }
   ],
   "known_normal": [
@@ -1657,9 +1679,20 @@
     "version": "0.1.1",
     "versionCode": 144,
     "base": "0.1.0 (79c0280)",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
     "next_version": "0.1.2",
-    "note": "Signing run needs the trusted-branch workflow; not yet built."
+    "source_commit": "2fa969a46244ccf56229e4dfeb822934a5dd34d8",
+    "apk_sha256": "9febf25e8e9a4ae20336b0b2dc170445a4d2f0b1fcaeaacb7565a17bcebafe60",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44749126432",
+    "release_publish": "GitHub release 0.1.1 published with apk, sha256 and txt (the 403 of 0.0.20/0.1.0 is gone after the owner set Actions to Read and write)."
+  },
+  "candidate_012": {
+    "version": "0.1.2",
+    "versionCode": 145,
+    "base": "0.1.1 (2fa969a)",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.1.3"
   }
 }

@@ -257,3 +257,22 @@ Based on 0.1.0 (versionCode 144 for this build).
 
 Status: SOURCE_FIXED, local Python tests passed (`test_v101_zip95_analysis_ready.py`), Java not compiled
 locally (no Android SDK; CI does it), CI and device not yet verified.
+
+
+## 0.1.2 — how the changed parts connect (issue #120, workbook sheet 11.20(2))
+Based on 0.1.1 (versionCode 145 for this build). 0.1.1 was delivered: source `2fa969a`, CI run 44749126432, APK SHA256 `9febf25e…bafe60`, signer unchanged, GitHub release 0.1.1 published; CI_VERIFIED only.
+
+1. **Lookback-low close stop (MA and MarketTrend, stock and coin).** At the first closed-bar observation after a BUY,
+   `new_legacy_1120_policy.reconcile` fixes the stop from authenticated completed bars that ended before the buy
+   (MA: lowest low of 50; Trend 30m/60m/day: mean low of 200/90/90) and stores it
+   (stock/coin MA sidecar `ma_v067_positions.state_json`, Trend position payload). A later completed bar closing below it
+   sets `nl1120_stop_confirmed`; `exit_signal` (Trend) and `ma_v067_policy.up_exit` (MA) then sell all at any stage, after the
+   -15 % and expiry checks. Sources: stock MA `bars` (Kiwoom verified), coin MA `_HISTORY` cache, Trend `_history` plus a one-time deeper read
+   (KRX store LIMIT 450 / Upbit 200 candles) in the observer thread, never in the order path.
+2. **Retired:** the rev1 reference-candle-low exit for marked (new) positions; older positions keep it.
+3. **MarketTrend entry:** `_entry_window` accepts only the FIRST completed bar after the RSI<=30 touch that closes above its MIDDLE
+   (`first_close_above_middle_end`); a consumed cycle returns to READY only after RSI>30.
+4. **Silent-failure guard:** the new reasons are in the coin MA accept-list and in `trade_decision_basis_v095`.
+5. Not changed: AT/reference, GMO, CW, market-score scope, -15 %, holding periods, TP1/TP2/trailing, resting-sell planning.
+
+Status: SOURCE_FIXED, local regression passed; CI and device not verified.

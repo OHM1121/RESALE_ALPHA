@@ -258,6 +258,19 @@ def _entry_window(self,market,now):
             try:
                 watch_started=dt.datetime.fromisoformat(old["observed_at"])
             except (KeyError,TypeError,ValueError):continue
+            # 11.20(2): ONLY the first completed bar that closes above its
+            # MIDDLE after the RSI<=30 touch may buy. A later bar (the first
+            # one was missed or failed the slope test) never qualifies; the
+            # cycle ends and a new one needs RSI>30 and then RSI<=30 again.
+            from new_legacy_1120_policy import first_close_above_middle_end
+            first_end=first_close_above_middle_end(closed,watch_started)
+            if first_end is None:continue
+            if first_end!=closed[-1]["end"]:
+                if rsi>30:
+                    spent={**old,"status":"READY"}
+                    self._nl1118_watches[k]=spent
+                    self._nl1118_watch_db.save(k,spent)
+                continue
             condition=closed_bar_entry_condition(
                 closes,closed[-1]["end"],watch_started)
             if condition is None:continue
@@ -355,6 +368,8 @@ def _trend_exit_action(self,price,now,bar_finished=True,bar3_preclose=False):
         "rev1_low_touched":getattr(self,"rev1_low_touched",False),
         "rev1_below_reference_low_confirmed":getattr(
             self,"rev1_below_reference_low_confirmed",False),
+        "nl1120":getattr(self,"nl1120",False),
+        "nl1120_stop_confirmed":getattr(self,"nl1120_stop_confirmed",False),
         "deadline":self.deadline.isoformat()}
     found=exit_signal(state,p,now)
     self.above_entry=bool(state["seen_above_entry"])
@@ -365,20 +380,87 @@ def _trend_exit_action(self,price,now,bar_finished=True,bar3_preclose=False):
     if reason=="NL1118_TP2":return "MT_TP2",fraction
     if reason=="NL1118_HARD_STOP_15PCT":return "MT1118_STOP_15PCT",1.
     if reason=="NL1118_HOLD_EXPIRY":return "MT1118_HOLD_DEADLINE",1.
+    if reason=="NL1120_LOOKBACK_LOW_CLOSE_STOP":
+        return "NL1120_LOOKBACK_LOW_CLOSE_STOP",1.
     return reason, fraction
 
 _ORIGINAL_ACTION=None
 _ORIGINAL_BUY=None
 _ORIGINAL_CLOSED=None
 
+_NL1120_KEYS=("nl1120_stop_status","nl1120_stop_price","nl1120_stop_bars",
+              "nl1120_stop_rule","nl1120_last_bar_end","nl1120_stop_confirmed",
+              "nl1120_stop_closed_bar")
+
+def _nl1120_deep_rows(self,p,rows):
+    """Completed bars deep enough for the stop window (200/90/90).
+
+    The in-memory RSI cache keeps only ~80-125 bars, so the missing older bars
+    are read once from the verified KRX store / Upbit candle history. This runs
+    in the closed-bar observer, never in the order path. Nothing is invented.
+    """
+    from new_legacy_1120_policy import TREND_STOP_BARS
+    import market_trend_runtime_v043 as runtime
+    need=TREND_STOP_BARS[p.frame]
+    if len([r for r in rows if r["end"]<=p.entry_at])>=need:return rows
+    merged={r["end"]:r for r in rows}
+    try:
+        if p.market=="stock":
+            runner=self.rt.stock_runner
+            if runner is not None:
+                with runner.store.connect() as src:
+                    found=src.execute("""SELECT ts,close,high,low FROM bars
+                        WHERE code=? AND frame=? ORDER BY ts DESC LIMIT 450""",
+                        (p.symbol,p.frame)).fetchall()
+                for bar in found:
+                    end=runtime._stock_bar_end(str(bar["ts"]),p.frame)
+                    close=mt._finite(bar["close"]);high=mt._finite(bar["high"])
+                    low=mt._finite(bar["low"])
+                    if end is None or None in (close,high,low):continue
+                    merged.setdefault(end,{"start":end-dt.timedelta(
+                        seconds=mt.FRAME_SECS[p.frame]),"end":end,"close":close,
+                        "high":high,"low":low,"source":"LOCAL_KRX_VERIFIED"})
+        elif not p.__dict__.get("nl1120_deep_tried"):
+            p.__dict__["nl1120_deep_tried"]=True
+            client=self.rt.coin_runner.minute_client
+            fetched=runtime._bars_from_upbit(
+                client.candles(p.symbol,p.frame,count=200),p.frame,
+                dt.datetime.now(mt.KST))
+            for bar in fetched:merged.setdefault(bar["end"],bar)
+    except (AttributeError,KeyError,ValueError,TypeError,OverflowError,
+            sqlite3.Error,OSError) as exc:
+        self._last_fetch_error[p.market]="NL1120_DEEP_HISTORY:"+type(exc).__name__
+    return [merged[k] for k in sorted(merged)]
+
+def _nl1120_after_closed(self,current,histories,now=None):
+    from new_legacy_1120_policy import reconcile
+    now=mt._as_kst(now if now is not None else dt.datetime.now(mt.KST))
+    for p in current:
+        if not p.__dict__.get("bar_finalized"):continue
+        rows=_nl1120_deep_rows(self,p,histories.get((p.market,p.symbol,p.frame),[]))
+        old={k:getattr(p,k) for k in _NL1120_KEYS if hasattr(p,k)}
+        state=reconcile(old,"trend",p.frame,rows,p.entry_at,p.entry,now)
+        changed={k:state[k] for k in _NL1120_KEYS if k in state and state[k]!=old.get(k)}
+        if not changed:continue
+        for key,value in changed.items():setattr(p,key,value)
+        # Persist the fixed stop; this only records state, never a SELL.
+        self.standalone_wallet.save_position(p)
+
 def _rev1_after_native_closed(self,market):
     """Observe the ORIGINAL verified closed candles, never REST high-as-fill."""
     _ORIGINAL_CLOSED(self,market)
     from new_legacy_rev1_low_close import reconcile
     with self.lock:
-        current=[p for p in self._positions.values()
+        all_current=[p for p in self._positions.values()
                  if p.market==market and p.strategy=="trend" and p.qty>0
                  and getattr(p,"nl1118_policy",None)==POLICY]
+        new_rule=[p for p in all_current if getattr(p,"nl1120",False)]
+        current=[p for p in all_current if not getattr(p,"nl1120",False)]
+        histories={(p.market,p.symbol,p.frame):
+                   list(self._history.get((p.market,p.symbol,p.frame),[]))
+                   for p in new_rule}
+    if new_rule:_nl1120_after_closed(self,new_rule,histories)
+    with self.lock:
         histories={(p.market,p.symbol,p.frame):
                    list(self._history.get((p.market,p.symbol,p.frame),[]))
                    for p in current}
@@ -431,6 +513,8 @@ def install():
             # positions by this value. The 11.20 rule is recorded separately.
             p.entry_signal_policy="NL1118_RSI20_24H_BOLL_20_1_5"
             p.entry_rule=TREND_ENTRY_RULE_1120
+            # 11.20(2): lookback-low CLOSE stop replaces the rev1 low rule.
+            p.nl1120=True
             p.bar_finalized=True
             self.save_position(p)
             # Two durable, independent PAPER resting sell orders immediately

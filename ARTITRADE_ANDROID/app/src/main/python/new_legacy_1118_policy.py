@@ -259,6 +259,10 @@ def exit_signal(state,observed_bid,now,market_score=None):
                 if deadline.tzinfo is not None and now>=deadline:
                     return "NL1118_HOLD_EXPIRY",1.0
             except (TypeError,ValueError):pass
+        # 11.20(2): completed-bar CLOSE below the lookback-low stop fixed at the
+        # BUY (any stage). Only the observer sets this durable flag.
+        if t.get("nl1120") is True and t.get("nl1120_stop_confirmed") is True:
+            return "NL1120_LOOKBACK_LOW_CLOSE_STOP",1.0
     stage=int(t.get("stage",0))
     if stage<=0:
         # rev1 F6/F7: the MA / MarketTrend entry-retrace full exit is retired.
@@ -266,7 +270,9 @@ def exit_signal(state,observed_bid,now,market_score=None):
         # touched the entry-signal candle low AND later closed strictly below
         # that same low. No synthetic candle high, no last-tick close proxy.
         if kind in ("ma","trend"):
-            if t.get("rev1_below_reference_low_confirmed") is True:
+            # 11.20(2) retires this exit for NEW positions (blue "삭제").
+            if (t.get("rev1_below_reference_low_confirmed") is True
+                    and not t.get("nl1120")):
                 return "NL1118_REV1_PRE_FIRST_REFERENCE_LOW_CLOSED",1.0
         else:
             if p>entry:t["seen_above_entry"]=True

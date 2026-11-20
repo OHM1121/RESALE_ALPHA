@@ -145,6 +145,9 @@ def _on_real_buy(self,c,p):
                  'status':'PRESTAGED_PAPER_TARGET'}]
             state['hard_stop']=str(policy.number(p['entry'])*Decimal('.85'))
             state['policy_source']='NEW LEGACY(11.18).xlsx'
+            # 11.20(2): this position is stopped by the lookback-low close stop,
+            # not by the retired rev1 reference-low rule.
+            state['nl1120']=True
             # Store the execution precision with each position. The same
             # 8dp floor is used by native Upbit CoinLedger._sell.
             state['coin_qty_step']='0.00000001'
@@ -539,6 +542,35 @@ def _expire_or_rebound(self,c,book,now):
 
 
 def _rev1_coin_closed_bar_state(state,position,now):
+    if state.get('nl1120') is True:
+        return _nl1120_coin_stop_state(state,position,now)
+    return _rev1_coin_closed_bar_state_old(state,position,now)
+
+
+def _nl1120_coin_stop_state(state,position,now):
+    """11.20(2) lookback-low close stop from the original verified candle cache."""
+    import ma_v061_coin_runtime as native_history
+    from d_upbit import SECONDS
+    from new_legacy_1120_policy import reconcile
+    frame=str(position['tf'])
+    market=str(position['market'])
+    with native_history._HISTORY_LOCK:
+        source=native_history._HISTORY.get((frame,market))
+    if not source:return state
+    updated_at,bars=source
+    if (not isinstance(updated_at,dt.datetime) or updated_at.tzinfo is None
+            or not isinstance(bars,(list,tuple))):
+        return state
+    # A stale snapshot proves no new completed close.
+    if abs((now-updated_at.astimezone(now.tzinfo)).total_seconds())>SECONDS[frame]+10:
+        return state
+    official=[dict(x,source='ORIGINAL_UPBIT_MA_VERIFIED') for x in bars
+              if isinstance(x,dict) and all(k in x for k in ('start','low','close'))]
+    return reconcile(state,'ma',frame,official,position['entry_at'],
+                     position['entry'],now)
+
+
+def _rev1_coin_closed_bar_state_old(state,position,now):
     """Read the EXISTING original Upbit MA verified candle cache only.
 
     No fresh network request, no REST-as-trade fill and no completion from a
@@ -637,7 +669,13 @@ def _process_v067_exits(self,book,now):
                         p['tf'],symbol,state,p['entry'],trade,now):
                     forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
                 if p['kind']=='REVERSAL_UP':
+                    before_state=state
                     state=_rev1_coin_closed_bar_state(state,p,now)
+                    if state.get('nl1120') is True and state!=before_state:
+                        # The stop price is fixed ONCE and must survive the
+                        # rolling candle cache, so persist it immediately.
+                        c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
+                                  (json.dumps(state,ensure_ascii=False),now.isoformat(),p['id']))
                     updated,want,reason=policy.up_exit(
                         state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
                 else:
@@ -841,6 +879,7 @@ def install():
                 'MA_V1118_UP_SECOND_35PCT',
                 'MA_V1118_UP_AFTER_SECOND_TRAIL',
                 'MA_V1118_STOP_MINUS_15',
+                'MA_NL1120_LOOKBACK_LOW_CLOSE_STOP',
                 'MA_V1118_HOLD_EXPIRY',
             ):
                 return False

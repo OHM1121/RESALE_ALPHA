@@ -114,6 +114,7 @@ def _ma_exit(reason,frame,pos,fill):
         'MA_V1118_UP_SECOND_35PCT':'NEW LEGACY 11.18 2차 매도: 첫 목표보다 +2/2/2.5/3% 상승, 최초 수량 35%',
         'MA_V1118_UP_AFTER_SECOND_TRAIL':'NEW LEGACY 11.18 3차: 최고가 대비 시간봉별 -2.5/-3/-3/-4% 하락시 잔량 전량',
         'MA_V1118_STOP_MINUS_15':'NEW LEGACY 11.18 손절: 실제 가격 매수가 -15% 도달, 전량매도',
+        'MA_NL1120_LOOKBACK_LOW_CLOSE_STOP':'NEW LEGACY 11.20(2) 손절: 매수 직전 완성봉 50개 중 최저가를 정한 손절가 아래로 완성봉 종가 마감, 전량매도',
         'MA_V1118_HOLD_EXPIRY':'NEW LEGACY 11.18 보유기한 만료: 48/80/120/360시간 후 첫 유효 시세에서 전량',
         'MA_V065_UP_FIRST_10PCT':f'1차 매도: 실제 최우선 매수호가가 매수가 대비 +{frame_target} 목표에 도달, 최초 매수량 10% 청산',
         'MA_V065_UP_SECOND_HALF_REMAINING':'2차 매도: 1차 목표가에서 추가 목표 상승에 도달, 1차 매도 후 잔량의 50% 청산',
@@ -172,6 +173,7 @@ def _trend_entry(pos,fill,frame):
 def _trend_exit(reason,pos,fill,frame):
     tags={
        'MT1118_STOP_15PCT':'NEW LEGACY 11.18 손절: 매수가 대비 -15% 전량',
+       'NL1120_LOOKBACK_LOW_CLOSE_STOP':'NEW LEGACY 11.20(2) 손절: 매수 직전 완성봉 200/90/90개 저가 평균을 손절가로 정하고 완성봉 종가가 아래로 마감, 전량매도',
        'MT1118_HOLD_DEADLINE':'NEW LEGACY 11.18 보유기한 100시간/8일/15일 만료 전량',
        'NL1118_AFTER_FIRST_PLUS_1_STOP':'NEW LEGACY 11.18 첫 익절 뒤 매수가+1% 방어선까지 회귀, 잔량 전량',
        'NL1118_AFTER_SECOND_FIRST_FLOOR':'NEW LEGACY 11.18 두번째 익절 뒤 첫 목표가까지 회귀, 잔량 전량',

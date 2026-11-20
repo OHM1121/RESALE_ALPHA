@@ -81,7 +81,7 @@ class MAOriginalNativePaperSimulation(unittest.TestCase):
             return list(c.execute("SELECT side,qty,reason FROM executions WHERE position_id=? ORDER BY id",
                                   (self.pid,)))
 
-    def test_cfg_rally_without_book_never_fakes_sell_retrace_only_holds_until_rev1_close(self):
+    def test_cfg_rally_without_book_never_fakes_sell_retrace_only_holds_until_lookback_close_stop(self):
         rally=ENTRY+dt.timedelta(seconds=3)
         runtime._persist_verified_up_ascent(self.wallet,SYMBOL,"118",rally)
         with self.wallet.connect() as c:
@@ -97,7 +97,7 @@ class MAOriginalNativePaperSimulation(unittest.TestCase):
             runtime._process_v067_exits(self.wallet,stale,moment)
             self.assertTrue(any("BOOK_STALE" in str(v) for v in report.call_args_list))
         self.assertEqual([x["side"] for x in self.sell_receipts()],["BUY"])
-        # NEW LEGACY rev1 F6: returning to entry is NOT an automatic exit.
+        # NEW LEGACY F6: returning to entry is NOT an automatic exit.
         live=moment+dt.timedelta(seconds=1)
         self.wallet.process_book(genuine_book(112,113,live),live)
         receipts=self.sell_receipts()
@@ -106,22 +106,44 @@ class MAOriginalNativePaperSimulation(unittest.TestCase):
             p=c.execute("SELECT qty,status FROM positions WHERE id=?",(self.pid,)).fetchone()
             self.assertGreater(float(p["qty"]),0.)
             self.assertEqual(p["status"],"OPEN")
-        # Only an original verified entry-reference-low touch AND a later
-        # CLOSED Upbit candle with close below that LOW can authorize the
-        # native protective exit on a separate genuine sellable current BID.
+        # NEW LEGACY 11.20(2): the reference-candle-low rule (rev1) is RETIRED for
+        # new positions (workbook blue "삭제"). A touch of the old reference low
+        # plus a later close below it must NOT sell. The stop is now the lowest low
+        # of the last 50 completed bars before the BUY (here 110), and only a later
+        # COMPLETED bar CLOSING below it sells, on a separate genuine current BID.
         import ma_v061_coin_runtime as source
+        def prior(i):
+            return {"start":ENTRY.replace(minute=25,second=0)-dt.timedelta(minutes=5*(25-i)),
+                    "low":"110","high":"120","close":"112"}
+        history=[prior(i) for i in range(25)]
+        history+=[{"start":ENTRY.replace(minute=25,second=0),
+                   "low":"113","high":"116","close":"115"},
+                  {"start":ENTRY.replace(minute=30,second=0),
+                   "low":"112","high":"115","close":"112"}]
         closed=ENTRY.replace(minute=35,second=1)
         with source._HISTORY_LOCK:
-            source._HISTORY[("5m",SYMBOL)]=(closed,(
-                {"start":ENTRY.replace(minute=25,second=0),
-                 "low":"113","high":"116","close":"115"},
-                {"start":ENTRY.replace(minute=30,second=0),
-                 "low":"112","high":"115","close":"112"}))
+            source._HISTORY[("5m",SYMBOL)]=(closed,tuple(history))
         try:
             self.wallet.process_book(genuine_book(112,113,closed),closed)
+            self.assertEqual([x["side"] for x in self.sell_receipts()],["BUY"],
+                             "rev1 reference-low close must no longer sell")
+            with self.wallet.connect() as c:
+                state=json.loads(c.execute(
+                    "SELECT state_json FROM ma_v067_positions WHERE position_id=?",
+                    (self.pid,)).fetchone()["state_json"])
+            self.assertTrue(state["nl1120"])
+            self.assertEqual(state["nl1120_stop_status"],"ACTIVE")
+            self.assertEqual(float(state["nl1120_stop_price"]),110.0)
+            # a completed bar that CLOSES below the fixed stop sells everything
+            history.append({"start":ENTRY.replace(minute=35,second=0),
+                            "low":"107","high":"112","close":"108"})
+            later=ENTRY.replace(minute=40,second=1)
+            with source._HISTORY_LOCK:
+                source._HISTORY[("5m",SYMBOL)]=(later,tuple(history))
+            self.wallet.process_book(genuine_book(108,109,later),later)
             receipts=self.sell_receipts()
             self.assertEqual([x["side"] for x in receipts],["BUY","SELL"])
-            self.assertEqual(receipts[1]["reason"],"MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE")
+            self.assertEqual(receipts[1]["reason"],"MA_NL1120_LOOKBACK_LOW_CLOSE_STOP")
             with self.wallet.connect() as c:
                 p=c.execute("SELECT qty,status FROM positions WHERE id=?",
                             (self.pid,)).fetchone()
