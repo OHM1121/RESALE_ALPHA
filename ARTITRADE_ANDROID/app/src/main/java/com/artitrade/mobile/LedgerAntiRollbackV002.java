@@ -17,6 +17,7 @@ final class LedgerAntiRollbackV002 {
     private LedgerAntiRollbackV002(){}
     private static boolean cfgSingleCleanupAttemptedV015=false;
     private static boolean ledgerResetAttemptedV0130=false;
+    private static boolean historyResetAttemptedV0140=false;
 
     static synchronized JSONObject verify(Context c)throws Exception{
         JSONObject epoch=FreshEpochGateV106.read(c);
@@ -97,6 +98,32 @@ final class LedgerAntiRollbackV002 {
                 c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
                     .putString("ledger_reset_v0130_status",
                         "FAILED:"+resetFailure.getClass().getSimpleName()).commit();
+            }
+        }
+        // Phase 2 of the owner's reset (0.1.4): clear only INDEPENDENT research /
+        // error / AI history files (engine-owned state, signals, pending orders,
+        // bars, market score and every GMO file are left alone). Once per process,
+        // before any engine starts, caught so it can never block trading. The app
+        // fault log is cleared only on the run that actually applied the reset.
+        if(!historyResetAttemptedV0140&&root.isDirectory()){
+            historyResetAttemptedV0140=true;
+            try{
+                JSONObject history=new JSONObject(Python.getInstance()
+                    .getModule("history_reset_v0140")
+                    .callAttr("run_json",root.getAbsolutePath()).toString());
+                if(history.optBoolean("applied_now",false)&&
+                    "DONE".equals(history.optString("status")))
+                    new RuntimeCrashStore(c).clear();
+                c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+                    .putString("history_reset_v0140_status",
+                        history.optString("status",history.optString("skipped","UNVERIFIED")))
+                    .commit();
+            }catch(Throwable historyFailure){
+                android.util.Log.w("ARTITRADE_RESET_V0140",
+                    "History reset not applied: "+historyFailure.getClass().getSimpleName());
+                c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+                    .putString("history_reset_v0140_status",
+                        "FAILED:"+historyFailure.getClass().getSimpleName()).commit();
             }
         }
         String raw=Python.getInstance()

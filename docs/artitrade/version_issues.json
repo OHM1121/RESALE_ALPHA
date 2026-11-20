@@ -1390,7 +1390,7 @@
       "root": "OWNER_DECISION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.3",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44752332541",
       "device": "UNVERIFIED",
       "nodes": [
         "LEDGER_RESET_V0130"
@@ -1410,7 +1410,7 @@
       "root": "CONFIRMED_IN_CODE",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.3",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44752332541",
       "device": "UNVERIFIED",
       "nodes": [
         "NL1120_LOOKBACK_STOP_V0120"
@@ -1419,6 +1419,26 @@
         "test_nl1120_2_lookback_stop_and_first_close.py"
       ],
       "notes": "Deep history is now read only until the stop is fixed, at most once a minute. Added a silent-rejection guard test for sell reasons."
+    },
+    {
+      "id": "AT-0140-01",
+      "issue": 123,
+      "found": "owner question 2026-11-20 (0.1.3 reset scope)",
+      "category": "USER_POLICY_DECISION",
+      "title": "Ledger reset phase 2: clear independent research/error/AI history; engine-owned research and pending buys stay",
+      "evidence": "d_candidate_history back-fills candidate_snapshots from signals, so wallet-DB research cannot be cleared without engine-state changes.",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.4",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "HISTORY_RESET_V0140"
+      ],
+      "tests": [
+        "test_history_reset_v0140.py"
+      ],
+      "notes": "Candidate/signal-linked research and pending buys are not cleared (owner decision pending)."
     }
   ],
   "known_normal": [
@@ -1743,8 +1763,20 @@
     "version": "0.1.3",
     "versionCode": 146,
     "base": "0.1.2 (f07bd85)",
+    "status": "DELIVERED_CI_VERIFIED",
+    "device_verified": false,
+    "next_version": "0.1.4",
+    "source_commit": "c1796120cc5f1cf9dde54b8b791f1577da311f2c",
+    "apk_sha256": "96c49a0dbadf4e68951eae4b3227205afd5bef7715ff98bde5694b4e7ce9ac25",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44752332541",
+    "release_publish": "GitHub release 0.1.3 published."
+  },
+  "candidate_014": {
+    "version": "0.1.4",
+    "versionCode": 147,
+    "base": "0.1.3 (c179612)",
     "status": "SOURCE_FIXED_CI_PENDING",
     "device_verified": false,
-    "next_version": "0.1.4"
+    "next_version": "0.1.5"
   }
 }

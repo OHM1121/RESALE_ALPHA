@@ -290,3 +290,15 @@ Based on 0.1.2 (versionCode 146 for this build). 0.1.2 was delivered: source `f0
 4. **Guard test** pins that every sell reason the MA policy can emit is accepted by the coin ledger (a missing entry rejects sells silently).
 
 Status: SOURCE_FIXED, local regression passed; CI and device not verified.
+
+
+## 0.1.4 — how the changed parts connect (issue #123)
+Based on 0.1.3 (versionCode 147). 0.1.3 was delivered: source `c179612`, CI run 44752332541, APK SHA256 `96c49a0d…9ac25`, signer unchanged, release 0.1.3 published; CI_VERIFIED only.
+
+1. **Reset phase 2.** `LedgerAntiRollbackV002.verify` also calls `history_reset_v0140.run_json` once per process (after the ledger reset, before the guard check). It clears
+   independent AI / research / audit / error files and counters (list in the contract of `HISTORY_RESET_V0140`) and, on the run that applied it, the app fault log.
+2. **Why not the wallet research tables:** `d_candidate_history` back-fills `candidate_snapshots` from `signals`; clearing snapshots alone would be rebuilt from the old signals,
+   clearing signals/pending changes engine state. Those and pending buys stay and expire by the engine's own rules.
+3. The anti-rollback witness is unaffected (no execution table is touched).
+
+Status: SOURCE_FIXED, local regression passed; CI and device not verified.

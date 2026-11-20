@@ -1309,6 +1309,24 @@
       "tests": [
         "test_ledger_reset_except_gmo_v0130.py"
       ]
+    },
+    {
+      "id": "HISTORY_RESET_V0140",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/history_reset_v0140.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java"
+      ],
+      "depends_on": [
+        "LEDGER_RESET_V0130"
+      ],
+      "issues": [
+        123
+      ],
+      "contract": "One-time clearing of INDEPENDENT research / error / AI history files only (AI_RESEARCH_V040, AI_COMPREHENSIVE_V052, phone_buy_evidence_v035, execution_decisions_v074, execution_entry_plans_v107, forward_high_v041, ANDROID_RESEARCH_OBSERVATIONS, MarketTrend RSI watch file; MarketTrend journal logs; issues/runtime_error_summary/issue_lifecycle of non-GMO DBs; non-GMO post-exit rows; *error*.jsonl; app fault log once). Never touches signals, candidates, pending, candidate_snapshots/forward/shadow (the engine back-fills snapshots from signals), bars, market score, accounts, MarketTrend latch/stop-reentry or any GMO file. Runs once per process before engines start, schema kept, per-database transactions, retried until every database succeeded, caught in Java so it never blocks trading.",
+      "tests": [
+        "test_history_reset_v0140.py"
+      ]
     }
   ],
   "audit_scope": {
