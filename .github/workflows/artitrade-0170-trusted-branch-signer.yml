@@ -1,0 +1,259 @@
+name: ARTITRADE 0.1.7 original-signer APK (trusted branch, pinned source)
+on:
+  push:
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
+    paths:
+      - .github/workflows/artitrade-0170-trusted-branch-signer.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: artitrade-0170-trusted-original-signer
+  cancel-in-progress: false
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      CI: 'true'
+      # USER STANDING RULE (docs/artitrade/USER_STANDING_RULES.md, rule R1):
+      # version name, APK file name and release tag are numeric dot-separated
+      # ONLY. No v-prefix, date, FIX/TEST or any other text.
+      VERSION: 0.1.7
+      VERSION_CODE: '150'
+      PREVIOUS_VERSION: 0.1.6
+      PREVIOUS_VERSION_CODE: '149'
+      # Pinned source commit (the signing key cache is only visible on the trusted
+      # branch, so this workflow lives there and checks out this exact commit).
+      SOURCE: 8d089510d0a65a53de17819f71d900c26e4ab9d2
+      SIGNER_SHA256: 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
+      PATCHED_ENGINE_SHA256: 0daf09fe2753efb980f350a200a45c16caa2d5b57e75e24eede1c456dffd44fd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 8d089510d0a65a53de17819f71d900c26e4ab9d2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Rule R1 - numeric-only version identifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$VERSION" | grep -Eq '^[0-9]+(\.[0-9]+){2}$'
+          grep -q "versionCode $VERSION_CODE" ARTITRADE_ANDROID/app/build.gradle
+          grep -q "versionName '$VERSION'" ARTITRADE_ANDROID/app/build.gradle
+          test -f docs/artitrade/USER_STANDING_RULES.md
+          test "$(python3 tools/artitrade/next_version.py "$PREVIOUS_VERSION")" = "$VERSION"
+      - name: Require exact previously installed signer
+        id: signing
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: artitrade-s21plus-update-signing-v1
+      - name: Verify signing identity before any compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.signing.outputs.cache-hit }}" = "true"
+          test -s "$HOME/.android/debug.keystore"
+          fp="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "COMPUTED_SIGNER_SHA256=$fp"
+          test "$fp" = "$SIGNER_SHA256"
+      - name: Apply the proven original-vendor patch chain in this ephemeral checkout only
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The proven patch scripts expect old Gradle metadata. Rewrite the
+          # unified flavor temporarily, run them, then restore the real identity.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          v=os.environ["VERSION"]; c=os.environ["VERSION_CODE"]
+          p=Path("ARTITRADE_ANDROID/app/build.gradle")
+          s=p.read_text("utf8")
+          old="versionCode %s\n            versionName '%s'"%(c,v)
+          assert s.count(old)==1
+          assert s.count("versionName '0.0.2'")==1   # MSERVER hub flavor untouched
+          s=s.replace(old,"versionCode 97\n            versionName '0.7.91-MA-STAGE-LEDGER'",1)
+          p.write_text(s,"utf8")
+          PY
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v093_strategy_priority_metadata.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v105_ka10004_readonly.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py | tee /tmp/artitrade-native.txt
+          grep '^NEW_SHA256=' /tmp/artitrade-native.txt | sed 's/^NEW_SHA256=/ARTITRADE_APPROVED_VENDOR_PATCHED_SHA256=/' >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          v=os.environ["VERSION"]; c=os.environ["VERSION_CODE"]
+          p=Path("ARTITRADE_ANDROID/app/build.gradle")
+          s=p.read_text("utf8")
+          assert s.count("versionCode 99")==1
+          assert s.count("versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'")==1
+          s=s.replace("versionCode 99","versionCode "+c).replace(
+              "versionName '0.7.93-STOCK-SUBSCRIPTION-PRIORITY'","versionName '"+v+"'")
+          assert s.count("versionCode "+c)==1 and s.count("versionName '"+v+"'")==1 and s.count("versionName '0.0.2'")==1
+          p.write_text(s,"utf8")
+          PY
+      - name: Vendor engine must be byte-identical to the shipped engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/ui_tests
+          python3 - <<'PY'
+          import ast,base64,hashlib,io,os,zipfile
+          from pathlib import Path
+          main=Path('ARTITRADE_ANDROID/app/src/main')
+          original=main/'assets/strategy_v070'
+          data=base64.b64decode(''.join((original/('part_%02d.txt'%i)).read_text('ascii') for i in range(22)))
+          sha=hashlib.sha256(data).hexdigest()
+          bridge=(main/'java/com/artitrade/mobile/StrategyRuntimeBridge.java').read_text('utf8')
+          assert 'CORE_SHA256="'+sha+'"' in bridge
+          assert sha==os.environ["PATCHED_ENGINE_SHA256"],("ENGINE_DRIFT",sha)
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              for name in z.namelist():
+                  if name.endswith('.py'):ast.parse(z.read(name).decode('utf8'),filename=name)
+              z.extractall('/tmp/artitrade-native')
+          print('ENGINE_IDENTICAL_TO_SHIPPED',sha)
+          PY
+      - name: Regression tests (original wallets, stock paths, 0.0.20 to 0.1.3 fixes, governance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          for pattern in \
+            test_v008_special_session_trend_proof.py \
+            test_v009_forensic_krx_gmo_ma_dns.py \
+            test_v010_gmo_capture_recovery_signature.py \
+            test_v010_gmo_d1_or_0b_recovery.py \
+            test_v010_native_market_clock.py \
+            test_v011_new_legacy_resting_and_legacy_retirement.py \
+            test_v012_legacy_purge_and_holding_frame.py \
+            test_v013_stock_at_pending_to_native_buy.py \
+            test_v014_cfg_native_sell_quote_regression.py \
+            test_v015_global_position_uid_and_cfg_single.py \
+            test_v015_position_uid_cfg_single.py \
+            test_v016_preload_trend_ledger.py \
+            test_v017_stock_preload_progress.py \
+            test_v017_native_pending_retry.py \
+            test_v081_both_feed_preload.py \
+            test_v089_fast_prices_rotation.py \
+            test_v008_broker_sell_receipt.py \
+            test_v008_bollinger_pixel_geometry.py \
+            test_v008_all_strategy_rootcause.py \
+            test_v097_gmo_preplan.py \
+            test_v093_strategy_subscription_priority.py \
+            test_v075_gmo_cw_original_failure_audit.py \
+            test_v090_gmo_open_priority_worker.py \
+            test_v108_native_ma_trend_entry_paths.py \
+            test_v007_error_history_root_contracts.py \
+            test_v006_trend_5m_retirement_and_startup.py \
+            test_new_legacy_1118_workbook.py \
+            test_new_legacy_1118_ai_basis.py \
+            test_v1118_fresh_score_bootstrap.py \
+            test_v002_post_reset_trend_and_top50.py \
+            test_v002_eight_virtual_paper_end_to_end.py \
+            test_v004_abnormal_reconnect_six.py \
+            test_v005_market_score_empty_wallet.py \
+            test_v002_ledger_rollback_guard.py \
+            test_v003_daily_market_backup.py \
+            test_v106_fresh_paper_epoch.py \
+            test_v108_mandatory_first_epoch.py \
+            test_v107_at_negative_market_gate.py \
+            test_v107_entry_plan_epoch.py \
+            test_v092_scenarios_8_wallets.py \
+            test_v095_trade_basis_ai.py \
+            test_v086_stock_manual_all.py \
+            test_v100_d19_native_manual_exit.py \
+            test_v018_rev1_low_close_and_fast_ma.py \
+            test_nl1120_trend_close_above_mid.py \
+            test_v020_subscription_candidate_coverage.py \
+            test_v020_limit_exclusion_and_trend_universe.py \
+            test_monitor_loop_contract.py \
+            test_release_packaging_contract.py \
+            test_at_pending_stall_audit.py \
+            test_next_version_rule.py \
+            test_r010_close_window_coverage.py \
+            test_v101_zip95_analysis_ready.py \
+            test_nl1120_2_lookback_stop_and_first_close.py \
+            test_ledger_reset_except_gmo_v0130.py \
+            test_history_reset_v0140.py \
+            test_candidate_reset_v0150.py \
+            test_ui_redesign_v0160.py; do
+            echo "TESTING $pattern"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
+          done
+          python3 tools/artitrade/validate_governance.py
+          python3 tools/artitrade/build_source_graph.py --output artitrade_source_graph.json
+          python3 tools/artitrade/validate_dependency_contracts.py --generated artitrade_source_graph.json
+      - name: JVM behaviour tests (fault log, probe backoff)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/artitrade-jvm /tmp/jars
+          curl -fsSL -o /tmp/jars/json.jar https://repo1.maven.org/maven2/org/json/json/20240303/json-20240303.jar
+          M=ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile
+          javac -d /tmp/artitrade-jvm -cp /tmp/jars/json.jar $M/FaultLogPolicy.java $M/ProbeBackoff.java \
+            ARTITRADE_ANDROID/ui_tests/FaultLogPolicyTest.java ARTITRADE_ANDROID/ui_tests/ProbeBackoffTest.java
+          java -cp /tmp/artitrade-jvm:/tmp/jars/json.jar com.artitrade.mobile.FaultLogPolicyTest
+          java -cp /tmp/artitrade-jvm com.artitrade.mobile.ProbeBackoffTest
+      - name: Build arm64 unified Android package with the exact existing signer
+        working-directory: ARTITRADE_ANDROID
+        shell: bash
+        run: gradle --no-daemon :app:assembleUnifiedDebug --stacktrace
+      - name: Verify package, numeric version, signer and non-debuggable manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=ARTITRADE_ANDROID/app/build/outputs/apk/unified/debug/app-unified-debug.apk
+          test -s "$apk"
+          badging="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")"
+          echo "$badging" | grep '^package: '
+          echo "$badging" | grep -F "name='com.artitrade.unified.s21dex' versionCode='$VERSION_CODE' versionName='$VERSION'"
+          # debuggable must be absent (issue #112)
+          if echo "$badging" | grep -q 'application-debuggable'; then echo "APK_IS_DEBUGGABLE" >&2; exit 1; fi
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > /tmp/signer.txt
+          grep -iF "$SIGNER_SHA256" /tmp/signer.txt
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/'
+          cp "$apk" "$VERSION.apk"
+          sha256sum "$VERSION.apk" > "$VERSION.sha256"
+          printf 'versionName=%s\nversionCode=%s\npackage=com.artitrade.unified.s21dex\nsource=%s\nsigner_sha256=%s\nprevious_installed_version=%s\nreal_broker_enabled=false\ndevice_verified=false\n' "$VERSION" "$VERSION_CODE" "$SOURCE" "$SIGNER_SHA256" "$PREVIOUS_VERSION" > "$VERSION.txt"
+          cat "$VERSION.sha256"
+      - name: Verify the exact source commit was built
+        run: test "$(git rev-parse HEAD)" = "$SOURCE"
+      - name: Upload the signed APK as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_0_1_7_SIGNED_APK
+          path: |
+            0.1.7.apk
+            0.1.7.sha256
+            0.1.7.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish the signed APK as a prerelease (tag and file name are the bare version)
+        shell: bash
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          set -euo pipefail
+          sha256sum -c "$VERSION.sha256"
+          printf '%s\n' "ARTITRADE $VERSION (PAPER, not device verified)." "Install over the existing app; same package and signer. Based on 0.1.6." "- Text-overlap fixes, footnotes removed, premium realized-P&L line, visual dashboards and holdings for every strategy, trade history grouped by unique trade id (buy and sell together)." "- Presentation only: trading engine, ledger and reset code unchanged." "DEVICE_VERIFIED=false. Real broker orders remain disabled." > /tmp/notes.md
+          if ! gh release create "$VERSION" "$VERSION.apk" "$VERSION.sha256" "$VERSION.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE $VERSION" --notes-file /tmp/notes.md --prerelease; then
+            echo "RELEASE_PUBLISH_FAILED - diagnostics (the APK is still in the workflow artifact):" >&2
+            gh api -i "repos/$GITHUB_REPOSITORY/releases?per_page=1" 2>&1 | grep -iE '^(HTTP|x-accepted-github-permissions|x-github-request-id)' >&2 || true
+            exit 1
+          fi
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json assets,tagName --jq '{tagName:.tagName,assets:[.assets[].name]}'
