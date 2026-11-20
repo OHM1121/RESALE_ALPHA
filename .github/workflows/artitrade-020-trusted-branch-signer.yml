@@ -1,14 +1,14 @@
-name: ARTITRADE 0.0.20 original-signer APK
+name: ARTITRADE 0.0.20 original-signer APK (trusted branch, pinned source)
 on:
   push:
-    branches: [claude/keen-turing-oijxxy]
+    branches: [artitrade-phone-main-v070-live-orders-20261112]
     paths:
-      - .github/workflows/artitrade-020-original-signer-release.yml
+      - .github/workflows/artitrade-020-trusted-branch-signer.yml
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: artitrade-020-original-signer
+  group: artitrade-020-trusted-original-signer
   cancel-in-progress: false
 jobs:
   build-and-release:
@@ -23,13 +23,15 @@ jobs:
       VERSION_CODE: '142'
       PREVIOUS_VERSION: 0.0.18
       PREVIOUS_VERSION_CODE: '140'
-      SOURCE: ${{ github.sha }}
+      # Pinned source commit (the signing key cache is only visible on the trusted
+      # branch, so this workflow lives there and checks out this exact commit).
+      SOURCE: 71b54ac8c6a708874a6ffe667426d88345dab7bd
       SIGNER_SHA256: 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
       PATCHED_ENGINE_SHA256: 0daf09fe2753efb980f350a200a45c16caa2d5b57e75e24eede1c456dffd44fd
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: 71b54ac8c6a708874a6ffe667426d88345dab7bd
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
