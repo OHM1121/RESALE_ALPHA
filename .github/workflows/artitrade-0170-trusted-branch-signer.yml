@@ -25,13 +25,13 @@ jobs:
       PREVIOUS_VERSION_CODE: '149'
       # Pinned source commit (the signing key cache is only visible on the trusted
       # branch, so this workflow lives there and checks out this exact commit).
-      SOURCE: 3362c1a05172b1e1362add02e513c851d74ffa89
+      SOURCE: 3d42217bc230b7f4b3199846ff33bf658dc120ba
       SIGNER_SHA256: 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
       PATCHED_ENGINE_SHA256: 0daf09fe2753efb980f350a200a45c16caa2d5b57e75e24eede1c456dffd44fd
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 3362c1a05172b1e1362add02e513c851d74ffa89
+          ref: 3d42217bc230b7f4b3199846ff33bf658dc120ba
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
