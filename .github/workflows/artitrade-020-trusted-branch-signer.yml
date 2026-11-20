@@ -25,13 +25,13 @@ jobs:
       PREVIOUS_VERSION_CODE: '140'
       # Pinned source commit (the signing key cache is only visible on the trusted
       # branch, so this workflow lives there and checks out this exact commit).
-      SOURCE: 71b54ac8c6a708874a6ffe667426d88345dab7bd
+      SOURCE: 92392c10f4d0287f3fd781d3c681fe5a3a409804
       SIGNER_SHA256: 37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6
       PATCHED_ENGINE_SHA256: 0daf09fe2753efb980f350a200a45c16caa2d5b57e75e24eede1c456dffd44fd
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 71b54ac8c6a708874a6ffe667426d88345dab7bd
+          ref: 92392c10f4d0287f3fd781d3c681fe5a3a409804
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -179,7 +179,7 @@ jobs:
             test_v018_rev1_low_close_and_fast_ma.py \
             test_nl1120_trend_close_above_mid.py \
             test_v020_subscription_candidate_coverage.py \
-            test_v020_trend_candidates_in_market_map.py \
+            test_v020_limit_exclusion_and_trend_universe.py \
             test_monitor_loop_contract.py \
             test_release_packaging_contract.py \
             test_at_pending_stall_audit.py; do
@@ -241,6 +241,6 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum -c "$VERSION.sha256"
-          printf '%s\n' "ARTITRADE $VERSION (PAPER, not device verified)." "Install over the existing app; same package and signer. Based on released 0.0.18." "- MA / MarketTrend candidate symbols now receive live quotes (subscription slot allocation fix; MarketTrend TOP50 candidates added to the live symbol map)." "- MarketTrend entry (NEW LEGACY 11.20): Bollinger(20,1.5) middle slope -15..+20 degrees and a completed bar closing above the middle." "- Service monitor loop: no more 2.5s probing storm / fault-log flooding / duplicate Python snapshots. APK is no longer debuggable." "DEVICE_VERIFIED=false. Real broker orders remain disabled." > /tmp/notes.md
+          printf '%s\n' "ARTITRADE $VERSION (PAPER, not device verified)." "Install over the existing app; same package and signer. Based on released 0.0.18." "- MA / MarketTrend candidate symbols now receive live quotes (subscription slot allocation fix). Stock MarketTrend uses the same symbol universe as the reference-bar strategy; the trading-value TOP50 stays coin-only." "- Stock reference-bar orders that can never fill (one-share cost above the per-symbol budget) are excluded from buy pending." "- MarketTrend entry (NEW LEGACY 11.20): Bollinger(20,1.5) middle slope -15..+20 degrees and a completed bar closing above the middle." "- Service monitor loop: no more 2.5s probing storm / fault-log flooding / duplicate Python snapshots. APK is no longer debuggable." "DEVICE_VERIFIED=false. Real broker orders remain disabled." > /tmp/notes.md
           gh release create "$VERSION" "$VERSION.apk" "$VERSION.sha256" "$VERSION.txt" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "ARTITRADE $VERSION" --notes-file /tmp/notes.md --prerelease
           gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json assets,tagName --jq '{tagName:.tagName,assets:[.assets[].name]}'
