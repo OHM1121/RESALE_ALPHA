@@ -16,6 +16,7 @@ final class LedgerAntiRollbackV002 {
     private static final String PREFS="artitrade_ledger_guard_v002";
     private LedgerAntiRollbackV002(){}
     private static boolean cfgSingleCleanupAttemptedV015=false;
+    private static boolean ledgerResetAttemptedV0130=false;
 
     static synchronized JSONObject verify(Context c)throws Exception{
         JSONObject epoch=FreshEpochGateV106.read(c);
@@ -72,6 +73,30 @@ final class LedgerAntiRollbackV002 {
                         result.optString("reason","NO_SINGLE_POSITION"));
             }finally{
                 cfgSingleCleanupAttemptedV015=true;
+            }
+        }
+        // Owner instruction 2026-11-20 (0.1.3): one-time PAPER ledger reset of
+        // everything EXCEPT the GMO ledger, to measure the new policy from zero.
+        // Only ledger rows are removed (exact cash/P&L reversal); engine code and
+        // schemas are untouched. Attempted once per process, BEFORE any engine
+        // starts, and never again after its DONE marker exists. A failure restores
+        // the wallets inside the module and must NOT block trading, so it is caught.
+        if(!ledgerResetAttemptedV0130&&root.isDirectory()&&independent.isFile()){
+            ledgerResetAttemptedV0130=true;
+            try{
+                JSONObject reset=new JSONObject(Python.getInstance()
+                    .getModule("ledger_reset_v0130")
+                    .callAttr("run_json",root.getAbsolutePath()).toString());
+                c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+                    .putString("ledger_reset_v0130_status",
+                        reset.optString("status",reset.optString("skipped","UNVERIFIED")))
+                    .commit();
+            }catch(Throwable resetFailure){
+                android.util.Log.w("ARTITRADE_RESET_V0130",
+                    "Ledger reset not applied: "+resetFailure.getClass().getSimpleName());
+                c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+                    .putString("ledger_reset_v0130_status",
+                        "FAILED:"+resetFailure.getClass().getSimpleName()).commit();
             }
         }
         String raw=Python.getInstance()

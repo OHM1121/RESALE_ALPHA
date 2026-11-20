@@ -1368,7 +1368,7 @@
       "root": "POLICY_SUPERSESSION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.2",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44750647399",
       "device": "UNVERIFIED",
       "nodes": [
         "NL1120_LOOKBACK_STOP_V0120",
@@ -1379,6 +1379,46 @@
         "test_v014_cfg_native_sell_quote_regression.py"
       ],
       "notes": "New BUYs only. Old holdings keep their exit. Stock Trend 200-bar history depth in the local KRX store unknown (partial window recorded). One-time Upbit candle fetch for coin Trend 30m in the observer thread."
+    },
+    {
+      "id": "AT-0130-01",
+      "issue": 121,
+      "found": "owner instruction 2026-11-20",
+      "category": "USER_POLICY_DECISION",
+      "title": "One-time PAPER ledger reset of everything except GMO; engine untouched",
+      "evidence": "Owner instruction. Reuses the proven legacy_purge_v012 machinery; GMO files never opened.",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.3",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "LEDGER_RESET_V0130"
+      ],
+      "tests": [
+        "test_ledger_reset_except_gmo_v0130.py"
+      ],
+      "notes": "PARTIAL status when REAL/unreconcilable rows exist. Research/score journals kept on purpose (engine inputs)."
+    },
+    {
+      "id": "AT-0130-02",
+      "issue": 122,
+      "found": "self-review 2026-11-20 (0.1.2)",
+      "category": "PERFORMANCE_DEFECT",
+      "title": "MarketTrend lookback-stop observer re-read up to 450 KRX bars every cycle for every held position",
+      "evidence": "Code review of _nl1120_after_closed: deep history was requested on every closed-bar cycle even after the stop was fixed.",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.3",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "NL1120_LOOKBACK_STOP_V0120"
+      ],
+      "tests": [
+        "test_nl1120_2_lookback_stop_and_first_close.py"
+      ],
+      "notes": "Deep history is now read only until the stop is fixed, at most once a minute. Added a silent-rejection guard test for sell reasons."
     }
   ],
   "known_normal": [
@@ -1691,8 +1731,20 @@
     "version": "0.1.2",
     "versionCode": 145,
     "base": "0.1.1 (2fa969a)",
+    "status": "DELIVERED_CI_VERIFIED",
+    "device_verified": false,
+    "next_version": "0.1.3",
+    "source_commit": "f07bd85c90c083b2c923702034f3401c4c2f1768",
+    "apk_sha256": "5f00ab48e9ce2193ba85c23e74bfbad352e87b356c12a46a1dc86b02ff9da4e9",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44750647399",
+    "release_publish": "GitHub release 0.1.2 published (apk, sha256, txt)."
+  },
+  "candidate_013": {
+    "version": "0.1.3",
+    "versionCode": 146,
+    "base": "0.1.2 (f07bd85)",
     "status": "SOURCE_FIXED_CI_PENDING",
     "device_verified": false,
-    "next_version": "0.1.3"
+    "next_version": "0.1.4"
   }
 }

@@ -95,3 +95,12 @@ rule headings disappear.
   `.github/workflows/artitrade-<digits>-trusted-branch-signer.yml` for the new version, pinned to the
   exact source commit. No other file, no other branch, no force-push, no history rewrite there.
 - The package, signer and numeric-version rules (R1, R2) are unchanged. CI is not device verification.
+
+
+## R10 — Report format to the owner (2026-11-20, replaces the longer wording of R5)
+- Every report to the owner has exactly two parts and nothing else:
+  1. **문제였던 것과 그에 따른 효과** (what was wrong, and what it caused);
+  2. **수정 후 개선된 내용** (what is better after the fix).
+- No introductions, no step-by-step narration, no filler. Unverified items are stated inside these two parts
+  (never implied as success). Needed decisions are added as one short line at the end of part 2.
+- Still never describe a CI pass as phone/broker verification (AGENTS.md).

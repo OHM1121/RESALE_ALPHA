@@ -437,7 +437,14 @@ def _nl1120_after_closed(self,current,histories,now=None):
     now=mt._as_kst(now if now is not None else dt.datetime.now(mt.KST))
     for p in current:
         if not p.__dict__.get("bar_finalized"):continue
-        rows=_nl1120_deep_rows(self,p,histories.get((p.market,p.symbol,p.frame),[]))
+        rows=histories.get((p.market,p.symbol,p.frame),[])
+        if getattr(p,"nl1120_stop_status",None) not in ("ACTIVE","IGNORED_ABOVE_ENTRY"):
+            # Deeper history is needed only until the stop is fixed, and at most
+            # once a minute, so a short history cannot hammer the KRX store.
+            asked=p.__dict__.get("nl1120_deep_at",0.0)
+            if time.monotonic()-asked>=60.0:
+                p.__dict__["nl1120_deep_at"]=time.monotonic()
+                rows=_nl1120_deep_rows(self,p,rows)
         old={k:getattr(p,k) for k in _NL1120_KEYS if hasattr(p,k)}
         state=reconcile(old,"trend",p.frame,rows,p.entry_at,p.entry,now)
         changed={k:state[k] for k in _NL1120_KEYS if k in state and state[k]!=old.get(k)}

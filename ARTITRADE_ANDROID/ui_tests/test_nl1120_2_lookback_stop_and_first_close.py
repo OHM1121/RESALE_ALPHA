@@ -201,6 +201,20 @@ class ExitContracts(unittest.TestCase):
         self.assertIn("MA_NL1120_LOOKBACK_LOW_CLOSE_STOP", basis)
         self.assertIn("NL1120_LOOKBACK_LOW_CLOSE_STOP", basis)
 
+    def test_every_exit_reason_the_ma_policy_can_emit_is_accepted_by_the_coin_ledger(self):
+        """Silent-failure guard: a sell reason missing from the coin accept-list is
+        rejected WITHOUT any error (this once blocked every +2% first sale)."""
+        import re
+        root = Path(__file__).resolve().parents[1] / "app/src/main/python"
+        policy = (root / "ma_v067_policy.py").read_text("utf8")
+        body = policy[policy.index("def up_exit"):policy.index("def apply_up_fill")]
+        emitted = {r for r in re.findall(r"'(MA_[A-Z0-9_]+)'", body)
+                   if not r.endswith("REVERSAL_UP")}          # policy names, not sell reasons
+        coin = (root / "ma_v067_coin_runtime.py").read_text("utf8")
+        gate = coin[coin.index("if row is None or str(reason) not in ("):]
+        accepted = set(re.findall(r"'(MA_[A-Z0-9_]+)'", gate[:gate.index("):")]))
+        self.assertEqual(emitted - accepted, set(), "reasons silently rejected by the coin ledger")
+
     def test_new_positions_are_marked_and_stored_durably(self):
         root = Path(__file__).resolve().parents[1] / "app/src/main/python"
         stock = (root / "ma_v067_stock_runtime.py").read_text("utf8")
@@ -405,6 +419,22 @@ class TrendObserverAndExit(unittest.TestCase):
         self.assertTrue(p.nl1120_stop_confirmed)
         self.assertEqual(nl._trend_exit_action(p, 106.0, later),
                          ("NL1120_LOOKBACK_LOW_CLOSE_STOP", 1.0))
+
+    def test_deep_history_is_read_only_until_the_stop_is_fixed(self):
+        """A fixed stop must stop the per-cycle deep KRX/Upbit history read."""
+        p = self.position()
+        rows = history(210, T0, low=100.0, close=106.0)
+        co, _ = self.co(rows)
+        calls = []
+        def deep(self_, pos, r):
+            calls.append(1)
+            return r
+        with patch.object(nl, "_nl1120_deep_rows", side_effect=deep):
+            for minute in range(3):
+                nl._nl1120_after_closed(co, [p], {("coin", "KRW-TEST", "30m"): rows},
+                                        now=T0 + dt.timedelta(minutes=10 + minute))
+        self.assertEqual(p.nl1120_stop_status, "ACTIVE")
+        self.assertEqual(len(calls), 1, "deep history must be read once, then never again")
 
     def test_old_position_without_the_marker_is_not_touched_by_the_new_observer(self):
         p = self.position()

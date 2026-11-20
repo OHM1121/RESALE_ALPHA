@@ -276,3 +276,17 @@ Based on 0.1.1 (versionCode 145 for this build). 0.1.1 was delivered: source `2f
 5. Not changed: AT/reference, GMO, CW, market-score scope, -15 %, holding periods, TP1/TP2/trailing, resting-sell planning.
 
 Status: SOURCE_FIXED, local regression passed; CI and device not verified.
+
+
+## 0.1.3 — how the changed parts connect (issues #121, #120)
+Based on 0.1.2 (versionCode 146 for this build). 0.1.2 was delivered: source `f07bd85`, CI run 44750647399, APK SHA256 `5f00ab48…da4e9`, signer unchanged, GitHub release 0.1.2 published; CI_VERIFIED only.
+
+1. **Ledger reset except GMO.** `LedgerAntiRollbackV002.verify` calls `ledger_reset_v0130.run_json` once per process, after the legacy cleanups and before
+   `ledger_rollback_guard_v002.verify_json`. Per wallet it backs up, reverses each position's cash/realized exactly (helpers of `legacy_purge_v012`), deletes the
+   position-linked rows and candidates, then rebases the independent witness only for the touched wallets and writes `ARTITRADE_NL1120_LEDGER_RESET_V0130_DONE.json`.
+   GMO (`stock/PROJECTGMO_*`) is never opened; research/score journals stay. Failure is caught in Java and never blocks trading.
+2. **Dashboard.** No separate cache exists: the UI recomputes from the wallets, so empty wallets give empty profit / target-reach figures (research-side panels keep their research rows).
+3. **MarketTrend stop observer** reads deeper history only until the stop is fixed (at most once a minute) instead of every cycle.
+4. **Guard test** pins that every sell reason the MA policy can emit is accepted by the coin ledger (a missing entry rejects sells silently).
+
+Status: SOURCE_FIXED, local regression passed; CI and device not verified.
