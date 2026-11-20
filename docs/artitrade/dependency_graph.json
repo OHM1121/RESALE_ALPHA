@@ -1345,6 +1345,24 @@
       "tests": [
         "test_candidate_reset_v0150.py"
       ]
+    },
+    {
+      "id": "UI_REDESIGN_V0160",
+      "kind": "java-ui",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ChartStyle.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/IntegratedVisualViews.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ArtitradeVisualViews.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [],
+      "issues": [
+        125
+      ],
+      "contract": "Presentation only. Integrated dashboard/holdings and chart views draw values the activity already computed (tradePnL/tradeReturnPct/stats); unknown values stay unknown (never drawn as 0). One shader per shape, no blur/shadow/software layers. bindFastVisiblePrice still only rewrites displayed price text. No ledger, order, quote, policy or reset code is read or written by the new views.",
+      "tests": [
+        "test_ui_redesign_v0160.py"
+      ]
     }
   ],
   "audit_scope": {

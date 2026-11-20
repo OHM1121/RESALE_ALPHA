@@ -37,12 +37,14 @@ final class TradeRangeView extends View {
         float x2=hi?point(maxPct,center,right-left):center;
         float low=Math.min(x1,x2),high=Math.max(x1,x2);
         if(low<center){
-            p.setColor(Color.rgb(237,112,135));
-            c.drawRoundRect(new RectF(low,y-dp(5),center,y+dp(5)),dp(4),dp(4),p);
+            RectF lossBar=new RectF(low,y-dp(5),center,y+dp(5));
+            ChartStyle.barPaint(p,lossBar,ChartStyle.DOWN,false);
+            c.drawRoundRect(lossBar,dp(4),dp(4),p);ChartStyle.clear(p);
         }
         if(high>center){
-            p.setColor(Color.rgb(64,210,162));
-            c.drawRoundRect(new RectF(center,y-dp(5),high,y+dp(5)),dp(4),dp(4),p);
+            RectF gainBar=new RectF(center,y-dp(5),high,y+dp(5));
+            ChartStyle.barPaint(p,gainBar,ChartStyle.UP,true);
+            c.drawRoundRect(gainBar,dp(4),dp(4),p);ChartStyle.clear(p);
         }
         if(lo){
             p.setColor(Color.rgb(255,177,186));

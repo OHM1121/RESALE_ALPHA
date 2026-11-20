@@ -314,3 +314,14 @@ Based on 0.1.4 (versionCode 148). 0.1.4 was delivered: CI run 44753055761, APK S
 3. Remaining behaviour: a NEW gap-repair may recreate a still-valid reference for one symbol (normal engine behaviour).
 
 Status: SOURCE_FIXED, local regression on the real native stores passed; CI and device not verified.
+
+
+## 0.1.6 — how the changed parts connect (issue #125)
+Based on 0.1.5 (versionCode 149 for 0.1.6). Presentation only.
+
+1. `UnifiedVisualActivity.renderIntegratedHome` / `renderIntegratedPositions` read the same `stats()`, `tradePnL`, `tradeReturnPct` values as before and hand them to `IntegratedVisualViews` (`SegmentBarView`, `ReturnGaugeView`, `SignedAmountBarView`) and `ArtitradeVisualViews` (`HorizontalStrategyBarsView`, `MetricProgressView`). Strategy colours come from `IntegratedPalette`.
+2. `ChartStyle` is the single gradient/colour helper for all chart views (one shader per shape, no blur/software layer).
+3. `bindFastVisiblePrice` still rewrites only the displayed current-price text (now the "현재가" column); the P&L pill, gauge and amounts come from the original ledger values and are not live-recomputed.
+4. Unknown P&L is counted as "미확인" and drawn as an empty gauge; it is never summed or drawn as 0.
+
+Status: SOURCE_FIXED, local source-level tests passed; CI, look and speed on the phone not verified.

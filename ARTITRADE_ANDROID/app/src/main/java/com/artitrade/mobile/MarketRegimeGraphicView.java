@@ -32,8 +32,11 @@ public final class MarketRegimeGraphicView extends View {
         super.onDraw(c);
         final float left=dp(13),right=getWidth()-dp(13),w=Math.max(1,right-left);
         final float top=dp(47),height=dp(22);
-        paint.setColor(Color.rgb(37,42,59));
+        paint.setShader(new android.graphics.LinearGradient(left,0,right,0,
+            new int[]{ChartStyle.withAlpha(ChartStyle.DOWN,70),Color.rgb(30,34,46),ChartStyle.withAlpha(ChartStyle.UP,70)},
+            new float[]{0f,.5f,1f},android.graphics.Shader.TileMode.CLAMP));
         c.drawRoundRect(new RectF(left,top,right,top+height),dp(9),dp(9),paint);
+        paint.setShader(null);
         // Signed EXE scale: center is 0, left is -100, right is +100.
         for(int tick:new int[]{-50,0,50}){
             float tx=left+w*(float)SignedMarketScore.position(tick);
@@ -48,13 +51,16 @@ public final class MarketRegimeGraphicView extends View {
                 score>0?Color.rgb(93,218,170):Color.rgb(236,193,102);
             float center=left+w*.5f;
             float endpoint=left+w*(float)SignedMarketScore.position(score);
-            paint.setColor(color);
+            RectF fillBar=new RectF(Math.min(center,endpoint),top,Math.max(center,endpoint),top+height);
+            ChartStyle.barPaint(paint,fillBar,color,score>0);
             if(score==0){
                 c.drawRect(center-dp(2),top,center+dp(2),top+height,paint);
             }else{
-                c.drawRoundRect(new RectF(Math.min(center,endpoint),top,
-                    Math.max(center,endpoint),top+height),dp(6),dp(6),paint);
+                c.drawRoundRect(fillBar,dp(6),dp(6),paint);
             }
+            ChartStyle.clear(paint);
+            paint.setColor(Color.rgb(240,247,255));
+            c.drawCircle(endpoint,top+height/2f,dp(3.5f),paint);
             text(c,String.format(java.util.Locale.KOREA,"%+.1f / ±100",score),
                 17,right-dp(125),dp(26),color,true);
         }else{

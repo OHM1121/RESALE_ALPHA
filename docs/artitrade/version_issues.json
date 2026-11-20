@@ -1459,6 +1459,26 @@
         "test_candidate_reset_v0150.py"
       ],
       "notes": "Rows only; schemas and sequences kept. A new gap-repair may legitimately recreate a still-valid reference."
+    },
+    {
+      "id": "UI-0160-01",
+      "issue": 125,
+      "found": "owner request 2026-11-20",
+      "category": "UX_PRESENTATION",
+      "title": "Dark chart redesign; integrated dashboard and holdings shown as charts/gauges instead of text lines",
+      "evidence": "renderIntegratedPositions rendered 5 text lines per holding with no grouping; renderIntegratedHome had no cross-strategy comparison chart.",
+      "root": "PRESENTATION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.6",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "UI_REDESIGN_V0160"
+      ],
+      "tests": [
+        "test_ui_redesign_v0160.py"
+      ],
+      "notes": "Look, readability and speed on the phone are not verified. No trading/ledger code changed."
     }
   ],
   "known_normal": [
@@ -1807,8 +1827,19 @@
     "version": "0.1.5",
     "versionCode": 148,
     "base": "0.1.4",
+    "status": "DELIVERED_CI_VERIFIED",
+    "device_verified": false,
+    "next_version": "0.1.6",
+    "source_commit": "c2f7962",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44754065009",
+    "apk_sha256": "9e9a4b61…f4a89 (see handoff)"
+  },
+  "candidate_016": {
+    "version": "0.1.6",
+    "versionCode": 149,
+    "base": "0.1.5",
     "status": "SOURCE_FIXED_CI_PENDING",
     "device_verified": false,
-    "next_version": "0.1.6"
+    "next_version": "0.1.7"
   }
 }

@@ -28,8 +28,14 @@ final class DonutMetricView extends View {
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sw);p.setStrokeCap(Paint.Cap.ROUND);p.setColor(PremiumUi.LINE);c.drawArc(r,-90,360,false,p);
         if(!Double.isNaN(value)){
             float sweep=(float)(Math.max(0,Math.min(100,value))*3.6);
-            p.setColor(value>=60?Color.rgb(62,224,181):value>=40?Color.rgb(255,201,94):Color.rgb(255,119,133));
-            c.drawArc(r,-90,sweep,false,p);
+            int zone=ChartStyle.zone(value);
+            if(sweep>8f){
+                android.graphics.SweepGradient g=new android.graphics.SweepGradient(cx,cy,
+                    new int[]{ChartStyle.darken(zone,.35f),ChartStyle.lighten(zone,.12f)},new float[]{0f,Math.max(.02f,sweep/360f)});
+                android.graphics.Matrix m=new android.graphics.Matrix();m.postRotate(-90,cx,cy);g.setLocalMatrix(m);
+                p.setShader(g);
+            }else p.setColor(zone);
+            c.drawArc(r,-90,sweep,false,p);p.setShader(null);
         }
         p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.CENTER);p.setColor(Color.rgb(240,247,255));p.setTextSize(Math.max(sp(18f),size*.18f));p.setFakeBoldText(true);
         c.drawText(center,cx,cy+sp(3),p);p.setFakeBoldText(false);p.setTextSize(sp(14f));p.setColor(Color.rgb(151,160,181));c.drawText(title,cx,h-sp(6),p);
@@ -46,7 +52,9 @@ final class HorizontalStrategyBarsView extends View {
     private static String won(double v){NumberFormat f=NumberFormat.getNumberInstance(Locale.KOREA);f.setMaximumFractionDigits(0);return f.format(v)+"원";}
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);if(items.isEmpty())return;
-        float left=sp(82),right=getWidth()-sp(78),top=sp(8),row=Math.max(sp(34),(getHeight()-sp(16))/items.size()),mid=(left+right)/2;
+        p.setTextSize(sp(14));p.setFakeBoldText(true);
+        float labelMax=0;for(Item i:items)labelMax=Math.max(labelMax,p.measureText(i.label));p.setFakeBoldText(false);
+        float left=Math.min(getWidth()*.40f,Math.max(sp(82),labelMax+sp(12))),right=getWidth()-sp(78),top=sp(8),row=Math.max(sp(34),(getHeight()-sp(16))/items.size()),mid=(left+right)/2;
         double max=1;for(Item i:items)if(!Double.isNaN(i.value))max=Math.max(max,Math.abs(i.value));
         p.setStrokeWidth(1);p.setColor(PremiumUi.LINE);c.drawLine(mid,5,mid,getHeight()-5,p);
         for(int n=0;n<items.size();n++){
@@ -54,8 +62,9 @@ final class HorizontalStrategyBarsView extends View {
             p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(14));p.setColor(Color.rgb(200,218,238));p.setFakeBoldText(true);c.drawText(it.label,left-sp(8),y+sp(4),p);p.setFakeBoldText(false);
             if(Double.isNaN(it.value))continue;
             float span=(float)(Math.abs(it.value)/max*((right-left)*.47));
-            p.setColor(it.value>=0?Color.rgb(62,224,181):Color.rgb(255,119,133));
-            RectF bar=it.value>=0?new RectF(mid,y-sp(7),mid+span,y+sp(7)):new RectF(mid-span,y-sp(7),mid,y+sp(7));c.drawRoundRect(bar,7,7,p);
+            p.setColor(ChartStyle.TRACK);c.drawRoundRect(new RectF(left,y-sp(7),right,y+sp(7)),sp(7),sp(7),p);
+            RectF bar=it.value>=0?new RectF(mid,y-sp(7),mid+Math.max(span,sp(2)),y+sp(7)):new RectF(mid-Math.max(span,sp(2)),y-sp(7),mid,y+sp(7));
+            ChartStyle.barPaint(p,bar,it.value>=0?ChartStyle.UP:ChartStyle.DOWN,it.value>=0);c.drawRoundRect(bar,sp(7),sp(7),p);ChartStyle.clear(p);
             p.setTextAlign(it.value>=0?Paint.Align.LEFT:Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(225,236,248));float tx=it.value>=0?Math.min(right-sp(2),mid+span+sp(7)):Math.max(left+sp(2),mid-span-sp(7));c.drawText(won(it.value),tx,y+sp(4),p);
         }
     }
@@ -158,14 +167,23 @@ final class PnlSparklineView extends View {
             float y=(float)(bottom-(values[i]-min)/(max-min)*(bottom-top));
             if(i==0)curve.moveTo(x,y);else curve.lineTo(x,y);
         }
+        int lineColor=values[n-1]<0?ChartStyle.DOWN:values[n-1]>0?ChartStyle.UP:Color.rgb(255,194,91);
+        if(n>1){
+            float zeroY=(float)(bottom-(0-min)/(max-min)*(bottom-top));
+            Path area=new Path(curve);
+            area.lineTo(pointX(n-1,n,left,right),zeroY);area.lineTo(pointX(0,n,left,right),zeroY);area.close();
+            p.setStyle(Paint.Style.FILL);ChartStyle.areaPaint(p,top,bottom,lineColor);c.drawPath(area,p);ChartStyle.clear(p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.8f));p.setColor(ChartStyle.withAlpha(lineColor,110));
+            c.drawLine(left,zeroY,right,zeroY,p);
+        }
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(2.3f));
         p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
-        p.setColor(values[n-1]<0?Color.rgb(255,119,133):
-            values[n-1]>0?Color.rgb(62,224,181):Color.rgb(255,194,91));
+        p.setColor(lineColor);
         c.drawPath(curve,p);
         float x=pointX(n-1,n,left,right);
         float y=(float)(bottom-(values[n-1]-min)/(max-min)*(bottom-top));
-        p.setStyle(Paint.Style.FILL);c.drawCircle(x,y,sp(3),p);
+        p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.BG);c.drawCircle(x,y,sp(4.6f),p);
+        p.setColor(lineColor);c.drawCircle(x,y,sp(3),p);
         drawXAxisLabels(c,left,right,bottom);
     }
 }
@@ -179,7 +197,7 @@ final class MetricProgressView extends View {
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);float w=getWidth(),h=getHeight();p.setTextSize(sp(13));p.setTextAlign(Paint.Align.LEFT);p.setColor(PremiumUi.MUTED);c.drawText(label,0,sp(13),p);
         float by=h-sp(11),bh=sp(6);p.setColor(PremiumUi.LINE);RectF bg=new RectF(0,by,w,by+bh);c.drawRoundRect(bg,bh,bh,p);
-        if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;p.setColor(value>=60?Color.rgb(79,219,170):value>=40?Color.rgb(255,194,91):Color.rgb(255,119,142));RectF fg=new RectF(0,by,w*f,by+bh);c.drawRoundRect(fg,bh,bh,p);}
+        if(!Double.isNaN(value)){float f=(float)Math.max(0,Math.min(100,value))/100f;RectF fg=new RectF(0,by,Math.max(bh,w*f),by+bh);ChartStyle.barPaint(p,fg,ChartStyle.zone(value),true);c.drawRoundRect(fg,bh,bh,p);ChartStyle.clear(p);}
         p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(13));p.setColor(Color.rgb(232,235,244));c.drawText(Double.isNaN(value)?"—":String.format(Locale.KOREA,"%.1f%%",value),w,sp(13),p);
     }
 }
@@ -212,8 +230,9 @@ final class TimeframePerformanceGridView extends View {
         float by=top+sp(7),bh=sp(5);p.setColor(PremiumUi.LINE);c.drawRoundRect(new RectF(left,by,right,by+bh),bh,bh,p);
         if(!Double.isNaN(value)){
             float f=(float)Math.max(0,Math.min(100,value))/100f;
-            p.setColor(value>=60?Color.rgb(79,219,170):value>=40?Color.rgb(255,194,91):Color.rgb(255,119,142));
-            c.drawRoundRect(new RectF(left,by,left+(right-left)*f,by+bh),bh,bh,p);
+            RectF fg=new RectF(left,by,left+Math.max(bh,(right-left)*f),by+bh);
+            ChartStyle.barPaint(p,fg,ChartStyle.zone(value),true);
+            c.drawRoundRect(fg,bh,bh,p);ChartStyle.clear(p);
         }
     }
     @Override protected void onDraw(Canvas c){
@@ -295,8 +314,9 @@ final class TimeframeAccountFlowView extends View {
         p.setColor(PremiumUi.LINE);
         c.drawRoundRect(new RectF(left,y,left+width,y+gh),gh,gh,p);
         if(Double.isFinite(value)&&value>0){
-            p.setColor(accent);float part=(float)Math.max(0,Math.min(100,value))/100f;
-            c.drawRoundRect(new RectF(left,y,left+width*part,y+gh),gh,gh,p);
+            float part=(float)Math.max(0,Math.min(100,value))/100f;
+            RectF fg=new RectF(left,y,left+Math.max(gh,width*part),y+gh);
+            ChartStyle.barPaint(p,fg,accent,true);c.drawRoundRect(fg,gh,gh,p);ChartStyle.clear(p);
         }
     }
     private void step(Canvas c,float left,float top,float width,float height,

@@ -52,10 +52,10 @@ final class TradeGeometryView extends View {
         float reach=(float)Math.min(.5,Math.abs(returnPct)/20.0);
         float endpoint=center+(up?1:-1)*reach*(right-left);
         if(Math.abs(endpoint-center)<px(3))endpoint=center+(up?1:-1)*px(3);
-        paint.setColor(up?Color.rgb(54,208,166):Color.rgb(250,109,126));
         float start=Math.min(center,endpoint),end=Math.max(center,endpoint);
-        canvas.drawRoundRect(new RectF(start,mid-px(5),end,mid+px(5)),
-            px(5),px(5),paint);
+        RectF geo=new RectF(start,mid-px(5),end,mid+px(5));
+        ChartStyle.barPaint(paint,geo,up?ChartStyle.UP:ChartStyle.DOWN,up);
+        canvas.drawRoundRect(geo,px(5),px(5),paint);ChartStyle.clear(paint);
         paint.setColor(Color.rgb(230,240,251));
         canvas.drawCircle(endpoint,mid,px(3.1f),paint);
     }
