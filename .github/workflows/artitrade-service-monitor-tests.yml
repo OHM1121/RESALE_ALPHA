@@ -1,4 +1,4 @@
-name: ARTITRADE service monitor loop / fault log regression (no APK)
+name: ARTITRADE service monitor loop, fault log and packaging contract (no APK)
 on:
   workflow_dispatch:
   pull_request:
@@ -10,6 +10,8 @@ on:
       - 'ARTITRADE_ANDROID/ui_tests/*Backoff*'
       - 'ARTITRADE_ANDROID/ui_tests/*FaultLog*'
       - 'ARTITRADE_ANDROID/ui_tests/test_monitor_loop_contract.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_release_packaging_contract.py'
+      - 'ARTITRADE_ANDROID/app/build.gradle'
       - '.github/workflows/artitrade-service-monitor-tests.yml'
 permissions:
   contents: read
@@ -29,6 +31,7 @@ jobs:
         run: |
           (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_monitor_loop_contract -v)
           (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_v089_verified_exits_ma.ManualAndErrorProvenance -v)
+          (cd ARTITRADE_ANDROID && python3 -m unittest ui_tests.test_release_packaging_contract -v)
       - name: JVM behaviour tests (org.json 20240303 from Maven Central)
         run: |
           set -euo pipefail

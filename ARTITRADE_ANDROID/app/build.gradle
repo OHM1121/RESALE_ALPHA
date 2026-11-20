@@ -69,6 +69,17 @@ android {
     buildTypes {
         debug {
             minifyEnabled false
+            // The user-facing signed APK is produced from this build type (same
+            // keystore as every earlier release), and a debuggable APK lets anyone
+            // with adb/run-as read the private PAPER ledgers and app files and
+            // attach a debugger to the process that holds broker credentials.
+            // Therefore NOT debuggable by default. Only the emulator smoke builds
+            // (they use `adb shell run-as`) or an explicit local opt-in
+            // (ARTITRADE_DEBUGGABLE=1) keep it. Package, signer and versionCode
+            // are unchanged, so it still upgrades in place.
+            debuggable System.getenv('ARTITRADE_DEBUGGABLE') == '1' ||
+                System.getenv('ARTITRADE_EMULATOR_ABI') == 'x86_64' ||
+                System.getenv('ARTITRADE_EMULATOR_FIXTURE') == '1'
             if (System.getenv('CI') == 'true') {
                 signingConfig signingConfigs.ciStable
             }

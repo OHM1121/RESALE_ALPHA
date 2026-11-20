@@ -24,7 +24,8 @@
         60,
         96,
         104,
-        106
+        106,
+        112
       ],
       "contract": "No source-ready proof from a zero-length array; UI snapshot != original execution DB."
     },
@@ -42,7 +43,7 @@
         "BACKUP",
         "STOCK_FEED",
         "COIN_FEED",
-        "SERVICE_MONITOR_LOOP"
+        "SERVICE_MONITOR_LOOP_V0182"
       ],
       "issues": [
         53,
@@ -1096,7 +1097,7 @@
       "contract": "One ORIGINAL Upbit WS; held-first independent polling of new original orderbook at ~120ms best-effort, dedupe genuine timestamp/BID/depth, 3s max age, perform existing MA _process_v067_exits with original ledger, no fabricated fill from candle high or ASK. All native 8 wallet protections and single worker owner unchanged."
     },
     {
-      "id": "SERVICE_MONITOR_LOOP",
+      "id": "SERVICE_MONITOR_LOOP_V0182",
       "kind": "java",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
@@ -1112,6 +1113,18 @@
         111
       ],
       "contract": "Optional MSERVER (127.0.0.1:8765) is probed every loop turn only while healthy; failures back off 2.5s..30s and stay fail-closed (epochs 0, lastMserverAuthOk=false). Exactly one synchronized Python snapshot() per turn; disarm reuses it. Identical faults merge into one row with count, never evicting other diagnostics. Snapshot prefs cadence is a UI-freshness contract (8.5-10s) and is NOT changed here."
+    },
+    {
+      "id": "BUILD_PACKAGING",
+      "kind": "gradle",
+      "files": [
+        "ARTITRADE_ANDROID/app/build.gradle"
+      ],
+      "depends_on": [],
+      "issues": [
+        112
+      ],
+      "contract": "Shipped signed APK (debug build type + ciStable signer) is NOT debuggable. debuggable only via ARTITRADE_DEBUGGABLE=1 or the emulator smoke env (ARTITRADE_EMULATOR_ABI=x86_64 / ARTITRADE_EMULATOR_FIXTURE=1). applicationId, signer and numeric version identity unchanged so the APK upgrades in place."
     }
   ],
   "audit_scope": {

@@ -1166,7 +1166,7 @@
       "ci": "PENDING",
       "device": "UNVERIFIED",
       "nodes": [
-        "SERVICE_MONITOR_LOOP",
+        "SERVICE_MONITOR_LOOP_V0182",
         "SERVICE",
         "STRATEGY_BRIDGE"
       ],
@@ -1177,6 +1177,27 @@
         "test_v089_verified_exits_ma.py"
       ],
       "notes": "Local javac of the whole Java source set against Android 15 API: baseline 0 errors, modified 0 errors. Existing ui_tests: no new failure vs baseline. Not Gradle-packaged, not signed, not device verified. Fail-closed epoch/disarm rules unchanged; strategy, ledger, quote and order code untouched."
+    },
+    {
+      "id": "AT-018-31",
+      "issue": 112,
+      "found": "0.0.18",
+      "category": "CODE_AUDIT_PACKAGING",
+      "title": "Shipped APK has android:debuggable=true; one class unused in every flavor; other legacy classes unreachable only from the unified app",
+      "evidence": "Decoded manifest of the uploaded 0.0.18 APK; source reachability analysis from UnifiedVisualActivity/UnifiedTradingService. No private data.",
+      "root": "CONFIRMED_BINARY_AND_SOURCE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.18-source-follow-up",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "BUILD_PACKAGING",
+        "ACTIVITY_UI"
+      ],
+      "tests": [
+        "test_release_packaging_contract.py"
+      ],
+      "notes": "Gradle/AGP could not be run (Google Maven and Chaquopy repositories blocked in the authoring sandbox): Groovy syntax and the debuggable expression were evaluated, full Java tree compiles. Packaged APK manifest NOT inspected. MainActivity/HubService/HubServer/SyncStore intentionally kept: live for hub/stock/coin flavors and CI. adb run-as no longer works on the unified APK unless built with ARTITRADE_DEBUGGABLE=1."
     }
   ],
   "known_normal": [
