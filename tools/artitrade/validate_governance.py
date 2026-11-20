@@ -41,7 +41,7 @@ def verify(strict=False):
         for heading in ("## R1 ","## R2 ","## R3 ","## R4 ","## R5 "):
             if heading not in text:fail(errors,"USER_STANDING_RULE_MISSING:"+heading.strip())
         if "numeric only" not in text.lower():fail(errors,"USER_RULE_R1_NUMERIC_VERSION_TEXT_MISSING")
-        for needle in ("0.1.0","0.2.0","next_version.py","Hand-over path","Quick Share"):
+        for needle in ("0.1.0","0.2.0","next_version.py","Hand-over path","artitrade apk","Phone Link"):
             if needle not in text:fail(errors,"USER_RULE_R1_VERSION_SEQUENCE_MISSING:"+needle)
     manual=json.loads((DOC/"dependency_graph.json").read_text("utf8"))
     issues=json.loads((DOC/"version_issues.json").read_text("utf8"))
