@@ -18,14 +18,28 @@ KIWOOM_MAX_SUBSCRIPTIONS = 200
 OVERFLOW_ROTATION_SECONDS = 180
 
 
+#: Band 0 is the WHOLE-MARKET scan list (every valid KRX symbol). Bands 1..4
+#: are strategy-specific candidate lists, which are always subsets of it.
+UNIVERSE_BAND = 0
+
+
 def allocate_priority(bands, protected=(), capacity=KIWOOM_MAX_SUBSCRIPTIONS, phase=0):
     """Return unique, bounded broker symbols; no permanent discard of overflow.
 
     Protected means existing holdings / orders needing monitored exits, not a
     substitute for an executable fresh orderbook. The hard limit still applies.
-    Candidates across the five strategy bands are weighted 5:4:3:2:1. Unused
-    capacity from an empty band flows to the others. Over-cap candidates cycle
-    in real broker REG subscriptions; unsubscribed names remain NOT LIVE.
+    Over-cap candidates cycle in real broker REG subscriptions; unsubscribed
+    names remain NOT LIVE.
+
+    De-duplication order matters. The whole-market band contains EVERY symbol,
+    so when it claimed its symbols first (as before 0.0.20) the CLOSE / MA /
+    TREND / GMO candidate bands became EMPTY after de-duplication, their
+    weights never applied, and their candidates were live only while the
+    rotating whole-market slice happened to include them (about 40 % of the
+    time). Now the strategy-specific candidate lists claim their symbols
+    FIRST; the whole-market band keeps its weighted floor (5/15 of the free
+    room) and receives whatever the candidate bands do not need. Output order
+    (band order, anchors first, then the rotating tail) is unchanged.
     """
     if len(bands) != len(STRATEGY_WEIGHTS):
         raise ValueError("EXPECTED_FIVE_STRATEGY_BANDS")
@@ -41,33 +55,42 @@ def allocate_priority(bands, protected=(), capacity=KIWOOM_MAX_SUBSCRIPTIONS, ph
             assigned.add(code)
             if len(chosen) >= limit:
                 return chosen
-    if limit == 0:
-        return []
 
-    groups = []
-    for band in bands:
-        values = []
-        for code in band:
+    groups = [[] for _ in bands]
+    claim_order = [i for i in range(len(bands)) if i != UNIVERSE_BAND] + [UNIVERSE_BAND]
+    for i in claim_order:
+        for code in bands[i]:
             code = str(code)
             if code and code not in assigned:
                 assigned.add(code)
-                values.append(code)
-        groups.append(values)
+                groups[i].append(code)
 
     room = limit - len(chosen)
+    total_weight = sum(STRATEGY_WEIGHTS)
     quotas = [0] * len(groups)
-    while room > 0:
+    # The whole-market scan keeps its weighted share of the free room ...
+    floor = min(len(groups[UNIVERSE_BAND]),
+                room * STRATEGY_WEIGHTS[UNIVERSE_BAND] // total_weight)
+    quotas[UNIVERSE_BAND] = floor
+    # ... and the candidate bands share the rest by weight (4:3:2:1).
+    specific_room = room - floor
+    while specific_room > 0:
         progressed = False
         for i, weight in enumerate(STRATEGY_WEIGHTS):
-            take = min(weight, room, len(groups[i]) - quotas[i])
+            if i == UNIVERSE_BAND:
+                continue
+            take = min(weight, specific_room, len(groups[i]) - quotas[i])
             if take > 0:
                 quotas[i] += take
-                room -= take
+                specific_room -= take
                 progressed = True
-            if room <= 0:
+            if specific_room <= 0:
                 break
         if not progressed:
             break
+    # Capacity the candidate bands do not need flows to the whole-market scan.
+    quotas[UNIVERSE_BAND] = min(len(groups[UNIVERSE_BAND]),
+                                floor + specific_room)
 
     for group, amount in zip(groups, quotas):
         if amount <= 0:
@@ -78,7 +101,7 @@ def allocate_priority(bands, protected=(), capacity=KIWOOM_MAX_SUBSCRIPTIONS, ph
         chosen.extend(group[:anchor])
         remainder = amount - anchor
         tail = group[anchor:]
-        if remainder > 0:
+        if remainder > 0 and tail:
             shift = (max(0, int(phase)) * remainder) % len(tail)
             ring = tail[shift:] + tail[:shift]
             chosen.extend(ring[:remainder])

@@ -2,6 +2,9 @@
 
 Applies to **every** AI coding agent (OpenAI GPT, Claude, GitHub Copilot, Google Antigravity, Google Gemini CLI, Codex, Cursor and every other AI coding tool) and human editor changing ARTITRADE_ANDROID, including GitHub-connected coding sessions. User instruction 2026-11-19. Never treat these rules as optional.
 
+## User standing rules (read first, apply to every build)
+`docs/artitrade/USER_STANDING_RULES.md` holds the owner's standing instructions (R1 numeric-only version names/APK names/tags, R2 build and hand over the signed APK after every fix, R3 update the GitHub feature-connection docs after each delivery, R4 record and obey new owner rules automatically, R5 plain short reporting, R6 workbook-driven trading rules, R7 chat-input ban, R8 repository privacy). They apply to every agent and every APK build without being restated.
+
 ## Before any change
 1. Read this file, `docs/artitrade/DEPENDENCY_MAP.md`, `docs/artitrade/dependency_graph.json`, `docs/artitrade/version_issues.json`, and the **GitHub Issues** tab (search `ARTITRADE`).
 2. Identify exact baseline app/source version and compare with most recent pre-reset working revision. Never assume an EXE and an APK have the same build or strategy engine.

@@ -179,33 +179,48 @@ class EightRealPaperWallets(unittest.TestCase):
             self.assertEqual(state['coin_qty_step'],'0.00000001')
 
     def _trend(self,market,code):
+        """Updated for NEW LEGACY 11.20 (explicit user supersession, issue #114).
+
+        BUY trigger is a COMPLETED bar closing above the Bollinger MIDDLE with
+        the MIDDLE slope inside (-15,+20) degrees, after the RSI<=30 watch has
+        begun. The sell side of the lifecycle below is unchanged.
+        """
         root=self.fresh();co=tr.Coordinator(Runtime(root));self.addCleanup(co.stop)
-        now=dt.datetime(2026,11,18,10,5,0,tzinfo=KST)
-        end=now.replace(minute=0,second=0,microsecond=0)
+        t1=dt.datetime(2026,11,18,10,5,0,tzinfo=KST)
+        t2=dt.datetime(2026,11,18,10,30,5,tzinfo=KST)
+        closes=[100.0]*21
+        closes[3],closes[7]=95.0,105.0
+        for i in range(10,21):closes[i]=100.0+(i-10)*0.3    # ~16 deg, last > MIDDLE
+        source=('UPBIT_CLOSED' if market=='coin' else 'LOCAL_KRX_VERIFIED')
+        def history(last_end):
+            return [dict(end=last_end-dt.timedelta(minutes=30*(20-i)),close=c,source=source)
+                    for i,c in enumerate(closes)]
         co._candidates[market]={code:('KOSPI' if market=='stock' else 'CRYPTO',code)}
-        # The synthetic fixture declares provenance explicitly; live paths
-        # reject missing or non-venue source evidence.
-        co._history[(market,code,'30m')]=[dict(end=end-dt.timedelta(minutes=30*(20-i)),
-                                              close=100-.03*i,
-                                              source=('UPBIT_CLOSED' if market=='coin'
-                                                      else 'LOCAL_KRX_VERIFIED'))
-                                          for i in range(21)]
-        co._decision_clock=lambda:now
+        co._history[(market,code,'30m')]=history(t1.replace(minute=0,second=0,microsecond=0))
+        clock={'now':t1}
+        co._decision_clock=lambda:clock['now']
         co._quote=lambda m,c:dict(trade=co._quotes[m][c][0],
               bid=co._quotes[m][c][0],ask=co._quotes[m][c][0]+.2,bid_size=100000,ask_size=100000)
-        with patch.object(nt,'_ready_market',return_value=True):
+        with patch.object(nt,'_ready_market',return_value=True), \
+             patch.object(tr.mt if hasattr(tr,'mt') else nt.mt,'rsi20',return_value=25.0):
+            # First genuine print arms the 24h watch; the 10:00 bar ended BEFORE it.
             co._quotes[market][code]=(98.5,time.monotonic())
-            nt._entry_window(co,market,now)
+            nt._entry_window(co,market,t1)
             self.assertEqual(co.standalone_wallet.open_positions(market),[])
             self.assertEqual(co._nl1118_watches[(market,code,'30m')]['status'],'WATCHING')
-            co._quotes[market][code]=(99.8,time.monotonic()+.001)
-            nt._entry_window(co,market,now)
+            # The 10:30 bar completes above its MIDDLE -> BUY on a fresh verified quote.
+            clock['now']=t2
+            co._history[(market,code,'30m')]=history(t2.replace(second=0,microsecond=0))
+            co._quotes[market][code]=(103.0,time.monotonic()+.001)
+            nt._entry_window(co,market,t2)
         found=co.standalone_wallet.open_positions(market)
         self.assertEqual(len(found),1,co._last_fetch_error)
         p=found[0]
+        self.assertEqual(getattr(p,'entry_rule',None),'NL1120_BAR_CLOSE_ABOVE_BOLL_MID')
+        self.assertEqual(getattr(p,'entry_signal_policy',None),'NL1118_RSI20_24H_BOLL_20_1_5')
         for i,price in enumerate((p.target1*1.002,p.target2*1.004,110.,105.)):
             co._quotes[market][code]=(price,time.monotonic())
-            co._process_holds(market,now+dt.timedelta(seconds=10+5*i))
+            co._process_holds(market,t2+dt.timedelta(seconds=10+5*i))
         self.assertEqual(co.standalone_wallet.open_positions(market),[])
         with co.standalone_wallet._connect(market) as c:
             rows=list(c.execute('SELECT side,qty FROM executions ORDER BY id'))

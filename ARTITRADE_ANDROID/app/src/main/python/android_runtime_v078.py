@@ -2348,6 +2348,12 @@ _install_market_trend_v043(_core)
 from stock_priority_runtime_v093 import install as _install_stock_priority_v093
 _install_stock_priority_v093(_core)
 
+# 0.0.20: MarketTrend's TOP50 stock candidates must be part of the live symbol
+# map, otherwise their 0B/0D prints are dropped and they can never become a
+# buy-pending watch or a BUY. Adds identities only; never a price or order.
+from stock_candidate_universe_v020 import install as _install_stock_candidates_v020
+_install_stock_candidates_v020(_core)
+
 # The coin price observer is installed on the already existing MarketTrend
 # Upbit ticker memory. Both markets retain their original broker/FOK owner.
 from ma_v067_coin_runtime import install as _install_ma_v067_coin

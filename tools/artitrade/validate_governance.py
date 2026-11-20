@@ -32,8 +32,15 @@ def verify(strict=False):
     errors=[];warnings=[]
     for file in ("AGENTS.md","CLAUDE.md",".github/copilot-instructions.md",
                  ".github/ISSUE_TEMPLATE/artitrade-root-cause.yml",
-                 ".github/PULL_REQUEST_TEMPLATE.md"):
+                 ".github/PULL_REQUEST_TEMPLATE.md",
+                 "docs/artitrade/USER_STANDING_RULES.md"):
         if not (ROOT/file).is_file():fail(errors,"CONTRIBUTOR_GOVERNANCE_MISSING:"+file)
+    rules=(ROOT/"docs/artitrade/USER_STANDING_RULES.md")
+    if rules.is_file():
+        text=rules.read_text("utf8")
+        for heading in ("## R1 ","## R2 ","## R3 ","## R4 ","## R5 "):
+            if heading not in text:fail(errors,"USER_STANDING_RULE_MISSING:"+heading.strip())
+        if "numeric only" not in text.lower():fail(errors,"USER_RULE_R1_NUMERIC_VERSION_TEXT_MISSING")
     manual=json.loads((DOC/"dependency_graph.json").read_text("utf8"))
     issues=json.loads((DOC/"version_issues.json").read_text("utf8"))
     if not manual["schema"].startswith("ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_"):

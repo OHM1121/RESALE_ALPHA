@@ -1266,6 +1266,32 @@
         "test_at_pending_stall_audit.py"
       ],
       "notes": "Not changed: order eligibility is a user policy decision (issue #115). Diagnostic counts it."
+    },
+    {
+      "id": "AT-020-03",
+      "issue": 116,
+      "found": "0.0.18 (code audit + simulation)",
+      "category": "USER_REPORTED_STOCK_NO_BUY_NO_PENDING",
+      "title": "Stock MA/MarketTrend candidates not subscribed (planner de-duplication) and MarketTrend candidates missing from the symbol map",
+      "evidence": "allocate_priority simulation with the shipped function: candidate groups empty after de-duplication, candidates live ~42% (min 30%); real parser drops unmapped codes. Device prevalence UNVERIFIED.",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.0.20",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_SUBSCRIPTION_PLANNER_V0200",
+        "STOCK_CANDIDATE_SYMBOL_MAP_V0200",
+        "STOCK_FEED",
+        "STOCK_MA",
+        "STOCK_TREND"
+      ],
+      "tests": [
+        "test_v020_subscription_candidate_coverage.py",
+        "test_v020_trend_candidates_in_market_map.py",
+        "test_v093_strategy_subscription_priority.py"
+      ],
+      "notes": "CLOSE (CW) cause not found: it is a protected subscription and reads raw shared messages. Whole-market AT keeps a 5/15 slot floor (owner weights unchanged). Not device verified."
     }
   ],
   "known_normal": [
@@ -1533,5 +1559,13 @@
     "original_upbit_single_ws": true,
     "unverified_phone_sell_latency": true,
     "comment": "CI may prove synthetic original PAPER SELL only; no genuine broker order; do not describe original user's POD missed TP1 as fixed historical trade."
+  },
+  "candidate_020": {
+    "version": "0.0.20",
+    "versionCode": 142,
+    "base": "0.0.18 (2f3b85d)",
+    "status": "BUILD_PENDING",
+    "signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "device_verified": false
   }
 }

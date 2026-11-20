@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
   "source_baseline": "0.0.18 11.18 rev1 source candidate from 0.0.17 exact release SHA 85b20dc39f247c9d7883c86977af62eab4ac5098; original 82 vendor modules retained; original 8 wallet flows protected; native 0.0.18 CI ongoing; DEVICE_VERIFIED=false.",
-  "updated": "2026-11-19",
+  "updated": "2026-11-20",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
   "nodes": [
@@ -195,7 +195,8 @@
         91,
         93,
         97,
-        104
+        104,
+        116
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
@@ -275,7 +276,8 @@
         94,
         95,
         98,
-        107
+        107,
+        116
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -367,7 +369,8 @@
         80,
         98,
         107,
-        114
+        114,
+        116
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -1174,6 +1177,40 @@
         115
       ],
       "contract": "Stock AT per-symbol budget (seed / max positions) is not checked when a PENDING order is created, so an order priced above it is rejected as BELOW_ONE_SHARE on every touch. Diagnostic only here (pending_above_per_symbol_cap_by_tf); changing order eligibility needs an explicit user policy decision."
+    },
+    {
+      "id": "STOCK_SUBSCRIPTION_PLANNER_V0200",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/stock_priority_runtime_v093.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "STOCK_CLOSE",
+        "STOCK_AT"
+      ],
+      "issues": [
+        116
+      ],
+      "contract": "One Kiwoom socket, max 200 live slots. Held/pending symbols first; strategy candidate lists (CLOSE, MA, TREND, GMO) claim their symbols BEFORE the whole-market list; the whole-market list keeps a 5/15 floor and takes the remainder; candidate lists share by weight 4:3:2:1. A symbol in several lists uses one slot. Never creates a quote, order or fill."
+    },
+    {
+      "id": "STOCK_CANDIDATE_SYMBOL_MAP_V0200",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/stock_candidate_universe_v020.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "STOCK_TREND"
+      ],
+      "issues": [
+        116
+      ],
+      "contract": "parse_venue_real drops 0B prints for codes outside market_map. MarketTrend TOP50 stock candidates (market, name) are added to market_map/krx_market_map after every Trend rank refresh and on every map rebuild, copy-on-write. Identity only; no price, order, fill or position."
     }
   ],
   "audit_scope": {

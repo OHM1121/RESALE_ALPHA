@@ -2,16 +2,28 @@
 
 **Single source of truth for maintained critical flows:** [dependency_graph.json](dependency_graph.json). **Version/error status:** [version_issues.json](version_issues.json) and the repository [GitHub Issues](https://github.com/OHM1121/RESALE_ALPHA/issues?q=is%3Aissue+ARTITRADE).
 
-## Main interdependencies
+## Main interdependencies (updated for 0.0.20)
 
 ```mermaid
 flowchart TD
  A[Android Activity UI] --> B[Trading Service]
+ B --> MON[Service monitor loop: 2.5s turn]
+ MON --> HUBP[Optional MSERVER probe 127.0.0.1:8765, backoff 2.5-30s]
+ MON --> FL[Fault log: identical faults merged with count]
  B --> C[Fresh Epoch Gate]
  C --> D[Anti Rollback Verification]
  D --> E[StrategyRuntimeBridge]
  E --> F[Python Runtime + Original 8 Wallets]
- K[KRX Kiwoom 0B/0D] --> F
+ K[KRX Kiwoom 0B/0D, ONE socket, 200 slots] --> PARSE[parse_venue_real: drops codes not in market_map]
+ PARSE --> F
+ PLAN[Subscription planner: candidates first, whole-market floor 5/15] --> K
+ RANK[KRX rank by trading value, every 30 min] --> MAP[market_map identities]
+ TREND_RANK[MarketTrend TOP50 x2 candidates, every 5 min] --> MAP
+ TREND_RANK --> PLAN
+ MA_CAND[MA pending + watched codes] --> PLAN
+ CW_CAND[CLOSE pinned + top40] --> PLAN
+ MAP --> PARSE
+ MAP --> PLAN
  U[Upbit WS / Verified Orderbook] --> F
  F --> G[SQLite Wallet / Orders / Fills]
  G --> H[Runtime.hub_records for_ui Contract]
@@ -20,8 +32,10 @@ flowchart TD
  J --> A
  G --> L[Research + AI + Post Exit]
  G --> M[Daily Verified Backup]
- S[Market Score] --> F
+ S[Market Score: AT/reference only] --> F
  S --> J
+ WB[Owner workbook 11.20 rules] --> TR[MarketTrend entry: RSI watch + closed-bar close above Bollinger middle]
+ TR --> F
 ```
 
 ## Critical contracts
@@ -128,3 +142,67 @@ Static references are not equivalent to a validated real broker execution flow. 
   Regression includes original eight wallets, original reference F5,
   old CFG price/path sidecar, TP1/TP2 receipt and no-false-fill.
   DEVICE_VERIFIED requires actual phone and current orderbook evidence.
+
+
+## 0.0.20 — how the changed parts connect (issues #111, #112, #113, #114, #115, #116)
+Delivered as APK `0.0.20` (versionCode 142), based on the released 0.0.18.
+Status: `SOURCE_FIXED`; CI result and device result are recorded in
+`version_issues.json` (`candidate_020`). Nothing here is `DEVICE_VERIFIED`.
+
+### Live stock quotes: who gets a price, and why a candidate could be missing (#116)
+1. **Symbol map** (`LivePaperRunner.market_map` / `krx_market_map`): the list of
+   stocks the feed is allowed to process. Built from the KRX trading-value rank
+   (rebuilt every 30 min) plus pinned holdings. `parse_venue_real` **drops any
+   0B print whose code is not in this map**; the subscription planner also only
+   considers stocks the map can identify.
+2. **MarketTrend candidates** (TOP50 per market by trading value, refreshed every
+   5 min in `market_trend_runtime_v043._refresh_rank`): used to be absent from the
+   map when they entered the TOP50 between two map rebuilds, so they received no
+   price. `stock_candidate_universe_v020` now adds their identity (market, name)
+   to the map right after each Trend rank refresh and whenever the map is rebuilt.
+   Identity only; no price, order or fill is ever created there.
+3. **Subscription planner** (`stock_priority_runtime_v093.allocate_priority`):
+   one Kiwoom socket, at most 200 live slots shared by AT (whole market),
+   CLOSE, MA, MarketTrend and GMO with weights 5:4:3:2:1. Order of claims is now
+   *candidate lists first, whole-market list last*; the whole-market list keeps a
+   floor of 5/15 of the free slots and takes whatever the candidate lists do not
+   need. Held/pending symbols stay protected and first. Before 0.0.20 the
+   whole-market list claimed everything first, so the CLOSE/MA/Trend/GMO lists
+   became empty and their candidates were live only ~42% of the time.
+4. Who consumes the prices: MarketTrend (`observe_stock_tick`, fresh-quote gate 3 s),
+   MA (`ma.watched_codes()` / pending), CLOSE (raw shared messages via
+   `at_close_bridge`), AT/GMO (`_new_tick` chain). Market score gates **only**
+   AT/reference buys; MA, MarketTrend and CLOSE do not depend on it.
+
+### MarketTrend entry rule (workbook sheet 11.20, issue #114)
+`RSI20 <= 30` starts a 24 h watch (unchanged) → Bollinger(20,1.5) MIDDLE slope
+strictly inside (-15, +20) degrees **and** a COMPLETED bar that ended after the
+watch began closes strictly above its MIDDLE (`new_legacy_1118_policy.closed_bar_entry_condition`)
+→ fresh verified quote/book + fees + slot + wallet (`TrendWalletV054.buy`). The
+11.19 trigger (a live price reaching the MIDDLE) is retired. `entry_signal_policy`
+keeps its value because `legacy_purge_v012` protects NEW LEGACY positions by it;
+the rule is stored as `entry_rule=NL1120_BAR_CLOSE_ABOVE_BOLL_MID`.
+
+### Service monitor loop (#111)
+`UnifiedTradingService.monitorLoop` (every 2.5 s) → one synchronized Python
+`snapshot()` per turn (its result is reused by the end-of-turn disarm) → snapshot
+preferences (the UI rejects a snapshot older than 8.5-10 s) → foreground
+notification only when its text changes. The optional MSERVER probe uses
+`ProbeBackoff` (2.5 s while healthy, 2.5→30 s while failing) and stays
+fail-closed (both lease epochs 0). Faults go to `RuntimeCrashStore` through
+`FaultLogPolicy`: identical (stage, type, message) faults become one row with a
+count, so a repeating benign fault cannot push other diagnostics out of the
+30-row buffer.
+
+### Packaging (#112)
+The signed user APK is built from the `debug` build type with the original
+signer. It is **not debuggable** unless built with `ARTITRADE_DEBUGGABLE=1` or the
+emulator smoke environment. Version identifiers are numeric only
+(`USER_STANDING_RULES.md` R1).
+
+### Diagnostics (#113, #115)
+`tools/artitrade/at_pending_stall_audit.py` reads an exported stock AT SQLite
+read-only and prints aggregate counts only (blocked audits, touched-but-not-bought
+reasons, pending orders priced above the per-symbol budget). It touches no
+runtime path.
+
