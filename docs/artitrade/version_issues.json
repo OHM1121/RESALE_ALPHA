@@ -1586,8 +1586,15 @@
     "version": "0.0.20",
     "versionCode": 142,
     "base": "0.0.18 (2f3b85d)",
-    "status": "BUILD_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
-    "device_verified": false
+    "device_verified": false,
+    "source_commit": "e24c1fb850cb2601e59f1149173af37549e5a827",
+    "apk_sha256": "94ded9419d57908153b0935acc96db0da0f61dc1bfaab28333f4aba929620d0f",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44716291848",
+    "ci_artifact": "ARTITRADE_0_0_20_SIGNED_APK",
+    "build_history": "run 3 failed at lintVital (network_security_config.xml includeSubdomains, exposed by removing debuggable, #112) -> fixed in e24c1fb; run 4 built, signed (original signer) and verified",
+    "release_publish": "GitHub release step returned HTTP 403 (token); APK handed to the owner from the workflow artifact",
+    "next_version": "0.1.0"
   }
 }

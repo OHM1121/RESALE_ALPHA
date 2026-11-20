@@ -148,6 +148,9 @@ Static references are not equivalent to a validated real broker execution flow. 
 
 ## 0.0.20 — how the changed parts connect (issues #111, #112, #113, #114, #115, #116)
 Delivered as APK `0.0.20` (versionCode 142), based on the released 0.0.18.
+Build: source `e24c1fb`, CI run 44716291848, APK SHA256 `94ded941…620d0f`, signer unchanged (`37967ed6…23c6`). CI-verified only; DEVICE_VERIFIED=false.
+Build chain note: `network_security_config.xml` (loopback cleartext domains) is now checked by Android lintVital because the APK is no longer debuggable (#112); each `<domain>` must declare `includeSubdomains`.
+Next version per owner rule R1: `0.1.0` (`tools/artitrade/next_version.py`).
 Status: `SOURCE_FIXED`; CI result and device result are recorded in
 `version_issues.json` (`candidate_020`). Nothing here is `DEVICE_VERIFIED`.
 
