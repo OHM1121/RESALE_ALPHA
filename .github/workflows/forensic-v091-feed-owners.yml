@@ -1,0 +1,38 @@
+name: ARTITRADE v091 MA cross-strategy feed segregation audit
+on:
+  push:
+    branches: [fix-artitrade-v091-ma-three-stage-sell-20261117]
+    paths: ['.github/workflows/forensic-v091-feed-owners.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trace KRX GMO priority queue and MA owner including actual stock active holding overlap
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for n in ('d_live.py','d_upbit.py','stock_ma_engine.py'):
+              s=z.read(n).decode();lines=s.splitlines();tree=ast.parse(s)
+              print('FILE',n)
+              for node in ast.walk(tree):
+                if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                  method=node.name.lower()
+                  if ('tick_worker' in method or 'gmo_tick' in method or 'ma_tick' in method or
+                      'tick_queue' in method or (n=='d_upbit.py' and ('process_book' in method or 'book' in method and 'process' in method))):
+                    if node.end_lineno-node.lineno>240:continue
+                    print("METHOD",node.name,node.lineno,node.end_lineno)
+                    for i in range(node.lineno-1,min(node.end_lineno,len(lines))):
+                      print('C%04d'%(i+1),lines[i][:260])
+              for i,l in enumerate(lines):
+                if ('_tick_queue.get(' in l or '_gmo_tick_queue.get(' in l or '.ma.on_tick(' in l
+                    or 'ma.process_book(' in l or 'ma_ledger.process_book(' in l or
+                    '.gmo.on_tick(' in l or 'gmo.on_tick(' in l or 'ma.watched_codes()' in l):
+                  print('MATCH',i+1,' '.join(x.strip() for x in lines[max(0,i-2):min(len(lines),i+3)])[:350])
+          PY

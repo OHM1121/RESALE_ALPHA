@@ -1,0 +1,29 @@
+name: V091 confirm buy target fields, venue restrictions and priority dispatch
+on:
+  push:
+    branches: [fix-artitrade-v091-stock-at-exit-root-cause-portrait-20261118]
+    paths: [.github/workflows/forensic-v091-d19-venue-targets.yml]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - run: |
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          windows={'d_v19_portfolio.py':[(1,170),(435,449),(762,775),(1089,1262)],
+                   'd_live.py':[(676,720),(779,820)],
+                   'd_engine.py':[(548,552),(883,969)],
+                   'd_upbit.py':[(1317,1356),(2070,2150)]}
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for filename,ranges in windows.items():
+              l=z.read(filename).decode().splitlines()
+              for lo,hi in ranges:
+                for i in range(lo-1,min(hi,len(l))):
+                  print('V',filename,i+1,l[i][:350])
+          PY

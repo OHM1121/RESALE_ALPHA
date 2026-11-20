@@ -1,0 +1,33 @@
+name: v089 review original tick and latest quote data without changing it
+on:
+  push:
+    branches: [fix-artitrade-v089-quote-plane-rotation-20261118]
+    paths: ['.github/workflows/forensic-v089-latest-ticks.yml']
+permissions: {contents: read}
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,re
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for fn in ['d_upbit.py','d_live.py','android_live_bridge.py']:
+              ls=z.read(fn).decode().splitlines()
+              reg=re.compile(r'latest_prices|_last_ws_quote|class UpbitPaperRunner|def _enqueue_ws_event|def _new_tick|def _consume|_tick_jobs|_feed_worker|_v071_feed_worker|_ws_connected|_latest_(trade|quote)|_positions',re.I)
+              matches=[i for i,line in enumerate(ls) if reg.search(line)]
+              print('FILE',fn,'LINES',len(ls),'MATCHES',len(matches))
+              for i in matches[:120]:
+                  print('HIT',fn,i+1,ls[i][:160])
+              if fn=='d_upbit.py':
+                  for i in range(900,min(985,len(ls))):print('SRC',fn,i+1,ls[i][:200])
+                  for i in range(1300,min(1390,len(ls))):print('SRC',fn,i+1,ls[i][:200])
+              if fn=='android_live_bridge.py':
+                  for i in range(40,min(155,len(ls))):print('SRC',fn,i+1,ls[i][:200])
+          PY

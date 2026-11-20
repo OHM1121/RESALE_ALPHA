@@ -60,7 +60,7 @@ public final class HubService extends Service {
                 SecureBox secrets=new SecureBox(this);
                 secrets.token();
                 data=new SyncStore(this,secrets);
-                server=new HubServer(secrets,data);
+                server=new HubServer(secrets,data,this);
                 server.start(getSharedPreferences("hub_ui",MODE_PRIVATE)
                     .getBoolean("tailscale_enabled",true));
                 activeServer=server;

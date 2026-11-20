@@ -1,0 +1,35 @@
+name: v083 inspect original coin manual sale (read only)
+on:
+  push:
+    branches: [ fix-artitrade-v083-coin-ma-manual-sell-20261117 ]
+    paths:
+      - '.github/workflows/v083-coin-ma-manual-diagnostics.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print original native coin manual sale method and wrapper interfaces
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              for fname in ('coin_ma_engine.py','d_upbit.py'):
+                  if fname not in z.namelist():continue
+                  src=z.read(fname).decode()
+                  tree=ast.parse(src)
+                  for cls in tree.body:
+                      if not isinstance(cls,ast.ClassDef) or cls.name not in ('MACoinLedger','CoinLedger'):continue
+                      print('CLASS',fname,cls.name)
+                      for func in cls.body:
+                          if isinstance(func,ast.FunctionDef) and func.name in ('manual_sell','_sell','connect'):
+                              print('METHOD',func.name,'lines',func.lineno,'..',func.end_lineno)
+                              print('\n'.join(src.splitlines()[func.lineno-1:func.end_lineno][:105]))
+          PY

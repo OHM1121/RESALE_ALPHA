@@ -25,11 +25,11 @@ import java.util.zip.GZIPInputStream;
 final class StrategyRuntimeBridge {
     private static final int PARTS=22;
     private static final int LIVE_BRIDGE_PARTS=8; // v0.7.1 Android-only overlay; EXE strategy core remains unchanged.
-    private static final String CORE_SHA256="b8e7c131f854ba05c97ee2a291a9370445589fc7421b573a6b51333e7d72da01";
+    private static final String CORE_SHA256="b014a00fd2cc29984650cb7ea24e7ea9672d6480fd68e91a6a1ebbe72754dfbb";
     private static final String LIVE_BRIDGE_SHA256="e9b35b0fa97ad8ee4a3150d89055e001a04f5dfb048beb13f3e50bec722bb88e";
     private final Context context;
     private final RuntimeCrashStore crashes;
-    private PyObject module;
+    private volatile PyObject module;
     private PyObject operationModule;
     private volatile boolean started=false;
 
@@ -186,6 +186,48 @@ final class StrategyRuntimeBridge {
         try{return parse(module.callAttr("snapshot"));}
         catch(Throwable e){crashes.add("python_strategy_snapshot",e);return error("PYTHON_SNAPSHOT",e);}
     }
+    /** Independent UI cache read. Never takes the Python bridge order lock:
+      * a 6s SQLite aggregation cannot delay this timestamp-only snapshot.
+      * The original strategy's own GIL and broker locks remain authoritative.
+      */
+    JSONObject quoteSnapshotV089(){
+        PyObject current=module;
+        if(current==null||!started)return new JSONObject();
+        try{return parse(current.callAttr("price_snapshot_v089"));}
+        catch(Throwable ignored){
+            // Read-only price-plane failure is not a trading failure.
+            return new JSONObject();
+        }
+    }
+
+    /** UI-only market-score lane. Does not take the full SQLite snapshot lock
+     * or provide event scores to trading decisions or fill-history evidence. */
+    JSONObject scoreSnapshotV005(){
+        PyObject current=module;
+        if(current==null||!started)return new JSONObject();
+        try{return parse(current.callAttr("score_snapshot_v005"));}
+        catch(Throwable e){
+            crashes.add("market_score_view_v005",e);
+            return new JSONObject();
+        }
+    }
+
+    /** Android connectivity hint. Original market subscriptions and prices
+     * continue to require their own authenticated exchange evidence. */
+    void reportNetworkV092(boolean validated){
+        PyObject current=module;
+        if(current==null||!started)return;
+        try{current.callAttr("set_network_v092",validated);}
+        catch(Throwable e){crashes.add("v092_network_status",e);}
+    }
+
+    /** Compact read-only Android display, generated in Python before JSON crosses the bridge. */
+    synchronized JSONObject hubRecordsUi(){
+        if(module==null)return new JSONObject();
+        try{return parse(module.callAttr("hub_records_ui"));}
+        catch(Throwable e){crashes.add("python_hub_records_ui_v104",e);return new JSONObject();}
+    }
+
     synchronized JSONObject hubRecords(){
         if(module==null)return new JSONObject();
         try{return parse(module.callAttr("hub_records"));}
@@ -208,6 +250,25 @@ final class StrategyRuntimeBridge {
         catch(Throwable e){crashes.add("operation_apply",e);return error("OPERATION_APPLY",e);}
     }
 
+    /** Explicit user request only: account's Kiwoom outstanding sells, NEVER an order. */
+    synchronized JSONObject brokerSellsV008(){
+        if(module==null||!started)return error("BROKER_RECEIPT_ENGINE_NOT_READY",null);
+        try{return parse(module.callAttr("broker_sells_v008"));}
+        catch(Throwable e){
+            crashes.add("broker_sell_receipt_v008",e);
+            return error("BROKER_RECEIPT_QUERY_FAILED",e);
+        }
+    }
+
+    /** Paper-wallet-only explicit manual exit; no broker-order adapter is called. */
+    synchronized JSONObject manualPaperSell(JSONObject request){
+        if(module==null||!started)return error("PAPER_SELL_RUNTIME_NOT_READY",null);
+        try{return parse(module.callAttr("manual_paper_sell",
+            request==null?"{}":request.toString()));}
+        catch(Throwable e){crashes.add("python_manual_paper_sell",e);
+            return error("MANUAL_PAPER_SELL_FAILED",e);}
+    }
+
     synchronized JSONObject setTrendManual(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))
             return error("INVALID_TREND_MARKET",null);
@@ -220,6 +281,7 @@ final class StrategyRuntimeBridge {
     synchronized JSONObject setLive(String market,boolean enabled){
         if(!("stock".equals(market)||"coin".equals(market)))
             return error("INVALID_LIVE_MARKET",null);
+        if(enabled)return error("SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS",null);
         if(enabled&&(!started||module==null))
             return error("LIVE_RUNTIME_NOT_READY",null);
         try{

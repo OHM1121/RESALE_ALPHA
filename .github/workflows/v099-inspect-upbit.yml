@@ -1,0 +1,15 @@
+name: v099 inspect Upbit rank 50 depth limits read only
+on:
+  push:
+    branches: [fix-artitrade-v099-coin-trend-top50-preplanned-20261117]
+    paths: ['.github/workflows/v099-inspect-upbit.yml','ARTITRADE_ANDROID/ui_tests/v099_inspect_upbit.py']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python3 ARTITRADE_ANDROID/ui_tests/v099_inspect_upbit.py

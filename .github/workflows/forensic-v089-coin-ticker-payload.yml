@@ -1,0 +1,27 @@
+name: v089 inspect exact authenticated Upbit ticker payload
+on:
+  push:
+    branches: [fix-artitrade-v089-quote-plane-rotation-20261118]
+    paths: [.github/workflows/forensic-v089-coin-ticker-payload.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          path=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((path/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+              for f,sections in [('d_upbit.py',[(3637,3728),(3850,3908)]),
+                                  ('d_live.py',[(908,964),(1920,1983)])]:
+                  ls=z.read(f).decode().splitlines()
+                  for a,b in sections:
+                      print('SECTION',f,a,b)
+                      for i in range(a-1,b):print('SRC',f,i+1,ls[i][:205])
+          PY

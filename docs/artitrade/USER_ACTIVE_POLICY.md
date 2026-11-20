@@ -57,6 +57,28 @@ a new instruction appears different. Cross-check original
 - Do not edit private historical ZIP/SQLite user exports in a public repo.
   Keep independent owner audit and signed-migration integrity protocol.
 
+## 2026-11-19: Additional explicit PAPER-only invalid-exit cleanup authorization
+- The user additionally authorizes removing an individually **proven invalid
+  NEW LEGACY PAPER** cycle from active holdings, executions, P&L, research and
+  ordinary UI when a genuine NEW LEGACY sell should have executed but a
+  confirmed software malfunction prevented the native PAPER sell.
+- This is an explicit narrowly scoped exception to the earlier preservation
+  of genuine NEW LEGACY receipts. It does NOT authorize deleting all new
+  positions, erasing an otherwise valid BUY, or reclassifying missing
+  metadata as an old-rule trade. For historical SELL failure, prove a
+  verified post-BUY trade sequence, actual executable contemporary bid/depth,
+  correct sell stage, original wallet/native sell decision, and error/absence
+  of receipt. Historical candle highs or ticker-only price touches are not
+  sufficient evidence that SELL liquidity existed.
+- Before any such cleanup, keep a *private* independent immutable forensic
+  record, original-wallet backup, exact rollback witness and cash/realized
+  reversal; reconcile duplicate/partial fills, restarts and linked research.
+  Unknown provenance or REAL/broker orders remain protected and PARTIAL.
+  No retroactive synthetic SELL and no private trade data in this public repo.
+- No on-device per-position delete is claimed without the actual private
+  source wallet and event evidence. This dated authorization alone is not
+  evidence that a device cleanup has executed. GMO/CW owners remain excluded.
+
 ## 2026-11-19: Holdings screen layout
 - In the holding-card **left rectangular badge**, show actual timeframe
   `5분`, `30분`, `60분`, `일봉` rather than `보유`. Remove redundant
@@ -110,3 +132,62 @@ a new instruction appears different. Cross-check original
 - Keep two markdown paths: a new dated archive under docs/artitrade/handoffs/ and the refreshed docs/artitrade/HANDOFF_LATEST.md. Commit to the current source branch and default main so the latest handoff can be found regardless of source/main divergence. Verify commit IDs and link them in the response; report a failed write instead of inventing an upload.
 - Do not automatically enter any text into the user's ChatGPT message/input/composer box, do not prefill it and do not automatically submit follow-up chat turns, even if the text is a handoff or a link. Only answer-side copyable text and verified GitHub files.
 - Keep handoffs up-to-date on release SHA, CI, version, APK, open errors, exact strategy/wallet policy, original provenance and device-verification status; no personal on-device private data in public GitHub. Archive revisions rather than replacing prior dated copies.
+
+## 2026-11-19: Original eight-wallet stable position identifiers
+- A durable, globally unique position UID covers active and completed original
+  positions in stock AT/MA/GMO/CW/Trend and coin Reference/MA/Trend.
+- A UID is namespaced by verified epoch + original owner-wallet + immutable
+  original native position ID/BUY receipt. Original source primary keys,
+  execution foreign keys, strategy policies and cash remain unchanged.
+- Fills without an independently verified source-position relationship are
+  marked UNLINKED_EXECUTION, never assigned a fabricated BUY or joined by
+  ticker alone. Missing provenance is a visible error, not a blank screen.
+- Historical rows are indexed read-only from original native SQLite; newly
+  recorded rows gain identifiers from the same source evidence, including after
+  restart. Sidecar failures must not block genuine SELL or hide original balances.
+
+## 2026-11-19: Specifically authorized one-cycle CFG exception
+- User explicitly authorizes deleting exactly ONE earlier reported KRW-CFG
+  coin MA 5-minute PAPER position with malfunctioning SELL, notwithstanding
+  unresolved historical book-liquidity proof. This exception does not apply
+  to another CFG entry, other frame, other owner, live/broker or other ticker.
+- Require a unique historical original position with native source BUY proof,
+  exact pre-incident entry time and unsold original MA state; ambiguity skips
+  rather than deletes. Restore native PAPER cash, realized P&L and linked
+  history, back up and rebase independent witness before trading starts.
+- Never claim a real phone position was erased or IDs were already indexed
+  solely because a synthetic CI suite or Android APK built. Record exact
+  DELETE_ONE / SKIPPED result privately on the phone.
+
+
+## 2026-11-19: Visible and verified native preload on a new UI entry
+- Show the existing source-data verification screen again on every new
+  Activity entry even when the existing service is already healthy; do not
+  create a second Kiwoom/Upbit login, reset original candles, duplicate
+  market subscriptions or interrupt held-position SELLs.
+- Preserve original mandatory native preflight: verified closed bars (including
+  missing/reconnect newest parent), verified exchange ticker/0B and genuine
+  executable bid/ask book/0D, market trend RSI20/MA frame coverage and original
+  eight wallet ledger integrity. Historical REST bars must never create fills.
+- Show evidence-count-based 0..100% and measured ETA. Unknown/stalled progress
+  must be labelled 'cannot estimate', not an invented deadline or false 100%.
+  The existing 40-second bounded UI escape remains: an outage/holiday cannot
+  block all holdings/UI indefinitely, while missing checks stay visible and
+  original background recovery continues. UI dismiss is not trading readiness.
+- Actual venue quote, orderbook and official bar source provenance must be
+  preserved. Coin UPBIT_CLOSED from original REST verified completed candles
+  is accepted after high/low/close and timestamp validation; stale newest
+  completed coin candles remain missing.
+
+## 2026-11-19: MarketTrend native BUY cost/returns source
+- For stock and coin MarketTrend, show each original MT54 position's committed
+  BUY execution entry price, quantity, source execution ID and source-position
+  matched SELL net PnL and realized % across holdings, executions and research.
+  Calculate SELL return from original confirmed buy unit price and proportional
+  original buy fee, never inferred candles or symbol-only joins.
+- For stock Trend holdings lacking fresh 0B display, source SQLite saved MARK
+  may be shown only if clearly labelled LAST SAVED (NOT LIVE/EXECUTABLE).
+  Never substitute this for native quote/book SELL permission or broker fill.
+- No changes to the original trend 30m/60m/day entry rules, original broker
+  live/PAPER fill ownership, GMO/CW wallets or cash accounting; old Trend 5m
+  entry remains retired, and legacy held 5m SELL recovery stays available.

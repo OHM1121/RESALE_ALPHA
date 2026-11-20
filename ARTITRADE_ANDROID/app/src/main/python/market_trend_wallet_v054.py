@@ -196,6 +196,9 @@ class TrendWalletV054:
         return price,qty,fee
 
     def buy(self,market,frame,symbol,name,ask,ask_size,at,bar_key,rsi20_live):
+        # Do not permit retired 5m MarketTrend BUY through direct wallet calls.
+        # Keep existing historical fills and SELL recovery untouched.
+        if frame == '5m':return None,'TREND_5M_RETIRED_NO_NEW_BUY'
         if frame not in FRAMES:raise ValueError('bad frame')
         at=_as_kst(at)
         key='MT54:BUY:'+':'.join((market,'trend',frame,str(symbol),str(bar_key)))
@@ -317,7 +320,8 @@ class TrendWalletV054:
             positions.append(p)
         return positions
 
-    def sell(self,pos,price,at,reason,bid_size=None):
+    def sell(self,pos,price,at,reason,bid_size=None,manual_fraction=None,
+             verified_manual_bid_qty=None):
         if pos.strategy!='trend':return 0,'WRONG_POSITION_OWNER'
         market,frame,symbol=pos.market,pos.frame,pos.symbol
         at=_as_kst(at)
@@ -334,21 +338,55 @@ class TrendWalletV054:
                     return 0,'LIVE_POSITION_BROKER_DISABLED'
                 if pos.execution_mode=='PAPER' and self._is_live(market):
                     return 0,'PAPER_POSITION_LIVE_MODE'
-                action=pos.action(price,at,bar_finished=bool(pos.__dict__.get('bar_finalized')),
-                                  bar3_preclose=bool(pos.__dict__.get('bar3_preclose')))
-                if action is None or action[0]!=reason:return 0,'NO_EXIT_SIGNAL'
-                fraction=action[1];balance=float(r['qty'])
+                if manual_fraction is None:
+                    action=pos.action(price,at,bar_finished=bool(pos.__dict__.get('bar_finalized')),
+                                      bar3_preclose=bool(pos.__dict__.get('bar3_preclose')))
+                    if action is None or action[0]!=reason:return 0,'NO_EXIT_SIGNAL'
+                    fraction=action[1]
+                else:
+                    # User-confirmed paper-only exit: skip automatic strategy
+                    # triggers, but NOT the original broker guard, orderbook
+                    # depth checks, fill verification or SQLite transaction.
+                    if not str(reason).startswith('USER_SIM_MANUAL:'):
+                        return 0,'INVALID_MANUAL_REQUEST'
+                    try:fraction=float(manual_fraction)
+                    except (ValueError,TypeError):return 0,'INVALID_MANUAL_PERCENT'
+                    if not (0<fraction<=1):return 0,'INVALID_MANUAL_PERCENT'
+                    # A retried UUID must not perform a second partial sale,
+                    # even if the prior request was accepted on a prior second.
+                    if c.execute('SELECT 1 FROM executions WHERE position_id=? AND reason=? LIMIT 1',
+                                 (int(pos.position_id),reason)).fetchone():
+                        return 0,'MANUAL_REQUEST_ALREADY_EXECUTED'
+                balance=float(r['qty'])
                 if market=='stock':
-                    qty=int(balance) if fraction>=.999 else max(1,int(round(balance*fraction)))
-                    runner=getattr(self.rt,'stock_runner',None)
-                    book=getattr(getattr(runner,'engine',None),'book',None)
-                    if book is not None:
-                        amount=book.available_sell(symbol,'KRX',at,int(price),qty)
-                        qty=min(qty,int(amount))
-                        if qty<=0 or not book.reserve_sell(symbol,'KRX',at,int(price),qty):
-                            return 0,'INSUFFICIENT_FRESH_BID_DEPTH'
-                    elif bid_size is not None:
-                        qty=min(qty,int(bid_size))
+                    if getattr(pos,'nl1118_policy',None)=='NEW_LEGACY_1118':
+                        from math import ceil
+                        qty=int(balance) if fraction>=.999 else max(1,int(ceil(balance*fraction-1e-10)))
+                    else:
+                        qty=int(balance) if fraction>=.999 else max(1,int(round(balance*fraction)))
+                    if manual_fraction is not None and verified_manual_bid_qty is not None:
+                        # Only the confirmed user PAPER path may supply a
+                        # newly verified official KRX 0D/ka10004 bid size.
+                        # Its price/timestamp and available depth were
+                        # independently checked before calling this wallet;
+                        # do not demand an unrelated 0B ticker event.
+                        if pos.execution_mode!='PAPER' or not str(reason).startswith('USER_SIM_MANUAL:'):
+                            return 0,'MANUAL_BID_EVIDENCE_NOT_AUTHORIZED'
+                        size=int(verified_manual_bid_qty)
+                        if size<=0:return 0,'INSUFFICIENT_VERIFIED_MANUAL_DEPTH'
+                        qty=min(qty,size)
+                    else:
+                        # Native automatic exit, shared reservations and
+                        # broker safeguards remain completely unchanged.
+                        runner=getattr(self.rt,'stock_runner',None)
+                        book=getattr(getattr(runner,'engine',None),'book',None)
+                        if book is not None:
+                            amount=book.available_sell(symbol,'KRX',at,int(price),qty)
+                            qty=min(qty,int(amount))
+                            if qty<=0 or not book.reserve_sell(symbol,'KRX',at,int(price),qty):
+                                return 0,'INSUFFICIENT_FRESH_BID_DEPTH'
+                        elif bid_size is not None:
+                            qty=min(qty,int(bid_size))
                 else:
                     if bid_size is None:return 0,'NO_FRESH_BID_DEPTH'
                     limit=_coin_qty(Decimal(str(bid_size))*Decimal('.5'))
@@ -398,6 +436,18 @@ class TrendWalletV054:
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (key,pos.position_id,frame,symbol,at.isoformat(),'SELL',sold,px,fee,tax,
                        pnl,new_cash,mode,str(fill.get('order_id') or ''),reason))
+                    # A durable TP1/TP2 PAPER resting order is matched ONLY
+                    # after the native execution journal has been written.
+                    # Not a broker-resting order and never a synthetic fill.
+                    if (getattr(pos,'nl1118_policy',None)=='NEW_LEGACY_1118'
+                            and mode=='PAPER'):
+                        import new_legacy_1118_resting as resting
+                        if reason in ('MT_TP1','MT_TP2'):
+                            resting.confirmed_fill(c,int(pos.position_id),
+                                1 if reason=='MT_TP1' else 2,
+                                int(c.execute('SELECT last_insert_rowid()').fetchone()[0]))
+                        else:
+                            resting.cancel_remaining(c,int(pos.position_id),reason)
                     c.commit()
                 pos.__dict__.update(confirmed.__dict__)
             except Exception as exc:
@@ -424,18 +474,82 @@ class TrendWalletV054:
             executions=[dict(r) for r in c.execute('SELECT * FROM executions ORDER BY id DESC LIMIT 1500')]
             position_total=int(c.execute('SELECT COUNT(*) FROM positions').fetchone()[0])
             execution_total=int(c.execute('SELECT COUNT(*) FROM executions').fetchone()[0])
+            # The original MT54 position is the ONLY authoritative BUY cost.
+            # Even if a SELL is older than the 500-row CLOSED view, join its
+            # own native PK. Never link by symbol, price or reference candle.
+            source_by_id={int(p['id']):p for p in positions}
+            missing=sorted({int(x['position_id']) for x in executions
+                 if x.get('position_id') is not None
+                 and int(x['position_id']) not in source_by_id})
+            for start in range(0,len(missing),350):
+                keys=missing[start:start+350]
+                if not keys:continue
+                q='SELECT id,tf,symbol,entry,entry_fee,qty0,entry_at,execution_mode FROM positions WHERE id IN (' + ','.join('?' for _ in keys)+')'
+                for r in c.execute(q,keys).fetchall():
+                    source_by_id[int(r['id'])]=dict(r)
         for p in positions:
+            valid_entry=float(p['entry'])>0 and float(p['qty0'])>0
+            valid_mark=float(p['mark'])>0
+            holding=bool(p['status']=='TREND_OPEN' and float(p['qty'])>0)
             p.update({'code':p['symbol'],'market':p['symbol'] if market=='coin' else 'KRX',
-                      'tf':p['tf'],'entry_price':p['entry'],'entry_at':p['entry_at'],
-                      'qty0':p['qty0'],'paper_pnl':(p['mark']-p['entry'])*p['qty'],
+                      'tf':p['tf'],'entry_price':p['entry'] if valid_entry else None,
+                      'buy_price':p['entry'] if valid_entry else None,
+                      'entry_at':p['entry_at'],'qty0':p['qty0'],
+                      'last_price':p['mark'] if valid_mark else None,
+                      'paper_pnl':(p['mark']-p['entry'])*p['qty']
+                                  if valid_entry and valid_mark and holding else
+                                  0 if not holding else None,
+                      'valuation_source':'ORIGINAL_MT54_SAVED_MARK_NOT_LIVE',
+                      'valuation_at':p.get('updated_at',''),
+                      'buy_evidence':'ORIGINAL_MT54_POSITION_ENTRY',
                       'entry_mode':'MARKET_TREND','strategy':'trend'})
+            if valid_entry and valid_mark and holding:
+                p['unrealized_pct']=(float(p['mark'])/float(p['entry'])-1.)*100.
+            else:
+                p['valuation_status']='NATIVE_SOURCE_MARK_OR_ENTRY_UNVERIFIED' if holding else 'CLOSED'
             p.pop('payload',None)
         for x in executions:
             x.update({'code':x['symbol'],'market':x['symbol'] if market=='coin' else 'KRX',
-                      'strategy':'trend','entry_mode':'MARKET_TREND'})
+                      'strategy':'trend','entry_mode':'MARKET_TREND',
+                      'source_execution_id':x.get('id')})
+            pid=x.get('position_id')
+            owner=source_by_id.get(int(pid)) if pid is not None else None
+            if not owner or str(owner.get('tf'))!=str(x.get('tf')) or str(owner.get('symbol'))!=str(x.get('symbol')):
+                x['buy_cost_evidence']='NATIVE_POSITION_ID_NOT_LINKED'
+                continue
+            unit=float(owner['entry'])
+            qty0=float(owner['qty0'])
+            sold=float(x['qty'])
+            if not (unit>0 and qty0>0 and sold>0):
+                x['buy_cost_evidence']='ORIGINAL_NATIVE_PRICE_OR_QTY_INVALID'
+                continue
+            prorated_fee=float(owner.get('entry_fee') or 0)*sold/qty0
+            buy_cost=unit*sold+prorated_fee
+            x.update({'entry_price':unit,'buy_price':unit,
+                      'buy_amount':buy_cost,'entry_at':owner.get('entry_at'),
+                      'buy_cost_evidence':'ORIGINAL_MT54_NATIVE_POSITION_ID_AND_BUY',
+                      'source_position_id':pid})
+            if str(x.get('side','')).upper()=='SELL':
+                realized=int(x['net_pnl'])
+                x['net_profit']=realized
+                x['realized_pct']=realized*100./buy_cost if buy_cost>0 else None
+        frame_perf={}
+        for a in accounts:
+            frame=a['tf']
+            held=[p for p in positions if p['tf']==frame and p['status']=='TREND_OPEN' and p['qty']>0]
+            verified=all(p.get('paper_pnl') is not None for p in held)
+            frame_perf[frame]={'realized_won':a['realized'],
+               'holding_won':sum(p['paper_pnl'] for p in held) if verified else None,
+               'open_count':len(held),
+               'closed_count':sum(1 for p in positions if p['tf']==frame and p['status']!='TREND_OPEN')}
+        unsettled=[p for p in positions if p['status']=='TREND_OPEN' and p['qty']>0]
+        all_valuations_valid=all(p.get('paper_pnl') is not None for p in unsettled)
         return {'accounts':accounts,'positions':positions,'executions':executions,
+                'performance_by_frame':frame_perf,
                 'positions_source_total':position_total,'executions_source_total':execution_total,
                 'preview_truncated':len(positions)<position_total or len(executions)<execution_total,
                 'realized_pnl':sum(x['realized'] for x in accounts),
-                'unrealized_pnl':sum(p['paper_pnl'] for p in positions if p['status']=='TREND_OPEN'),
-                'pending':[],'strategy':'trend'}
+                'unrealized_pnl':sum(p['paper_pnl'] for p in unsettled)
+                                  if all_valuations_valid else None,
+                'pending':[],'strategy':'trend',
+                'native_execution_cost_join':'EXACT_POSITION_ID_READONLY'}

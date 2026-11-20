@@ -13,10 +13,49 @@ import threading
 import time
 from decimal import Decimal
 import ma_v067_policy as policy
+import new_legacy_1118_resting as resting
+from coin_held_depth_v014 import book_sell_evidence
 
 _INSTALLED=False
 KST=dt.timezone(dt.timedelta(hours=9))
 _LOCK=threading.RLock()
+
+
+def _v014_exit_block(self, symbol, now, reason, details=None):
+    """Durable, throttled local diagnostics for an actual held MA position.
+
+    Never logs a missing bid as a sell, or posts personal records to GitHub.
+    Called off the WS callback thread. A repeated shortage is observable
+    without filling issue storage with one row per market tick.
+    """
+    if str(symbol) not in getattr(self, '_ma_v067_up_hold_symbols', set()):
+        return
+    monotonic=time.monotonic()
+    signature=(str(symbol),str(reason))
+    with _LOCK:
+        recent=getattr(self,'_ma_v014_exit_audit_seen',{})
+        if monotonic-recent.get(signature,-1000)<30:
+            return
+        recent[signature]=monotonic
+        if len(recent)>500:
+            recent.clear()
+            recent[signature]=monotonic
+        self._ma_v014_exit_audit_seen=recent
+    fields=dict(details or {})
+    fields.update(stage='HELD_EXIT',source='ORIGINAL_UPBIT_WS',
+                  book_is_execution=False,receipt_confirmed=False)
+    stamp=now.isoformat() if isinstance(now,dt.datetime) else str(now)
+    try:
+        self.write_issue('MA_V014_HELD_EXIT_BLOCK',
+            str(symbol)+' '+str(reason)+' at='+stamp+
+            ' evidence='+json.dumps(fields,ensure_ascii=False,default=str)[:350],
+            severity='ERROR')
+    except Exception:
+        # Fall back to the separate original research decision journal.
+        pass
+    _record_v074_ma_observation(str(symbol),'held',stamp,
+                                'MA_V014_'+str(reason),fields)
+
 
 def _table(c):
     c.execute("""CREATE TABLE IF NOT EXISTS ma_v067_positions(
@@ -97,6 +136,18 @@ def _on_real_buy(self,c,p):
                if kind=='REVERSAL_BEAR' else policy.initial_up_exit_state(p['tf']))
         state['entry_at']=str(p['entry_at'])
         state['entry_bar_start']=str(features.get('ma_v067_bar_start') or '')
+        if kind=='REVERSAL_UP':
+            one,two=policy.up_targets(p['entry'],p['tf'])
+            state['exit_intents']=[
+                {'stage':1,'price':str(one),'fraction_of_original':'.30',
+                 'status':'PRESTAGED_PAPER_TARGET'},
+                {'stage':2,'price':str(two),'fraction_of_original':'.35',
+                 'status':'PRESTAGED_PAPER_TARGET'}]
+            state['hard_stop']=str(policy.number(p['entry'])*Decimal('.85'))
+            state['policy_source']='NEW LEGACY(11.18).xlsx'
+            # Store the execution precision with each position. The same
+            # 8dp floor is used by native Upbit CoinLedger._sell.
+            state['coin_qty_step']='0.00000001'
         stamp=str(p['entry_at'])
         c.execute("""INSERT INTO ma_v067_positions(position_id,kind,frame,code,
             state_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)""",
@@ -104,10 +155,76 @@ def _on_real_buy(self,c,p):
              stamp,stamp))
         qty=policy.number(p['qty0'])
         target=policy.number(features['ma_v067_high']) if kind=='REVERSAL_BEAR' else policy.up_targets(p['entry'],p['tf'])[0]
-        first=Decimal('.30') if kind=='REVERSAL_BEAR' else Decimal('.10')
+        first=(policy.up_stage_quantities(state,qty)[0]
+               if kind=='REVERSAL_UP' else qty*Decimal('.30'))
         c.execute('UPDATE positions SET first_qty=?,target=? WHERE id=?',
-                  (str(qty*first),str(target),p['id']))
+                  (str(first),str(target),p['id']))
+        if kind=='REVERSAL_UP':
+            one,two=policy.up_targets(p['entry'],p['tf'])
+            first_goal,second_goal=policy.up_stage_quantities(state,qty)
+            resting.place(c,int(p['id']),'coin',str(p['market']),str(p['tf']),
+                str(p['entry_at']),qty,one,two,first_goal,second_goal,paper=True)
+            deadline=_ma_hold_deadline(p['tf'],p['entry_at'])
+            if deadline:
+                c.execute('UPDATE positions SET hold_until=? WHERE id=?',
+                          (deadline,p['id']))
+            held=getattr(self,'_ma_v067_up_hold_symbols',None)
+            if held is not None:held.add(str(p['market']))
     except (ValueError,TypeError,KeyError):pass
+
+
+def _persist_verified_up_ascent(self,market,trade,now):
+    """Latch a genuine WS ticker excursion without claiming a SELL fill.
+
+    A book can be absent throughout a rally; keep the ascent in the original
+    MA sidecar so a later REAL fresh bid/book can enforce entry retrace.
+    Runs ONLY on the bounded background ticker worker, never WS callback.
+    """
+    px=policy.number(trade)
+    if px is None or px<=0 or not isinstance(now,dt.datetime) or now.tzinfo is None:
+        return
+    with self.lock,self.connect() as c:
+        _table(c)
+        rows=c.execute("""SELECT p.id,p.entry,p.qty,s.state_json
+            FROM positions p JOIN ma_v067_positions s ON s.position_id=p.id
+            WHERE p.market=? AND p.status='OPEN' AND s.kind='REVERSAL_UP'""",
+            (market,)).fetchall()
+        for p in rows:
+            entry=policy.number(p['entry'])
+            if entry is None or px<=entry:continue
+            try:state=json.loads(p['state_json'] or '{}')
+            except (TypeError,ValueError):continue
+            if state.get('seen_above_entry') or (
+                    policy.number(state.get('first_sold')) or Decimal(0))>0:
+                continue
+            state['seen_above_entry']=True
+            state['verified_above_entry_at']=now.isoformat()
+            state['verified_above_entry_price']=str(px)
+            state['verified_above_entry_source']='UPBIT_VERIFIED_WS_TICKER'
+            c.execute("""UPDATE ma_v067_positions SET state_json=?,updated_at=?
+                WHERE position_id=?""",
+                (json.dumps(state,ensure_ascii=False),now.isoformat(),p['id']))
+
+
+def _ma_hold_deadline(frame,entry_at):
+    hours={'5m':48,'30m':80,'60m':120,'day':360}.get(str(frame))
+    if hours is None:return None
+    try:
+        when=dt.datetime.fromisoformat(str(entry_at))
+        return (when+dt.timedelta(hours=hours)).isoformat() if when.tzinfo is not None else None
+    except (TypeError,ValueError):return None
+
+
+def _sync_existing_ma_hold_deadlines(c):
+    """Correct MA-only prior 24h native expiry, not other strategy wallets."""
+    rows=c.execute("""SELECT p.id,p.entry_at,p.hold_until,p.tf
+        FROM positions p JOIN ma_v067_positions s ON s.position_id=p.id
+        WHERE p.status='OPEN' AND s.kind='REVERSAL_UP'""").fetchall()
+    for p in rows:
+        deadline=_ma_hold_deadline(p['tf'],p['entry_at'])
+        if deadline and str(p['hold_until'] or '')!=deadline:
+            c.execute('UPDATE positions SET hold_until=? WHERE id=?',
+                      (deadline,p['id']))
 
 
 def _recent_trade(self,market,now):
@@ -186,13 +303,22 @@ def _v074_coin_tick_worker(runner):
             now=dt.datetime.now(KST)
             due=[(tf,end) for tf in ('5m','30m','60m','day')
                  for remain,end in [_bar_close(now,tf)] if 2<=remain<=30]
-            if not due:continue
+            ledger=getattr(runner,'ma_ledger',None)
+            hold=ledger is not None and code in getattr(
+                ledger,'_ma_v067_up_hold_symbols',set())
+            if not due and not hold:continue
+            if hold:
+                trade=_recent_trade(ledger,code,now)
+                if trade is not None:
+                    _persist_verified_up_ascent(ledger,code,trade,now)
             lock=getattr(runner,'_lock',None)
             if lock is not None:
                 with lock:
                     book=(getattr(runner,'last_book',{}) or {}).get(code)
             else:book=(getattr(runner,'last_book',{}) or {}).get(code)
             if not isinstance(book,dict):
+                if hold:
+                    _v014_exit_block(ledger,code,now,'BOOK_MISSING_AFTER_TICKER')
                 for tf,end in due:
                     _record_v074_ma_observation(code,tf,end.isoformat(),
                         ('MA_PREWATCH_BOOK_NOT_READY' if policy.in_ma_prewatch_window(_bar_close(now,tf)[0])
@@ -200,12 +326,14 @@ def _v074_coin_tick_worker(runner):
                 continue
             stamp=book.get('timestamp')
             if not isinstance(stamp,(int,float)) or abs(now.timestamp()-stamp/1000)>3:
+                if hold:
+                    _v014_exit_block(ledger,code,now,'BOOK_STALE_AFTER_TICKER',
+                                     {'timestamp_ms':str(stamp)[:40]})
                 for tf,end in due:
                     _record_v074_ma_observation(code,tf,end.isoformat(),
                         ('MA_PREWATCH_BOOK_STALE' if policy.in_ma_prewatch_window(_bar_close(now,tf)[0])
                          else 'UP_CACHED_BOOK_STALE_AFTER_TICKER'))
                 continue
-            ledger=getattr(runner,'ma_ledger',None)
             if ledger is not None:
                 # Same native book and original FOK; never assume a fill.
                 ledger.process_book(dict(book),now)
@@ -409,17 +537,54 @@ def _expire_or_rebound(self,c,book,now):
                           (row['order_id'],))
 
 
+
+def _rev1_coin_closed_bar_state(state,position,now):
+    """Read the EXISTING original Upbit MA verified candle cache only.
+
+    No fresh network request, no REST-as-trade fill and no completion from a
+    still-forming bar. The original MA scanner owns this immutable history.
+    """
+    import ma_v061_coin_runtime as native_history
+    from d_upbit import SECONDS
+    from new_legacy_rev1_low_close import reconcile
+    frame=str(position['tf'])
+    market=str(position['market'])
+    with native_history._HISTORY_LOCK:
+        source=native_history._HISTORY.get((frame,market))
+    if not source or not state.get('entry_bar_start'):
+        return state
+    updated_at, bars=source
+    if (not isinstance(updated_at,dt.datetime) or
+        updated_at.tzinfo is None or
+        not isinstance(bars,(list,tuple))):
+        return state
+    # An old snapshot is not evidence of a newly completed low break.
+    if abs((now-updated_at.astimezone(now.tzinfo)).total_seconds()) > SECONDS[frame]+10:
+        return state
+    official=[dict(x,source='ORIGINAL_UPBIT_MA_VERIFIED') for x in bars
+              if isinstance(x,dict) and all(k in x for k in
+                                        ('start','low','high','close'))]
+    return reconcile(state,position['entry_at'],frame,official,now,
+                     entry_bar_start=state.get('entry_bar_start'))
+
+
 def _process_v067_exits(self,book,now):
     from d_upbit import dec,qty_floor
     if not isinstance(book,dict):return
     symbol=str(book.get('market') or '')
     trade=_recent_trade(self,symbol,now)
-    if trade is None:return
+    # Same authentic Upbit bid/depth as before: no synthetic sale on reconnect.
+    status,evidence=book_sell_evidence(book,now)
+    if status!='OK':
+        _v014_exit_block(self,symbol,now,status,evidence)
+        return
     try:
         bid=dec(book['bid']);bid_qty=dec(book['bid_size'])
-        if bid<=0 or bid_qty<=0:return
-        if abs(now.timestamp()-float(book['timestamp'])/1000)>3:return
-    except (TypeError,KeyError,ValueError):return
+    except (TypeError,KeyError,ValueError):
+        _v014_exit_block(self,symbol,now,'BOOK_DECIMAL_REJECTED')
+        return
+    began=time.monotonic()
+    failed=[]
     with self.lock,self.connect() as c:
         _table(c)
         rows=c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
@@ -428,45 +593,120 @@ def _process_v067_exits(self,book,now):
             (symbol,)).fetchall()
         if not rows:return
         depth=qty_floor(bid_qty*Decimal('.5'))
-        for p in rows:
-            qty=dec(p['qty'])
-            if qty<=0:continue
-            try:state=json.loads(p['state_json'] or '{}')
-            except (TypeError,ValueError):continue
-            closes=_prior_verified_closes(p['tf'],symbol,now)
-            forced=policy.forced_ma_exit(closes,trade)
-            if not forced and _second_followup(p['tf'],symbol,state,p['entry'],trade,now):
-                forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
-            if p['kind']=='REVERSAL_UP':
-                updated,want,reason=policy.up_exit(
-                    state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
-            else:
-                updated,want,reason=policy.bear_exit(
-                    state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
-            if updated!=state:
-                c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
-                          (json.dumps(updated,ensure_ascii=False),now.isoformat(),p['id']))
-            desired=qty_floor(min(want,qty,depth))
-            if desired<=0 or not reason:continue
-            key='MA_V067:'+symbol+':'+str(p['id'])+':'+reason+':'+str(int(book['timestamp']))
-            # Calling native _sell uses real broker/PAPER verification inside
-            # the original live SQL proxy and records its filled quantity.
-            if not self._sell(c,p,desired,bid,now.isoformat(),reason,event_key=key):
+        for item in rows:
+            if item['kind']!='REVERSAL_UP':
+                # The workbook removes the former MA bearish scenario.
                 continue
-            executed=c.execute("""SELECT qty,price FROM executions
-                WHERE event_key=? AND side='SELL' AND position_id=?""",
-                (key,p['id'])).fetchone()
-            if executed is None:continue
-            actually=policy.number(executed['qty'])
-            px=executed['price']
-            if p['kind']=='REVERSAL_BEAR':
-                applied=policy.apply_bear_fill(updated,reason,actually,now)
-                applied=policy.mark_stage_completion(applied,p['qty0'],now,px)
-            else:
-                applied=policy.apply_up_fill(updated,reason,actually,now,p['qty0'],px)
-            c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
-                      (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
-            depth=max(Decimal(0),depth-actually)
+            for attempt in range(2):
+                # A single genuine post-reconnect order book may be above
+                # BOTH profit targets; consume at most two confirmed stages.
+                # Protect against a slow SQLite operation aging that book.
+                if depth<=0:
+                    break
+                if time.monotonic()-began>2.5:
+                    failed.append(('NATIVE_BOOK_PROCESSING_TIMEOUT',
+                                   {'position_id':int(item['id'])}))
+                    break
+                # First stage uses the already-authoritative initial SQL
+                # row. Only after the first confirmed SELL do we re-read
+                # the now-changed position and sidecar for stage 2.
+                p=item if attempt==0 else c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
+                    JOIN ma_v067_positions s ON s.position_id=p.id
+                    WHERE p.id=? AND p.market=? AND p.status='OPEN' AND p.qty!='0'""",
+                    (item['id'],symbol)).fetchone()
+                # An incomplete stage-2 reread must not raise inside the
+                # first SELL's original transaction or imply another fill.
+                if p is None or any(k not in p.keys() for k in (
+                        'id','qty','qty0','entry','tf','kind','state_json')):break
+                qty=dec(p['qty'])
+                if qty<=0:break
+                try:state=json.loads(p['state_json'] or '{}')
+                except (TypeError,ValueError):break
+                # A v0.0.2 position may already have a real 8dp TP1 SELL
+                # before this fix. Recover its persisted policy metadata
+                # WITHOUT changing cash, fills, entry or position quantity.
+                if p['kind']=='REVERSAL_UP' and not state.get('coin_qty_step'):
+                    state['coin_qty_step']='0.00000001'
+                    c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
+                              (json.dumps(state,ensure_ascii=False),now.isoformat(),p['id']))
+                closes=_prior_verified_closes(p['tf'],symbol,now)
+                forced=(policy.forced_ma_exit(closes,trade)
+                        if trade is not None and p['kind']=='REVERSAL_BEAR'
+                        else '')
+                if p['kind']=='REVERSAL_BEAR' and trade is not None and not forced and _second_followup(
+                        p['tf'],symbol,state,p['entry'],trade,now):
+                    forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
+                if p['kind']=='REVERSAL_UP':
+                    state=_rev1_coin_closed_bar_state(state,p,now)
+                    updated,want,reason=policy.up_exit(
+                        state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
+                else:
+                    updated,want,reason=policy.bear_exit(
+                        state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
+                if attempt==1 and reason not in (
+                        'MA_V065_SECOND_HALF_REMAINING',
+                        'MA_V1118_UP_SECOND_35PCT'):
+                    break
+                if updated!=state:
+                    c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
+                              (json.dumps(updated,ensure_ascii=False),now.isoformat(),p['id']))
+                desired=qty_floor(min(want,qty,depth))
+                if desired<=0 or not reason:break
+                key=('MA_V067:'+symbol+':'+str(p['id'])+':'+
+                     reason+':'+str(int(book['timestamp'])))
+                if not self._sell(c,p,desired,bid,now.isoformat(),reason,event_key=key):
+                    failed.append(('NATIVE_SELL_REJECTED',
+                                   {'position_id':int(p['id']),
+                                    'exit_reason':reason,'order_qty':str(desired)}))
+                    break
+                executed=c.execute("""SELECT id,qty,price FROM executions
+                    WHERE event_key=? AND side='SELL' AND position_id=?""",
+                    (key,p['id'])).fetchone()
+                if executed is None:
+                    failed.append(('NATIVE_SELL_RECEIPT_MISSING',
+                                   {'position_id':int(p['id']),'exit_reason':reason}))
+                    break
+                actually=policy.number(executed['qty'])
+                if actually is None or actually<=0:
+                    failed.append(('NATIVE_SELL_RECEIPT_BAD_QTY',
+                                   {'position_id':int(p['id']),'exit_reason':reason}))
+                    break
+                px=executed['price']
+                if reason in ('MA_V1118_UP_FIRST_30PCT','MA_V1118_UP_SECOND_35PCT'):
+                    resting.confirmed_fill(c,int(p['id']),
+                        1 if reason=='MA_V1118_UP_FIRST_30PCT' else 2,
+                        int(executed['id']))
+                else:
+                    resting.cancel_remaining(c,int(p['id']),reason)
+                if p['kind']=='REVERSAL_BEAR':
+                    applied=policy.apply_bear_fill(updated,reason,actually,now)
+                    applied=policy.mark_stage_completion(applied,p['qty0'],now,px)
+                else:
+                    applied=policy.apply_up_fill(updated,reason,actually,now,p['qty0'],px)
+                c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
+                          (json.dumps(applied,ensure_ascii=False),now.isoformat(),p['id']))
+                # Reconcile original first-stage field strictly from the
+                # matching native SELL execution (V067 IDs are non-Korean).
+                first_reason=reason in ('MA_V1118_UP_FIRST_30PCT',
+                    'MA_V065_FIRST_30_AT_REVERSAL_HIGH')
+                if first_reason:
+                    first_goal=(policy.up_stage_quantities(applied,p['qty0'])[0]
+                                if p['kind']=='REVERSAL_UP'
+                                else (policy.number(p['qty0']) or Decimal(0))*policy.FIRST_FRACTION)
+                    confirmed=policy.number(applied.get('first_sold')) or Decimal(0)
+                    existing=(policy.number(p['first_sold_qty']) or Decimal(0)
+                              if 'first_sold_qty' in p.keys() else Decimal(0))
+                    verified=min(first_goal,confirmed)
+                    if verified>existing:
+                        c.execute('UPDATE positions SET first_sold_qty=? WHERE id=?',
+                                  (str(verified),p['id']))
+                depth=max(Decimal(0),depth-actually)
+                # Only a FULLY booked first stage may immediately arm second.
+                # Otherwise await a new authentic orderbook with enough depth.
+                if not first_reason or confirmed<first_goal:break
+    # Emit after releasing the wallet transaction/SQLite lock.
+    for blocked,details in failed:
+        _v014_exit_block(self,symbol,now,blocked,details)
 
 
 def install():
@@ -489,9 +729,51 @@ def install():
         return old_stage(self,c,p,kind)
     previous._entry_stage=distinct_v067_stage
 
+    # The original MA 5m range filter indexes f['high'] and f['low'].
+    # Historical/imported old candidates may lack one of those values.
+    # That used to escape as KeyError('high') from process_book, aborting
+    # evaluation of OTHER valid pending orders and sell-side work.
+    # Reject only the unverifiable/incomplete source metadata. Keep the
+    # original threshold logic untouched for every complete native record,
+    # and keep the explicit V061/V067 MA rules exactly as before.
+    previous_range=ma.MACoinLedger._enough_5m_range
+    def verified_or_fail_closed_range(f):
+        if not isinstance(f,dict):
+            return False
+        # MA TURNPOINT / sustained-bear candidates carry their OWN verified
+        # signal metadata, not the reference-bar high/low schema. V006
+        # accidentally required reference OHLC from all MA 5m candidates,
+        # blocking actual V079 MA orders and cancelling legitimate pending.
+        # Never apply the 2% reference-bar range rule to a proven MA origin.
+        kind=str(f.get('ma_v067_kind') or '')
+        legacy=str(f.get('ma_v061_kind') or '')
+        src=str(f.get('source') or '')
+        if kind=='REVERSAL_UP' and legacy=='TURNPOINT':
+            return bool(src=='UPBIT_V079_LIVE_10_TO_2_TICK_AND_BOOK' and
+                        f.get('ma_v067_bar_start') and
+                        policy.number(f.get('ma_v067_120_delta')) is not None)
+        if kind=='REVERSAL_BEAR' and legacy=='DOWN_BEAR':
+            high=policy.number(f.get('ma_v067_high'))
+            low=policy.number(f.get('ma_v067_low'))
+            return bool(src=='UPBIT_MA_V067_SUSTAINED_ALIGNMENT' and
+                        high is not None and low is not None
+                        and 0<low<high)
+        if kind or legacy:
+            # Unknown/partial MA features are not executable proof.
+            return False
+        # Legacy *reference* records still require their original range
+        # evidence; missing/bad fields fail closed without KeyError.
+        hi=policy.number(f.get('high'))
+        lo=policy.number(f.get('low'))
+        if hi is None or lo is None or hi<=0 or lo<=0 or hi<=lo:
+            return False
+        return previous_range(f)
+    ma.MACoinLedger._enough_5m_range=staticmethod(verified_or_fail_closed_range)
+
     old_init=ma.MACoinLedger.__init__
     def init(self,*a,**kw):
         old_init(self,*a,**kw)
+        self._ma_v067_up_hold_symbols=set()
         with self.lock,self.connect() as c:
             _table(c)
             joined=c.execute("""SELECT p.* FROM positions p JOIN candidates x
@@ -500,6 +782,24 @@ def install():
                 WHERE p.status='OPEN' AND s.position_id IS NULL
                 AND x.features LIKE '%"ma_v067_kind"%'""").fetchall()
             for row in joined:_on_real_buy(self,c,row)
+            _sync_existing_ma_hold_deadlines(c)
+            existing=c.execute("""SELECT p.*,s.state_json FROM positions p
+                JOIN ma_v067_positions s ON s.position_id=p.id
+                WHERE p.status='OPEN' AND s.kind='REVERSAL_UP'""").fetchall()
+            for p in existing:
+                try:
+                    state=json.loads(p['state_json'] or '{}')
+                    one,two=policy.up_targets(p['entry'],p['tf'])
+                    q1,q2=policy.up_stage_quantities(state,p['qty0'])
+                    resting.place(c,int(p['id']),'coin',str(p['market']),
+                        str(p['tf']),str(p['entry_at']),p['qty0'],
+                        one,two,q1,q2,paper=True)
+                except (ValueError,TypeError,KeyError):
+                    continue
+            held=c.execute("""SELECT DISTINCT p.market FROM positions p
+                JOIN ma_v067_positions s ON s.position_id=p.id
+                WHERE p.status='OPEN' AND s.kind='REVERSAL_UP'""").fetchall()
+            self._ma_v067_up_hold_symbols.update(str(x[0]) for x in held)
         self._ma_v067_live_ticks={}
     ma.MACoinLedger.__init__=init
 
@@ -524,8 +824,26 @@ def install():
     def scoped_sell(self,c,p,desired,price,at,reason,event_key=None):
         _table(c)
         row=c.execute('SELECT 1 FROM ma_v067_positions WHERE position_id=?',(p['id'],)).fetchone()
-        if row and not str(reason).startswith('MA_V067_'):
-            return False # Prior SR1/V24/V061 exits cannot override new case.
+        # V067 positions use the verified v065 policy's original reason
+        # names for target/stop orders. The former V067-only prefix gate
+        # silently rejected ALL legitimate +2% first-profit sells.
+        # Retain the legacy-policy isolation: only reasons from the
+        # exact v065 policy or the v067 second-bar guard may pass.
+        manual=(str(event_key or '').startswith('USER:') and
+                str(reason).startswith('사용자 가상 강제매도 '))
+        if not manual:
+            if row is None or str(reason) not in (
+                'MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE',
+                'MA_V065_UP_PRE_FIRST_ENTRY_RETURN',
+                'MA_V065_UP_AFTER_FIRST_ENTRY_PLUS_1',
+                'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR',
+                'MA_V1118_UP_FIRST_30PCT',
+                'MA_V1118_UP_SECOND_35PCT',
+                'MA_V1118_UP_AFTER_SECOND_TRAIL',
+                'MA_V1118_STOP_MINUS_15',
+                'MA_V1118_HOLD_EXPIRY',
+            ):
+                return False
         return previous_sell(self,c,p,desired,price,at,reason,event_key=event_key)
     ma.MACoinLedger._sell=scoped_sell
 
@@ -535,7 +853,32 @@ def install():
         if now.tzinfo is None:return 0
         _new_up_candidate(self,raw,now)
         _process_v067_exits(self,raw,now)
-        return older_book(self,raw,at)
+        try:
+            return older_book(self,raw,at)
+        except KeyError as error:
+            # Preserve strict non-fabricated execution and the original
+            # caller's MA_BOOK_PROCESS_FAIL handling. Store a rate-limited
+            # exact source line so recurring legacy failures are diagnosable.
+            symbol=str(raw.get('market') or '') if isinstance(raw,dict) else ''
+            last=getattr(self,'_v088_keyerror_trace_seen',{})
+            elapsed=time.monotonic()
+            sig=(symbol,str(error))
+            if elapsed-last.get(sig,0)>180:
+                last[sig]=elapsed
+                if len(last)>150:last.clear()
+                self._v088_keyerror_trace_seen=last
+                try:
+                    import traceback
+                    stack=traceback.extract_tb(error.__traceback__)
+                    frame=stack[-1] if stack else None
+                    location=(str(frame.name)+':'+str(frame.lineno)
+                              if frame is not None else 'unknown')
+                    self.write_issue('MA_BOOK_KEYERROR_SOURCE_V088',
+                        symbol+' '+str(error)[:80]+' origin='+location,
+                        severity='ERROR')
+                except Exception:
+                    pass
+            raise
     ma.MACoinLedger.process_book=book
 
     # Observe the same genuine Upbit WS ticker on an independent, short,
@@ -550,7 +893,8 @@ def install():
             ledger._ma_v067_live_ticks[str(code)]=(price,time.monotonic())
             try:
                 now=dt.datetime.now(KST)
-                if any(2<=_bar_close(now,tf)[0]<=30
+                held=(str(code) in getattr(ledger,'_ma_v067_up_hold_symbols',set()))
+                if held or any(2<=_bar_close(now,tf)[0]<=30
                        for tf in ('5m','30m','60m','day')):
                     pending=getattr(runner,'_ma_v074_tick_queue',None)
                     if pending is None:
@@ -569,9 +913,11 @@ def install():
                         gate=getattr(runner,'_ma_v079_ws_queue_gate',None)
                         if gate is None:
                             gate={};runner._ma_v079_ws_queue_gate=gate
-                        remaining=min(_bar_close(now,tf)[0] for tf in ('5m','30m','60m','day')
-                                      if 2<=_bar_close(now,tf)[0]<=30)
-                        cooldown=.25 if policy.in_up_entry_window(remaining) else 5.0
+                        remaining=[_bar_close(now,tf)[0] for tf in ('5m','30m','60m','day')
+                                   if 2<=_bar_close(now,tf)[0]<=30]
+                        cooldown=(.5 if held else
+                                  .25 if remaining and policy.in_up_entry_window(min(remaining))
+                                  else 5.0)
                         stamped=time.monotonic()
                         permitted=stamped-gate.get(str(code),0)>cooldown
                         if permitted:gate[str(code)]=stamped
@@ -586,4 +932,9 @@ def install():
                     'OPERATIONAL_MA_TICK_DISPATCH_'+type(exc).__name__)
         return prior_tick(coord,code,price)
     trend.Coordinator.observe_coin_tick=verified_coin_tick
+    # MA currently-open symbols must remain in the vendor's existing ticker
+    # and orderbook subscription sets even if rank/preload cohorts rotate.
+    # No second Upbit socket, REST-as-book, lease or LIVE order is created.
+    from coin_held_depth_v014 import install as install_ma_held_depth
+    install_ma_held_depth(d_upbit)
     _INSTALLED=True

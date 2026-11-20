@@ -1,0 +1,22 @@
+name: ARTITRADE v090 GMO Nov16 D to Nov17 09:00 inclusive opening regression
+on:
+  push:
+    branches: [fix-artitrade-v090-gmo-d1-open-20261117]
+    paths: ['.github/workflows/artitrade-v090-gmo-tests.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gmo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Validate code and execute exact D+1 opening regression, original packaged core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/ui_tests/test_v090_gmo_d1_open_inclusive.py
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v090_gmo_*.py' -v

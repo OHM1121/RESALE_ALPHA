@@ -1,0 +1,26 @@
+name: ARTITRADE v009 inspect exact native GMO phase and 0D schema
+on:
+  push:
+    branches: [fix-artitrade-009-v007-forensic-rootcause-20261119]
+    paths: [.github/workflows/artitrade-009-gmo-phase-0d-audit.yml]
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for name,ranges in [('d_gmo_runtime.py',[(22,49),(455,521),(1010,1060)]),
+               ('d_live.py',[(1948,2030)]),('d_engine.py',[(90,160)])]:
+                  lines=z.read(name).decode('utf8').splitlines()
+                  for a,b in ranges:
+                      print('RANGE',name,a,b)
+                      for i in range(a-1,b):print(str(i+1)+': '+lines[i])
+          PY

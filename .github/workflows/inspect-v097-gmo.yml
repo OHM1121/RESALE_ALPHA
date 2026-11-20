@@ -1,0 +1,16 @@
+name: ARTITRADE v097 inspect GMO original code read only
+on:
+  push:
+    branches: [fix-artitrade-v097-gmo-dplus1-preplan-20261117]
+    paths: ['.github/workflows/inspect-v097-gmo.yml','ARTITRADE_ANDROID/ui_tests/inspect_v097_gmo_src.py']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Print selected archived GMO methods
+        run: python3 ARTITRADE_ANDROID/ui_tests/inspect_v097_gmo_src.py

@@ -37,3 +37,94 @@ flowchart TD
 `tools/artitrade/build_source_graph.py` reads (without executing) **all current Python overlays, all 22-archive original EXE strategy Python files, all Java classes and dependency references**, emits `artitrade_source_graph.json`, and labels inferred/dynamic edges as not statically verifiable. The workflow `artitrade-dependency-governance.yml` regenerates and uploads a complete per-commit artifact. If a function is registered dynamically (monkeypatch/callback/serialized event), add it to the critical [dependency_graph.json](dependency_graph.json) manually.
 
 Static references are not equivalent to a validated real broker execution flow. Every missing, unknown or dormant dependency must be disclosed as such, not silently claimed to be inspected.
+
+
+## Position identity + one-cycle cleanup (0.0.15)
+- **POSITION_UID_V015**: original 8 wallet positions/BUY/SELL receipts →
+  private epoch-scoped UID sidecar → read-only hub/UI history; no strategy,
+  quote, broker or original SQLite wallet writes. Historical closed rows are
+  indexed from native source DB, not inferred from symbol+time alone.
+- **CFG_SINGLE_PAPER_CLEANUP_V015**: after original old-policy migration and
+  before native runtime startup, qualify exactly one historically reported
+  coin MA 5m KRW-CFG PAPER position, backup native SQLite, reverse original
+  cash/P&L, delete only that position's linked receipts, rebase independent
+  witness. Zero or multiple matches are SKIPPED; never bulk ticker deletion.
+- Both features require original native regression and Java CI; a GitHub CI
+  pass does not prove phone-side migration ran or that any live fill exists.
+
+
+## 0.0.16 verified preflight visibility and Trend original value provenance
+- **PRELOAD_VERIFIED_V016**: original service startup + shared, existing
+  Kiwoom/Upbit WS → native preload_gate + KRX 0B/0D / Upbit ticker/book
+  + verified completed candle/RSI history → read-only 0.0.16 audit and
+  work-item counts → Android status/%/ETA. No new socket/order. 40s UI
+  escape leaves original background repair active and never declares ready.
+- **TREND_COST_PROVENANCE_V016**: original MT54 position.entry/entry_fee/mark,
+  exact native execution.position_id and SELL net_pnl → read-only snapshot
+  joined buy unit price/source cost/realized_pct, per-frame PnL → original
+  UID display enrichment and Java holdings/execution view. Saved stock mark
+  is labelled LAST SAVED NOT LIVE and never controls native SELL orders.
+  Original SQLite positions, funds, quantities and policy remain unchanged.
+
+## 0.0.17 native KRX PENDING retry and stock-symbol loading count (Issue #104)
+- `STOCK_PENDING_NATIVE_RETRY_V017`: original Kiwoom ONE client →
+  verified native `d_multiframe_recovery_fix14.recover_frame` →
+  source `v19_higher_frame_audit14` per original pending ID →
+  original PAPER D19 BUY and NEW LEGACY signed score/orderbook gate.
+  The 0.0.15 phone export showed original PENDING 181 and original
+  `LIVE_PARENT_GAP` blocked audits 204. 0.0.16 original retry worker
+  dropped DNS exceptions, could lose work before its own 55s throttle,
+  and starved retries behind the nonempty scan queue. Fix adds bounded
+  retries, pending-priority and preserves actual already VERIFIED
+  per-position audits against a delayed global checkpoint; a
+  `VERIFIED_RESTORED` frame response with blocked pending audits still
+  retries. No original wallet, trade or quote policy changes; never
+  turn REST history into a buy or create a synthetic fill.
+- `PRELOAD_STOCK_SYMBOLS_V017`: original selected KRX universe `N`
+  (459 only when native universe really has 459) →
+  one-time native `VERIFIED_RESTORED` historical response per unique code →
+  monotonic `loaded/N` Android progress. Variable network audit
+  checklists are separate from displayed stock-symbol %; stable count
+  persists through Activity recreation. Stock-loaded 100% is NOT a
+  working same-venue 0B/0D quote, an eligible market-score BUY, nor
+  authenticated broker fill. The pre-existing 40-second bounded UI
+  escape may show incomplete background work without falsely saying 100%.
+- Regressions: `test_v017_native_pending_retry.py`,
+  `test_v017_stock_preload_progress.py`,
+  `test_v013_stock_at_pending_to_native_buy.py`, original eight
+  wallet PAPER suites and Java compile. CI and original keystore sign
+  validation do not prove DEVICE_VERIFIED real buy/market session.
+
+## 0.0.18 NEW LEGACY(11.18) rev1 red-text F6/F7 + critical coin MA POD held exit (#107)
+- `NL1118_REV1_VERIFIED_LOW_STOP_V018`: the original **MA upward
+  transition signal candle** and original **MarketTrend falling-entry
+  signal candle** must be read from the same authentic native officially
+  completed KRX or Upbit bars; its LOW is immutable reference. During
+  TP1 pending, the signal bar or a later actually completed bar must
+  evidence a touch of this LOW, and an officially CLOSED bar must CLOSE
+  strictly below the original reference LOW. Only then may the original
+  wallet attempt a FULL SELL using current authentic same-venue BID and
+  nonzero capacity. Previous MA/Trend `seen_above_entry && bid <= entry`
+  no longer authorizes full SELL. The reference-bar strategy remains
+  unchanged. NO retroactive sell, candle-HIGH fill or source invention.
+- `MA_COIN_HELD_EXIT_PRIORITY_V018`: existing coin MA open holdings
+  are examined ahead of regular candidate exploration by a bounded
+  independent `~0.12s` best-effort **book freshness observer**.
+  It sees only new genuine Upbit WS orderbook BID, timestamp and
+  executable depth from the original UpbitPaperRunner single WS,
+  passing the intact native v067 policy, SQLite ledger, broker guard,
+  dedupe and native execution receipt. There is **no second websocket,
+  no standalone broker sell order and NO guarantee of 120ms SELL**:
+  slow database/transport and missing BID are still blocking facts.
+  A 1m candle HIGH=595 or original ASK=595 cannot fill TP1=594.66
+  when original verified BID maxes at 593; the existing
+  `nl1118_resting_sells` are PAPER plans, not submitted orders.
+- Source scope includes `ma_v067_policy.py`,
+  `new_legacy_1118_policy.py`,
+  `new_legacy_rev1_low_close.py`,
+  `ma_v067_coin_runtime.py`, `ma_v067_stock_runtime.py`,
+  `market_trend_1118_runtime.py`,
+  `ma_fast_held_exit_v018.py`, and existing runner integration.
+  Regression includes original eight wallets, original reference F5,
+  old CFG price/path sidecar, TP1/TP2 receipt and no-false-fill.
+  DEVICE_VERIFIED requires actual phone and current orderbook evidence.

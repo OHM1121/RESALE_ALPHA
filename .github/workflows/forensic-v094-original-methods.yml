@@ -1,0 +1,38 @@
+name: ARTITRADE v094 read-only live and paper MA forced-sell / partial-buy forensic
+on:
+  push:
+    branches: [fix-artitrade-v094-forced-exits-ma-legacy-partial-chase-20261117]
+    paths: ['.github/workflows/forensic-v094-original-methods.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read original 82-module stock coin order and broker entry exit method signatures
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          r=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          b=base64.b64decode(''.join((r/f"part_{i:02d}.txt").read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            assert z.testzip() is None
+            arr={x:z.read(x).decode(errors='replace') for x in z.namelist() if x.endswith('.py')}
+          for name in ('stock_ma_engine.py','coin_ma_engine.py','d_v19_portfolio.py','d_live.py','d_upbit.py','d_gmo_runtime.py','at_close_runner.py','android_live_bridge.py','projectgmo/engine.py'):
+            if name not in arr:
+              print('MISSING',name);continue
+            s=arr[name]; ls=s.splitlines()
+            print('==== FILE',name,'LINES',len(ls),'====')
+            for node in ast.walk(ast.parse(s)):
+              if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                nm=node.name
+                if any(term in nm.lower() for term in ('buy','sell','exit','entry','fill','depth','order','tick','manual','position','cap','quote','price','mark','reserve')):
+                  print('METHOD',name,nm,node.lineno,node.end_lineno)
+            for i,x in enumerate(ls):
+              if any(t in x for t in ('MAX_', 'tick_size', 'tick_size=', 'max_seed','seed_per_','max_positions','BUY_BLOCK',
+                                     'BUY_REJECT','FRESH_', 'MANUAL_SELL','manual_sell','FORCED_SELL','MAX_BOOK',
+                                     'PARTIAL','REASON_', 'order_limit','ORDER_LIMIT','최대시드')):
+                print('REF',name,i+1,x[:230])
+          PY

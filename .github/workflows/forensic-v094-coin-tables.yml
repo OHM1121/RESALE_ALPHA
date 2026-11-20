@@ -1,0 +1,23 @@
+name: ARTITRADE v094 coin original ledger tables scan
+on:
+  push:
+    branches: [fix-artitrade-v094-forced-exits-ma-legacy-partial-chase-20261117]
+    paths: ['.github/workflows/forensic-v094-coin-tables.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import base64,zipfile,io
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for n,start,end in [('d_upbit.py',675,895),('d_upbit.py',2710,2740),
+                                ('coin_ma_engine.py',1,154)]:
+              l=z.read(n).decode().splitlines()
+              for i in range(start-1,min(end,len(l))):print('SOURCE',n,i+1,l[i][:350])
+          PY

@@ -78,7 +78,10 @@ class V081TwoFeedsPreload(unittest.TestCase):
     def test_real_quote_and_original_ledger_are_gated_before_cold_shell(self):
         java=(ROOT/'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text()
         self.assertIn('PRELOAD_WATCHDOG_MS=40_000L',java)
-        self.assertIn('PRELOAD_BOTH_FEEDS_WARM_MIN_MS=22_000L',java)
+        self.assertIn('PRELOAD_WATCHDOG_MS=40_000L',java)
+        self.assertIn('startupNativeAuditReady',java)
+        self.assertIn('updateVerifiedStartupProgress(',java)
+        self.assertNotIn('if(elapsed>=PRELOAD_BOTH_FEEDS_WARM_MIN_MS)',java)
         self.assertIn('startupReadinessTick()',java)
         self.assertIn('coin.optBoolean("ws_ready",false)',java)
         self.assertIn('stock.optBoolean("ws_ready",false)',java)
@@ -88,7 +91,11 @@ class V081TwoFeedsPreload(unittest.TestCase):
         self.assertIn('장외/휴장 · WS 체결 필수 아님',java)
         self.assertIn('RSI20 확정봉 주식',java)
         self.assertNotIn('finishPreload(engineReady)',java)
-        self.assertIn('main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS)',java)
+        # Since v089, a rotating cold-start preserves the original watchdog
+        # deadline rather than starting another 40-second waiting period.
+        self.assertIn('main.postDelayed(this::preloadWatchdog,',java)
+        self.assertIn('PRELOAD_WATCHDOG_MS-elapsed',java)
+        self.assertIn('v089_preload_ready',java)
 
 
 if __name__=='__main__':

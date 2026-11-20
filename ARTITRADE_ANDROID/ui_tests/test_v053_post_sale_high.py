@@ -79,7 +79,9 @@ class PostSalePolicyV053(unittest.TestCase):
     def test_coin_continuous_five_days_and_paper_expected_is_not_actual(self):
         with tempfile.TemporaryDirectory() as t:
             manager=high.Tracker(t)
-            sold=at("2026-11-12",12,33,11)
+            # Keep this five-day boundary test independent of wall-clock expiry.
+            sold=(dt.datetime.now(KST)-dt.timedelta(days=1)).replace(
+                hour=12,minute=33,second=11,microsecond=0)
             case=manager.register("coin","general","30m","KRW-BTC","PAPER",
                 500,sold.isoformat(),"coin/shadow/7",exit_evidence="EXPECTED")
             same=manager.register("coin","general","30m","KRW-BTC","PAPER",

@@ -7,7 +7,7 @@ Buy at the reversal candle low or below, but never after the price has
 fallen below its low and rebounded back to the low.
 
 REVERSAL_UP: first 120-down / all 4-up transition on FORMING candle;
-requires a genuine recheck inside close-minus-10 to minus-2 seconds. No 4-below filter.
+requires genuine close-minus-10 to minus-2 second verification, with all four short averages below MA120.
 Any entry fill delayed over 15 seconds is prohibited.
 
 All new positions: forced 120-up / all 4-above-and-down instant exit,
@@ -19,7 +19,7 @@ Case 2 uses the user's subsequent explicit first/second targets and
 confirmed-fill-only 10% / 50%-of-remainder exit stages.
 """
 from __future__ import annotations
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from datetime import datetime, timedelta
 from typing import Mapping
 import ma_v061_rules as legacy
@@ -39,7 +39,7 @@ UP_SUBMIT_BEFORE_CLOSE_SECONDS=10
 UP_SUBMIT_END_BEFORE_CLOSE_SECONDS=2
 MAX_UP_FILL_DELAY_SECONDS=15
 # Entry setup only. The protective forced-SELL rule is kept unchanged.
-MA120_DOWN_TOLERANCE=Decimal('0.0050')
+MA120_DOWN_TOLERANCE=Decimal('0')
 
 
 def number(x):
@@ -58,13 +58,13 @@ def slopes(prices):
 
 
 def ma120_down_for_entry(ma):
-    """MA120 delta <= +0.0050 is considered falling for new BUY screening.
+    """MA120 delta <= +0.0099 is allowed for user-defined upward-entry screening.
 
     This is an absolute moving-average-price delta, not a percentage.
     """
     try:
         value=number(ma[120]['delta'])
-        return value is not None and value<=MA120_DOWN_TOLERANCE
+        return value is not None and value<MA120_DOWN_TOLERANCE
     except (KeyError,TypeError,AttributeError):
         return False
 
@@ -81,6 +81,8 @@ def bear_setup(closed_bars):
 
 def bear_reversal_completed(bars,frame):
     """Identify any large bear while established alignment remains satisfied."""
+    # 11/18: BEAR entries retired; old open SELL rows are retained safely.
+    return {'kind':None,'reason':'NL1118_BEAR_ENTRY_RETIRED'}
     if frame not in FRAMES or len(bars)<122:
         return {'kind':None,'reason':'REQUIRES_122_VERIFIED_BARS'}
     # v067 correction: the 120-down / four-below-down alignment need not
@@ -126,10 +128,14 @@ def prewatch_upward_alignment(prior_closed, price):
     cur=slopes(list(prior_closed)+[price])
     if prev is None or cur is None:
         return {'kind':None,'reason':'INVALID_SMA_DATA'}
-    qualifies=lambda m:ma120_down_for_entry(m) and all(m[k]['delta']>0 for k in SHORT)
+    qualifies=lambda m:ma120_down_for_entry(m) and all(
+        m[k]['delta']>0 and m[k]['value']<m[120]['value'] for k in SHORT)
     fields={'ma_120_delta':str(cur[120]['delta']),
             'ma_60_delta':str(cur[60]['delta']),
-            'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE)}
+            'ma120_down_tolerance':str(MA120_DOWN_TOLERANCE),
+            'short4_below120':all(cur[k]['value']<cur[120]['value'] for k in SHORT)}
+    if not fields['short4_below120']:
+        return {'kind':None,'reason':'SHORT4_NOT_BELOW_120',**fields}
     if not qualifies(cur):
         return {'kind':None,'reason':'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN',**fields}
     if qualifies(prev):
@@ -301,16 +307,17 @@ def mark_stage_completion(state,initial_qty,at,execution_price=None):
 # Case 2, the upward-forming reversal (REVERSAL_UP). These targets apply to
 # this case only; case 1 (REVERSAL_BEAR) remains entirely separate.
 UP_FIRST_TARGET_PCT={
-    '5m':Decimal('2'), '30m':Decimal('2.5'),
-    '60m':Decimal('3'), 'day':Decimal('5'),
+    '5m':Decimal('2'), '30m':Decimal('3'),
+    '60m':Decimal('3.5'), 'day':Decimal('4'),
 }
 UP_SECOND_EXTRA_PCT={
-    '5m':Decimal('2'), '30m':Decimal('2.5'),
-    '60m':Decimal('3'), 'day':Decimal('3'),
+    '5m':Decimal('2'), '30m':Decimal('2'),
+    '60m':Decimal('2.5'), 'day':Decimal('3'),
 }
-UP_FIRST_FRACTION=Decimal('.10')
+UP_FIRST_FRACTION=Decimal('.30')
 UP_SECOND_FRACTION_OF_REMAINDER=Decimal('.50')
-UP_TRAIL_FROM_SECOND=Decimal('.03')
+UP_TRAIL_FROM_SECOND={'5m':Decimal('.025'),'30m':Decimal('.03'),
+                      '60m':Decimal('.03'),'day':Decimal('.04')}
 UP_FIRST_TO_SECOND_HARD_STOP=Decimal('.01')
 
 
@@ -330,7 +337,7 @@ def up_targets(entry,frame):
 def initial_up_exit_state(frame):
     """No sale, no target touch, no synthetic execution at position opening."""
     if frame not in FRAMES:raise ValueError('unsupported timeframe')
-    return {'policy':'MA_V065_REVERSAL_UP','frame':frame,
+    return {'policy':'MA_V1118_REVERSAL_UP','frame':frame,
             'first_sold':'0','second_sold':'0',
             'first_completed_at':'','second_completed_at':'',
             'peak_after_second':'0','seen_above_entry':False}
@@ -350,7 +357,17 @@ def up_stage_quantities(state,initial):
     if (first_integer is not None and first_integer>0 and
         first_integer<=n and first_integer==first_integer.to_integral_value()):
         first=first_integer
+    # Upbit original wallet executes fractional quantities at 8-decimal
+    # precision. Never demand untradeable sub-step dust before arming TP2:
+    # 4345.65326032 * 30% = 1303.695978096, but native SELL confirms
+    # only 1303.69597809; without matching floor, the first stage NEVER
+    # advances, even after a valid native SQLite SELL.
+    step=number(state.get('coin_qty_step'))
+    if step is not None and step>0 and step<1:
+        first=(first/step).to_integral_value(rounding=ROUND_DOWN)*step
     second=(n-first)*UP_SECOND_FRACTION_OF_REMAINDER
+    if step is not None and step>0 and step<1:
+        second=(second/step).to_integral_value(rounding=ROUND_DOWN)*step
     second_integer=number(state.get('rounded_second_goal'))
     if (second_integer is not None and second_integer>=0 and
         second_integer<=n-first and
@@ -369,7 +386,7 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
     sell. No brokerage order is sent by this pure function.
     """
     state=dict(state)
-    if state.get('policy')!='MA_V065_REVERSAL_UP':
+    if state.get('policy') not in ('MA_V1118_REVERSAL_UP','MA_V065_REVERSAL_UP'):
         return state,Decimal(0),''
     frame=state.get('frame')
     if frame not in FRAMES:
@@ -380,22 +397,30 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         or price<=0 or base<=0 or avail<0 or initial<=0
         or not isinstance(now,datetime) or now.tzinfo is None):
         return state,Decimal(0),''
-    if forced:
-        return _full(avail,forced,state)
+    # Workbook defines only -15% and holding expiry as unconditional
+    # MA stops; obsolete MA slope/second-followup forced exits retired.
+    if price<=base*Decimal('.85'):
+        return _full(avail,'MA_V1118_STOP_MINUS_15',state)
+    try:
+        start=datetime.fromisoformat(str(state.get('entry_at') or ''))
+        hold={'5m':48,'30m':80,'60m':120,'day':360}[frame]
+        if start.tzinfo is not None and now>=start+timedelta(hours=hold):
+            return _full(avail,'MA_V1118_HOLD_EXPIRY',state)
+    except (ValueError,TypeError,KeyError):pass
     first_target,second_target=up_targets(base,frame)
     first_goal,second_goal=up_stage_quantities(state,initial)
     first_sold=number(state.get('first_sold')) or Decimal(0)
     second_sold=number(state.get('second_sold')) or Decimal(0)
 
     if first_sold<first_goal:
-        # Only an observed climb followed by a RETURN to entry can trigger
-        # the user's pre-first retrace rule. Do not invent a prior price path.
-        if price>base:
-            state['seen_above_entry']=True
-        if state.get('seen_above_entry') and price<=base:
-            return _full(avail,'MA_V065_UP_PRE_FIRST_ENTRY_RETURN',state)
+        # 11.18 REV1 F6 (red): DO NOT sell at the entry-price retrace.
+        # The entry/forming MA candle's verified low must first be touched,
+        # then a genuinely CLOSED source bar must close strictly below it.
+        # Only the original native closed-bar observer sets this durable flag.
+        if state.get('rev1_below_reference_low_confirmed') is True:
+            return _full(avail,'MA_V018_PRE_FIRST_VERIFIED_LOW_CLOSE',state)
         if price>=first_target:
-            return state,min(avail,first_goal-first_sold),'MA_V065_UP_FIRST_10PCT'
+            return state,min(avail,first_goal-first_sold),'MA_V1118_UP_FIRST_30PCT'
         return state,Decimal(0),''
 
     if second_sold<second_goal:
@@ -404,7 +429,7 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         if price<=base*(1+UP_FIRST_TO_SECOND_HARD_STOP):
             return _full(avail,'MA_V065_UP_AFTER_FIRST_ENTRY_PLUS_1',state)
         if price>=second_target:
-            return state,min(avail,second_goal-second_sold),'MA_V065_UP_SECOND_HALF_REMAINING'
+            return state,min(avail,second_goal-second_sold),'MA_V1118_UP_SECOND_35PCT'
         return state,Decimal(0),''
 
     # The SECOND stage must have actually filled 50% of the remaining
@@ -413,8 +438,8 @@ def up_exit(state,bid,entry,available_qty,initial_qty,now,forced=''):
         return _full(avail,'MA_V065_UP_AFTER_SECOND_FIRST_TARGET_FLOOR',state)
     peak=max(number(state.get('peak_after_second')) or Decimal(0),price)
     state['peak_after_second']=str(peak)
-    if price<=peak*(1-UP_TRAIL_FROM_SECOND):
-        return _full(avail,'MA_V065_UP_PEAK_MINUS_3',state)
+    if price<=peak*(1-UP_TRAIL_FROM_SECOND[frame]):
+        return _full(avail,'MA_V1118_UP_AFTER_SECOND_TRAIL',state)
     return state,Decimal(0),''
 
 
@@ -427,14 +452,14 @@ def apply_up_fill(state,reason,quantity,filled_at,initial_qty,
     fresh order books. Never call on rejected/cancelled/ambiguous orders.
     """
     state=dict(state)
-    if state.get('policy')!='MA_V065_REVERSAL_UP':return state
+    if state.get('policy') not in ('MA_V1118_REVERSAL_UP','MA_V065_REVERSAL_UP'):return state
     q,n,price=map(number,(quantity,initial_qty,execution_price))
     if (any(x is None for x in (q,n,price))
         or q<=0 or n<=0 or price<=0
         or not isinstance(filled_at,datetime) or filled_at.tzinfo is None):
         return state
     first_goal,second_goal=up_stage_quantities(state,n)
-    if reason=='MA_V065_UP_FIRST_10PCT':
+    if reason=='MA_V1118_UP_FIRST_30PCT':
         was=number(state.get('first_sold')) or Decimal(0)
         # Wrong/duplicate sizes should not silently advance to stage 2.
         if was>=first_goal or q>first_goal-was:return state
@@ -442,7 +467,7 @@ def apply_up_fill(state,reason,quantity,filled_at,initial_qty,
         state['first_sold']=str(total)
         if total>=first_goal and not state.get('first_completed_at'):
             state['first_completed_at']=filled_at.isoformat()
-    elif reason=='MA_V065_UP_SECOND_HALF_REMAINING':
+    elif reason=='MA_V1118_UP_SECOND_35PCT':
         if (number(state.get('first_sold')) or Decimal(0))<first_goal:
             return state
         was=number(state.get('second_sold')) or Decimal(0)

@@ -1,0 +1,47 @@
+name: ARTITRADE v092 read-only Kiwoom Upbit quotation delay audit
+on:
+  push:
+    branches: [fix-artitrade-v092-quote-latency-20261117]
+    paths: ['.github/workflows/forensic-v092-quote-latency.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract exact original 82 modules and trace websocket and enqueue latency paths
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          folder=root/'assets/strategy_v070'
+          blob=base64.b64decode(''.join((folder/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              files={x:z.read(x).decode('utf8') for x in ['d_live.py','d_upbit.py']}
+          for name,source in files.items():
+              lines=source.splitlines()
+              tree=ast.parse(source)
+              print('SOURCE',name,'LINES',len(lines))
+              funcs=[]
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                      if any(q in node.name for q in ('ws','WS','feed','tick','queue','universe','refresh','subscription','book','start','preload')):
+                          funcs.append((node.lineno,node.end_lineno,node.name))
+              for a,b,n in sorted(funcs):print('METHOD',name,n,a,b)
+              if name=='d_live.py':
+                  keys=['async def run(','async def _refresh_universe_if_due(','def _tick_worker(','def _gmo','def _enqueue','def _v071_','def _feed']
+              else:
+                  keys=['def _ws(', 'def _enqueue_ws_event(', 'def _ws_event_worker(', 'def _ensure_ws_workers(', 'def _v083_consume_ticks(', 'def _v083_refresh_subscriptions(', 'def _both_watched_codes(']
+              for term in keys:
+                  matched=[i for i,x in enumerate(lines) if term in x]
+                  for i in matched[:3]:
+                      print('SEGMENT',name,term,i+1)
+                      if term=='async def run(': lo,hi=i,i+230
+                      elif term=='def _ws(':lo,hi=i,i+280
+                      else:lo,hi=i,i+110
+                      for k in range(lo,min(hi,len(lines))):print('CODE',name,k+1,lines[k][:250])
+          PY

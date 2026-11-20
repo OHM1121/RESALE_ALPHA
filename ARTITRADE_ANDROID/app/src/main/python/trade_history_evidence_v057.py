@@ -236,6 +236,16 @@ def lookup_batch(root: str, requests_json: str) -> str:
                     except (sqlite3.Error,OSError):original[path]=None
                 output[key].update(_entry_signal_for(
                     original[path],market,strategy,frame,symbol,pid))
+            # Original source candidate / executed fill, NOT a generic
+            # exchange best-ask price provenance. Joins by position + exact
+            # BUY/SELL execution and actual fill time, read-only.
+            if strategy in ('ma','trend') and side in ('BUY','SELL'):
+                try:
+                    from trade_decision_basis_v095 import from_original
+                    output[key].update(from_original(base,market,strategy,frame,
+                        symbol,pid,side,execution_id,at=at))
+                except (ImportError,sqlite3.Error,ValueError,TypeError,KeyError):
+                    pass
             if side in ('SELL', '매도'):
                 output[key].update(_post_sale_for(post, market, strategy, frame,
                                                  symbol, pid, at, execution_id))

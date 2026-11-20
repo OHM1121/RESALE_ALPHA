@@ -1,0 +1,41 @@
+name: ARTITRADE v106 fresh PAPER epoch source-only tests (NO APK)
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - ARTITRADE_ANDROID/app/src/main/python/fresh_epoch_reset_v106.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FreshEpochGateV106.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LegacyLedgerMigration.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+      - ARTITRADE_ANDROID/ui_tests/test_v106_fresh_paper_epoch.py
+      - .github/workflows/artitrade-v106-fresh-ledger-source-tests.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Compile Python only - NO Android APK or deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/fresh_epoch_reset_v106.py
+          python3 -m py_compile ARTITRADE_ANDROID/ui_tests/test_v106_fresh_paper_epoch.py
+      - name: Run synthetic SQLite reset / live safety / reimport-block regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests" \
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v106_fresh_paper_epoch.py' -v
+      - name: Assert no APK job or GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
+          echo "V106_RESET_SOURCE_ONLY_NO_APK_NO_PHONE_DATA_MUTATION"

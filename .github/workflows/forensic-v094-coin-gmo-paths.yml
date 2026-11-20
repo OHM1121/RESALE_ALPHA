@@ -1,0 +1,33 @@
+name: ARTITRADE v094 read-only coin GMO trend native buy and forced sell paths
+on:
+  push:
+    branches: [fix-artitrade-v094-forced-exits-ma-legacy-partial-chase-20261117]
+    paths: ['.github/workflows/forensic-v094-coin-gmo-paths.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Coin native orderbook fills, stablecoin tick sizes, GMO partial, trend budget
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          a=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((a/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          spans={
+           'd_upbit.py':[(142,170),(2087,2225),(2280,2430),(2542,2573)],
+           'projectgmo/engine.py':[(175,300),(345,425),(426,607)],
+           'd_gmo_runtime.py':[(587,675)],
+           'coin_ma_engine.py':[(1,185)]}
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for name,rr in spans.items():
+              print('===== FILE',name,'=====')
+              lines=z.read(name).decode().splitlines()
+              for lo,hi in rr:
+                print('----- RANGE',lo,hi,'-----')
+                for i in range(lo-1,min(hi,len(lines))):
+                  print('S',name,i+1,lines[i][:350])
+          PY

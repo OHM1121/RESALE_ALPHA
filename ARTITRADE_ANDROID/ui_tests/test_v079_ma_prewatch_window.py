@@ -29,9 +29,14 @@ class V079MAWatchAndEntry(unittest.TestCase):
 
     def test_first_flip_is_preview_only_until_verified_buy_window(self):
         prior=[Decimal('100')]*121
-        before={n:{'delta':Decimal('-0.20')} for n in (*policy.SHORT,120)}
-        current={n:{'delta':Decimal('0.10')} for n in policy.SHORT}
-        current[120]={'delta':Decimal('0.0050')}
+        # v089 requires four short SMA VALUES below MA120 in addition to
+        # the previously verified slope and timing contract.
+        before={n:{'delta':Decimal('-0.20'),'value':Decimal('90')}
+                for n in policy.SHORT}
+        before[120]={'delta':Decimal('-0.20'),'value':Decimal('100')}
+        current={n:{'delta':Decimal('0.10'),'value':Decimal('90')}
+                 for n in policy.SHORT}
+        current[120]={'delta':Decimal('0.0050'),'value':Decimal('100')}
         def fake_slopes(series):
             return before if len(series)==121 else current
         with patch.object(policy,'slopes',side_effect=fake_slopes):
@@ -43,7 +48,8 @@ class V079MAWatchAndEntry(unittest.TestCase):
             for sec in (10,8,5,2):
                 result=policy.upward_transition_on_forming(prior,Decimal('101'),sec)
                 self.assertEqual(result['kind'],'REVERSAL_UP',sec)
-            current[120]['delta']=Decimal('0.0051')
+            # v089: +0.0099 is now inclusive, test strictly over the NEW cap.
+            current[120]['delta']=Decimal('0.0100')
             result=policy.upward_transition_on_forming(prior,Decimal('101'),5)
             self.assertIsNone(result['kind'])
             self.assertEqual(result['reason'],'NO_SIMULTANEOUS_SHORT4_UP_120_DOWN')
@@ -75,7 +81,7 @@ class V079MAWatchAndEntry(unittest.TestCase):
         self.assertIn("abs(submit_now.timestamp()-book['timestamp']/1000)>3",coin_src)
         self.assertIn('not str(key[5]).startswith(\'MA_PREWATCH_\')',trend_src)
         self.assertIn('for(int phase=0;phase<2;phase++)',ui_src)
-        self.assertIn('실제 매수대기 · 원본 주문원장',ui_src)
+        self.assertIn('MA 매수대기',ui_src)
         self.assertIn('사전 관측 · 30~10초 전 · 미주문',ui_src)
         self.assertEqual(policy.MAX_UP_FILL_DELAY_SECONDS,15)
 

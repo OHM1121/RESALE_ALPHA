@@ -1,0 +1,36 @@
+name: ARTITRADE all-strategy read-only source mirror for root-cause audit
+on:
+  push:
+    branches: [audit-artitrade-v007-all-strategies-antigravity-gemini-20261119]
+    paths:
+      - .github/workflows/artitrade-v007-full-strategy-source-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mirror-original-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Create source-only tarball without user/phone/secret data
+        run: |
+          set -euo pipefail
+          tar -czf ARTITRADE_ALL_STRATEGY_SOURCE_AUDIT_V007.tar.gz \
+            ARTITRADE_ANDROID/app/src/main/python \
+            ARTITRADE_ANDROID/app/src/main/java \
+            ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 \
+            ARTITRADE_ANDROID/ui_tests \
+            ARTITRADE_ANDROID/app/build.gradle \
+            docs/artitrade tools/artitrade \
+            AGENTS.md CLAUDE.md GEMINI.md .agents/rules .github/workflows
+          tar -tzf ARTITRADE_ALL_STRATEGY_SOURCE_AUDIT_V007.tar.gz | wc -l
+          sha256sum ARTITRADE_ALL_STRATEGY_SOURCE_AUDIT_V007.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V007_ALL_STRATEGY_READONLY_SOURCE
+          path: ARTITRADE_ALL_STRATEGY_SOURCE_AUDIT_V007.tar.gz
+          if-no-files-found: error
+          retention-days: 7

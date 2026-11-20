@@ -60,10 +60,18 @@ def dump(label):
     name=capture(label)
     for attempt in range(4):
         try:
-            adb("shell","uiautomator","dump","/sdcard/artitrade_ui.xml",timeout=35)
-            raw=subprocess.run(["adb","exec-out","cat","/sdcard/artitrade_ui.xml"],
-                               capture_output=True,timeout=25,check=True).stdout
-            if b"<hierarchy" not in raw:raise AssertionError("UI hierarchy missing")
+            # Android 15 uiautomator intermittently ignores a custom XML
+            # destination. The supported default is /sdcard/window.xml.
+            # Remove it BEFORE every dump so a stale file cannot pass a test.
+            xml_target="/sdcard/window.xml"
+            adb("shell","rm","-f",xml_target,timeout=15)
+            diagnostic=adb("shell","uiautomator","dump",timeout=35,check=False)
+            raw=subprocess.run(["adb","exec-out","cat",xml_target],
+                               capture_output=True,timeout=25,check=False).stdout
+            if b"<hierarchy" not in raw:
+                (BASE/f"{SCREENSHOT_COUNT:02d}_{name}_xml_failure.txt").write_text(
+                    diagnostic+"\n"+adb("shell","ls","-l",xml_target,check=False),encoding="utf-8")
+                raise AssertionError("Fresh default UI hierarchy unavailable")
             (BASE/f"{SCREENSHOT_COUNT:02d}_{name}.xml").write_bytes(raw)
             return ET.fromstring(raw)
         except Exception as exc:
@@ -113,14 +121,30 @@ def choose(label,old=None,checks=4):
         tree=dump("scroll_to_"+label+"_"+str(i))
     raise AssertionError("Could not navigate to "+label+"; visible="+str(describe(tree)[-45:]))
 
-def check_screen(label,expected,scroll=2):
+def check_screen(label,expected,scroll=2,drawer=False):
     tree=dump(label)
     seen=list(expected)
     for i in range(scroll+1):
         seen=[word for word in seen if not contains(tree,word)]
         if not seen:return tree
         if i<scroll:
-            adb("shell","input","swipe","1050","900","1050","380","330")
+            if drawer:
+                # The settings panel is right-aligned and only dp(380) wide.
+                # The old fixed x=1050 swipe was OUTSIDE the drawer on
+                # 2340px-wide Android 15 and never scrolled the export bars.
+                # Target the actual right-hand ScrollView, not its dim scrim.
+                size=adb("shell","wm","size",check=False)
+                import re
+                found=re.search(r"(?:Override|Physical) size:\\s*(\\d+)x(\\d+)",size)
+                width=int(found.group(1)) if found else 1920
+                height=int(found.group(2)) if found else 1080
+                x=width-max(80,min(140,width//12))
+                y1=max(180,min(height-90,int(height*.82)))
+                y2=max(50,min(int(height*.26),y1-160))
+                adb("shell","input","swipe",str(x),str(y1),str(x),
+                    str(y2),"460")
+            else:
+                adb("shell","input","swipe","1050","900","1050","380","330")
             time.sleep(.4)
             tree=dump(label+"_scroll_"+str(i))
     raise AssertionError(label+" missing "+str(seen)+"; visible="+str(describe(tree)[-50:]))
@@ -310,7 +334,7 @@ def real_boot():
     opened=False
     for attempt in range(5):
         tree=dump("v080_settings_drawer_probe_"+str(attempt))
-        if contains(tree,"내보내기 진행 상황") or contains(tree,"오류 이력   ·"):
+        if contains(tree,"주식 설정") and contains(tree,"운용 설정   ·"):
             opened=True
             break
         print("V080_DRAWER_GEAR_TAP_RETRY",attempt+1,
@@ -321,8 +345,13 @@ def real_boot():
     if not opened:
         raise AssertionError("REAL_SETTINGS_DRAWER_NOT_OPENING_AFTER_RETRIES")
     check_screen("v076_export_progress_drawer",
-                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4)
-    print("V076_RIGHT_DRAWER_EXPORT_PROGRESS_BARS_VISIBLE",flush=True)
+                 ["오류이력 ZIP 추출","연구이력 ZIP 추출"],scroll=4,drawer=True)
+    check_screen("v088_scoped_error_buttons",
+                 ["코인 오류 추출","주식 오류 추출","통합 오류 추출"],
+                 scroll=4,drawer=True)
+    if contains(dump("v088_error_screen_absent"),"오류 이력   ·"):
+        raise AssertionError("V088_PRIVATE_ERRORS_MUST_NOT_HAVE_VISIBLE_ERROR_HISTORY_TAB")
+    print("V088_THREE_SCOPED_ERROR_EXPORT_BUTTONS_AND_NO_ERROR_HISTORY_TAB_PASS",flush=True)
     # Touch the dark scrim to the left of the right-aligned drawer.
     # Its close icon may be offscreen after scrolling the long drawer.
     adb("shell","input","tap","14","430")
@@ -347,6 +376,22 @@ def real_boot():
     independent=adb("shell","run-as",PACKAGE,"ls","-l",wallet,check=False,timeout=15)
     if "market_trend_wallet_v054.sqlite3" not in independent:
         raise AssertionError("MT54_INDEPENDENT_WALLET_NOT_INITIALIZED_AFTER_REAL_BOOT")
+    # This is the actual service-enabled APK, with both strategy engines
+    # started. Verify the new atomic display snapshot was published without
+    # blocking foreground order workers or restarting the Android process.
+    view_file="files/artitrade_view_record_snapshot_v087.json"
+    view=adb("shell","run-as",PACKAGE,"ls","-l",view_file,check=False,timeout=15)
+    if "artitrade_view_record_snapshot_v087.json" not in view:
+        raise AssertionError("V087_SERVICE_ATOMIC_UI_RECORD_NOT_PUBLISHED")
+    health=adb("shell","run-as",PACKAGE,"cat",
+        "shared_prefs/artitrade_process_health_v087.xml",check=False,timeout=15)
+    if "last_memory_sample" not in health:
+        raise AssertionError("V087_ANDROID_MEMORY_SAMPLE_NOT_PERSISTED")
+    memory=adb("shell","dumpsys","meminfo",PACKAGE,timeout=45,check=False)
+    (BASE/"v087_service_memory_pss.txt").write_text(memory,encoding="utf-8")
+    if "TOTAL" not in memory:
+        raise AssertionError("V087_SERVICE_PROCESS_MEMORY_NOT_REPORTED")
+    print("V087_REAL_PROCESS_HEALTH_AND_ATOMIC_VIEW_STORE_PASS",flush=True)
     verify_no_fatal("real_boot")
 
 def fixtures():
@@ -360,6 +405,10 @@ def fixtures():
     adb("shell","am","force-stop",PACKAGE)
     print(adb("install","-r",str(fixture_apk),timeout=180),flush=True)
     adb("shell","am","force-stop",PACKAGE)
+    # This is an isolated emulator fixture. Ensure seeded historical records
+    # are selected instead of a real-boot private atomic file from the prior APK.
+    adb("shell","run-as",PACKAGE,"rm","-f",
+        "files/artitrade_view_record_snapshot_v087.json",check=False)
     put_pref("artitrade_local_records_v075",{
         "records":json.dumps(fixture(),ensure_ascii=False,separators=(",",":")),
         "updated_at":int(time.time()*1000)})

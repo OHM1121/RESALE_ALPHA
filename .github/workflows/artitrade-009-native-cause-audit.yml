@@ -1,0 +1,39 @@
+name: ARTITRADE v009 read-only native 0D, GMO, MA and REST retry audit
+on:
+  push:
+    branches: [fix-artitrade-009-v007-forensic-rootcause-20261119]
+    paths: [.github/workflows/artitrade-009-native-cause-audit.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit only exact vendor code method contracts; no broker keys or trading
+        run: |
+          python3 - <<'PY'
+          import zipfile,io,base64,ast,re
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for name in ['d_live.py','d_gmo_runtime.py','d_minute_repair_fast.py','d_v19_portfolio.py','android_live_bridge.py','projectgmo/engine.py']:
+                  if name not in z.namelist():continue
+                  lines=z.read(name).decode('utf8').splitlines()
+                  print('MODULE',name,len(lines))
+                  tree=ast.parse('\n'.join(lines))
+                  wanted=re.compile(r'(book|quote|depth|_0d|_0b|subscribe|fix14|fix15|higher.frame|minute.repair|repair|_post|_d1|on_tick|fetch|open|retry|refresh|liveness|_new_tick|reg)',re.I)
+                  for node in ast.walk(tree):
+                      if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and wanted.search(node.name):
+                          print('FUNCTION',name,node.name,node.lineno,node.end_lineno)
+                          for n in range(node.lineno-1,min(node.end_lineno,node.lineno+115)):
+                              print(f'{n+1}: {lines[n]}')
+                  for i,line in enumerate(lines):
+                      if 'FIX14_' in line or 'fix14_' in line or '0D' in line and 'quote' in line.lower():
+                          print('HIT',name,i+1,lines[max(i-2,0):min(i+3,len(lines))])
+          PY

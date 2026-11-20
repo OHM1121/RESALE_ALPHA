@@ -61,3 +61,30 @@ def status(at=None):
 
 def is_regular_open(at=None):
     return status(at)[0]
+
+
+def venue_bounds(at=None,venue="KRX"):
+    """Explicit per-date exchange schedule, not a recurring exam-day rule.
+
+    All exceptional sessions have a FULL ISO date. Unlisted dates use the
+    normal official schedule; fresh broker 0B/0D remains mandatory to trade.
+    """
+    if at is None:now=dt.datetime.now(KST)
+    elif isinstance(at,dt.datetime):now=at.astimezone(KST) if at.tzinfo else at.replace(tzinfo=KST)
+    elif isinstance(at,dt.date):now=dt.datetime.combine(at,dt.time(12,0),KST)
+    else:now=dt.datetime.fromtimestamp(float(at),KST)
+    if venue=="KRX":
+        return SPECIAL_SESSIONS.get(now.date().isoformat(),(START,END))
+    if venue=="NXT":
+        if now.date().isoformat()=="2026-11-19":return None
+        return (8*60,8*60+30)
+    return None
+
+
+def in_regular_clock(at,venue="KRX"):
+    """Clock gate only. Never asserts market open or orders executable."""
+    v=venue_bounds(at,venue)
+    if v is None:return False
+    t=at.astimezone(KST) if at.tzinfo else at.replace(tzinfo=KST)
+    m=t.hour*60+t.minute
+    return v[0]<=m<v[1]

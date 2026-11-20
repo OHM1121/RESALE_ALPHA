@@ -234,6 +234,9 @@ class TrendWallet:
     def buy(self,market,strategy,frame,symbol,name,ask,ask_size,at,bar_key,
             rsi20_live):
         """Atomic parent cash allocation after explicit broker FOK confirmation."""
+        # Parent wallet also serves non-Trend owners; only Trend 5m retires.
+        if strategy == 'trend' and frame == '5m':
+            return None,'TREND_5M_RETIRED_NO_NEW_BUY'
         event_key="MT43:BUY:"+market+":"+strategy+":"+frame+":"+symbol+":"+str(bar_key)
         with self.order_lock:
             if self.native_owned(market,symbol) or self.trend_owned(market,symbol):

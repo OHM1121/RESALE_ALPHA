@@ -13,7 +13,16 @@ final class RuntimeCrashStore {
     private static final String PREF="artitrade_runtime_faults";
     private static final String KEY="items";
     private final SharedPreferences prefs;
-    RuntimeCrashStore(Context c){prefs=c.getApplicationContext().getSharedPreferences(PREF,Context.MODE_PRIVATE);}
+    private final Context appContext;
+    RuntimeCrashStore(Context c){
+        appContext=c.getApplicationContext();
+        prefs=appContext.getSharedPreferences(PREF,Context.MODE_PRIVATE);
+    }
+    private String appVersion(){
+        try{return appContext.getPackageManager().getPackageInfo(
+            appContext.getPackageName(),0).versionName;}
+        catch(Exception e){return "UNKNOWN_INSTALLED_VERSION";}
+    }
 
     synchronized void add(String stage,Throwable error){
         try{
@@ -21,6 +30,7 @@ final class RuntimeCrashStore {
             JSONArray out=new JSONArray();
             JSONObject row=new JSONObject()
                 .put("at",System.currentTimeMillis())
+                .put("app_version",appVersion())
                 .put("stage",stage==null?"":stage)
                 .put("type",error==null?"":error.getClass().getName())
                 .put("message",safe(error==null?"":String.valueOf(error.getMessage()),600))

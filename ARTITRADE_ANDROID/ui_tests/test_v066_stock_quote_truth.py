@@ -13,13 +13,13 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'app/src/main/python'))
 import stock_quote_truth_v066 as q
 
-T=dt.datetime(2026,11,16,10,45,0,tzinfo=q.KST)
+T=(dt.datetime.now(q.KST)-dt.timedelta(seconds=2)).replace(microsecond=0)
 
 
 def tick(symbol='005930',venue='KRX',price=73400,when=T,
          receive=T,exchange=None):
     exchange=exchange if exchange is not None else when
-    return (symbol,'KOSPI','삼성전자','20261116104500',price,123,
+    return (symbol,'KOSPI','삼성전자',receive.strftime('%Y%m%d%H%M%S'),price,123,
             receive.isoformat(),venue,exchange.isoformat(),price+100,price-100)
 
 

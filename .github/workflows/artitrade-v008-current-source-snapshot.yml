@@ -1,0 +1,26 @@
+name: ARTITRADE V008 current all-strategy source inspection snapshot
+on:
+  push:
+    branches: [audit-artitrade-v007-all-strategies-antigravity-gemini-20261119]
+    paths:
+      - .github/workflows/artitrade-v008-current-source-snapshot.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Only tracked source, no user data
+        run: |
+          set -euo pipefail
+          tar -czf ARTITRADE_V008_CURRENT_SOURCE.tar.gz ARTITRADE_ANDROID/app/src/main/python ARTITRADE_ANDROID/app/src/main/java ARTITRADE_ANDROID/app/src/main/assets/strategy_v070 ARTITRADE_ANDROID/ui_tests ARTITRADE_ANDROID/app/build.gradle docs/artitrade tools/artitrade AGENTS.md CLAUDE.md GEMINI.md .agents/rules
+          sha256sum ARTITRADE_V008_CURRENT_SOURCE.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V008_CURRENT_SOURCE
+          path: ARTITRADE_V008_CURRENT_SOURCE.tar.gz
+          retention-days: 3

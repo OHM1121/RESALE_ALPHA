@@ -105,6 +105,16 @@ def install(core):
 
     original_start=core.Runtime.start
     def tracking_start(self):
+        # Preserve the native Runtime.start idempotency guarantee across
+        # stacked Trend/recovery/post-exit decorators. A second call to
+        # start must not spawn a second research writer/subscription owner.
+        if getattr(self,"started",False):
+            return original_start(self)
+        prior=getattr(self,"post_sale_tracker_v053",None)
+        if prior is not None:
+            try:prior.stop()
+            except Exception as e:self._err("post_sale_tracker_previous_stop",e)
+            self.post_sale_tracker_v053=None
         outcome=original_start(self)
         try:
             tracker=Tracker(self.root)
@@ -132,8 +142,8 @@ def install(core):
     core.Runtime.stop=tracking_stop
 
     original_hub=core.Runtime.hub_records
-    def tracking_hub(self):
-        raw=original_hub(self)
+    def tracking_hub(self,for_ui=False):
+        raw=original_hub(self,for_ui=for_ui)
         tracker=getattr(self,"post_sale_tracker_v053",None)
         if not tracker:return raw
         try:

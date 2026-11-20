@@ -1,6 +1,6 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
-  "source_baseline": "fix-artitrade-007-v005-errorlog-rootcause-governance-20261119",
+  "source_baseline": "0.0.18 11.18 rev1 source candidate from 0.0.17 exact release SHA 85b20dc39f247c9d7883c86977af62eab4ac5098; original 82 vendor modules retained; original 8 wallet flows protected; native 0.0.18 CI ongoing; DEVICE_VERIFIED=false.",
   "updated": "2026-11-19",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
@@ -21,7 +21,10 @@
       "issues": [
         53,
         55,
-        60
+        60,
+        96,
+        104,
+        106
       ],
       "contract": "No source-ready proof from a zero-length array; UI snapshot != original execution DB."
     },
@@ -43,7 +46,11 @@
       "issues": [
         53,
         54,
-        60
+        60,
+        62,
+        65,
+        70,
+        75
       ],
       "contract": "Only STARTED Python engine makes trading live. Failure does not masquerade as healthy heartbeat."
     },
@@ -72,7 +79,8 @@
         "FRESH_EPOCH"
       ],
       "issues": [
-        60
+        60,
+        95
       ],
       "contract": "Monotonic fills cannot regress; fail closed only after consistent proof, no automatic reset."
     },
@@ -154,7 +162,10 @@
       ],
       "issues": [
         53,
-        55
+        55,
+        63,
+        65,
+        96
       ],
       "contract": "No full JSON on order lock, source errors not masked; zero ledger data != missing source."
     },
@@ -170,22 +181,39 @@
       "issues": [
         57,
         58,
-        60
+        60,
+        62,
+        68,
+        71,
+        72,
+        77,
+        80,
+        87,
+        91,
+        93,
+        97,
+        104
       ],
-      "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D."
+      "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
     {
       "id": "COIN_FEED",
       "kind": "python",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
-        "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py"
+        "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_held_depth_v014.py"
       ],
       "depends_on": [],
       "issues": [
         56,
         59,
-        60
+        60,
+        62,
+        67,
+        78,
+        98,
+        107
       ],
       "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified."
     },
@@ -199,11 +227,24 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "MARKET_SCORE"
+        "MARKET_SCORE",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         58,
-        60
+        60,
+        68,
+        71,
+        75,
+        79,
+        80,
+        91,
+        92,
+        94,
+        95,
+        97,
+        98,
+        104
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -217,11 +258,21 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "MA_TICK_QUEUE"
+        "MA_TICK_QUEUE",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         57,
-        60
+        60,
+        68,
+        73,
+        79,
+        80,
+        92,
+        94,
+        95,
+        98,
+        107
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
     },
@@ -235,7 +286,8 @@
         "STOCK_FEED"
       ],
       "issues": [
-        57
+        57,
+        93
       ],
       "contract": "One latest genuine tick per symbol, sorted by exchange timestamp; no buy from cached/rest prices."
     },
@@ -249,13 +301,22 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "UI_RECORDS"
+        "UI_RECORDS",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         55,
-        60
+        60,
+        65,
+        68,
+        77,
+        79,
+        80,
+        85,
+        89,
+        90
       ],
-      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet."
+      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy. Overlay preplan fixes are partial; native first opening 09:00 guard may prevent 10:00 venue official open (#80)."
     },
     {
       "id": "STOCK_CLOSE",
@@ -266,10 +327,15 @@
       ],
       "depends_on": [
         "STOCK_FEED",
-        "EXECUTION"
+        "EXECUTION",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
-        60
+        60,
+        68,
+        69,
+        79,
+        80
       ],
       "contract": "Original CW/close betting engine and native source; no duplicative WS login."
     },
@@ -283,11 +349,21 @@
       "depends_on": [
         "STOCK_FEED",
         "EXECUTION",
-        "MARKET_SCORE"
+        "MARKET_SCORE",
+        "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
         61,
-        60
+        60,
+        68,
+        70,
+        72,
+        73,
+        78,
+        79,
+        80,
+        98,
+        107
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
     },
@@ -304,7 +380,9 @@
       ],
       "issues": [
         59,
-        60
+        60,
+        79,
+        98
       ],
       "contract": "Four original reference wallets 5m/30m/60m/day, verified ticker/book."
     },
@@ -322,7 +400,16 @@
       "issues": [
         56,
         59,
-        60
+        60,
+        67,
+        73,
+        75,
+        79,
+        92,
+        94,
+        95,
+        98,
+        107
       ],
       "contract": "Missing source high/low rejected; never abort other eligible book work."
     },
@@ -340,9 +427,16 @@
       ],
       "issues": [
         61,
-        60
+        60,
+        70,
+        72,
+        73,
+        78,
+        79,
+        98,
+        107
       ],
-      "contract": "New BUY 30m/60m/day only; prior 5m sells intact."
+      "contract": "New BUY 30m/60m/day only; prior 5m sells intact. Coin MarketTrend RSI20 requires actual latest continuous official completed bars and durable verified <=30 within 24h before Bollinger MID angle/touch."
     },
     {
       "id": "MARKET_SCORE",
@@ -356,7 +450,9 @@
         "COIN_FEED"
       ],
       "issues": [
-        60
+        60,
+        63,
+        97
       ],
       "contract": "Trading authority checks source freshness; scoreSnapshotV005 is display-only."
     },
@@ -365,15 +461,33 @@
       "kind": "python+java",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
-        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java"
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java",
+        "ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py"
       ],
       "depends_on": [
         "ANTI_ROLLBACK"
       ],
       "issues": [
-        60
+        60,
+        62,
+        63,
+        65,
+        67,
+        75,
+        77,
+        78,
+        79,
+        80,
+        90,
+        92,
+        94,
+        95,
+        97,
+        98,
+        104,
+        107
       ],
-      "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative."
+      "contract": "Original SQLite wallet/orders/fills, idempotent event keys. Analytical DuckDB is NOT authoritative. NEW LEGACY target sell intent is NOT broker ACK or a resting order; true staged target preorder/rollover is tracked in #79."
     },
     {
       "id": "OPERATION_CONFIG",
@@ -402,7 +516,9 @@
         "ANTI_ROLLBACK"
       ],
       "issues": [
-        54
+        54,
+        65,
+        88
       ],
       "contract": "KST fixed UTC+9 on Android; WAL-safe local snapshot and verify before publish."
     },
@@ -418,7 +534,9 @@
         "COIN_FEED"
       ],
       "issues": [
-        60
+        60,
+        69,
+        70
       ],
       "contract": "Post-sale high tracking is research, never a broker fill/auto-sell."
     },
@@ -435,9 +553,571 @@
         "EXECUTION"
       ],
       "issues": [
-        60
+        60,
+        69
       ],
       "contract": "Read-only analyses and storage; incomplete evidence must stay unknown, not fabricated."
+    },
+    {
+      "id": "STOCK_SHARED_WS_OWNER",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
+        "ARTITRADE_ANDROID/app/src/main/python/stock_priority_runtime_v093.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED"
+      ],
+      "issues": [
+        68,
+        77
+      ],
+      "contract": "Exactly one Kiwoom 0B/0D subscription owner for all 5 stock strategies. GMO prewarm may use scheduled opening selection but cannot replace protected/priority symbols or exceed 200. On delayed KRX open preserve existing held/pending and all-strategy subscription pins while GMO D+1 gets highest preopen candidate protection."
+    },
+    {
+      "id": "CLOSE_FOLLOWUP_ASOF",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/close_followup_integrity_v008.py"
+      ],
+      "depends_on": [
+        "STOCK_CLOSE",
+        "AI_RESEARCH"
+      ],
+      "issues": [
+        69,
+        75
+      ],
+      "contract": "A due research label may be DONE only from native genuine near-due quote or source-validated same-day completed 3m bar. Late REST/daily price cannot backfill an earlier due."
+    },
+    {
+      "id": "TREND_SHARED_OWNERSHIP",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/unified_recovery_v092.py",
+        "ARTITRADE_ANDROID/app/src/main/python/post_exit_runtime_v053.py"
+      ],
+      "depends_on": [
+        "STOCK_TREND",
+        "COIN_TREND",
+        "SERVICE"
+      ],
+      "issues": [
+        70,
+        72,
+        75
+      ],
+      "contract": "Coordinator.lock protects all shared position/virtual ownership snapshots/assign/pop; original Runtime.start idempotent, no double workers or stale owners."
+    },
+    {
+      "id": "AT_HISTORY_RECOVERY",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/stock_pending_recovery_v017.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_FEED"
+      ],
+      "issues": [
+        58,
+        71,
+        86,
+        104
+      ],
+      "contract": "Verified KRX completed parent bars are required for AT; DNS/history REST errors are not zero candidates and cannot authorize synthetic fills. Retries presently unverified. 0.0.17 KRX original REST retry after DNS/rate/backpressure/55s throttle, prioritize native PENDING, prevent only incorrectly reblocking original VERIFIED audits; unverified states remain BLOCKED and never produce synthetic fills."
+    },
+    {
+      "id": "GMO_D1_RECOVERY_V008",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
+        "ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py",
+        "ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py"
+      ],
+      "depends_on": [
+        "STOCK_GMO",
+        "STOCK_FEED",
+        "EXECUTION",
+        "STOCK_SHARED_WS_OWNER",
+        "PYTHON_RUNTIME"
+      ],
+      "issues": [
+        80,
+        82
+      ],
+      "contract": "True D+1 date, verified live exchange 0B, native KRX session by exact date; replay/restart preplan rearmed, no substitute for official opener, verified D close independent fallback, never automatic live-enable, broker order ID only from native adapter."
+    },
+    {
+      "id": "BROKER_SELL_READONLY_V008",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/broker_sell_receipt_v008.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "STRATEGY_BRIDGE",
+        "SERVICE",
+        "ACTIVITY_UI"
+      ],
+      "issues": [
+        79,
+        83
+      ],
+      "contract": "Explicit user-only read-only Kiwoom ka10075; authenticated open SELL orders displayed with original broker order IDs; APP 1/2 intents never claimed actual broker-registered without matching persisted official ACK, no placing or cancelling orders."
+    },
+    {
+      "id": "TREND_PIXEL_ANGLE_V008",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py"
+      ],
+      "depends_on": [
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "issues": [
+        78,
+        84
+      ],
+      "contract": "Bollinger(20,1.5) mid visual slope = atan2(pixel projected price change, candle pixel pitch); fixed 21-close viewport convention saved with decision; exact external chart screenshot angle depends external zoom and axis, not asserted. RSI 24h evidence remains required."
+    },
+    {
+      "id": "KRX_PARENT_COVERAGE_V009",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py",
+        "ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "STOCK_AT",
+        "AT_HISTORY_RECOVERY"
+      ],
+      "issues": [
+        80,
+        86
+      ],
+      "contract": "Original d_engine bar_end, is_krx_regular_reference, complete_session_coverage and d_multiframe_recovery_fix14 expected_last_parent use verified exact-date KRX opening/close, not fixed 09:00. No synthetic parent/fill. 2026-11-19 KRX 10:00; other ordinary days 09:00."
+    },
+    {
+      "id": "GMO_0D_RESTART_V009",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py",
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "STOCK_GMO",
+        "STOCK_SHARED_WS_OWNER",
+        "EXECUTION"
+      ],
+      "issues": [
+        82,
+        85
+      ],
+      "contract": "Native GMO priority phase matches KRX venue date; verified source same-session 0D re-REG after ANY reconnect during live session, with same socket and no duplicate account sessions. Missing/zero qty means no order/fill; 0B only is not executable ask depth."
+    },
+    {
+      "id": "STOCK_HISTORY_REST_CIRCUIT_V009",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/artitrade_history_dns_circuit_v009.py",
+        "ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_FEED",
+        "STOCK_GMO",
+        "STOCK_MA",
+        "EXECUTION"
+      ],
+      "issues": [
+        58,
+        71,
+        87
+      ],
+      "contract": "Only optional past candle REST retries share DNS-only exponential cooldown; stock 0B/0D and exits are never suspended; no future history filled or fake data. Defer slow rest if quote backlog; same current SQLite retained."
+    },
+    {
+      "id": "DAILY_REMOTE_BACKUP_PROTOCOL_V009",
+      "kind": "java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LocalHubClient.java"
+      ],
+      "depends_on": [
+        "SERVICE",
+        "BACKUP"
+      ],
+      "issues": [
+        88
+      ],
+      "contract": "If PC MSERVER reports unknown_endpoint for daily backup, no verified backup claim or done_date; six-hour retry backoff (not every 5min), retain original SQLite/WAL. PC server endpoint update remains required."
+    },
+    {
+      "id": "GMO_D1_PRICE_OR_PAPER_PROOF_V010",
+      "kind": "python+native",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
+        "ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py"
+      ],
+      "depends_on": [
+        "STOCK_GMO",
+        "GMO_D1_RECOVERY_V008",
+        "EXECUTION",
+        "STOCK_FEED"
+      ],
+      "issues": [
+        89
+      ],
+      "contract": "Independent genuine verified D close strict-below OR verified opening stage ceilings; original managed PAPER wallet only; absent 0D can use fresh SAME KRX 0B exchange/receipt, >=1 observed shares, volume-capped <=10% PAPER proxy, never real/broker ACK, no stale/no-tick orders, no cross-venue book."
+    },
+    {
+      "id": "GMO_RECONNECT_RECORD_HOOK_V010",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/entry_plan_hooks_v107.py",
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py"
+      ],
+      "depends_on": [
+        "STOCK_GMO",
+        "PYTHON_RUNTIME",
+        "EXECUTION"
+      ],
+      "issues": [
+        90
+      ],
+      "contract": "Research-only _gmo_preplan capture forwards recovery bool to Preplanner.prepare unchanged, preserving result and D+1 original order owner; must not crash when live KRX 0B returns after app restart."
+    },
+    {
+      "id": "GMO_AND_AT_NATIVE_CLOSECLOCK_V010",
+      "kind": "native+python",
+      "files": [
+        "ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py",
+        "ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py"
+      ],
+      "depends_on": [
+        "STOCK_GMO",
+        "STOCK_AT",
+        "STOCK_FEED",
+        "EXECUTION",
+        "AT_HISTORY_RECOVERY"
+      ],
+      "issues": [
+        91
+      ],
+      "contract": "projectgmo/engine.py paper_match & 0B proxy and d_gmo_runtime residual D+1 watch respect daily KRX verified venue, d_live secondary parent coverage requires only actual session intervals. Date-specific 2026-11-19 10:00-16:30; no yearly exam date assumed. All other 8 strategies regressions remain compulsory."
+    },
+    {
+      "id": "NL1118_PAPER_RESTING_V011",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_resting.py",
+        "ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_MA",
+        "EXECUTION",
+        "COIN_FEED",
+        "STOCK_FEED"
+      ],
+      "issues": [
+        92,
+        94
+      ],
+      "contract": "Two durable 30%/35% PAPER RESTING rows created at verified native BUY (per wallet). SELL allocation requires original native SELL receipt ID/qty/price; repeated receipt ignored. No real broker LIMIT placement or remote receipt; LIVE is PLAN_NOT_SUBMITTED. Protective exits cancel pending PAPER targets; original wallets own cash/shares and the historical ledger remains intact."
+    },
+    {
+      "id": "NL1118_OLD_POLICY_RETIRE_V011",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v061_coin_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/nl1118_strict_entry_v012.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_MA",
+        "EXECUTION"
+      ],
+      "issues": [
+        94,
+        95
+      ],
+      "contract": "GMO and CLOSE/CW are exempt. No old V2.6/SR1/MA V061/V067 bearish/old MT exit can auto trade; missing NEW LEGACY sidecars fail closed without erasing or reclassifying prior actual fills. Full verified migration of pre-policy open holdings remains open. 0.0.12 install-last strict MA source gate retires old completed-bar stock+coin scanners and retains independent first upward close-minus-10..2s execution. No GMO/CW install modification."
+    },
+    {
+      "id": "NL1118_PAPER_LEGACY_PURGE_V012",
+      "kind": "java+python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java",
+        "ARTITRADE_ANDROID/app/src/main/python/ledger_rollback_guard_v002.py",
+        "ARTITRADE_ANDROID/app/src/main/python/nl1118_strict_entry_v012.py"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "ANTI_ROLLBACK",
+        "STOCK_AT",
+        "STOCK_MA",
+        "COIN_MA",
+        "NL1118_OLD_POLICY_RETIRE_V011"
+      ],
+      "issues": [
+        95
+      ],
+      "contract": "Explicit user-authorized one-time PAPER historical removal for six owned wallets and legacy MA archives; no mutation to GMO or CW database. Validate old immutable execution and fresh epoch before rebasing independent witness only for declared affected files, restore exact SQLite backups on interruption, reverse legacy cash/realized and remove linked position receipts. Broker/unknown histories fail closed; device unverified."
+    },
+    {
+      "id": "HOLDING_FRAME_BADGE_V012",
+      "kind": "java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "ACTIVITY_UI",
+        "UI_RECORDS"
+      ],
+      "issues": [
+        96
+      ],
+      "contract": "Left holding status square renders original wallet timeframe 5분/30분/60분/일봉; remove duplicate timeframe from stock/coin symbol text. Nonframe GMO/CW categories shown only as grounded source strategy category. Pending/SELL UI unchanged. Integrated holdings also show timeframe on the left, no missing chart origin."
+    },
+    {
+      "id": "STOCK_AT_SIGNED_SCORE_ROOT_V013",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py",
+        "ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v013_stock_at_pending_to_native_buy.py"
+      ],
+      "depends_on": [
+        "MARKET_SCORE",
+        "STOCK_AT",
+        "STOCK_FEED",
+        "EXECUTION"
+      ],
+      "issues": [
+        97,
+        104
+      ],
+      "contract": "At original KRX D19 native BUY, resolve signed market worker at shared app root instead of stock ledger root; cold-launch worker before native stock tick. Score must be fresh signed >0 at EXACT BUY, never reuse stale snapshot, fabricate real 0B/0D/5m or bypass native wallet. Order rejection classifies score missing from non-positive, and complete transaction commits a verified native PAPER BUY receipt + NEW LEGACY 30/35 resting plans. Nondeterministic phone session remains separate from CI evidence. GMO and CW owner untouched."
+    },
+    {
+      "id": "POSITION_UID_V015",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/position_uid_v015.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "EXECUTION",
+        "UI_RECORDS",
+        "PYTHON_RUNTIME",
+        "ANTI_ROLLBACK"
+      ],
+      "issues": [
+        101
+      ],
+      "contract": "Assign stable owner/epoch/original-native-position+BUY-receipt UIDs for eight strategy wallets, including historical OPEN/CLOSED; never replace original PK or invent fill links. UI display only. Preserve GMO/CW cash, policy and sell owner."
+    },
+    {
+      "id": "CFG_SINGLE_PAPER_CLEANUP_V015",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/cfg_single_paper_cleanup_v015.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java",
+        "ARTITRADE_ANDROID/app/src/main/python/legacy_purge_v012.py"
+      ],
+      "depends_on": [
+        "COIN_MA",
+        "EXECUTION",
+        "ANTI_ROLLBACK",
+        "NL1118_PAPER_LEGACY_PURGE_V012"
+      ],
+      "issues": [
+        92,
+        98,
+        100
+      ],
+      "contract": "User-authorized exactly-one historic KRW-CFG coin MA 5m PAPER failed-exit exception only; require unique source BUY/sidecar/entry evidence. Back up original wallet, reverse only target cash/realized and linked records, rebase independent witness; no other CFG, GMO/CW/REAL, guessed fills or bulk ticker deletion. Real device unverified."
+    },
+    {
+      "id": "PRELOAD_VERIFIED_V016",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/preload_audit_v016.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "COIN_FEED",
+        "UI_RECORDS",
+        "SERVICE",
+        "TREND_SHARED_OWNERSHIP"
+      ],
+      "issues": [
+        102,
+        104,
+        106
+      ],
+      "contract": "Display true original engine preflight: 21 continuous official closes latest including Upbit UPBIT_CLOSED, original quote+0B/0D book and WS, source gate/wallet, measured percent/ETA. Never duplicate socket, order or mark missing as ready; bounded 40s UI escape keeps source recovery. Original variable check-progress is independent of 0.0.17 distinct stock-symbol loading percent."
+    },
+    {
+      "id": "TREND_COST_PROVENANCE_V016",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "STOCK_TREND",
+        "COIN_TREND",
+        "EXECUTION",
+        "UI_RECORDS",
+        "POSITION_UID_V015"
+      ],
+      "issues": [
+        103
+      ],
+      "contract": "Original MT54 native position.entry/BUY receipts/source position_id alone establish cost/return across holdings and SELL fills; proportional original buy fees, net_pnl/percent and independent per-frame PnL; missing linkage labelled not fabricated. Non-live stock saved-mark valued with explicit provenance; ZERO source wallet mutation, thresholds and GMO/CW unchanged."
+    },
+    {
+      "id": "STOCK_PENDING_NATIVE_RETRY_V017",
+      "kind": "python+native",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/stock_pending_recovery_v017.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v017_native_pending_retry.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "AT_HISTORY_RECOVERY",
+        "STOCK_AT_SIGNED_SCORE_ROOT_V013",
+        "EXECUTION"
+      ],
+      "issues": [
+        104
+      ],
+      "contract": "Use existing one Kiwoom client and official native recover_frame; bounded DNS/retry after 55s throttle and priority existing PENDING, preserve source VERIFIED higher-frame audits vs stale global checkpoint. A success return with still BLOCKED audit schedules another retry; never fake BUY, broker fill, candle, account or ORDER."
+    },
+    {
+      "id": "PRELOAD_STOCK_SYMBOLS_V017",
+      "kind": "python+java",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/stock_pending_recovery_v017.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
+        "ARTITRADE_ANDROID/ui_tests/test_v017_stock_preload_progress.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v017_native_pending_retry.py"
+      ],
+      "depends_on": [
+        "STOCK_FEED",
+        "PRELOAD_VERIFIED_V016",
+        "ACTIVITY_UI"
+      ],
+      "issues": [
+        106
+      ],
+      "contract": "Numerator counts uniquely native REST VERIFIED_RESTORED source symbol after actual broker history, denominator freezes original selected KRX scan universe; cannot decrease during rotation/reconnect; 100% is per-symbol load only, never an actual order authorization or full 0B/0D readiness; 40s safe UI exit retained and unresolved repairs remain background."
+    },
+    {
+      "id": "NL1118_REV1_VERIFIED_LOW_STOP_V018",
+      "kind": "python+native",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_rev1_low_close.py",
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v018_rev1_low_close_and_fast_ma.py"
+      ],
+      "depends_on": [
+        "COIN_MA",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "STOCK_FEED",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "issues": [
+        107
+      ],
+      "contract": "User's NEW LEGACY(11.18) rev1 F6/F7 RED: first TP pending no longer full-exits merely on entry-price return. Require exact MA/Trend entry-signal candle reference low from authenticated native completed bar, touch of that low then original or later completed genuine candle CLOSE strictly below low; original fresh broker BID book and native execution receipt required to record sell. No lookahead/ASK-as-bid, cannot treat PAPER_RESTING as broker order. Original reference-bar F5, GMO and CW untouched."
+    },
+    {
+      "id": "MA_COIN_HELD_EXIT_PRIORITY_V018",
+      "kind": "python+native",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/ma_fast_held_exit_v018.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_held_depth_v014.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v018_rev1_low_close_and_fast_ma.py",
+        "ARTITRADE_ANDROID/ui_tests/test_v014_cfg_native_sell_quote_regression.py"
+      ],
+      "depends_on": [
+        "COIN_MA",
+        "COIN_FEED",
+        "EXECUTION"
+      ],
+      "issues": [
+        107
+      ],
+      "contract": "One ORIGINAL Upbit WS; held-first independent polling of new original orderbook at ~120ms best-effort, dedupe genuine timestamp/BID/depth, 3s max age, perform existing MA _process_v067_exits with original ledger, no fabricated fill from candle high or ASK. All native 8 wallet protections and single worker owner unchanged."
     }
-  ]
+  ],
+  "audit_scope": {
+    "focus": [
+      "GMO",
+      "CW/CLOSE",
+      "AT",
+      "MarketTrend",
+      "MA"
+    ],
+    "modes": [
+      "static source",
+      "SQLite error evidence",
+      "20-suite PAPER regression",
+      "GitHub source+Java CI",
+      "real device unresolved",
+      "original-82 native KRX/NXT patch source+CI",
+      "signed arm64 0.0.8 test APK SHA256 99c913a5f3dad481f70fd3293d504bb8aa99cf9bda23372517cbbd8cb243ef59",
+      "0.0.7 actual phone JSON+ZIP 15 original records, read-only local analysis, counts only committed",
+      "0.0.9 phone 12:50 actual 15-source ZIP+SQLite forensic, 8 PAPER regression; new exact error signature 12:23 gmo_paper_tick",
+      "0.0.10 code132 old-signature signed original 82-module same-day KRX/GMO/AT regression, actual Samsung orderbook and live broker fill unverified",
+      "0.0.11 source candidate: 11.18 original workbook physical cell audit, sanitized 2026-11-19 stock+coin SQLite exports, local PAPER-resting + old policy retirement; signed APK and real broker order verification PENDING",
+      "0.0.12 verified schema audit for generated native SQLite wallets, original-account refund logic, explicit user-authorized legacy PAPER purge and left timeframe badge; real device and actual source P&L correction pending CI",
+      "0.0.17 original synthetic KRX PENDING retry + per-symbol 459-source counter, pending real-device verification",
+      "0.0.18 red rev1 F6/F7 original closed-bar low-touch & close-below guard and same original Upbit held-first fast BID-only SELL, original-wallet CI; DEVICE_UNVERIFIED"
+    ],
+    "not_a_completeness_claim": true
+  }
 }

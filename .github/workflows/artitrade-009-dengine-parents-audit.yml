@@ -1,0 +1,29 @@
+name: ARTITRADE v009 KRX parent-series historical minute read-only audit
+on:
+  push:
+    branches: [fix-artitrade-009-v007-forensic-rootcause-20261119]
+    paths: [.github/workflows/artitrade-009-dengine-parents-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect source AST only
+        run: |
+          python3 - <<'PY'
+          import zipfile,io,base64,ast,re
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for name in ('d_engine.py','d_multiframe_recovery_fix14.py','d_minute_repair_fast.py','d_live.py'):
+                  lines=z.read(name).decode('utf8').splitlines()
+                  print('SOURCE',name,len(lines))
+                  tree=ast.parse('\n'.join(lines))
+                  for node in ast.walk(tree):
+                      if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and re.search(r'complete_session_coverage|is_krx_regular_reference|expected_last_parent|missing_regular_minutes|_frame_repair_loop|_minute_repair_loop|bar_end|_repair_gmo_depth_on_existing_ws|_ws_loop|_new_tick|_register_subscriptions',node.name):
+                          print('FUNCTION',name,node.name,node.lineno,node.end_lineno)
+                          for i in range(node.lineno-1,node.end_lineno):print(f'{i+1}: {lines[i]}')
+          PY

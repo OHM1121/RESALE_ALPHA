@@ -323,9 +323,15 @@ class Tracker:
         # Re-reading every candidate and order in every SQLite on a 20-second
         # poll adds load without new evidence. WAL is part of the signature.
         paths=("stock/ARTITRADE_D.sqlite3",
-               "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+               "stock/MA_EPOCH_V067/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
+               "coin/ma_epoch_v067/upbit_paper.sqlite3",
+               "stock/trend/market_trend_wallet_v054.sqlite3",
+               "coin/trend/market_trend_wallet_v054.sqlite3",
+               "stock/MA_EPOCH_V062/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
                "stock/close/AT_CLOSE_PAPER.sqlite3",
                "coin/base/upbit_paper.sqlite3",
+               "coin/ma_epoch_v062/upbit_paper.sqlite3",
+               "stock/STOCK_MA_ENGINE_V1/ma_paper.sqlite3",
                "coin/ma/upbit_paper.sqlite3",
                "stock/PROJECTGMO_V1.0_account_state.json",
                "stock/PROJECTGMO_V1.0_research.sqlite3",
@@ -451,17 +457,25 @@ class Tracker:
 
 
 def _ma_v062_post_exit_report(root,market,limit):
-    """Read only post-reset MA exits; old source tracker remains intact."""
-    from ma_epoch_v062 import epoch_start
-    stamp=epoch_start(root,market)
+    """MA v067 active AND prior v062 original-wallet SELLS after new epoch.
+
+    Preserve old history but do not mislabel a pre-v067 historical sale as
+    current-v067 research. The v095 scan itself still records all confirmed
+    original fills for explicitly selected historical investigations.
+    """
+    from ma_epoch_v067 import epoch_start as v067_start
+    from ma_epoch_v062 import epoch_start as v062_start
+    stamp=v067_start(root,market) or v062_start(root,market)
     if not stamp:
-        return {"ok":False,"schema":SCHEMA,"reason":"MA_NEW_EPOCH_NOT_STARTED"}
+        path=Path(root)/FILE
+        return (Tracker(root).summary(market,'ma',limit) if path.is_file()
+                else {"ok":False,"schema":SCHEMA,"reason":"MA_TRACKER_NOT_STARTED"})
     cutoff=int(dt.datetime.fromisoformat(stamp).timestamp())
     path=Path(root)/FILE
     if not path.is_file():
         return {"ok":True,"schema":SCHEMA,"cohorts":[],"cases":[],
                 "total_cases":0,"ma_epoch_started_at":stamp,
-                "old_ma_post_exit_excluded":True}
+                "pre_epoch_ma_post_exit_excluded":True}
     with closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
                                  uri=True,timeout=4)) as con:
         con.row_factory=sqlite3.Row
@@ -479,7 +493,7 @@ def _ma_v062_post_exit_report(root,market,limit):
           (market,cutoff))]
     return {"ok":True,"schema":SCHEMA,"cohorts":counts,"cases":rows,
             "total_cases":sum(int(x["n"]) for x in counts),
-            "ma_epoch_started_at":stamp,"old_ma_post_exit_excluded":True,
+            "ma_epoch_started_at":stamp,"pre_epoch_ma_post_exit_excluded":True,
             "raw_research_db":FILE,"original_trade_databases_untouched":True}
 
 

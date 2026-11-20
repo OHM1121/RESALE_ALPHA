@@ -68,8 +68,8 @@ def enrich(runtime,payload):
 
 def install(core):
     old=core.Runtime.hub_records
-    def scoped(self):
-        raw=old(self)
+    def scoped(self,for_ui=False):
+        raw=old(self,for_ui=for_ui)
         try:
             payload=json.loads(raw) if isinstance(raw,str) else raw
             if isinstance(payload,dict):

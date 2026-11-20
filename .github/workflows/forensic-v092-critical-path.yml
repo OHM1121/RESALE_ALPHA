@@ -1,0 +1,36 @@
+name: ARTITRADE v092 original quote critical-path audit
+on:
+  push:
+    branches: [fix-artitrade-v092-quote-latency-20261117]
+    paths: ['.github/workflows/forensic-v092-critical-path.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print exact callback timing and subscription code
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          r=Path('ARTITRADE_ANDROID/app/src/main')
+          b=base64.b64decode(''.join((r/'assets/strategy_v070'/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            src={x:z.read(x).decode() for x in z.namelist() if x.endswith('.py')}
+          config={
+            'd_live.py':['_start_market_workers','_desired_subscriptions','_register_subscriptions','_v071_subscription_maintenance','_v071_background_preload','_boot_market','_v071_feed_worker'],
+            'd_upbit.py':['_both_watched_codes','_dispatch_public_book','_dispatch_public_mark','_run_after_preload','_universe','_ws_event_worker'],
+            'at_close_bridge.py':['at_pulse','publish']
+          }
+          for filename,functions in config.items():
+            if filename not in src:continue
+            s=src[filename];ls=s.splitlines();tree=ast.parse(s)
+            for node in ast.walk(tree):
+              if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and node.name in functions:
+                print(f'==METHOD== {filename} {node.name} {node.lineno} {node.end_lineno}')
+                for i in range(node.lineno-1,node.end_lineno):
+                  print('C%04d'%(i+1),ls[i][:260])
+          PY

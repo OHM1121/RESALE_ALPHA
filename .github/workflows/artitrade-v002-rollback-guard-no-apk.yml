@@ -1,0 +1,49 @@
+name: ARTITRADE 0.0.2 monotonic ledger anti-rollback regression - NO APK
+on:
+  push:
+    branches: [artitrade-v106-fresh-paper-ledger-reset-source-only]
+    paths:
+      - .github/workflows/artitrade-v002-rollback-guard-no-apk.yml
+      - ARTITRADE_ANDROID/app/src/main/python/ledger_rollback_guard_v002.py
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/LedgerAntiRollbackV002.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java
+      - ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/FreshEpochGateV106.java
+      - ARTITRADE_ANDROID/ui_tests/test_v002_ledger_rollback_guard.py
+      - ARTITRADE_ANDROID/ui_tests/test_v106_fresh_paper_epoch.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Eight-wallet past-to-present monotonicity and corruption tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ARTITRADE_ANDROID/app/src/main/python/ledger_rollback_guard_v002.py
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_ledger_rollback_guard.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v106_fresh_paper_epoch.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v108_mandatory_first_epoch.py' -v
+      - name: Verify Android-only source compilation, no packaging or signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p ARTITRADE_ANDROID :app:compileUnifiedDebugJavaWithJavac --no-daemon
+          test ! -e ARTITRADE_ANDROID/app/build/outputs/apk
+          echo "0.0.2_PAPER_ROLLBACK_GUARD_JAVA_OK_NO_APK"

@@ -1,0 +1,40 @@
+name: ARTITRADE v098 restart-safe GMO preplans and original fill regressions
+on:
+  push:
+    branches: [fix-artitrade-v098-gmo-preplan-restart-safe-20261117]
+    paths:
+      - '.github/workflows/verify-v098-gmo.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v097_*.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  paper-scenarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Inspect unmodified frozen original source and test REAL original engine
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,zipfile,io,hashlib
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main')
+          assets=root/'assets/strategy_v070'
+          blob=base64.b64decode(''.join((assets/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            assert z.testzip() is None and len(z.namelist())==82
+            z.extractall('/tmp/v097-original-gmo')
+          print('V097_FROZEN_CORE_SHA256',hashlib.sha256(blob).hexdigest())
+          PY
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/v097-original-gmo"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v097_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_gmo_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v090_gmo_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_manual_gmo_0d.py' -v

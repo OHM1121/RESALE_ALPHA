@@ -1,0 +1,35 @@
+name: ARTITRADE v091 native SELL ledger and feed forensic
+on:
+  push:
+    branches: [fix-artitrade-v091-ma-three-stage-sell-20261117]
+    paths: ['.github/workflows/forensic-v091-ma-exits-2.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate native stock / coin methods and exactly trace entry to EXIT callbacks
+        run: |
+          python3 - <<'PY'
+          import ast,base64,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          b=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            for name in ('coin_ma_engine.py','d_upbit.py','d_live.py','d_engine.py'):
+              s=z.read(name).decode();ls=s.splitlines();tree=ast.parse(s)
+              print('==== FILE',name,'====')
+              if name=='coin_ma_engine.py':
+                for i,l in enumerate(ls):print(f'C{i+1:04d}',l[:260])
+              else:
+                for n in ast.walk(tree):
+                  if isinstance(n,ast.ClassDef) and 'MA' in n.name.upper():
+                    print('CLASS',n.name,n.lineno,n.end_lineno)
+                  if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                    if (name=='d_upbit.py' and n.name in ('_sell','_buy','process_book','process_tick','on_book','qty_floor','book','_ws')) or (name=='d_live.py' and n.name in ('_new_book','_book','_new_tick','on_book')) or (name=='d_engine.py' and n.name in ('available_sell','reserve_sell')):
+                      print('METHOD',name,n.name,n.lineno,n.end_lineno)
+                      for i in range(n.lineno-1,min(n.end_lineno,len(ls))):
+                        print(f'C{i+1:04d}',ls[i][:300])
+          PY

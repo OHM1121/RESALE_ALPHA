@@ -1,0 +1,40 @@
+name: ARTITRADE v092 Kiwoom Upbit realtime latency RED GREEN
+on:
+  push:
+    branches: [fix-artitrade-v092-quote-latency-20261117]
+    paths:
+      - '.github/workflows/verify-v092-realtime-latency.yml'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v092_realtime_ws_latency.py'
+      - 'ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py'
+      - 'ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/**'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  native-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Apply exact v092 82-module surgical quote transport patch
+        run: python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
+      - name: Native original websocket protocol and bounded latency regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v092_realtime_ws_latency.py' -v
+      - name: Compile entire embedded original engine and ensure all other modules unmodified
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast,base64,hashlib,io,zipfile
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          data=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            assert z.testzip() is None and len(z.namelist())==82
+            for name in z.namelist():
+              if name.endswith('.py'):ast.parse(z.read(name).decode(),filename=name)
+          print('CORE_82_MODULE_PARSE_PASS',hashlib.sha256(data).hexdigest())
+          PY

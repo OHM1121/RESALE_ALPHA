@@ -1,0 +1,40 @@
+name: ARTITRADE v0.8.0 D+1 07:50 NXT and 08:50 KRX preflight checks
+on:
+  push:
+    branches: [fix-artitrade-v080-gmo-preplan-0750-0850-20261117]
+    paths:
+      - '.github/workflows/verify-v080-gmo-early-preflight.yml'
+      - 'ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v080_gmo_early_preflight.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify early local-only preflight and original GMO fills
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          import base64,io,zipfile,hashlib
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          blob=base64.b64decode(''.join((p/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            assert z.testzip() is None and len(z.namelist())==82
+            z.extractall('/tmp/artitrade-v080-original')
+          print('FROZEN_ORIGINAL_SHA256',hashlib.sha256(blob).hexdigest())
+          PY
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v080-original"
+          python3 -m compileall -q ARTITRADE_ANDROID/app/src/main/python
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v080_gmo_early_preflight.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v097_gmo_preplan.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v099_coin_trend_preplan.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v090_gmo_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v094_gmo_*.py' -v

@@ -1,0 +1,15 @@
+name: ARTITRADE v083 coin MA manual sell regression
+on:
+  push:
+    branches: [ fix-artitrade-v083-coin-ma-manual-sell-20261117 ]
+    paths: [ 'ARTITRADE_ANDROID/ui_tests/test_v083_coin_ma_manual_sell.py', 'ARTITRADE_ANDROID/app/src/main/python/ma_v061_coin_runtime.py', 'ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py', '.github/workflows/v083-coin-ma-manual-test.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify manual exit guards (no broker connection)
+        run: python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v083_coin_ma_manual_sell.py' -v

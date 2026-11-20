@@ -1,0 +1,89 @@
+name: ARTITRADE 0.0.10 Native GMO D1 ROOTCAUSE TDD
+on:
+  push:
+    branches: [fix-artitrade-010-v009-cross-strategy-rootcause-20261119]
+    paths:
+      - .github/workflows/artitrade-010-tdd-original-rootcauses.yml
+      - ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py
+      - ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py
+      - ARTITRADE_ANDROID/ui_tests/test_v009_forensic_krx_gmo_ma_dns.py
+      - ARTITRADE_ANDROID/ui_tests/test_v010_gmo_d1_or_0b_recovery.py
+      - ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py
+      - ARTITRADE_ANDROID/ui_tests/test_v010_native_market_clock.py
+      - ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py
+      - ARTITRADE_ANDROID/app/src/main/python/entry_plan_hooks_v107.py
+      - ARTITRADE_ANDROID/ui_tests/test_v010_gmo_capture_recovery_signature.py
+      - ARTITRADE_ANDROID/app/src/main/python/artitrade_history_dns_circuit_v009.py
+      - ARTITRADE_ANDROID/app/src/main/python/krx_session_v041.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-session:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Exact ephemeral legacy patch sequence followed by 0.0.8 venue patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ARTITRADE_ANDROID/app/build.gradle')
+          s=p.read_text()
+          assert s.count("versionCode 132")==1 and s.count("versionName '0.0.10'")==1
+          p.write_text(s.replace("versionCode 132","versionCode 97").replace("versionName '0.0.10'","versionName '0.7.91-MA-STAGE-LEDGER'"))
+          PY
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v092_realtime_ws_latency.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v093_strategy_priority_metadata.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v105_ka10004_readonly.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v008_native_krx_special.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v009_native_krx_history_gmo_dns.py
+          python3 ARTITRADE_ANDROID/ui_tests/patch_v010_native_market_clock.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile,hashlib,ast,datetime as dt,sys
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          expected=hashlib.sha256(raw).hexdigest()
+          sys.path[:0]=['ARTITRADE_ANDROID/app/src/main/python']
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              assert z.testzip() is None
+              for path in z.namelist():
+                  if path.endswith('.py'):ast.parse(z.read(path).decode(),filename=path)
+              z.extractall('/tmp/artitrade-v008-native')
+          sys.path.insert(0,'/tmp/artitrade-v008-native')
+          from d_v19_portfolio import live_session
+          from krx_session_v041 import venue_bounds
+          tz=dt.timezone(dt.timedelta(hours=9))
+          def at(day,h,m):return dt.datetime.fromisoformat(f'{day}T{h:02d}:{m:02d}:00+09:00')
+          assert live_session(at('2026-11-19',9,59),'KRX') is False
+          assert live_session(at('2026-11-19',10,0),'KRX') is True
+          assert live_session(at('2026-11-19',16,29),'KRX') is True
+          assert live_session(at('2026-11-19',16,30),'KRX') is False
+          assert live_session(at('2026-11-19',8,15),'NXT') is False
+          assert live_session(at('2026-11-18',9,0),'KRX') is True
+          assert live_session(at('2026-11-18',15,30),'KRX') is False
+          assert live_session(at('2027-11-19',9,0),'KRX') is True
+          print('V008_NATIVE_SESSION_CONTRACT_PASS',expected)
+          Path('/tmp/vendor_sha').write_text(expected)
+          PY
+          echo "ARTITRADE_APPROVED_VENDOR_PATCHED_SHA256=$(cat /tmp/vendor_sha)" >> "$GITHUB_ENV"
+      - name: Retest 0.0.7 exact failure modes and eight strategy flows
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v008-native:$PWD/ARTITRADE_ANDROID/ui_tests"
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v010_gmo_capture_recovery_signature.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v010_gmo_d1_or_0b_recovery.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v010_native_market_clock.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v009_forensic_krx_gmo_ma_dns.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v097_gmo_preplan.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_eight_virtual_paper_end_to_end.py' -v
+      - name: Re-run source graph against exact patched core
+        run: |
+          python3 tools/artitrade/build_source_graph.py --output /tmp/artitrade_graph.json
+          python3 tools/artitrade/validate_dependency_contracts.py --generated /tmp/artitrade_graph.json

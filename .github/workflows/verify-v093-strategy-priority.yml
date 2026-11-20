@@ -1,0 +1,36 @@
+name: ARTITRADE v093 five-strategy realtime quote priority RED GREEN
+on:
+  push:
+    branches: [fix-artitrade-v093-strategy-quote-priority-20261117]
+    paths:
+      - '.github/workflows/verify-v093-strategy-priority.yml'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v093_strategy_subscription_priority.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/stock_priority_runtime_v093.py'
+      - 'ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Rank and rotate all five streams without fake live quotes
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v093_strategy_subscription_priority.py' -v
+      - name: Confirm five-strategy patch never alters original order logic
+        run: |
+          python3 - <<'PY'
+          import pathlib,ast
+          p=pathlib.Path('ARTITRADE_ANDROID/app/src/main/python/stock_priority_runtime_v093.py')
+          ast.parse(p.read_text())
+          runtime=pathlib.Path('ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py').read_text()
+          assert 'from stock_priority_runtime_v093 import install as _install_stock_priority_v093' in runtime
+          assert '_install_stock_priority_v093(_core)' in runtime
+          assert runtime.index('_install_market_trend_v043(_core)')<runtime.index('_install_stock_priority_v093(_core)')
+          print('V093_ONLY_SUBSCRIPTION_PRIORITY_WRAPPER_PASS')
+          PY

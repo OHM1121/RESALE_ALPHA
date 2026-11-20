@@ -1,0 +1,13 @@
+name: ARTITRADE v084 startup recovery test
+on:
+  push:
+    branches: [ fix-artitrade-v084-native-ma-manual-20261118 ]
+    paths: [ 'ARTITRADE_ANDROID/ui_tests/test_v084_startup_crash_loop.py','ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java','.github/workflows/verify-v084-startup.yml' ]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v084_startup_crash_loop.py' -v

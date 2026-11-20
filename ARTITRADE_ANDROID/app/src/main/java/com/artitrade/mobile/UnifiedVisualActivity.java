@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.provider.DocumentsContract;
 import android.text.Editable;
@@ -40,6 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import com.chaquo.python.Python;
+import com.chaquo.python.android.AndroidPlatform;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -112,6 +114,8 @@ public final class UnifiedVisualActivity extends Activity {
     // Worker-only parsed record reuse. The service publishes a fresh JSON string
     // frequently, even when all historical records are unchanged.
     private final Map<String,JSONObject> tradeEvidenceCache=new ConcurrentHashMap<>();
+    private final Map<String,Long> tradeEvidenceFetchedAt=new ConcurrentHashMap<>();
+    private static final long POST_SALE_REFRESH_MS=20_000L;
     // Read-only execution enrichment remains dormant until the person expands
     // that exact fill. No row-page auto fetches from research SQLite.
     private final java.util.Set<String> expandedTradeEvidenceKeys=
@@ -119,6 +123,7 @@ public final class UnifiedVisualActivity extends Activity {
     private final java.util.Set<String> pendingTradeEvidence=java.util.Collections.newSetFromMap(
         new ConcurrentHashMap<String,Boolean>());
     private String cachedLocalRaw;
+    private String cachedLocalFileVersion="";
     private JSONObject cachedLocalParsed=new JSONObject();
     private boolean cachedLocalMeaningful;
     // One strategy having live rows must not suppress fallback for other
@@ -146,7 +151,16 @@ public final class UnifiedVisualActivity extends Activity {
     private long preloadStartedWallMs=0L;
     private String preloadExitNote="";
     private ProgressBar startupProgress;
-    private TextView startupStage;
+    private TextView startupStage, startupPercent, startupEta, startupChecks;
+    private boolean startupNativeAuditSeen=false;
+    private boolean startupNativeAuditReady=false;
+    private long startupFirstWorkAtMs=0L;
+    private int startupFirstWorkDone=-1;
+    private int startupStockLoaded=0;
+    private int startupStockTotal=0;
+    private long startupStockFirstProgressAtMs=0L;
+    private int startupStockFirstProgressCount=0;
+    private String startupMissingCause="";
     private String market="stock";
     private String policyTargetCode="";
     private String policyTargetStrategy="";
@@ -206,20 +220,115 @@ public final class UnifiedVisualActivity extends Activity {
     private static final int REQUEST_EXPORT_COMBINED_RESEARCH=7713;
     private static final int REQUEST_EXPORT_AI_EVIDENCE=7714;
     private static final int REQUEST_EXPORT_ERRORS=7715;
+    private static final int REQUEST_EXPORT_SCOPED_ERRORS=7716;
     private String pendingAiExportScope;
     private String pendingAiExportReport;
-    private final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
+    // Static across Activity recreation: never start a second export while
+    // the previous screen's worker still owns a SQLite snapshot or SAF stream.
+    private static final java.util.concurrent.atomic.AtomicBoolean fullExportRunning=
         new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicBoolean errorExportCancelRequested=
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static volatile Thread scopedErrorWorker;
+    private static volatile OutputStream scopedErrorOutput;
     private byte[] pendingResearchExport;
     private String pendingResearchReports;
     private String pendingErrorsReports;
     private String pendingCombinedResearchScope;
+    private String pendingScopedErrorScope;
     private static final long REFRESH_MS=3500L;
+    // Bounded lightweight view update, never a second exchange/API subscription.
+    private static final long FAST_PRICE_VIEW_MS=900L;
+    private final java.util.ArrayList<LivePriceBinding> livePriceBindings=
+        new java.util.ArrayList<>();
+    private static final class LivePriceBinding{
+        final String market,code,prefix,suffix;
+        final TextView amount,status;
+        LivePriceBinding(String market,String code,TextView amount,
+                         TextView status,String prefix,String suffix){
+            this.market=market;this.code=code;this.amount=amount;
+            this.status=status;this.prefix=prefix;this.suffix=suffix;
+        }
+    }
+    private final Runnable fastPriceViewTicker=new Runnable(){
+        @Override public void run(){
+            if(uiDestroyed)return;
+            if(preloadScreenReady)refreshVisiblePriceViews();
+            main.postDelayed(this,FAST_PRICE_VIEW_MS);
+        }
+    };
+
+    private void bindFastVisiblePrice(JSONObject position,String scope,
+             TextView amount,TextView status,String prefix,String suffix){
+        if(position==null||amount==null||status==null)return;
+        String code=position.optString("code",
+            position.optString("symbol",position.optString("market",""))).trim();
+        if("stock".equals(scope)){
+            if(code.startsWith("A")&&code.length()==7)code=code.substring(1);
+            if(code.endsWith("_NX"))code=code.substring(0,code.length()-3);
+        }else if(!code.startsWith("KRW-"))return;
+        if(code.isEmpty())return;
+        livePriceBindings.add(new LivePriceBinding(scope,code,amount,status,
+            prefix==null?"":prefix,suffix==null?"":suffix));
+    }
+
+    /**
+     * Only adjusts displayed price text. Does not change the position JSON,
+     * any wallet, PnL accounting, buy/sell decision or historical price.
+     */
+    private void refreshVisiblePriceViews(){
+        if(livePriceBindings.isEmpty())return;
+        JSONObject packet;
+        try{
+            String raw=getSharedPreferences("artitrade_quote_plane_v089",
+                MODE_PRIVATE).getString("snapshot","{}");
+            packet=new JSONObject(raw);
+        }catch(Exception ignored){return;}
+        if(!packet.optBoolean("ready",false))return;
+        long now=System.currentTimeMillis();
+        for(LivePriceBinding item:livePriceBindings){
+            JSONObject marketPrices=packet.optJSONObject(item.market);
+            JSONObject quotes=marketPrices==null?null:marketPrices.optJSONObject("quotes");
+            JSONObject quote=quotes==null?null:quotes.optJSONObject(item.code);
+            if(quote==null){
+                item.amount.setText(item.prefix+"가격 조회 중"+item.suffix);
+                item.status.setText("실시간 수신 미확인 · 이전 원장 평가가는 최신가 아님");
+                continue;
+            }
+            double price=quote.optDouble("price",Double.NaN);
+            if(Double.isNaN(price)||Double.isInfinite(price)||price<=0)continue;
+            String state=quote.optString("status","LAST");
+            long expires=quote.optLong("expires_ms",0L);
+            boolean fresh="FRESH".equals(state)&&expires>now;
+            long tradeMs=quote.optLong("exchange_ms",0L);
+            String time=quote.optString("exchange_at","");
+            String source="stock".equals(item.market)?"키움":"업비트";
+            if(tradeMs>0){
+                long age=Math.max(0L,(now-tradeMs)/1000L);
+                time=age+"초 전 체결";
+            }else if(time.length()>=19){
+                time=time.substring(11,19)+" 체결";
+            }
+            String venue=quote.optString("venue","");
+            boolean officialRest="stock".equals(item.market)&&
+                quote.optString("source","").contains("REST");
+            String label=(fresh?"실시간 "+source+" WS":
+                officialRest?source+" 공식 REST 조회값(실시간 WS 아님)":
+                "마지막 "+source+" 시세(실시간 아님)");
+            if("stock".equals(item.market)&&!venue.isEmpty())
+                label+=" · "+venue;
+            item.amount.setText(item.prefix+WonFormat.price(price)+item.suffix);
+            item.status.setText(label+(time.isEmpty()?"":" · "+time)+
+                " · 화면용 가격 · 체결판단·원장 손익은 별도");
+        }
+    }
+
 
     private final Runnable periodic=new Runnable(){
         @Override public void run(){
             refresh(false);
             updateClock();
+            markUiVisible(true);
             main.postDelayed(this,REFRESH_MS);
         }
     };
@@ -249,15 +358,54 @@ public final class UnifiedVisualActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        restoreNavigation(state);
+        // Fresh-only successor to v0.9.5: abandon ALL previous PAPER ledgers
+        // before restoring UI, starting the trading service or opening any
+        // exchange connections. No old-paper-holding migration is permitted.
+        try{
+            if(FreshEpochGateV106.mandatoryFreshStartPending(this)){
+                beginMandatoryPaperFreshStart();
+                return;
+            }
+        }catch(Throwable markerError){
+            renderFreshStartBlocked("새 원장 마커 손상: "+
+                markerError.getClass().getSimpleName()+
+                " · 주문 및 엔진 시작을 차단했습니다.");
+            return;
+        }
+        // Corrupt navigation preferences must never create an infinite launcher
+        // crash loop. Recover ONLY view state; retain all original SQLite,
+        // orders, filled trades, API credentials and research history.
+        try{
+            ProcessHealthV087.install(this);
+            restoreNavigation(state);
+        }catch(Throwable bootstrapError){
+            try{new RuntimeCrashStore(this).add(
+                "startup_navigation_recovered",bootstrapError);}catch(Throwable ignored){}
+            market="stock";
+            strategy="at";
+            page="home";
+            integratedMode=false;
+            historyFilterStock="current";
+            historyFilterCoin="current";
+        }
+        // v088 error logs remain private and exportable; no error-table screen.
+        if("errors".equals(page))page="home";
         try{
             getWindow().setStatusBarColor(PremiumUi.BG);
             getWindow().setNavigationBarColor(PremiumUi.BG);
             root=new FrameLayout(this);
             root.setBackgroundColor(PremiumUi.BG);
             setContentView(root);
-            preloadStartedAt=android.os.SystemClock.elapsedRealtime();
-            preloadStartedWallMs=System.currentTimeMillis();
+            // Rotation while warming must preserve the SAME cold-start
+            // progress and deadline, not reinterpret a recreated Activity as
+            // evidence of a ready broker / UI snapshot.
+            preloadStartedAt=state!=null?
+                state.getLong("v089_preload_elapsed_at",
+                    android.os.SystemClock.elapsedRealtime()):
+                android.os.SystemClock.elapsedRealtime();
+            preloadStartedWallMs=state!=null?
+                state.getLong("v089_preload_wall_at",
+                    System.currentTimeMillis()):System.currentTimeMillis();
             recordUiEntry(state);
             if(shouldRestoreShellImmediately(state)){
                 // Re-creating the Activity is NOT evidence that the trading engine
@@ -266,9 +414,27 @@ public final class UnifiedVisualActivity extends Activity {
                 showShell();
             }else{
                 showBoot();
+                if(state!=null&&!state.getBoolean("v089_preload_ready",true)){
+                    startupStockTotal=Math.max(0,state.getInt("v017_stock_loading_total",0));
+                    startupStockLoaded=Math.min(startupStockTotal,Math.max(0,
+                        state.getInt("v017_stock_loading_done",0)));
+                    startupStockFirstProgressAtMs=android.os.SystemClock.elapsedRealtime();
+                    startupStockFirstProgressCount=startupStockLoaded;
+                    if(startupProgress!=null)startupProgress.setProgress(
+                        startupStockTotal>0 ? 100*startupStockLoaded/startupStockTotal : 0);
+                    if(startupPercent!=null && startupStockTotal>0)
+                        startupPercent.setText((100*startupStockLoaded/startupStockTotal)+
+                            "% · "+startupStockLoaded+" / "+startupStockTotal+"종목");
+                    if(startupStage!=null)startupStage.setText(
+                        state.getString("v089_preload_stage",
+                            "원장 · 전략별 시세 사전 준비 중"));
+                }
                 // Even if the local-hub request stalls, never trap the user in
                 // the full-screen boot view waiting for an I/O worker.
-                main.postDelayed(this::preloadWatchdog,PRELOAD_WATCHDOG_MS);
+                long elapsed=Math.max(0L,
+                    android.os.SystemClock.elapsedRealtime()-preloadStartedAt);
+                main.postDelayed(this::preloadWatchdog,
+                    Math.max(200L,PRELOAD_WATCHDOG_MS-elapsed));
             }
             // Begin both original broker feeds before slow UI/hub aggregation.
             // START is idempotent and never re-arms live broker orders.
@@ -318,14 +484,22 @@ public final class UnifiedVisualActivity extends Activity {
         // After a genuine service/process stop, show cold-start progress again.
         // Foreground service heartbeat still bypasses repeated preload when
         // returning from sleep, another app, or Activity recreation.
-        return saved!=null||isRecentBackgroundHeartbeat();
+        if(saved!=null)
+            return saved.getBoolean("v089_preload_ready",true);
+        // On a new Activity entry, SHOW the source verification screen
+        // even if a healthy service already exists. START remains idempotent,
+        // so this does not restart brokers, discard native warmed candles,
+        // or interrupt already held orders.
+        return false;
     }
 
     private void preloadWatchdog(){
         if(!preloadScreenReady&&!isFinishing()&&root!=null){
             // Bounded escape hatch: broker outages and holidays must never
             // trap the user behind a loading cover. No quote is marked fresh.
-            preloadExitNote="일부 준비 미완료 · 시세·확정봉은 백그라운드 복구 중";
+            preloadExitNote="사전점검 부분완료 · "+(startupMissingCause.isEmpty()
+                ?"확정봉·시세·호가 백그라운드 복구 중":startupMissingCause+
+                    " · 백그라운드 복구 중");
             finishPreload(false);
         }
     }
@@ -387,19 +561,48 @@ public final class UnifiedVisualActivity extends Activity {
                         coinLoaded+"/"+coinTotal+"(코인)";
                 }
             }
-            updateStartupProgress(progress,stage);
+            JSONObject audit=ready==null?null:ready.optJSONObject("work_audit");
+            boolean audited=audit!=null&&
+                "ARTITRADE_VERIFIED_PRELOAD_AUDIT_V016".equals(
+                    audit.optString("schema",""))&&
+                audit.optInt("work_units_total",0)>0;
+            if(audited){
+                int units=audit.optInt("work_units_done",0);
+                int total=audit.optInt("work_units_total",0);
+                JSONObject historyState=audit.optJSONObject("official_history");
+                JSONObject sBars=historyState==null?null:historyState.optJSONObject("stock");
+                JSONObject cBars=historyState==null?null:historyState.optJSONObject("coin");
+                String verified="공식 확정봉 주식 "+(sBars==null?0:sBars.optInt("ready",0))+
+                    "/"+(sBars==null?0:sBars.optInt("required",0))+
+                    " · 코인 "+(cBars==null?0:cBars.optInt("ready",0))+
+                    "/"+(cBars==null?0:cBars.optInt("required",0));
+                String firstMissing=audit.optString("first_missing","");
+                startupMissingCause=firstMissing;
+                startupNativeAuditReady=audit.optBoolean("ready",false);
+                updateVerifiedStartupProgress(audit.optInt("percent",0),
+                    verified,units,total,firstMissing);
+                updateOriginalStockLoadingCounter(all.optJSONObject("stock_feed"));
+            }else{
+                startupMissingCause="원본 사전점검 결과 수신 대기";
+                updateStartupProgress(progress,stage);
+                updateOriginalStockLoadingCounter(all.optJSONObject("stock_feed"));
+            }
             if(engine&&uiReady&&stockReady&&coinReady){
-                if(coinWarm&&stockWarm){
+                // Preserve the original verified feed/ledger checkpoint for
+                // the vendor quote patch and independent broker recovery.
+                // New read-only audits are an ADDITIONAL UI completion gate,
+                // never a substitute for the original one.
+                if(coinWarm&&stockWarm&&audited&&startupNativeAuditReady
+                        &&startupStockTotal>0
+                        &&startupStockLoaded==startupStockTotal){
                     preloadExitNote="";
                     finishPreload(true);
                     return;
                 }
-                if(elapsed>=PRELOAD_BOTH_FEEDS_WARM_MIN_MS){
-                    preloadExitNote="주식·코인 시세 연결됨 · MA/RSI 과거봉은 백그라운드 보강 중";
-                    finishPreload(false);
-                    return;
-                }
             }
+            // 0.0.15 exited after 22s while official candle/book audits
+            // were still missing. Retain the source-check screen through the
+            // bounded watchdog, but never stop original background recovery.
         }catch(Exception e){
             // No network call, strategy order, or database write on the UI thread.
             if(preloadStartedAt>0&&android.os.SystemClock.elapsedRealtime()-
@@ -505,6 +708,7 @@ public final class UnifiedVisualActivity extends Activity {
         java.util.HashSet<String> validPages=new java.util.HashSet<>(
             java.util.Arrays.asList("home","positions","pending","executions",
                 "research","analysis","operation","scores","errors","policyHistory","market","more"));
+        if("research".equals(page))page="analysis"; // removed UI tab, keep raw export and AI data
         if(!validPages.contains(page))page="home";
     }
 
@@ -517,7 +721,65 @@ public final class UnifiedVisualActivity extends Activity {
             .apply();
     }
 
+    /**
+     * System rotation lock is enforced by fullUser in the Manifest.
+     * When auto-rotate is enabled, retain THIS Activity during 0/90/180/270
+     * degree turns: never restart the broker, kill its preload worker, discard
+     * a selected SAF directory or interrupt a 500MB WAL/ZIP export.
+     */
+    @Override public void onConfigurationChanged(android.content.res.Configuration config){
+        super.onConfigurationChanged(config);
+        if(uiDestroyed||root==null)return;
+        try{
+            if(!preloadScreenReady){
+                // Do not replace the startup view, reset the clock, or spawn
+                // another background preload. Re-measure only its progress bar.
+                if(startupProgress!=null){
+                    android.view.ViewGroup.LayoutParams lp=startupProgress.getLayoutParams();
+                    if(lp!=null){
+                        lp.width=dp(Math.min(320,Math.max(140,config.screenWidthDp-76)));
+                        startupProgress.setLayoutParams(lp);
+                    }
+                }
+                root.requestLayout();
+                return;
+            }
+            // Recreating/editing the view during user input or an active
+            // background export can lose a draft or its progress dialog.
+            // Keep the actual View and simply let Android resize it.
+            if(fullExportRunning.get()||drawerOverlay!=null||
+                "operation".equals(page)||"policyHistory".equals(page)){
+                root.requestLayout();
+                return;
+            }
+            // Recompose wide/narrow presentation from the existing immutable
+            // in-memory snapshot. No SQLite reload and no new feed subscription.
+            showShell();
+        }catch(Throwable rotationError){
+            try{new RuntimeCrashStore(this).add(
+                "rotation_config_resize_recovered",rotationError);}
+            catch(Throwable ignored){}
+            // Failure to recompose a card must not terminate the app or
+            // stop the foreground engine.
+            try{root.requestLayout();}catch(Throwable ignored){}
+        }
+    }
+
     @Override protected void onSaveInstanceState(Bundle state){
+        // The loading cover remains loading across 90/180/270 degree rotation.
+        // A previous, valid warm UI continues to restore immediately.
+        state.putBoolean("v089_preload_ready",preloadScreenReady);
+        state.putLong("v089_preload_elapsed_at",preloadStartedAt);
+        state.putLong("v089_preload_wall_at",preloadStartedWallMs);
+        if(!preloadScreenReady){
+            state.putInt("v089_preload_pct",
+                startupProgress==null?0:startupProgress.getProgress());
+            state.putInt("v017_stock_loading_done",startupStockLoaded);
+            state.putInt("v017_stock_loading_total",startupStockTotal);
+            state.putString("v089_preload_stage",
+                startupStage==null?"원장 · 전략별 시세 사전 준비 중":
+                startupStage.getText().toString());
+        }
         state.putString("market",market);
         state.putString("strategy",strategy);
         state.putString("page",page);
@@ -654,31 +916,94 @@ public final class UnifiedVisualActivity extends Activity {
         TextView brand=text("ARTITRADE",28);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.12f);p.addView(brand);
         TextView sub=text("S21+ PHONE MAIN · NATIVE SAFEBOOT",12);sub.setTextColor(Color.rgb(139,164,194));sub.setPadding(0,dp(8),0,dp(18));p.addView(sub);
         startupProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
-        startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(5);
-        p.addView(startupProgress,new LinearLayout.LayoutParams(dp(320),dp(10)));
+        startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(0);
+        p.addView(startupProgress,new LinearLayout.LayoutParams(dp(Math.min(320,Math.max(180,getResources().getConfiguration().screenWidthDp-76))),dp(10)));
+        startupPercent=text("0% · 종목별 로딩 실적 확인 중",18);
+        startupPercent.setTextColor(Color.rgb(178,218,255));
+        startupPercent.setPadding(0,dp(11),0,0);p.addView(startupPercent);
         startupStage=text("원장 · 전략별 요약 · 화면 자료를 준비 중",12);
         startupStage.setTextColor(Color.rgb(116,143,178));
         startupStage.setPadding(0,dp(14),0,0);p.addView(startupStage);
-        TextView note=text("거래·시세·원장 상태를 백그라운드에서 준비한 뒤 메인화면을 엽니다.",11);
-        note.setTextColor(PremiumUi.MUTED);note.setPadding(0,dp(7),0,0);p.addView(note);
+        startupChecks=text("확정봉 연속성 · 시세 · 실시간 매도호가 · 원장 검증",12);
+        startupChecks.setTextColor(Color.rgb(135,160,188));
+        startupChecks.setPadding(0,dp(10),0,0);p.addView(startupChecks);
+        startupEta=text("완료예상: 수신속도 확인 중",12);
+        startupEta.setTextColor(Color.rgb(215,195,140));
+        startupEta.setPadding(0,dp(10),0,0);p.addView(startupEta);
         root.addView(p,new FrameLayout.LayoutParams(-1,-1));
+    }
+
+    // Stock progress must come from completed, individual symbols in the native
+    // feed; never turn volatile feed-health check totals into a stock percentage.
+    // A reconnect or a new scan stage cannot roll this screen backward.
+    private void updateOriginalStockLoadingCounter(JSONObject feed){
+        if(preloadScreenReady||feed==null)return;
+        int observedTotal=feed.optInt("preload_stock_total",0);
+        int observedDone=feed.optInt("preload_stock_done",-1);
+        if(observedTotal<=0||observedDone<0||observedDone>observedTotal)return;
+        // Restarted scan/reordered subscription batches must not erase this
+        // session's already verified completed symbol count.
+        if(startupStockTotal!=observedTotal){
+            if(startupStockTotal>0)return; // freeze denominator per load run
+            startupStockTotal=observedTotal;
+            startupStockFirstProgressAtMs=android.os.SystemClock.elapsedRealtime();
+            startupStockFirstProgressCount=observedDone;
+        }
+        startupStockLoaded=Math.max(startupStockLoaded,observedDone);
+        int percent=(int)((100L*startupStockLoaded)/startupStockTotal);
+        if(startupProgress!=null)startupProgress.setProgress(percent);
+        if(startupPercent!=null)startupPercent.setText(
+            percent+"% · "+startupStockLoaded+" / "+startupStockTotal+"종목");
+        if(startupStage!=null)startupStage.setText(
+            "주식 원본 종목별 로딩 "+startupStockLoaded+"/"+startupStockTotal);
+        long elapsed=android.os.SystemClock.elapsedRealtime()-startupStockFirstProgressAtMs;
+        int gain=startupStockLoaded-startupStockFirstProgressCount;
+        String eta="실제 로딩 속도 확인 중";
+        if(startupStockLoaded==startupStockTotal)eta="종목 로딩 완료";
+        else if(gain>=2&&elapsed>=1500L){
+            long seconds=(long)Math.ceil((startupStockTotal-startupStockLoaded)
+                *elapsed/(1000.0*gain));
+            if(seconds>0&&seconds<86400)
+                eta="약 "+String.format(Locale.KOREA,"%02d:%02d",seconds/60,seconds%60)
+                    +" · 실제 종목 처리속도 기준";
+        }
+        if(startupEta!=null)startupEta.setText("완료예상: "+eta);
     }
 
     private void updateStartupProgress(int percent,String stage){
         main.post(()->{
-            if(preloadScreenReady)return;
-            if(startupProgress!=null)
-                startupProgress.setProgress(Math.max(startupProgress.getProgress(),
-                    Math.min(98,Math.max(0,percent))));
-            if(startupStage!=null)startupStage.setText(stage);
+            if(preloadScreenReady||startupNativeAuditSeen)return;
+            // Before native per-symbol counts arrive, do not show guessed 16/38/
+            // 60/94 percentages. The native feed owns the completion metric.
+            if(startupStage!=null&&startupStockTotal==0)startupStage.setText(stage);
+            if(startupPercent!=null&&startupStockTotal==0)
+                startupPercent.setText("0% · 원본 종목별 로딩 실적 수신 대기");
         });
+    }
+
+    private void updateVerifiedStartupProgress(int percent,String detail,int done,
+                                                int total,String firstMissing){
+        if(preloadScreenReady)return;
+        startupNativeAuditSeen=true;
+        // Dynamic check totals are deliberately NOT a load-progress denominator.
+        // Network readiness changes independently of the stock loading counter.
+        if(startupChecks!=null)
+            startupChecks.setText(firstMissing.isEmpty()
+                ?"별도 점검: 공식봉·시세·호가·원장 유효성 확인"
+                :"별도 점검 미완료: "+firstMissing+" · 원본 수신기에서 복구 중");
+        if(startupStockTotal==0&&startupStage!=null)
+            startupStage.setText(detail+" · 종목별 완료 건수 수신 대기");
     }
 
     private void finishPreload(boolean engineReady){
         if(preloadScreenReady)return;
         preloadScreenReady=true;
-        if(startupProgress!=null)startupProgress.setProgress(100);
-        startupProgress=null;startupStage=null;
+        // Never advertise 100% when the last native per-stock proof is missing.
+        if(startupProgress!=null && startupStockTotal>0 &&
+            startupStockLoaded==startupStockTotal)
+            startupProgress.setProgress(100);
+        startupProgress=null;startupStage=null;startupPercent=null;
+        startupEta=null;startupChecks=null;
         showShell(); // showShell already renders the prepared snapshot once.
         updateHeader();
         if(!engineReady && statusText!=null)
@@ -688,13 +1013,12 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String marketVersionLabel(){
-        // The installed APK is the source of truth after an in-place update.
-        String version="0.7.44";
+        // Show the installed version only; no market, mode, or feature suffix.
+        String version="";
         try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}
-        if(version==null||version.isEmpty())version="버전 확인 중";
-        int dash=version.indexOf('-');
-        if(dash>0)version=version.substring(0,dash);
-        return "v"+version+" · "+(integratedMode?"통합":("stock".equals(market)?"주식":"코인"));
+        if(version==null||version.isEmpty())return "버전 확인 중";
+        return version.matches("[0-9]+\\.[0-9]+\\.[0-9]+")
+            ?version:"버전 확인 중";
     }
 
     private void showShell(){
@@ -717,11 +1041,18 @@ public final class UnifiedVisualActivity extends Activity {
         brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         brand.setLetterSpacing(.065f);
         brandLine.addView(brand);
-        if(wideHeader){
-            TextView ver=text("  ·  "+marketVersionLabel(),12);
-            ver.setTextColor(accent());
-            brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(22)));
+        // Show installed APK version directly to the RIGHT of ARTITRADE
+        // in portrait too. Full market caption is kept only on wide screens.
+        String installedVersion=marketVersionLabel();
+        if(!wideHeader){
+            int split=installedVersion.indexOf(" · ");
+            if(split>0)installedVersion=installedVersion.substring(0,split);
         }
+        TextView ver=text("  "+installedVersion,wideHeader?12:11);
+        ver.setTextColor(accent());
+        ver.setSingleLine(true);
+        ver.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        brandLine.addView(ver,new LinearLayout.LayoutParams(-2,dp(22)));
         brandBox.addView(brandLine,new LinearLayout.LayoutParams(-1,dp(24)));
         top.addView(brandBox,new LinearLayout.LayoutParams(0,dp(24),1));
 
@@ -808,8 +1139,6 @@ public final class UnifiedVisualActivity extends Activity {
             bottom.addView(bottomNavItem("pending","◌","매수대기"),
                 new LinearLayout.LayoutParams(0,dp(46),1));
             bottom.addView(bottomNavItem("executions","↔","체결이력"),
-                new LinearLayout.LayoutParams(0,dp(46),1));
-            bottom.addView(bottomNavItem("research","◎","연구자료"),
                 new LinearLayout.LayoutParams(0,dp(46),1));
             bottom.addView(bottomNavItem("analysis","◇","AI분석"),
                 new LinearLayout.LayoutParams(0,dp(46),1));
@@ -1002,8 +1331,6 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout manage=card();
         TextView opRow=text("운용 설정   ·   전 전략 시드 / 최대보유",12);opRow.setTypeface(null,Typeface.BOLD);opRow.setPadding(dp(4),dp(7),dp(4),dp(7));opRow.setOnClickListener(v->{page="operation";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(opRow,new LinearLayout.LayoutParams(-1,dp(44)));
         manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
-        TextView erRow=text("오류 이력   ·   "+("stock".equals(market)?"주식 전체":"코인 전체"),12);erRow.setTypeface(null,Typeface.BOLD);erRow.setPadding(dp(4),dp(7),dp(4),dp(7));erRow.setOnClickListener(v->{page="errors";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(erRow,new LinearLayout.LayoutParams(-1,dp(44)));
-        manage.addView(divider(),new LinearLayout.LayoutParams(-1,dp(1)));
         TextView scoreRow=text("엔진 점수 비교   ·   미선정 후보 포함",12);scoreRow.setTypeface(null,Typeface.BOLD);scoreRow.setPadding(dp(4),dp(7),dp(4),dp(7));scoreRow.setOnClickListener(v->{page="scores";closeSettingsDrawer();main.postDelayed(this::showShell,190);});manage.addView(scoreRow,new LinearLayout.LayoutParams(-1,dp(44)));
         TextView policyRow=text("정책이력   ·   실제 체결과 매도 판단 근거",12);
         policyRow.setPadding(dp(4),dp(7),dp(4),dp(7));
@@ -1045,6 +1372,22 @@ public final class UnifiedVisualActivity extends Activity {
         drawerResearchExportProgress=addProgressBlock(exports,"연구이력 ZIP 추출",
             drawerExportProgress("research"),Color.rgb(92,194,244));
         panel.addView(exports);
+        LinearLayout errorActions=new LinearLayout(this);
+        errorActions.setOrientation(LinearLayout.HORIZONTAL);
+        errorActions.setPadding(0,dp(5),0,dp(9));
+        for(String[] spec:new String[][]{
+            {"coin","코인 오류 추출"},{"stock","주식 오류 추출"},{"all","통합 오류 추출"}}){
+            final String selected=spec[0];
+            Button export=button(spec[1],false,()->requestScopedErrorExport(selected));
+            export.setTextSize(10);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(42),1);
+            lp.setMargins(dp(2),0,dp(2),0);
+            errorActions.addView(export,lp);
+        }
+        panel.addView(errorActions);
+        Button stopErrors=button("진행 중인 오류 추출 취소",false,this::cancelScopedErrorExport);
+        stopErrors.setTextSize(11);
+        panel.addView(stopErrors,new LinearLayout.LayoutParams(-1,dp(42)));
 
         updateHeader();
 
@@ -1054,7 +1397,19 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout api=card();TextView brokerState=text(brokerStatusText(brokerKey),12);brokerState.setTextColor(Color.rgb(205,212,229));api.addView(brokerState);
         LinearLayout ar=new LinearLayout(this);ar.setOrientation(LinearLayout.HORIZONTAL);ar.setPadding(0,dp(12),0,0);
         ar.addView(button(brokerName+" 키 설정",true,this::apiSettings),new LinearLayout.LayoutParams(0,dp(44),1));
-        LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(44),1);prp.setMargins(dp(8),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);api.addView(ar);panel.addView(api);
+        LinearLayout.LayoutParams prp=new LinearLayout.LayoutParams(0,dp(44),1);prp.setMargins(dp(8),0,0,0);ar.addView(button("인증 검사",false,()->runBrokerProbe(false)),prp);
+        api.addView(ar);
+        if("stock".equals(market)){
+            TextView receipt=text(brokerSellReceiptStatusText(),11);
+            receipt.setTextColor(PremiumUi.MUTED);
+            receipt.setPadding(0,dp(10),0,dp(7));
+            api.addView(receipt);
+            Button verify=button("키움 실제 미체결 매도주문 조회 (읽기 전용)",false,
+                this::requestBrokerSellReceiptsV008);
+            verify.setTextSize(11);
+            api.addView(verify,new LinearLayout.LayoutParams(-1,dp(44)));
+        }
+        panel.addView(api);
 
         TextView srvTitle=text("MSERVER",14);
         srvTitle.setTypeface(null,Typeface.BOLD);
@@ -1113,8 +1468,12 @@ public final class UnifiedVisualActivity extends Activity {
 
         drawerPublishProgress=addProgressBlock(tools,"휴대전화 원장 전송",
             sync,Color.rgb(0,196,164));
-        drawerImportProgress=addProgressBlock(tools,"PC 원장 승계",
-            importProgress,Color.rgb(77,124,254));
+        // The first-boot clean epoch unconditionally discards all prior
+        // PAPER histories. Old PC ledger migration is permanently disabled.
+        drawerImportProgress=null;
+        TextView freshSource=text("원장 정책: 새 PAPER만 유지 · 과거 PC 승계 차단",11);
+        freshSource.setTextColor(PremiumUi.MUTED);
+        tools.addView(freshSource);
         // Detailed counts, source DB names, network codes, thread/preload timing
         // and per-strategy raw verification stay in the diagnostic store.
         // Never put them in the user-facing MSERVER drawer.
@@ -1136,11 +1495,7 @@ public final class UnifiedVisualActivity extends Activity {
         Button pairing=button("연결 토큰",false,this::pair);
         pairing.setTextSize(12);
         secondActions.addView(pairing,new LinearLayout.LayoutParams(0,dp(41),1));
-        Button verify=button("PC 승계 재검증",false,this::requestPcMigrationApply);
-        verify.setTextSize(12);
-        LinearLayout.LayoutParams verifyLp=new LinearLayout.LayoutParams(0,dp(41),1);
-        verifyLp.setMargins(dp(6),0,0,0);
-        secondActions.addView(verify,verifyLp);
+
         LinearLayout.LayoutParams secondLp=new LinearLayout.LayoutParams(-1,dp(43));
         secondLp.setMargins(0,dp(5),0,0);
         tools.addView(secondActions,secondLp);
@@ -1170,6 +1525,60 @@ public final class UnifiedVisualActivity extends Activity {
             public void onAnimationEnd(android.view.animation.Animation a){try{root.removeView(old);}catch(Exception ignored){}}
         });
         old.startAnimation(anim);
+    }
+
+    private void requestBrokerSellReceiptsV008(){
+        try{
+            Intent request=new Intent(this,UnifiedTradingService.class);
+            request.setAction(UnifiedTradingService.READ_BROKER_SELLS);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(request);
+            else startService(request);
+            new AlertDialog.Builder(this).setTitle("키움 매도주문 확인")
+                .setMessage("키움 실제 계좌의 현재 미체결 매도주문만 읽기 전용으로 조회합니다.\n\n"+
+                    "이 기능은 1·2차 목표매도 주문을 새로 등록하지 않으며, "+
+                    "조회 결과만으로 앱의 각 매도단계에 주문번호가 연계됐다고 판단하지 않습니다.")
+                .setPositiveButton("확인",null).show();
+            main.postDelayed(()->refresh(false),3500);
+        }catch(Throwable e){
+            new RuntimeCrashStore(this).add("broker_sell_receipt_ui_v008",e);
+        }
+    }
+
+    private String brokerSellReceiptStatusText(){
+        JSONObject data=copyCache().optJSONObject("broker_sell_audit");
+        if(data==null)return "1·2차 실제 브로커 사전매도: 앱 PAPER 전용 · 등록 확인 불가\n"+
+            "키움 실제 계좌 미체결 조회 이력 없음";
+        if(!data.optBoolean("ok",false)){
+            return "1·2차 실제 브로커 사전매도: 등록 확인 불가\n"+
+                "조회 상태: "+data.optString("error","조회 미실행");
+        }
+        JSONArray rows=data.optJSONArray("orders");
+        int size=rows==null?0:rows.length();
+        String suffix=data.optBoolean("has_more",false)?" · 연속조회 미완료":"";
+        return "키움 실제 미체결 매도 "+size+"건"+suffix+
+            " · 조회 "+data.optString("verified_at","")+
+            "\n1·2차 매도단계와 브로커 주문번호의 직접 연계는 미확인";
+    }
+
+    private String brokerSellStatusForHolding(JSONObject row){
+        JSONObject data=copyCache().optJSONObject("broker_sell_audit");
+        if(data==null||!data.optBoolean("ok",false))
+            return "1·2차 실브로커 지정가: 접수 미확인 · 읽기 전용 조회 필요";
+        String code=row.optString("code",row.optString("market","")).replace("A","").trim();
+        JSONArray open=data.optJSONArray("orders");
+        int count=0;String ids="";
+        if(open!=null)for(int k=0;k<open.length();k++){
+            JSONObject x=open.optJSONObject(k);
+            if(x!=null&&code.equals(x.optString("code",""))){
+                count++;
+                if(count<=2)ids+=(ids.isEmpty()?"":", ")+x.optString("broker_order_id","");
+            }
+        }
+        if(count>0)return "키움 실제 미체결 매도 "+count+"건 (주문 "+ids+
+            ") · 1·2차 단계연계 미확인";
+        if(data.optBoolean("has_more",false))
+            return "1·2차 실브로커 지정가: 연속조회 미완료 · 미등록 단정 불가";
+        return "키움 실제 미체결 매도 0건 · 1·2차 사전등록 증빙 없음";
     }
 
     private String brokerStatusText(String which){
@@ -1236,6 +1645,11 @@ public final class UnifiedVisualActivity extends Activity {
                     packet.put("live_orders",new JSONObject().put("stock",p.getBoolean("live_stock",false)).put("coin",p.getBoolean("live_coin",false)));
                 }catch(Exception e){packet.put("live_orders",new JSONObject());}
                 try{
+                    String raw=getSharedPreferences("artitrade_broker_sells_v008",MODE_PRIVATE)
+                        .getString("receipt","{}");
+                    packet.put("broker_sell_audit",new JSONObject(raw));
+                }catch(Exception e){packet.put("broker_sell_audit",new JSONObject());}
+                try{
                     String raw=getSharedPreferences("artitrade_runtime_snapshot",MODE_PRIVATE).getString("snapshot","{}");
                     packet.put("strategy_runtime",new JSONObject(raw));
                 }catch(Exception e){packet.put("strategy_runtime",new JSONObject());}
@@ -1244,65 +1658,66 @@ public final class UnifiedVisualActivity extends Activity {
                 JSONObject localRecords=new JSONObject();
                 try{
                     android.content.SharedPreferences lp=getSharedPreferences("artitrade_local_records_v075",MODE_PRIVATE);
-                    String raw=lp.getString("records","{}");
-                    reusedLocalRecords=cachedLocalRaw!=null
-                        &&(cachedLocalRaw==raw||cachedLocalRaw.equals(raw));
-                    if(reusedLocalRecords){
-                        localRecords=cachedLocalParsed;
-                        meaningfulLocalRecords=cachedLocalMeaningful;
+                    String fileVersion=LargeRecordStoreV087.version(this);
+                    if(!fileVersion.isEmpty()){
+                        reusedLocalRecords=fileVersion.equals(cachedLocalFileVersion);
+                        if(reusedLocalRecords){
+                            localRecords=cachedLocalParsed;
+                            meaningfulLocalRecords=cachedLocalMeaningful;
+                        }else{
+                            // Read a single private atomic file only on VERSION CHANGE.
+                            // No repeated XML SharedPreferences multi-MB string copies.
+                            localRecords=new JSONObject(LargeRecordStoreV087.read(this));
+                            meaningfulLocalRecords=meaningfulTree(localRecords);
+                            cachedLocalFileVersion=fileVersion;
+                            cachedLocalRaw=null;
+                            cachedLocalParsed=localRecords;
+                            cachedLocalMeaningful=meaningfulLocalRecords;
+                        }
                     }else{
-                        localRecords=new JSONObject(raw);
-                        meaningfulLocalRecords=meaningfulTree(localRecords);
-                        cachedLocalRaw=raw;
-                        cachedLocalParsed=localRecords;
-                        cachedLocalMeaningful=meaningfulLocalRecords;
+                        String raw=lp.getString("records","{}"); // legacy first boot
+                        reusedLocalRecords=cachedLocalRaw!=null
+                            &&(cachedLocalRaw==raw||cachedLocalRaw.equals(raw));
+                        if(reusedLocalRecords){
+                            localRecords=cachedLocalParsed;
+                            meaningfulLocalRecords=cachedLocalMeaningful;
+                        }else if(raw.length()>6_000_000){
+                            // Legacy XML from older builds could exceed the Java heap.
+                            // Ignore only the stale display cache; source trading DB intact.
+                            localRecords=new JSONObject();
+                            meaningfulLocalRecords=false;
+                            cachedLocalRaw=null;
+                            cachedLocalFileVersion="";
+                            cachedLocalParsed=localRecords;
+                            cachedLocalMeaningful=false;
+                        }else{
+                            localRecords=new JSONObject(raw);
+                            meaningfulLocalRecords=meaningfulTree(localRecords);
+                            cachedLocalRaw=raw;
+                            cachedLocalFileVersion="";
+                            cachedLocalParsed=localRecords;
+                            cachedLocalMeaningful=meaningfulLocalRecords;
+                        }
                     }
                     packet.put("local_records",localRecords);
                     packet.put("local_records_at",lp.getLong("updated_at",0L));
                 }catch(Exception e){packet.put("local_records",new JSONObject());}
-                // v0.7.25: source-by-source gap recovery. The old global flag
-                // hid MA/CLOSE/GMO or coin data whenever AT had any records.
-                // Keep phone-created records authoritative, and fetch MSERVER only
-                // for a *missing bucket*, not for an entire market.
-                long now=android.os.SystemClock.elapsedRealtime();
-                boolean hubResponding=packet.optJSONObject("status")!=null
-                    &&packet.optJSONObject("status").optBoolean("ok",false);
-                boolean pollGaps=preloadScreenReady&&hubResponding&&
-                    now-lastHubGapPollMs>=25_000L;
-                if(pollGaps)lastHubGapPollMs=now;
-                boolean anyHub=false;
-                for(String[] k:RECORDS){
-                    JSONObject marketTree=localRecords.optJSONObject(k[0]);
-                    JSONObject strategyTree=marketTree==null?null:marketTree.optJSONObject(k[1]);
-                    JSONObject localBucket=strategyTree==null?null:strategyTree.optJSONObject(k[2]);
-                    if(meaningfulRecord(localBucket)
-                        &&!missingNestedBucket(localBucket,k[3]))continue;
-                    JSONObject response=cachedHubGapRecords.optJSONObject(k[3]);
-                    if(pollGaps){
-                        try{
-                            JSONObject fresh=client.record(k[0],k[1],k[2]);
-                            JSONObject data=fresh.optJSONObject("data");
-                            if(meaningfulRecord(data)){
-                                cachedHubGapRecords.put(k[3],fresh);
-                                response=fresh;
-                            }else if(fresh.optBoolean("ok",false)){
-                                // Confirmed empty data must replace stale cache.
-                                cachedHubGapRecords.remove(k[3]);
-                                response=fresh;
-                            }
-                        }catch(Exception e){
-                            new RuntimeCrashStore(this).add("hub_gap_"+k[3],e);
-                        }
-                    }
-                    if(response!=null&&meaningfulRecord(response.optJSONObject("data"))){
-                        records.put(k[3],response);
-                        anyHub=true;
-                    }
+                try{
+                    android.content.SharedPreferences scorePrefs=getSharedPreferences(
+                        "artitrade_market_score_v005",MODE_PRIVATE);
+                    packet.put("market_score_plane_v005",
+                        new JSONObject(scorePrefs.getString("snapshot","{}")));
+                    packet.put("market_score_plane_v005_at",
+                        scorePrefs.getLong("written_at_ms",0L));
+                }catch(Exception ignored){
+                    packet.put("market_score_plane_v005",new JSONObject());
                 }
-                packet.put("using_hub_fallback",anyHub);
-                packet.put("hub_gap_refresh_available",hubResponding);
-                packet.put("hub_gap_status",anyHub?"MISSING_BUCKETS_FROM_MSERVER":
-                    hubResponding?"LOCAL_OR_EMPTY":"MSERVER_OFFLINE");
+                // Fresh PAPER epoch never reads old remote PC buckets back
+                // into the new UI. Only local phone execution ledgers are
+                // authoritative; MServer is an outgoing sync/status source.
+                packet.put("using_hub_fallback",false);
+                packet.put("hub_gap_refresh_available",false);
+                packet.put("hub_gap_status","FRESH_PHONE_LEDGER_ONLY");
                 try{
                     android.content.SharedPreferences sp=getSharedPreferences("artitrade_mserver_sync_v078",MODE_PRIVATE);
                     packet.put("mserver_sync",new JSONObject()
@@ -1313,16 +1728,8 @@ public final class UnifiedVisualActivity extends Activity {
                         .put("started_at",sp.getLong("started_at",0L)).put("updated_at",sp.getLong("updated_at",0L))
                         .put("complete",sp.getBoolean("complete",false)));
                 }catch(Exception e){packet.put("mserver_sync",new JSONObject());}
-                try{
-                    android.content.SharedPreferences ip=getSharedPreferences("artitrade_pc_ledger_import_progress_v078",MODE_PRIVATE);
-                    packet.put("pc_import_progress",new JSONObject()
-                        .put("stage",ip.getString("stage","")).put("detail",ip.getString("detail",""))
-                        .put("done",ip.getLong("done",0L)).put("total",ip.getLong("total",0L))
-                        .put("percent",ip.getInt("percent",0)).put("updated_at",ip.getLong("updated_at",0L))
-                        .put("complete",ip.getBoolean("complete",false)).put("error",ip.getString("error","")));
-                }catch(Exception e){packet.put("pc_import_progress",new JSONObject());}
-                try{packet.put("mserver_migration",client.migrationStatus());}
-                catch(Exception e){packet.put("mserver_migration",new JSONObject());}
+                packet.put("pc_import_progress",new JSONObject());
+                packet.put("mserver_migration",new JSONObject());
                 try{
                     android.content.SharedPreferences hp=getSharedPreferences("artitrade_hub_publish_v075",MODE_PRIVATE);
                     packet.put("hub_publish",new JSONObject()
@@ -1335,11 +1742,7 @@ public final class UnifiedVisualActivity extends Activity {
                         .put("last_bucket",hp.getString("last_bucket",""))
                         .put("last_http_status",hp.getInt("last_http_status",200)));
                 }catch(Exception e){packet.put("hub_publish",new JSONObject());}
-                try{
-                    android.content.SharedPreferences mp=getSharedPreferences("artitrade_pc_ledger_import_result",MODE_PRIVATE);
-                    String raw=mp.getString("result","{}");
-                    packet.put("pc_ledger_migration",new JSONObject(raw));
-                }catch(Exception e){packet.put("pc_ledger_migration",new JSONObject());}
+                packet.put("pc_ledger_migration",new JSONObject());
                 try{
                     android.content.SharedPreferences ap=getSharedPreferences("artitrade_mserver_auth_v077",MODE_PRIVATE);
                     packet.put("mserver_auth",new JSONObject()
@@ -1358,8 +1761,11 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject previousHub=previous.packet.optJSONObject("records");
             boolean hubGapChanged=!(records.toString().equals(
                 previousHub==null?"{}":previousHub.toString()));
+            boolean quoteChanged=!liveQuoteRevision(packet).equals(
+                liveQuoteRevision(previous.packet));
+            boolean recordChanged=!reusedLocalRecords||hubGapChanged||previous.totals.isEmpty();
             if(reusedLocalRecords&&meaningfulLocalRecords&&!hubGapChanged
-                &&!previous.totals.isEmpty()){
+                &&!quoteChanged&&!previous.totals.isEmpty()){
                 preparedTotals=previous.totals;
                 preparedFrames=previous.frames;
             }else{
@@ -1372,7 +1778,10 @@ public final class UnifiedVisualActivity extends Activity {
                             Stats st=calculateStats(packet,m,stg);
                             preparedTotals.put(m+"/"+stg,st);
                             if("at".equals(stg)||"ma".equals(stg)||"general".equals(stg)||"trend".equals(stg)){
-                                for(String tf:new String[]{"5m","30m","60m","day"})
+                                String[] activeFrames="trend".equals(stg)
+                                    ?new String[]{"30m","60m","day"}
+                                    :new String[]{"5m","30m","60m","day"};
+                                for(String tf:activeFrames)
                                     preparedFrames.put(m+"/"+stg+"/"+tf,
                                         calculateStatsTf(packet,m,stg,tf,st));
                             }
@@ -1384,13 +1793,16 @@ public final class UnifiedVisualActivity extends Activity {
             }
             if(!preloadScreenReady)updateStartupProgress(76,"주식·코인 전략별 화면 자료 사전 계산");
             boolean ledgerChanged=preparedTotals!=previous.totals;
-            Map<String,java.util.List<HistoryRow>> histories=ledgerChanged
+            // A live price changed, but SELL history/AI did not. Keep those
+            // potentially huge prepared tables while repainting current prices.
+            Map<String,java.util.List<HistoryRow>> histories=recordChanged
                 ?prepareHistories(preparedTotals):previous.histories;
-            Map<String,RealizedTrend.Series> trends=ledgerChanged
+            Map<String,RealizedTrend.Series> trends=recordChanged
                 ?prepareTrends(preparedTotals):previous.trends;
-            Map<String,ResearchScoreGrid> researchGrids=ledgerChanged
-                ?prepareResearchGrids(preparedTotals):previous.researchGrids;
-            int rows=ledgerChanged?countPreparedRows(preparedTotals):previous.preloadRows;
+            // Research UI removed v107: do not build thousands of orphaned
+            // score-grid rows. Raw SQLite and AI-analysis sources remain intact.
+            Map<String,ResearchScoreGrid> researchGrids=java.util.Collections.emptyMap();
+            int rows=recordChanged?countPreparedRows(preparedTotals):previous.preloadRows;
             long preloadMs=android.os.SystemClock.elapsedRealtime()-preloadStart;
             uiSnapshot=new UiSnapshot(packet,preparedTotals,preparedFrames,histories,
                 trends,researchGrids,preloadMs,rows,!ledgerChanged);
@@ -1413,7 +1825,7 @@ public final class UnifiedVisualActivity extends Activity {
                 }
                 updateHeader();
                 if(!"operation".equals(page)
-                    &&(ledgerChanged||"home".equals(page)||"errors".equals(page)||
+                    &&(ledgerChanged||"home".equals(page)||
                         "market".equals(page)))render();
             });
         });
@@ -1428,13 +1840,10 @@ public final class UnifiedVisualActivity extends Activity {
         boolean stopped=halted!=null&&!halted.isNull(market)&&halted.optJSONObject(market)!=null;
         long recordsAt=c.optLong("local_records_at",0L);
         String sync=recordsAt>0?" · 원장 "+Math.max(0,(System.currentTimeMillis()-recordsAt)/1000)+"초":" · 원장 준비";
-        JSONObject mp=c.optJSONObject("mserver_sync"),ip=c.optJSONObject("pc_import_progress"),ms=c.optJSONObject("mserver_migration");
+        JSONObject mp=c.optJSONObject("mserver_sync");
         String progress="";
-        if(mp!=null&&!mp.optBoolean("complete",false)&&mp.optInt("total",0)>0)progress+=" · MSERVER "+mp.optInt("percent",0)+"%";
-        int ipp=ip==null?0:ip.optInt("percent",0);
-        if(ip!=null&&!ip.optBoolean("complete",false)&&ip.optInt("total",0)>0)progress+=" · 과거원장 "+ipp+"%";
-        else if(ms!=null&&!ms.optBoolean("ready",false)&&ms.optInt("total_chunks",0)>0)
-            progress+=" · PC전송 "+Math.max(0,Math.min(100,ms.optInt("received",0)*100/Math.max(1,ms.optInt("total_chunks",1))))+"%";
+        if(mp!=null&&!mp.optBoolean("complete",false)&&mp.optInt("total",0)>0)
+            progress=" · 전송 "+mp.optInt("percent",0)+"%";
         statusText.setText((live?"실시간 LIVE":"실시간 대기")+sync+progress+(stopped?" · 주문정지":""));
         statusText.setTextColor(stopped?Color.rgb(255,119,133):!progress.isEmpty()?Color.rgb(255,201,94):live?Color.rgb(62,224,181):Color.rgb(255,201,94));
     }
@@ -1482,13 +1891,19 @@ public final class UnifiedVisualActivity extends Activity {
             String[] parts=source.getKey().split("/");
             if(parts.length!=2)continue;
             String m=parts[0],s=parts[1];Stats st=source.getValue();
-            for(String kind:new String[]{"positions","pending","executions","research"}){
+            // Dedicated research page was removed; avoid allocating copies of
+            // research arrays on every ledger refresh. AI uses source JSON.
+            for(String kind:new String[]{"positions","pending","executions"}){
                 JSONArray data="positions".equals(kind)?st.positions:
                     "pending".equals(kind)?st.pending:
                     "executions".equals(kind)?st.executions:st.research;
                 for(int i=0;i<data.length();i++){
                     JSONObject row=data.optJSONObject(i);if(row==null)continue;
                     String frame=timeFrameOf(row);
+                    // Retired Trend 5m entries are hidden from current pending/fill
+                    // history. Existing open holdings remain visible for recovery.
+                    if("trend".equals(s)&&"5m".equals(frame)
+                        &&!"positions".equals(kind))continue;
                     HistoryRow item=new HistoryRow(row,s,frame,rowTimestamp(row));
                     // Current-strategy default, all-strategy opt-in and per-frame within the current strategy.
                     buckets.computeIfAbsent(m+"/"+s+"/"+kind+"/all",k->new java.util.ArrayList<>()).add(item);
@@ -1515,7 +1930,9 @@ public final class UnifiedVisualActivity extends Activity {
             java.util.Map<String,java.util.List<RealizedTrend.Event>> grouped=new HashMap<>();
             grouped.put("all",new java.util.ArrayList<>());
             if(StrategyDashboardScope.showFrameCharts(strategyName))
-                for(String tf:new String[]{"5m","30m","60m","day"})
+                for(String tf:("trend".equals(strategyName)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"}))
                     grouped.put(tf,new java.util.ArrayList<>());
             JSONArray fills=source.getValue().executions;
             for(int i=0;i<fills.length();i++){
@@ -1553,6 +1970,7 @@ public final class UnifiedVisualActivity extends Activity {
             for(int i=0;i<records.length();i++){
                 JSONObject row=records.optJSONObject(i);if(row==null)continue;
                 String frame=timeFrameOf(row);
+                if("trend".equals(parts[1])&&"5m".equals(frame))continue;
                 if(frame.isEmpty())frame=parts[1];
                 double score=num(row,"score","gmo_score_at_signal","original_score","signal_score");
                 boolean purchased=bool(row,"bought","actually_bought","filled");
@@ -1570,7 +1988,9 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private String activeHistoryFilter(){
-        return "stock".equals(market)?historyFilterStock:historyFilterCoin;
+        String chosen="stock".equals(market)?historyFilterStock:historyFilterCoin;
+        // A saved v005 5m selection must never reopen a retired Trend pane.
+        return "trend".equals(strategy)&&"5m".equals(chosen)?"current":chosen;
     }
 
     private java.util.List<HistoryRow> selectedHistory(String kind){
@@ -1616,6 +2036,7 @@ public final class UnifiedVisualActivity extends Activity {
             ?new String[]{"current","all","5m","30m","60m","day","gmo","close"}
             :new String[]{"current","all","5m","30m","60m","day"};
         for(String choice:filters){
+            if("trend".equals(strategy)&&"5m".equals(choice))continue;
             android.view.MenuItem item=menu.getMenu().add(HistorySelection.filterLabel(choice));
             item.setCheckable(true);item.setChecked(choice.equals(activeHistoryFilter()));
             item.setOnMenuItemClickListener(selected->{
@@ -1682,53 +2103,6 @@ public final class UnifiedVisualActivity extends Activity {
     private boolean meaningfulRecord(JSONObject value){
         return value!=null&&meaningfulTree(value);
     }
-    private boolean recoveryCandidate(JSONObject nested,String recordKey){
-        if(nested==null||nested.length()==0)return true;
-        if("stockAtResearch".equals(recordKey)){
-            JSONArray items=nested.optJSONArray("items");
-            if(items!=null&&items.length()>0)return false;
-            String status=nested.optString("load_status","");
-            return !("OK".equals(status)&&nested.optLong("source_total",0L)==0L);
-        }
-        if("stockAtLedger".equals(recordKey)){
-            JSONObject diagnostic=nested.optJSONObject("load_diagnostic");
-            String stage=diagnostic==null?"":diagnostic.optString("stage","");
-            return "PC_SOURCE_NOT_PRESENT".equals(stage)||
-                "ENGINE_NOT_READY".equals(stage);
-        }
-        return false;
-    }
-    private boolean missingNestedBucket(JSONObject local,String recordKey){
-        if(local==null)return true;
-        if("stockAtLedger".equals(recordKey)||"stockAtResearch".equals(recordKey)){
-            for(String nested:new String[]{"ma","gmo"}){
-                String field="stockAtLedger".equals(recordKey)&&"ma".equals(nested)
-                    ?"ma_subledger":nested;
-                if(recoveryCandidate(local.optJSONObject(field),recordKey))return true;
-            }
-        }
-        return false;
-    }
-    /** Supplement genuinely missing or failed nested buckets, but
-     * never overwrite a complete phone trading ledger with old PC data.
-     */
-    private JSONObject mergeMissingNested(JSONObject local,JSONObject remote,String recordKey){
-        if(!meaningfulRecord(local))return remote;
-        if(!meaningfulRecord(remote)||!missingNestedBucket(local,recordKey))return local;
-        String[] keys="stockAtLedger".equals(recordKey)
-            ?new String[]{"ma_subledger","gmo"}:new String[]{"ma","gmo"};
-        try{
-            JSONObject merged=new JSONObject(local.toString());
-            for(String nested:keys){
-                JSONObject source=remote.optJSONObject(nested);
-                if(recoveryCandidate(merged.optJSONObject(nested),recordKey)
-                    &&meaningfulRecord(source))merged.put(nested,source);
-            }
-            return merged;
-        }catch(Exception ignored){return local;}
-    }
-
-
     private JSONObject localRecord(String key){return localRecord(copyCache(),key);}
     private JSONObject localRecord(JSONObject snapshot,String key){
         JSONObject all=snapshot.optJSONObject("local_records");if(all==null)return new JSONObject();
@@ -1751,17 +2125,12 @@ public final class UnifiedVisualActivity extends Activity {
 
     private JSONObject record(String key){return record(copyCache(),key);}
     private JSONObject record(JSONObject snapshot,String key){
-        JSONObject local=localRecord(snapshot,key);
-        JSONObject p=snapshot.optJSONObject("records");
-        JSONObject remote=null;
-        if(p!=null){
-            JSONObject envelope=p.optJSONObject(key);
-            remote=envelope==null?null:envelope.optJSONObject("data");
-        }
-        if(meaningfulRecord(local))
-            return mergeMissingNested(local,remote,key);
-        if(meaningfulRecord(remote))return remote;
-        return local==null?new JSONObject():local;
+        // Fresh-only native phone ledger. Remote PC/UI records are never
+        // promoted to the source of current holdings, P&L or fill evidence.
+        // MSERVER is a separately verified, read-only DISASTER BACKUP, not
+        // a live ledger gap filler. 0 executions in an initialized wallet
+        // is a legitimate zero balance, never a reason to import old rows.
+        return localRecord(snapshot,key);
     }
 
     private JSONObject ledger(String m,String s){return ledger(copyCache(),m,s);}
@@ -1874,7 +2243,8 @@ public final class UnifiedVisualActivity extends Activity {
         String status=row.optString("status","").toUpperCase(Locale.ROOT);
         String id=row.optString("id","");
         String reason=row.optString("reason","").toUpperCase(Locale.ROOT);
-        return mode.contains("MARKET_TREND")||mode.contains("마켓트렌드")||
+        return "trend".equalsIgnoreCase(row.optString("strategy",""))||
+            mode.contains("MARKET_TREND")||mode.contains("마켓트렌드")||
             status.startsWith("TREND_")||id.startsWith("MT43:")||id.startsWith("MT54:")||
             reason.startsWith("MARKET_TREND_");
     }
@@ -1904,14 +2274,89 @@ public final class UnifiedVisualActivity extends Activity {
         int researchVirtualEvaluated=0,researchVirtualHit=0,researchVirtualMiss=0,researchVirtualPending=0,researchVirtualEntry=0;
         int flowPending=0,flowBought=0,flowHolding=0,flowSold=0;
         boolean flowKnown=false;
+        boolean sourceReady=false;
+        boolean sourceError=false;
+    }
+
+    /** A fresh but EMPTY original wallet is valid and has zero P&L.
+     * The UI may NOT turn a missing or unreadable source into a fake 0.
+     */
+    private boolean ledgerSourceReady(JSONObject ledger){
+        if(ledger==null||ledger.length()==0)return false;
+        JSONObject diagnostic=ledger.optJSONObject("load_diagnostic");
+        if(diagnostic!=null){
+            String stage=diagnostic.optString("stage","").toUpperCase(Locale.ROOT);
+            if(stage.contains("MISSING")||stage.contains("NOT_READY")||
+               stage.contains("ERROR")||stage.contains("FAIL"))return false;
+        }
+        return ledger.has("positions")||ledger.has("holdings")||
+            ledger.has("executions")||ledger.has("fills")||
+            ledger.has("accounts")||ledger.has("performance_by_frame")||
+            ledger.has("wallets")||ledger.has("realized_pnl")||
+            ledger.has("unrealized_pnl")||ledger.has("cash")||
+            ledger.has("total_pnl");
+    }
+
+    private void normalizeFreshZeroPnl(Stats st){
+        if(!st.sourceReady)return;
+        // With no CLOSED SELL a verified new wallet's realized P&L is
+        // mathematically zero. With no OPEN holdings its floating P&L
+        // is zero. Do not infer prices, fills, wins, or profits otherwise.
+        if(st.flowSold==0&&st.executions.length()==0&&
+            !finite(st.realized))st.realized=0.0;
+        if(st.positions.length()==0&&!finite(st.unrealized))
+            st.unrealized=0.0;
+        if(finite(st.realized)&&finite(st.unrealized))
+            st.total=st.realized+st.unrealized;
     }
 
     private Stats stats(String m,String s){
         Stats preloaded=uiSnapshot.totals.get(m+"/"+s);
         return preloaded==null?new Stats():preloaded;
     }
+    /** Apply ONLY quote evidence from the 2.5s service heartbeat, never use
+     * these display prices as executable KRX 0D sell depth or a broker fill.
+     * A large SQLite UI snapshot can be 6.5-17s old without delaying price.
+     */
+    private void overlayLiveStockQuotes(JSONObject snapshot,JSONArray positions){
+        JSONObject runtime=snapshot.optJSONObject("strategy_runtime");
+        JSONObject live=runtime==null?null:runtime.optJSONObject("stock_quote_live_v086");
+        JSONObject quotes=live==null?null:live.optJSONObject("quotes");
+        if(quotes==null||positions==null)return;
+        for(int i=0;i<positions.length();i++){
+            JSONObject held=positions.optJSONObject(i);
+            if(held==null||!isStockPosition(held))continue;
+            String code=held.optString("code",held.optString("symbol","")).trim();
+            if(code.startsWith("A")&&code.length()==7)code=code.substring(1);
+            JSONObject q=quotes.optJSONObject(code);
+            if(q==null)continue;  // no false live price for missing instruments
+            double price=num(q,"price");
+            if(!finite(price)||price<=0)continue;
+            try{
+                held.put("stock_quote_checked_v066",true);
+                held.put("stock_quote_status",q.optString("status","NOT_RECEIVED"));
+                held.put("stock_quote_source",q.optString("source",""));
+                held.put("stock_quote_venue",q.optString("venue",""));
+                held.put("stock_quote_exchange_at",q.optString("exchange_at",""));
+                held.put("stock_quote_received_at",q.optString("received_at",""));
+                held.put("stock_quote_expires_ms",q.optLong("expires_ms",0L));
+                held.put("stock_quote_display_price",price);
+            }catch(org.json.JSONException ignored){}
+        }
+    }
+    private String liveQuoteRevision(JSONObject packet){
+        JSONObject r=packet==null?null:packet.optJSONObject("strategy_runtime");
+        JSONObject q=r==null?null:r.optJSONObject("stock_quote_live_v086");
+        return q==null?"":q.optString("revision","");
+    }
+
     private Stats calculateStats(JSONObject snapshot,String m,String s){
         Stats st=new Stats();JSONObject l=ledger(snapshot,m,s);
+        st.sourceReady=ledgerSourceReady(l);
+        JSONObject diagnostic=l.optJSONObject("load_diagnostic");
+        st.sourceError=diagnostic!=null&&
+            diagnostic.optString("stage","").toUpperCase(Locale.ROOT)
+                .matches(".*(ERROR|CORRUPT|FAIL).*");
         if("trend".equals(s)){
             JSONArray all=array(l,"positions"),open=new JSONArray();
             for(int i=0;i<all.length();i++){
@@ -1920,15 +2365,28 @@ public final class UnifiedVisualActivity extends Activity {
                     x.optDouble("qty",0)>0)open.put(x);
             }
             st.positions=open;
+            if("stock".equals(m))overlayLiveStockQuotes(snapshot,st.positions);
             JSONObject local=snapshot.optJSONObject("local_records");
             JSONObject watches=local==null?null:local.optJSONObject("market_trend_watch");
-            st.pending=watches==null?new JSONArray():array(watches,m);
+            JSONArray rawTrendPending=watches==null?new JSONArray():array(watches,m);
+            st.pending=new JSONArray();
+            for(int n=0;n<rawTrendPending.length();n++){
+                JSONObject candidate=rawTrendPending.optJSONObject(n);
+                if(candidate!=null&&!"5m".equals(timeFrameOf(candidate)))
+                    st.pending.put(candidate);
+            }
             st.executions=array(l,"executions");
             st.realized=num(l,"realized_pnl");
             st.unrealized=num(l,"unrealized_pnl");
             if(finite(st.realized)&&finite(st.unrealized))st.total=st.realized+st.unrealized;
             JSONObject rs=research(snapshot,m,s);
-            st.research=array(rs,"items");
+            JSONArray rawTrendResearch=array(rs,"items");
+            st.research=new JSONArray();
+            for(int n=0;n<rawTrendResearch.length();n++){
+                JSONObject observation=rawTrendResearch.optJSONObject(n);
+                if(observation!=null&&!"5m".equals(timeFrameOf(observation)))
+                    st.research.put(observation);
+            }
             st.candidates=st.research.length();
             int bought=0,sold=0;
             for(int i=0;i<st.executions.length();i++){
@@ -1941,9 +2399,11 @@ public final class UnifiedVisualActivity extends Activity {
             st.bought=bought;st.closed=sold;
             st.flowPending=st.pending.length();st.flowHolding=st.positions.length();
             st.flowBought=bought;st.flowSold=sold;st.flowKnown=true;
+            normalizeFreshZeroPnl(st);
             return st;
         }
         st.positions=rows(l,m,s,"positions","holdings");
+        if("stock".equals(m))overlayLiveStockQuotes(snapshot,st.positions);
         // Shadow observations are research, not broker pending orders.
         // They remain in the trend research journal and approved evidence.
         JSONArray sourcePending=rows(l,m,s,"pending","pending_orders","orders","candidates");
@@ -1971,6 +2431,26 @@ public final class UnifiedVisualActivity extends Activity {
         if(!finite(st.unrealized))st.unrealized=sum(st.positions,false);
         if(finite(st.realized)&&finite(st.unrealized))st.total=st.realized+st.unrealized;
         else st.total=num(l,"total_pnl","net_pnl","profit","total_profit");
+
+        if("stock".equals(m)&&"gmo".equals(s)){
+            // EXACT same per-position valuation as the holdings cards.
+            // Engine wallet.holding is based on a DIFFERENT saved mark and
+            // must never be mixed with the verified UI mark in dashboards.
+            // If any held price is unknown, do not advertise a partial sum
+            // as a complete profit on the strategy or integrated dashboard.
+            double reconciled=0;
+            boolean complete=true;
+            for(int i=0;i<st.positions.length();i++){
+                JSONObject held=st.positions.optJSONObject(i);
+                if(held==null){complete=false;break;}
+                double value=tradePnL(held,"positions");
+                if(!finite(value)){complete=false;break;}
+                reconciled+=value;
+            }
+            st.unrealized=complete?reconciled:Double.NaN;
+            st.total=finite(st.realized)&&complete
+                ?st.realized+reconciled:Double.NaN;
+        }
 
         int sell=0,buy=0,known=0,wins=0;
         for(int i=0;i<st.executions.length();i++){JSONObject r=st.executions.optJSONObject(i);if(r==null)continue;
@@ -2036,6 +2516,7 @@ public final class UnifiedVisualActivity extends Activity {
         st.researchVirtualEntry=rs.optInt("virtual_entry",0);
         st.confirmed=st.researchActualEvaluated+st.researchVirtualEvaluated;
         st.hits=st.researchActualHit+st.researchVirtualHit;
+        normalizeFreshZeroPnl(st);
         return st;
     }
 
@@ -2056,6 +2537,8 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private Stats calculateStatsTf(JSONObject snapshot,String m,String stg,String tf,Stats all){
         Stats st=new Stats();
+        st.sourceReady=all.sourceReady;
+        st.sourceError=all.sourceError;
         st.positions=filterTf(all.positions,tf);st.pending=filterTf(all.pending,tf);st.executions=filterTf(all.executions,tf);st.research=filterTf(all.research,tf);
         JSONObject l=ledger(snapshot,m,stg);
         JSONObject pf=l.optJSONObject("performance_by_frame");JSONObject p=pf==null?null:pf.optJSONObject(tf);
@@ -2099,6 +2582,7 @@ public final class UnifiedVisualActivity extends Activity {
             st.flowSold=st.closed;
             st.flowBought=Math.max(st.flowHolding+st.flowSold,st.bought);
         }
+        normalizeFreshZeroPnl(st);
         return st;
     }
 
@@ -2121,6 +2605,19 @@ public final class UnifiedVisualActivity extends Activity {
         if("60m".equals(tf))return "1시간";
         if("day".equals(tf))return "일봉";
         return tf;
+    }
+
+    private String holdingFrameBadge(JSONObject row,String sourceStrategy){
+        // Display the real wallet timeframe IN the former holding-status
+        // square, not repeated after the symbol. GMO/CW have no bar frame.
+        String frame=timeFrameOf(row);
+        if("5m".equals(frame))return "5분";
+        if("30m".equals(frame))return "30분";
+        if("60m".equals(frame))return "60분";
+        if("day".equals(frame))return "일봉";
+        if("gmo".equals(sourceStrategy))return "수급";
+        if("close".equals(sourceStrategy))return "종가";
+        return "—";
     }
 
     private String[][] strategyList(String m){
@@ -2168,7 +2665,27 @@ public final class UnifiedVisualActivity extends Activity {
     }
 
     private void render(){
-        if(content==null)return;content.removeAllViews();updateHeader();
+        if(content==null)return;
+        livePriceBindings.clear();
+        content.removeAllViews();
+        // A stale local snapshot must never look like the CURRENT ledger
+        // after anti-rollback has stopped trading. No apparent old holdings,
+        // false P&L or manual exit button may be displayed as executable.
+        String ledgerBlock=getSharedPreferences("artitrade_ledger_guard_v002",
+            MODE_PRIVATE).getString("blocked_reason","");
+        if(!ledgerBlock.isEmpty()){
+            TextView warning=text("원장 무결성 오류 · 매매 중단",19);
+            warning.setTextColor(Color.rgb(255,145,155));
+            warning.setPadding(dp(10),dp(20),dp(10),dp(8));
+            content.addView(warning);
+            TextView detail=text("체결기록이 이전 상태로 변경되었을 수 있어 "+
+                "원장 복원과 전략 실행을 차단했습니다. 기존 기록을 자동 덮어쓰지 않습니다.",13);
+            detail.setTextColor(PremiumUi.MUTED);
+            detail.setPadding(dp(10),0,dp(10),dp(12));
+            content.addView(detail);
+            return;
+        }
+        updateHeader();
         if(integratedMode){
             if("positions".equals(page))renderIntegratedPositions();
             else renderIntegratedHome();
@@ -2183,10 +2700,10 @@ public final class UnifiedVisualActivity extends Activity {
         }
         else if("executions".equals(page))renderList("체결 이력",stats(market,strategy).executions,"executions");
         else if("operation".equals(page))renderOperation();
-        else if("research".equals(page))renderResearch();
+        else if("research".equals(page))renderAiAnalysis(); // legacy navigation fallback
         else if("analysis".equals(page))renderAiAnalysis();
         else if("scores".equals(page))renderScores();
-        else if("errors".equals(page))renderErrors();
+        else if("errors".equals(page))renderHome(); // no error history table
         else if("policyHistory".equals(page))renderPolicyHistory();
         else renderMore();
     }
@@ -2194,22 +2711,13 @@ public final class UnifiedVisualActivity extends Activity {
     private void renderMaEntryObservations(){
         // The original MA wallet is the ONLY source of actual orders and fills.
         // Early 30-second observations are research, not a broker PENDING order.
-        renderList("실제 매수대기 · 원본 주문원장",stats(market,"ma").pending,"pending");
-
-        TextView guide=text("MA 사전관측: 마감 30초 전부터 · 실제 상승전환 매수판정: 마감 10~2초 전",13);
-        guide.setTextColor(Color.rgb(186,219,250));
-        guide.setPadding(dp(2),dp(12),0,dp(4));
-        content.addView(guide);
-        TextView caution=text("사전관측은 주문이 아님. 매수 직전 실제 체결가·호가(3초 이내)와 MA 조건을 다시 확인하며, 주문 후 체결 허용시간은 15초임.",12);
-        caution.setTextColor(PremiumUi.MUTED);
-        caution.setMaxLines(5);
-        content.addView(caution);
+        renderList("MA 매수대기",stats(market,"ma").pending,"pending");
 
         JSONObject local=copyCache().optJSONObject("local_records");
         JSONObject maWatch=local==null?null:local.optJSONObject("ma_watch_v076");
         JSONArray rows=maWatch==null?null:maWatch.optJSONArray(market);
         if(rows==null||rows.length()==0){
-            empty("MA 사전관측 및 최종 판정 이력 없음 · 실제 체결가가 수신되어야 관측 가능함. 이력 0건은 매수조건 만족을 뜻하지 않음");
+            empty("MA 관측 내역 없음");
             return;
         }
         for(int phase=0;phase<2;phase++){
@@ -2237,23 +2745,6 @@ public final class UnifiedVisualActivity extends Activity {
                 what.setTextColor(Color.rgb(228,199,149));
                 what.setMaxLines(4);
                 tile.addView(what);
-                JSONObject facts=r.optJSONObject("ma_details");
-                if(facts!=null&&facts.length()>0){
-                    StringBuilder detail=new StringBuilder();
-                    for(String k:new String[]{"remaining_sec","seconds_to_close","ma_120_delta",
-                        "ma120_delta","ma_60_delta","ma120_down_tolerance","book_age_sec",
-                        "trade_price","last_trade_price","ask","live_source"}){
-                        if(!facts.has(k))continue;
-                        if(detail.length()>0)detail.append(" · ");
-                        detail.append(k).append(" ").append(facts.optString(k,""));
-                    }
-                    if(detail.length()>0){
-                        TextView values=text(detail.toString(),11);
-                        values.setTextColor(Color.rgb(143,180,206));
-                        values.setMaxLines(5);
-                        tile.addView(values);
-                    }
-                }
                 TextView when=text("기준봉 마감 "+r.optString("bar_end","미확인")+
                     " · 관측 시각 "+formatKst(r.opt("at")),11);
                 when.setTextColor(PremiumUi.MUTED);
@@ -2283,55 +2774,34 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject watch=local==null?null:local.optJSONObject("market_trend_watch");
         JSONArray pending=watch==null?null:watch.optJSONArray(market);
         if(pending==null)pending=stats(market,"trend").pending;
-        TextView title=text("마켓트렌드 · RSI(20) ≤ 35 매수대기",20);
+        TextView title=text("마켓트렌드 · 진행봉 RSI 사전관측 (매수후보 아님)",17);
         title.setTypeface(null,Typeface.BOLD);
         content.addView(title);
-        TextView detail=text("RSI20 관측대기는 미주문 · 사전확인 마감 22~12.5초 전 · 실제 매수 판정 12~7초 전 · RSI30 충족과 신선한 체결가·호가 필요",12);
-        detail.setTextColor(PremiumUi.MUTED);
-        detail.setPadding(dp(2),dp(6),0,dp(10));
-        content.addView(detail);
         JSONObject trendDiag=local==null?null:local.optJSONObject("market_trend_status");
         JSONObject marketDiag=trendDiag==null?null:trendDiag.optJSONObject(market);
-        JSONObject blocked=marketDiag==null?null:marketDiag.optJSONObject("entry_block_reasons");
-        if(blocked!=null&&blocked.length()>0){
-            StringBuilder hint=new StringBuilder("미진입 사유(누적) · ");
-            java.util.Iterator<String> keys=blocked.keys();int shown=0;
-            while(keys.hasNext()&&shown<3){
-                String reason=keys.next();int count=blocked.optInt(reason,0);
-                if(count<=0)continue;
-                if(shown>0)hint.append(" / ");
-                hint.append(reason).append(" ").append(count);
-                shown++;
-            }
-            if(shown>0){
-                TextView why=text(hint.toString(),11);
-                why.setTextColor(PremiumUi.MUTED);
-                why.setMaxLines(4);
-                content.addView(why);
-            }
-        }
         if(pending.length()==0){
-            // Reuse the diagnostics already resolved above; no redeclaration.
-            int candidates=marketDiag==null?0:marketDiag.optInt("candidates",0);
-            String err=marketDiag==null?"":marketDiag.optString("error","");
-            String info="현재 관측 대기 0건 · 스캔 후보 "+candidates+
-                "종목 · RSI 35 이하 실시간 증거 없음";
-            if(!err.isEmpty())info+=" · 마지막 진단: "+err;
-            empty(info);
+            empty("매수대기 종목 없음");
             return;
         }
         for(int i=0;i<pending.length();i++){
             JSONObject row=pending.optJSONObject(i);
-            if(row==null||!"WATCH_PENDING".equals(row.optString("status","")))continue;
+            if(row==null||"5m".equals(timeFrameOf(row))
+                ||!"WATCH_PENDING".equals(row.optString("status","")))continue;
             LinearLayout panel=card();
             String symbol=row.optString("code","종목 미확인");
             panel.addView(text(symbol+" · "+tfLabel(timeFrameOf(row)),17));
             double rsi=row.optDouble("rsi20_live",Double.NaN);
-            panel.addView(text("관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
-                " · 현재가 "+formatMaybeMoney(row,"price"),13));
+            String rsiText="진행봉 관측 RSI20 "+(finite(rsi)?number(rsi):"미수신")+
+                " · 현재가 ";
+            TextView priceView=text(rsiText+formatMaybeMoney(row,"price"),13);
+            panel.addView(priceView);
+            TextView observed=text("시세 확인 중",10);
+            observed.setTextColor(PremiumUi.MUTED);
+            panel.addView(observed);
+            bindFastVisiblePrice(row,market,priceView,observed,rsiText,"");
             panel.addView(text("진입 재무장 "+(row.optBoolean("armed",false)?"완료":"대기")+
                 " · RSI30 관측 "+(row.optBoolean("touched_30",false)?"있음":"없음")+
-                " · 상태: 미주문 관측",11));
+                "",11));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
             lp.setMargins(0,0,0,dp(9));
             content.addView(panel,lp);
@@ -2468,6 +2938,27 @@ public final class UnifiedVisualActivity extends Activity {
         JSONObject research=local==null?null:local.optJSONObject("market_research");
         JSONObject stock=research==null?null:research.optJSONObject("stock");
         JSONObject coin=research==null?null:research.optJSONObject("coin");
+        // Screen-only independent score route. Real execution history still
+        // joins the ORIGINAL market_research_v033.sqlite3 score_events ledger.
+        JSONObject scorePlane=uiSnapshot.packet.optJSONObject("market_score_plane_v005");
+        if(scorePlane!=null&&"ARTITRADE_MARKET_SCORE_PLANE_V005".equals(
+                scorePlane.optString("schema",""))){
+            long written=uiSnapshot.packet.optLong("market_score_plane_v005_at",0L);
+            long age=System.currentTimeMillis()-written;
+            if(written>0L&&age>=-3000L&&age<=25000L){
+                stock=scorePlane.optJSONObject("stock");
+                coin=scorePlane.optJSONObject("coin");
+            }else{
+                stock=new JSONObject();
+                coin=new JSONObject();
+                try{
+                    stock.put("status","주식 시장점수 전달 지연 · 상태 확인 중");
+                    stock.put("stale",true);
+                    coin.put("status","코인 시장점수 전달 지연 · 상태 확인 중");
+                    coin.put("stale",true);
+                }catch(Exception ignored){}
+            }
+        }
         boolean wide=getResources().getConfiguration().screenWidthDp>=720;
         LinearLayout panels=new LinearLayout(this);
         panels.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
@@ -2561,6 +3052,13 @@ public final class UnifiedVisualActivity extends Activity {
         }
         java.util.List<IntegratedHolding> held=integratedHoldings();
         boolean complete=knownR==totalScopes&&knownU==totalScopes;
+        boolean anyError=false;
+        for(String marketName:new String[]{"stock","coin"}){
+            for(String[] sourceDef:strategyList(marketName)){
+                if(stats(marketName,sourceDef[0]).sourceError)anyError=true;
+            }
+        }
+        String incompleteText=anyError?"원장 조회 오류":"원장 확인 중";
         LinearLayout hero=card();
         hero.setPadding(dp(15),dp(10),dp(15),dp(10));
         TextView info=text("전략 8개 · 주식 5 / 코인 3 · 보유 "+held.size()+"종목",12);
@@ -2569,7 +3067,7 @@ public final class UnifiedVisualActivity extends Activity {
         totalTitle.setTextColor(PremiumUi.MUTED);
         totalTitle.setPadding(0,dp(6),0,dp(2));hero.addView(totalTitle);
         double aggregate=realized+unrealized;
-        TextView total=text(complete?WonFormat.signed(aggregate):"일부 원장 미수신",27);
+        TextView total=text(complete?WonFormat.signed(aggregate):incompleteText,27);
         total.setTypeface(null,Typeface.BOLD);
         autoSingle(total,16,27);
         if(complete)paintProfit(total,aggregate);
@@ -2616,7 +3114,7 @@ public final class UnifiedVisualActivity extends Activity {
                 tile.addView(heading);
                 LinearLayout figures=new LinearLayout(this);
                 figures.setGravity(Gravity.CENTER_VERTICAL);
-                TextView current=text(finite(v.total)?WonFormat.signed(v.total):"손익 미수신",20);
+                TextView current=text(finite(v.total)?WonFormat.signed(v.total):(v.sourceError?"원장 조회 오류":"원장 확인 중"),20);
                 current.setTypeface(null,Typeface.BOLD);
                 autoSingle(current,12,20);
                 if(finite(v.total))paintProfit(current,v.total);
@@ -2632,7 +3130,7 @@ public final class UnifiedVisualActivity extends Activity {
                     "실현 "+(finite(v.realized)?WonFormat.signed(v.realized):"—"));
                 tile.addView(chart,new LinearLayout.LayoutParams(-1,dp(108)));
                 tile.setContentDescription(scopeTitle(m,s)+" · 손익 "+
-                    (finite(v.total)?WonFormat.signed(v.total):"미수신")+
+                    (finite(v.total)?WonFormat.signed(v.total):(v.sourceError?"원장 조회 오류":"원장 확인 중"))+
                     " · 탭하면 해당 전략 열기");
                 final String chosenMarket=m,chosenStrategy=s;
                 tile.setOnClickListener(view->{
@@ -2675,32 +3173,46 @@ public final class UnifiedVisualActivity extends Activity {
             tile.setPadding(dp(10),dp(8),dp(10),dp(7));
             LinearLayout top=new LinearLayout(this);
             top.setGravity(Gravity.CENTER_VERTICAL);
+            // Integrated holdings have the same left timeframe square as
+            // strategy-specific holdings; never repeat it beside the name.
+            TextView frameBadge=tradeStage(
+                holdingFrameBadge(p,holding.scopeStrategy),
+                Color.rgb(37,55,88),Color.rgb(154,199,255));
+            top.addView(frameBadge,new LinearLayout.LayoutParams(dp(57),dp(28)));
             TextView symbol=text(nameOf(p),15);
             symbol.setTypeface(null,Typeface.BOLD);
             symbol.setSingleLine(true);
             bindSymbolFourTap(symbol,p,holding.scopeMarket);
-            top.addView(symbol,new LinearLayout.LayoutParams(0,dp(26),1));
+            LinearLayout.LayoutParams symbolLayout=
+                new LinearLayout.LayoutParams(0,dp(26),1);
+            symbolLayout.setMargins(dp(7),0,dp(4),0);
+            top.addView(symbol,symbolLayout);
             TextView origin=text(scopeTitle(holding.scopeMarket,holding.scopeStrategy)+
-                " "+tfLabel(timeFrameOf(p))+
                 (isTrendRow(p)?" · 마켓트렌드":""),11);
             origin.setTextColor(PremiumUi.MUTED);
             top.addView(origin);
             tile.addView(top);
+            TextView uid=text("고유 거래 ID · "+p.optString("position_uid",
+                "원본 연결 확인 필요"),10);
+            uid.setTextColor(PremiumUi.MUTED);
+            uid.setSingleLine(true);
+            tile.addView(uid);
             double pnl=tradePnL(p,"positions");
             double rate=tradeReturnPct(p,"positions",pnl);
-            String detail="매수가 "+formatMaybeMoney(p,"entry_price","entry","avg_buy_price")+
+            String detail="매수가 "+formatMaybePrice(p,"entry_price","entry","avg_buy_price")+
                 "    현재가 "+displayPositionMark(p)+
                 "    수량 "+formatMaybeNumber(p,"qty","quantity","holding_qty");
             TextView prices=text(detail,12);
             prices.setTextColor(Color.rgb(168,193,219));
             prices.setMaxLines(2);
             tile.addView(prices);
-            if(isStockPosition(p)){
-                TextView quoteProof=text(stockQuoteCaption(p),10);
-                quoteProof.setTextColor(PremiumUi.MUTED);
-                quoteProof.setMaxLines(2);
-                tile.addView(quoteProof);
-            }
+            TextView received=text("실시간 시세 수신 확인 중 · 화면 전용",10);
+            received.setTextColor(PremiumUi.MUTED);
+            tile.addView(received);
+            bindFastVisiblePrice(p,holding.scopeMarket,prices,received,
+                "매수가 "+formatMaybePrice(p,"entry_price","entry","avg_buy_price")+
+                "    현재가 ",
+                "    수량 "+formatMaybeNumber(p,"qty","quantity","holding_qty"));
             TextView result=text("평가손익 "+
                 (finite(pnl)?WonFormat.signed(pnl):"—")+
                 (finite(rate)?" ("+signedPct(rate)+")":""),14);
@@ -2714,58 +3226,80 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void renderHome(){
         Stats selected=stats(market,strategy);
-        if("ma".equals(strategy)){
-            JSONObject account=ledger(market,"ma");
-            JSONObject epoch=account.optJSONObject("ma_epoch_v062");
-            if(epoch!=null && !epoch.optString("started_at","").isEmpty()){
-                TextView point=text("신규 MA 시작  "+
-                    researchMoment(epoch.optString("started_at"))+
-                    "  ·  새 MA 손익만 집계 · 과거 기록 별도 보존",12);
-                point.setTextColor(Color.rgb(112,214,178));
-                content.addView(point,new LinearLayout.LayoutParams(-1,dp(39)));
+        // The 8-strategy recovery planner is READ-ONLY. It reports which
+        // evidence path is active; it never labels a missed target a fill.
+        JSONObject rt=copyCache().optJSONObject("strategy_runtime");
+        JSONObject recovery=rt==null?null:rt.optJSONObject("recovery_scenarios_v092");
+        JSONObject rows=recovery==null?null:recovery.optJSONObject("scenario_by_strategy");
+        JSONObject decision=rows==null?null:rows.optJSONObject(market+"/"+strategy);
+        if(decision!=null){
+            String scenario=decision.optString("scenario","");
+            String caption;
+            switch(scenario){
+                case "LIVE_VERIFIED":caption="정상 실시간 평가";break;
+                case "RESTART_CATCH_UP":caption="연결 복구 · 원본 매도단계 재평가";break;
+                case "CANDLE_GAP_EXIT_FIRST":caption="기준봉/1분봉 복구 · 보유종목 매도 우선";break;
+                case "BROKER_FEED_DOWN":caption="실시간 연결 복구 대기";break;
+                case "HELD_NOT_SUBSCRIBED":caption="보유종목 재구독 필요";break;
+                case "NO_FRESH_EXIT_EVIDENCE":caption="유효한 매도 체결근거 대기";break;
+                case "MARKET_CLOSED":caption="장외 · 다음 실시간 시세 대기";break;
+                case "UNRESOLVED_EXECUTION":caption="미확정 체결 원장 대조";break;
+                case "POLICY_MISSING":caption="원본 매매 정책 확인 필요";break;
+                case "WAIT_ENTRY_SOURCE":caption="신규매수 실시간 근거 대기";break;
+                default:caption="매매복구 상태 확인 중";break;
             }
-            int oldOpen=account.optInt("ma_legacy_open_count",0);
-            if(oldOpen>0){
-                TextView risk=text("기존 MA 미청산 "+oldOpen+
-                    "건 보존 · 신규 MA 계좌와 별도 · 실제 증권사/거래소 잔고 및 주문은 초기화되지 않음",12);
-                risk.setTextColor(Color.rgb(255,181,91));
-                risk.setMaxLines(3);
-                content.addView(risk,new LinearLayout.LayoutParams(-1,-2));
+            TextView notice=text(caption,11);
+            notice.setTextColor(Color.rgb(139,199,232));
+            notice.setMaxLines(2);
+            content.addView(notice,new LinearLayout.LayoutParams(-1,-2));
+        }
+        if("stock".equals(market)&&"close".equals(strategy)){
+            JSONObject diagnostic=ledger(market,strategy).optJSONObject("cw_runtime_diagnostic_v087");
+            if(diagnostic!=null){
+                String last=diagnostic.optString("last_scan","미기록");
+                int requested=diagnostic.optInt("requested_shared_codes",0);
+                int subscribed=diagnostic.optInt("subscribed_shared_codes",0);
+                String reason=diagnostic.optString("last_error","").trim();
+                String description="종가베팅 원본 스캔 "+last+
+                    " · 공통시세 구독 "+subscribed+"/"+requested+
+                    " · "+diagnostic.optString("status","확인 중");
+                if(!reason.isEmpty())description+=" · 오류: "+reason;
+                if(diagnostic.has("not_subscribed_count")
+                    && diagnostic.optInt("not_subscribed_count",0)>0)
+                    description+=" · 시세 미구독 "+diagnostic.optInt("not_subscribed_count",0)+"종목";
+                TextView note=text(description,11);
+                note.setTextColor(PremiumUi.MUTED);
+                note.setMaxLines(3);
+                content.addView(note,new LinearLayout.LayoutParams(-1,-2));
             }
         }
         if("stock".equals(market)&&"gmo".equals(strategy)&&
            selected.positions.length()+selected.executions.length()+selected.research.length()==0){
+            // Empty is the expected state of a committed fresh PAPER epoch.
+            // A missing ledger, failed source read, and a verified empty
+            // wallet are three DIFFERENT states; never treat count=0 as corruption.
             JSONObject diag=ledger(market,strategy).optJSONObject("load_diagnostic");
-            String detail=diag==null?"원장 확인 필요":diag.optString("stage","원장 확인 필요");
-            TextView warn=text("◉  수급매매 원장 확인 필요 · "+detail,11);
-            warn.setTextColor(Color.rgb(255,119,133));
-            content.addView(warn,new LinearLayout.LayoutParams(-1,dp(22)));
+            String stage=diag==null?"":diag.optString("stage","");
+            String upper=stage.toUpperCase(java.util.Locale.ROOT);
+            boolean sourceFailed=selected.sourceError||
+                upper.contains("ERROR")||upper.contains("CORRUPT")||
+                upper.contains("FAILED")||upper.contains("UNREADABLE");
+            if(sourceFailed||!selected.sourceReady){
+                String message=sourceFailed
+                    ?"수급매매 원장 조회 오류 · "+(stage.isEmpty()?"SOURCE_ERROR":stage)
+                    :"수급매매 엔진 시작 대기 · 원장 조회 중";
+                TextView status=text(message,11);
+                status.setTextColor(sourceFailed?Color.rgb(255,119,133):PremiumUi.MUTED);
+                content.addView(status,new LinearLayout.LayoutParams(-1,dp(22)));
+            }
+            // verified zero positions/executions is NORMAL and needs no warning
         }
         LinearLayout headline=new LinearLayout(this);headline.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=text(strategyName(market,strategy),20);
         title.setTypeface(null,Typeface.BOLD);
         headline.addView(title,new LinearLayout.LayoutParams(0,dp(29),1));
-        TextView source=text("trend".equals(strategy)?"● 독립 마켓트렌드":"● 전략별 계좌",12);
-        source.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-        source.setTextColor(Color.rgb(132,177,213));
-        headline.addView(source,new LinearLayout.LayoutParams(dp(100),dp(29)));
         content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
-        if("trend".equals(strategy)){
-            TextView status=text("RSI20 독립 자동감시 · 5분/30분/1시간/일봉 · 각 시장의 승인된 LIVE/PAPER 상태 적용",12);
-            status.setTextColor(Color.rgb(119,229,180));
-            content.addView(status,new LinearLayout.LayoutParams(-1,dp(27)));
-        }
-
-        // v054 independent RSI strategy: never expose the obsolete MT43
-        // manual toggle on original AT/MA strategy tabs. Preserve saved legacy
-        // flags and old positions for existing-exit reconciliation only.
-        if("at".equals(strategy)||"general".equals(strategy)||"ma".equals(strategy)){
-            TextView active=text("기준봉·MA·마켓트렌드 각각 독립 원장 · 다른 전략 연구자료 미포함",12);
-            active.setTextColor(Color.rgb(119,229,180));
-            content.addView(active,new LinearLayout.LayoutParams(-1,dp(23)));
-        }
-
-        String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"trend".equals(strategy)?"업비트 · KRW TOP40":"업비트 · KRW TOP35";
+        String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"trend".equals(strategy)?"업비트 · KRW TOP50":"업비트 · KRW TOP35";
         content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(46)));
 
         // A single performance strip on landscape; no stacked 167dp+142dp panels.
@@ -2832,7 +3366,9 @@ public final class UnifiedVisualActivity extends Activity {
             boolean sideBySide=getResources().getConfiguration().screenWidthDp>=720;
             LinearLayout pair=null;
             int pairCount=0;
-            for(String tf:new String[]{"5m","30m","60m","day"}){
+            for(String tf:("trend".equals(strategy)
+                ?new String[]{"30m","60m","day"}
+                :new String[]{"5m","30m","60m","day"})){
                 Stats q=statsTf(market,strategy,tf);
                 TimeframeAccountFlowView flow=new TimeframeAccountFlowView(this);
                 flow.setData(tfLabel(tf),q.total,q.realized,q.unrealized,q.win,q.target,
@@ -2869,8 +3405,13 @@ public final class UnifiedVisualActivity extends Activity {
         // Current strategy only; never merge AT, MA, CLOSE or GMO automatically.
         addTrendCard("all",strategyName(market,strategy)+" 누적",null);
         if(StrategyDashboardScope.showFrameCharts(strategy)){
-            addTrendCard("5m","5분봉","30m");
-            addTrendCard("60m","1시간봉","day");
+            if("trend".equals(strategy)){
+                addTrendCard("30m","30분봉","60m");
+                addTrendCard("day","일봉",null);
+            }else{
+                addTrendCard("5m","5분봉","30m");
+                addTrendCard("60m","1시간봉","day");
+            }
         }
     }
 
@@ -3082,24 +3623,24 @@ public final class UnifiedVisualActivity extends Activity {
         if("positions".equals(kind)){
             switch(key){
                 case "a":return "보유 "+number(usefulNumber(r,"qty","quantity","holding_qty"));
-                case "b":return "매수가 "+formatMaybeMoney(r,"entry_price","avg_buy_price","buy_price");
+                case "b":return "매수가 "+formatMaybePrice(r,"entry_price","avg_buy_price","buy_price");
                 case "c":
                     double last=positionMark(r);
-                    return finite(last)?"현재가 "+money(last):"현재가 조회 중";
-                default:return "1차 목표 "+formatMaybeMoney(r,"first_target","target","target_price");
+                    return finite(last)?"현재가 "+WonFormat.price(last):"현재가 조회 중";
+                default:return "1차 목표 "+stockAtFirstTargetDisplay(r,strategy);
             }
         }
         if("pending".equals(kind)){
             switch(key){
                 case "a":return "점수 "+formatMaybeNumber(r,"score","signal_score");
-                case "b":return "매수가 "+formatMaybeMoney(r,"limit_price","entry_price","price");
-                case "c":return "목표가 "+formatMaybeMoney(r,"first_target","target","target_price");
+                case "b":return "매수가 "+formatMaybePrice(r,"limit_price","entry_price","price");
+                case "c":return "목표가 "+formatMaybePrice(r,"first_target","target","target_price");
                 default:return "대기 상태 "+r.optString("status",r.optString("state","확인 중"));
             }
         }
         switch(key){
             case "a":return "구분 "+tradeSideOf(r);
-            case "b":return "체결가 "+formatMaybeMoney(r,"price","fill_price");
+            case "b":return "체결가 "+formatMaybePrice(r,"price","fill_price");
             case "c":return "체결량 "+formatMaybeNumber(r,"qty","quantity","fill_qty");
             default:return "순손익 "+formatMaybeMoney(r,"net_profit","net_realized","net_pnl","profit");
         }
@@ -3111,6 +3652,10 @@ public final class UnifiedVisualActivity extends Activity {
     private String formatMaybeMoney(JSONObject r,String... fields){
         double value=usefulNumber(r,fields);
         return finite(value)?money(value):"미기록";
+    }
+    private String formatMaybePrice(JSONObject r,String... fields){
+        double value=usefulNumber(r,fields);
+        return finite(value)?WonFormat.price(value):"미기록";
     }
     private void addGridCell(LinearLayout parent,String value){
         TextView t=text(value,13);
@@ -3177,8 +3722,16 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private String stockQuoteCaption(JSONObject r){
         if(!isStockPosition(r))return "";
-        if(!r.optBoolean("stock_quote_checked_v066",false))
+        if(!r.optBoolean("stock_quote_checked_v066",false)){
+            if(isTrendRow(r) &&
+               "ORIGINAL_MT54_SAVED_MARK_NOT_LIVE".equals(r.optString("valuation_source",""))){
+                double last=usefulNumber(r,"last_price","mark");
+                if(finite(last)&&last>0)
+                    return "마켓트렌드 마지막 저장 평가가 · "+
+                        r.optString("valuation_at","시각 미기록")+" · 실시간 시세 아님";
+            }
             return "키움 현재가 조회 준비 중 · 원장 저장가격과 별도";
+        }
         String state=r.optString("stock_quote_status","");
         String venue=r.optString("stock_quote_venue","");
         String exchange=r.optString("stock_quote_exchange_at","");
@@ -3199,14 +3752,21 @@ public final class UnifiedVisualActivity extends Activity {
     }
     private String displayPositionMark(JSONObject r){
         double n=positionMark(r);
-        return finite(n)&&n>0?money(n):"가격 조회 중";
+        return finite(n)&&n>0?WonFormat.price(n):"가격 조회 중";
     }
     private double positionMark(JSONObject r){
         if(isStockPosition(r)){
             // Only the separately proven market-price overlay may be shown.
             // REST and aged 0B are labelled as such, never promoted to LIVE.
-            if(!r.optBoolean("stock_quote_checked_v066",false))return Double.NaN;
-            return usefulNumber(r,"stock_quote_display_price");
+            if(r.optBoolean("stock_quote_checked_v066",false))
+                return usefulNumber(r,"stock_quote_display_price");
+            // Trend P&L may show only an EXPLICITLY LABELLED original
+            // saved valuation, not an executable KRX 0B/0D or live quote.
+            if(isTrendRow(r) &&
+               "ORIGINAL_MT54_SAVED_MARK_NOT_LIVE".equals(
+                   r.optString("valuation_source","")))
+                return usefulNumber(r,"last_price","mark");
+            return Double.NaN;
         }
         return usefulNumber(r,"last_price","mark","current_price","market_price");
     }
@@ -3214,7 +3774,16 @@ public final class UnifiedVisualActivity extends Activity {
         if("positions".equals(kind)){
             if(isStockPosition(r)){
                 double mark=positionMark(r);
-                if(!finite(mark))return Double.NaN;
+                if(!finite(mark)||mark<=0)return Double.NaN;
+                if(r.optBoolean("gmo",false)||"gmo".equalsIgnoreCase(r.optString("strategy",""))){
+                    double qty=usefulNumber(r,"qty","quantity","holding_qty");
+                    double acquisition=usefulNumber(r,"gmo_cost_basis");
+                    double fee=usefulNumber(r,"gmo_sell_fee_rate");
+                    double tax=usefulNumber(r,"gmo_sell_tax_rate");
+                    if(finite(qty)&&qty>0&&finite(acquisition)&&acquisition>0
+                       &&finite(fee)&&finite(tax)&&fee>=0&&tax>=0&&fee+tax<1)
+                        return mark*qty*(1-fee-tax)-acquisition;
+                }
                 double liveEstimate=usefulNumber(r,"stock_quote_unrealized_estimate");
                 if(finite(liveEstimate)&&stockQuoteCurrent(r))return liveEstimate;
                 double entry=positionBuyPrice(r),qty=usefulNumber(r,"qty","quantity","holding_qty");
@@ -3236,6 +3805,10 @@ public final class UnifiedVisualActivity extends Activity {
         if("positions".equals(kind)){
             double entry=positionBuyPrice(r),mark=positionMark(r);
             double qty=usefulNumber(r,"qty","quantity","holding_qty");
+            if(finite(profit)&&r.optBoolean("gmo",false)){
+                double paid=usefulNumber(r,"gmo_cost_basis");
+                if(finite(paid)&&paid>0)return profit/paid*100d;
+            }
             if(finite(profit)&&finite(entry)&&entry>0&&finite(qty)&&qty>0)
                 return profit/(entry*qty)*100d;
             return finite(entry)&&entry>0&&finite(mark)&&mark>0
@@ -3255,7 +3828,24 @@ public final class UnifiedVisualActivity extends Activity {
     /** Two-level cards: a 10sp key followed by a 16sp value, not dense
      * label/value sentences spread across the entire panel.
      */
-    private void tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
+    private String stockAtFirstTargetDisplay(JSONObject position,String source){
+        if(position==null)return "원장 확인 중";
+        // D19/PC FIX31 stores the real durable first target under
+        // exit_first_target; legacy D19 positions use ref_bodytop.
+        // Neither is first_target (a candidate-preview-only field).
+        if("stock".equals(market)&&
+            ("at".equalsIgnoreCase(source)||"기준봉".equals(source))){
+            double target=usefulNumber(position,"exit_first_target");
+            if(!finite(target)||target<=0)
+                target=usefulNumber(position,"ref_bodytop");
+            return finite(target)&&target>0?WonFormat.price(target):
+                "기준봉 상단 미확인";
+        }
+        double value=usefulNumber(position,"first_target","target","target_price");
+        return finite(value)&&value>0?WonFormat.price(value):"미기록";
+    }
+
+    private TextView tradeMetricTile(LinearLayout row,String label,String value,boolean highlight){
         LinearLayout tile=new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(9),dp(5),dp(7),dp(5));
@@ -3276,6 +3866,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(54),1);
         if(row.getChildCount()>0)cell.setMargins(dp(5),0,0,0);
         row.addView(tile,cell);
+        return amount;
     }
     private TextView tradeStage(String value,int backgroundColor,int foreground){
         TextView chip=text(value,16);
@@ -3330,7 +3921,15 @@ public final class UnifiedVisualActivity extends Activity {
             String symbol=row.optString("code",row.optString("market",""));
             if(pid.isEmpty()||symbol.isEmpty())continue;
             String key=tradeEvidenceKey(item);
-            if(tradeEvidenceCache.containsKey(key)||!pendingTradeEvidence.add(key))continue;
+            // A SELL with no post-sale quotes is not a permanently empty
+            // record: genuine public ticks can arrive after this UI opens.
+            // Requery that read-only study every 20 s without touching orders.
+            boolean isSell="매도".equals(tradeSideOf(row));
+            long lastFetched=tradeEvidenceFetchedAt.getOrDefault(key,0L);
+            if(tradeEvidenceCache.containsKey(key)&&
+                (!isSell || SystemClock.uptimeMillis()-lastFetched<POST_SALE_REFRESH_MS))
+                continue;
+            if(!pendingTradeEvidence.add(key))continue;
             try{
                 JSONObject request=new JSONObject();
                 request.put("key",key).put("market",market)
@@ -3355,13 +3954,20 @@ public final class UnifiedVisualActivity extends Activity {
                 for(String key:requestedKeys){
                     JSONObject found=result.optJSONObject(key);
                     tradeEvidenceCache.put(key,found==null?new JSONObject():found);
+                    tradeEvidenceFetchedAt.put(key,SystemClock.uptimeMillis());
                 }
                 // Bound view cache independently of SQLite and order state.
-                if(tradeEvidenceCache.size()>1500)tradeEvidenceCache.clear();
+                if(tradeEvidenceCache.size()>1500){
+                    tradeEvidenceCache.clear();
+                    tradeEvidenceFetchedAt.clear();
+                }
             }catch(Exception err){
                 // A transient/missing research DB is not an order error.
                 // Cache unknown rather than an exception->render->retry loop.
-                for(String key:requestedKeys)tradeEvidenceCache.put(key,new JSONObject());
+                for(String key:requestedKeys){
+                    tradeEvidenceCache.put(key,new JSONObject());
+                    tradeEvidenceFetchedAt.put(key,SystemClock.uptimeMillis());
+                }
                 new RuntimeCrashStore(this).add("trade_history_read_only_evidence",err);
             }finally{
                 for(String key:requestedKeys)pendingTradeEvidence.remove(key);
@@ -3413,10 +4019,27 @@ public final class UnifiedVisualActivity extends Activity {
         historyEvidenceCell(fields,"기준봉·D일·매수일",
             referenceTimelineOf(r,item.source),198);
         historyEvidenceCell(fields,"체결구분",tradeSideOf(r),78);
-        historyEvidenceCell(fields,"체결가",formatMaybeMoney(r,"price","fill_price"),116);
+        historyEvidenceCell(fields,"체결가",formatMaybePrice(r,"price","fill_price"),116);
         historyEvidenceCell(fields,"체결수량",formatMaybeNumber(r,"qty","fill_qty"),106);
+        if(isTrendRow(r)){
+            // Original MT54 source JOIN by immutable native position_id.
+            // A missing source BUY is visibly unknown, never inferred from
+            // candle high/low or matched by symbol alone.
+            historyEvidenceCell(fields,"마켓트렌드 원본 매수가",
+                formatMaybePrice(r,"entry_price","buy_price"),150);
+            if(sell){
+                double net=tradePnL(r,"executions");
+                historyEvidenceCell(fields,"원본 실현손익",
+                    formatMaybeMoney(r,"net_profit","net_pnl"),132);
+                historyEvidenceCell(fields,"원본 매도수익률",
+                    signedPct(tradeReturnPct(r,"executions",net)),125);
+            }
+        }
         historyEvidenceCell(fields,"판단점수",formatMaybeNumber(r,"score","signal_score"),92);
-        historyEvidenceCell(fields,"매수·매도 근거",tradeReasonOf(r,tradeSideOf(r)),250);
+        String verifiedBasis=e.optString("verified_trade_basis","");
+        historyEvidenceCell(fields,"매수·매도 근거",
+            verifiedBasis.isEmpty()?tradeReasonOf(r,tradeSideOf(r)):verifiedBasis,
+            verifiedBasis.isEmpty()?250:475);
         if(!sell && e.has("entry_signal_reason"))
             historyEvidenceCell(fields,"MA 실제 진입신호",
                 e.optString("entry_signal_reason",""),310);
@@ -3445,23 +4068,27 @@ public final class UnifiedVisualActivity extends Activity {
              e.has("post_sale_state")?e.optString("post_sale_state",""):
              "후속 관측 기록 미연결");
         historyEvidenceCell(fields,"후속 관측상태",postState,196);
-        historyEvidenceCell(fields,"포지션 ID",
+        historyEvidenceCell(fields,"고유 거래 ID",
+            r.optString("position_uid","연결 검증 필요"),260);
+        historyEvidenceCell(fields,"원본 포지션 ID",
             r.optString("position_id",r.optString("source_position_id","미기록")),210);
         details.addView(fields,new HorizontalScrollView.LayoutParams(-2,-2));
         panel.addView(details,new LinearLayout.LayoutParams(-1,dp(56)));
+        // An actual signal such as "MA5/10/20/60 slope turns positive below
+        // MA120" cannot be read in a one-line 250dp ellipsized cell. Show
+        // the full evidence text separately from exchange quote provenance.
+        if(!verifiedBasis.isEmpty()){
+            TextView basis=text("매매조건·체결 근거  "+verifiedBasis,12);
+            basis.setTextColor(Color.rgb(181,202,221));
+            basis.setMaxLines(7);
+            panel.addView(basis,new LinearLayout.LayoutParams(-1,-2));
+        }
         if(!sell && e.has("candidate_reason")){
             TextView sourceReason=text("원본 매수후보 판단 · "+
                 e.optString("candidate_reason",""),12);
             sourceReason.setTextColor(Color.rgb(181,202,221));
             sourceReason.setMaxLines(4);
             panel.addView(sourceReason,new LinearLayout.LayoutParams(-1,-2));
-        }
-        if(sell && e.has("post_sale_state") &&
-            !e.has("post_sale_peak")){
-            TextView note=text("실제 매도는 원장에 기록됨. 후속고가는 매도체결 이후 수신한 실제 시세만 집계하며, 관측값이 아직 없으면 고가를 임의 계산하지 않음.",11);
-            note.setTextColor(PremiumUi.MUTED);
-            note.setMaxLines(4);
-            panel.addView(note,new LinearLayout.LayoutParams(-1,-2));
         }
     }
 
@@ -3525,7 +4152,8 @@ public final class UnifiedVisualActivity extends Activity {
             double rate=tradeReturnPct(r,kind,profit);
             String side="executions".equals(kind)?tradeSideOf(r):
                 "pending".equals(kind)?
-                    (r.optBoolean("ledger_is_virtual_only",false)?"가상체결":"대기"):"보유";
+                    (r.optBoolean("ledger_is_virtual_only",false)?"가상체결":"대기"):
+                    holdingFrameBadge(r,source);
             boolean isSell="매도".equals(side),isBuy="매수".equals(side);
             int chipBg=isSell?Color.rgb(79,34,46):
                 isBuy?Color.rgb(28,72,67):
@@ -3540,7 +4168,8 @@ public final class UnifiedVisualActivity extends Activity {
             top.setGravity(Gravity.CENTER_VERTICAL);
             TextView badge=tradeStage(side,chipBg,chipText);
             top.addView(badge,new LinearLayout.LayoutParams(dp(64),dp(36)));
-            TextView symbol=text(nameOf(r)+" · "+
+            TextView symbol=text("positions".equals(kind)?nameOf(r):
+                nameOf(r)+" · "+
                 HistorySelection.strategyTag(source,marketWide?item.frame:timeFrameOf(r))+
                 (isTrendRow(r)?" · 마켓트렌드":""),16);
             symbol.setTypeface(null,Typeface.BOLD);
@@ -3555,56 +4184,100 @@ public final class UnifiedVisualActivity extends Activity {
             TextView net=text(value,19);
             net.setTypeface(null,Typeface.BOLD);
             net.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
-            net.setSingleLine(true);
-            autoSingle(net,16,19);
             if(finite(profit))paintProfit(net,profit);
             else if(finite(rate))paintProfit(net,rate);
             else net.setTextColor(PremiumUi.MUTED);
-            // Reserve a bounded cell for P/L so long values cannot push
-            // the symbol name outside the viewport on narrow devices.
             int screenDp=getResources().getConfiguration().screenWidthDp;
-            int netWidth=Math.max(92,Math.min(142,(screenDp-58)*39/100));
-            top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
-            panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
-            if("positions".equals(kind)&&isStockPosition(r)){
-                TextView quoteProof=text(stockQuoteCaption(r),10);
-                quoteProof.setTextColor(PremiumUi.MUTED);
-                quoteProof.setPadding(dp(3),0,0,dp(2));
-                quoteProof.setMaxLines(2);
-                panel.addView(quoteProof);
+            if(screenDp<520){
+                // Portrait phones cannot fit the symbol and a signed P/L
+                // amount PLUS percent in the same fixed-width horizontal
+                // row. The prior END gravity cut digits from the LEFT.
+                // Use a full-width, wrap-content second line instead.
+                panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
+                if(finite(profit)&&finite(rate))
+                    net.setText(money(profit)+"   ("+signedPct(rate)+")");
+                net.setSingleLine(false);
+                net.setHorizontallyScrolling(false);
+                net.setEllipsize(null);
+                net.setMaxLines(2);
+                net.setTextSize(17);
+                net.setPadding(0,0,dp(3),dp(3));
+                panel.addView(net,new LinearLayout.LayoutParams(-1,-2));
+            }else{
+                net.setSingleLine(true);
+                autoSingle(net,13,19);
+                int netWidth=Math.max(142,Math.min(210,(screenDp-58)*34/100));
+                top.addView(net,new LinearLayout.LayoutParams(dp(netWidth),dp(38)));
+                panel.addView(top,new LinearLayout.LayoutParams(-1,dp(38)));
             }
 
+            if("positions".equals(kind)||"executions".equals(kind)){
+                String tradeUid=r.optString("position_uid","");
+                String nativeSource=r.optString("position_uid_status","");
+                TextView uidText=text("고유 거래 ID · "+
+                    (tradeUid.isEmpty()?"원본 연결 확인 필요":tradeUid)+
+                    ("UNLINKED_EXECUTION".equals(nativeSource)?
+                        " · 원본 포지션 미연결":""),10);
+                uidText.setTextColor(PremiumUi.MUTED);
+                uidText.setSingleLine(false);
+                uidText.setMaxLines(2);
+                panel.addView(uidText,new LinearLayout.LayoutParams(-1,-2));
+            }
+            TextView fastAmount=null;
             LinearLayout figures=new LinearLayout(this);
             figures.setOrientation(LinearLayout.HORIZONTAL);
             figures.setPadding(0,dp(7),0,dp(3));
             if("positions".equals(kind)){
-                tradeMetricTile(figures,"매수가",finite(price)?money(price):"—",true);
+                tradeMetricTile(figures,"매수가",finite(price)?WonFormat.price(price):"—",true);
                 String quoteStatus=r.optString("stock_quote_status","");
                 String quoteLabel=isStockPosition(r)&&"LAST_LEDGER".equals(quoteStatus)
-                    ?"저장 평가가":isStockPosition(r)&&("LAST_0B".equals(quoteStatus)||
-                    "LAST_REST".equals(quoteStatus))?"마지막 확인가":"현재가";
-                tradeMetricTile(figures,quoteLabel,
-                    finite(current)&&current>0?money(current):"가격 조회 중",true);
+                    ?"저장 평가가":"현재가";
+                fastAmount=tradeMetricTile(figures,quoteLabel,
+                    finite(current)&&current>0?WonFormat.price(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
-                tradeMetricTile(figures,"1차 목표",formatMaybeMoney(r,"first_target","target","target_price"),false);
+                tradeMetricTile(figures,"1차 목표",stockAtFirstTargetDisplay(r,source),false);
             }else if("pending".equals(kind)){
                 tradeMetricTile(figures,"점수",formatMaybeNumber(r,"score","signal_score"),true);
-                tradeMetricTile(figures,"매수대기",formatMaybeMoney(r,"limit_price","entry_price","price"),true);
-                tradeMetricTile(figures,"목표가",formatMaybeMoney(r,"first_target","target","target_price"),false);
+                tradeMetricTile(figures,"매수대기",formatMaybePrice(r,"limit_price","entry_price","price"),true);
+                tradeMetricTile(figures,"목표가",formatMaybePrice(r,"first_target","target","target_price"),false);
                 tradeMetricTile(figures,"상태",r.optString("status",r.optString("state","확인 중")),false);
             }else if(isSell){
                 double buyPerShare=usefulNumber(r,"buy_price","entry_price");
-                tradeMetricTile(figures,"매수가",finite(buyPerShare)?money(buyPerShare):"미기록",true);
+                tradeMetricTile(figures,"매수가",finite(buyPerShare)?WonFormat.price(buyPerShare):"미기록",true);
                 tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
-                tradeMetricTile(figures,"매도가",formatMaybeMoney(r,"price","fill_price"),false);
-                tradeMetricTile(figures,"매도수량",formatMaybeNumber(r,"qty","fill_qty"),false);
+                tradeMetricTile(figures,"매도가",formatMaybePrice(r,"price","fill_price"),false);
+                tradeMetricTile(figures,"매도량",formatMaybeNumber(r,"sell_qty","qty","fill_qty"),false);
             }else{
-                tradeMetricTile(figures,"매수가",formatMaybeMoney(r,"price","fill_price"),true);
+                tradeMetricTile(figures,"매수가",formatMaybePrice(r,"price","fill_price"),true);
                 tradeMetricTile(figures,"매수금액",formatMaybeMoney(r,"buy_amount"),true);
                 tradeMetricTile(figures,"매수수량",formatMaybeNumber(r,"qty","fill_qty"),false);
                 tradeMetricTile(figures,"수수료",formatMaybeMoney(r,"fees","fee"),false);
             }
             panel.addView(figures,new LinearLayout.LayoutParams(-1,dp(64)));
+            if("positions".equals(kind)&&"stock".equals(market)){
+                TextView brokerage=text(brokerSellStatusForHolding(r),10);
+                brokerage.setTextColor(PremiumUi.MUTED);
+                brokerage.setMaxLines(3);
+                brokerage.setPadding(0,dp(2),0,dp(6));
+                panel.addView(brokerage,new LinearLayout.LayoutParams(-1,-2));
+            }
+            if("positions".equals(kind)&&fastAmount!=null){
+                TextView origin=text("실시간 가격 재확인 중 · 원장 손익은 별도 갱신",10);
+                origin.setTextColor(PremiumUi.MUTED);
+                origin.setMaxLines(2);
+                panel.addView(origin,new LinearLayout.LayoutParams(-1,-2));
+                bindFastVisiblePrice(r,isStockPosition(r)?"stock":"coin",
+                    fastAmount,origin,"","");
+            }else if("pending".equals(kind)){
+                TextView watched=text("미매수 관측 현재가 조회 중",12);
+                watched.setTextColor(PremiumUi.TEXT);
+                TextView observed=text("실시간 체결 미수신 · 목표 도달과 매수 체결은 별개",10);
+                observed.setTextColor(PremiumUi.MUTED);
+                panel.addView(watched);
+                panel.addView(observed);
+                bindFastVisiblePrice(r,market,watched,observed,
+                    "미매수 관측 현재가 ","");
+            }
             // A diverging geometric bar is an exact two-value comparison.
             // It does not pretend the app knows the intervening price path.
             if(("positions".equals(kind)||isSell)&&finite(rate)){
@@ -3631,7 +4304,7 @@ public final class UnifiedVisualActivity extends Activity {
                 scenario.setMaxLines(4);
                 LinearLayout actions=new LinearLayout(this);
                 actions.setOrientation(LinearLayout.HORIZONTAL);
-                Button sell=button("강제매도",false,()->showManualSellInfo(r));
+                Button sell=button("강제매도",false,()->showManualSellInfo(r,source));
                 sell.setTextSize(12);
                 actions.addView(sell,new LinearLayout.LayoutParams(0,dp(35),1));
                 Button policy=button("정책이력",false,()->{
@@ -3646,6 +4319,11 @@ public final class UnifiedVisualActivity extends Activity {
             String action="executions".equals(kind)?tradeSideOf(r):
                 "positions".equals(kind)||"pending".equals(kind)?"매수":"판단";
             String actualReason=tradeReasonOf(r,action);
+            if("executions".equals(kind)){
+                String verified=readTradeEvidence(item)
+                    .optString("verified_trade_basis","");
+                if(!verified.isEmpty())actualReason=verified;
+            }
             if("positions".equals(kind)){
                 String recorded=r.optString("buy_reason_source","");
                 if(recorded.isEmpty() && 
@@ -3743,11 +4421,108 @@ public final class UnifiedVisualActivity extends Activity {
         persistNavigation();render();
     }
 
-    private void showManualSellInfo(JSONObject position){
+    private void showManualSellInfo(JSONObject position,String owner){
+        final String[] quantities={"전량 (100%)","절반 (50%)","25%"};
+        final int[] selected={0};
         String identity=nameOf(position);
-        new AlertDialog.Builder(this).setTitle(identity+" · 강제매도")
-            .setMessage("이 버전에서는 강제매도 버튼이 실제 주문을 발행하지 않습니다. 현재 EXE의 가상 수동매도와 Android 실거래 주문 상태머신이 동일한 결과를 보장하는지 확인되지 않았습니다.\n\n오주문 방지를 위해 강제매도를 차단합니다. 실거래 중에는 증권사/거래소 앱에서 직접 매도하십시오.")
+        new AlertDialog.Builder(this).setTitle(identity+" · 가상계좌 강제매도")
+            .setMessage("실제 수신 시세·호가로만 처리하며 원장에 기록합니다. 실계좌 주문은 실행하지 않습니다.")
+            .setSingleChoiceItems(quantities,0,(d,which)->selected[0]=which)
+            .setNegativeButton("취소",null)
+            .setPositiveButton("매도 실행",(d,w)->{
+                int percent=selected[0]==0?100:selected[0]==1?50:25;
+                requestManualPaperSell(position,owner,percent);
+            }).show();
+    }
+
+    private void requestManualPaperSell(JSONObject position,String owner,int percent){
+        String code=position.optString("code",position.optString("market",""));
+        String qty=position.optString("qty",position.optString("quantity",""));
+        int id=position.optInt("id",-1);
+        if(code.isEmpty()||qty.isEmpty()||(!"gmo".equals(owner)&&id<0)){
+            new AlertDialog.Builder(this).setTitle("강제매도 확인 불가")
+                .setMessage("종목·보유수량·원장 ID를 확인할 수 없습니다.")
+                .setPositiveButton("확인",null).show();
+            return;
+        }
+        final String requestId=java.util.UUID.randomUUID().toString();
+        try{
+            JSONObject request=new JSONObject()
+                .put("market",market).put("strategy",owner)
+                .put("code",code).put("position_id",id)
+                .put("expected_qty",qty).put("percent",percent)
+                .put("request_id",requestId).put("user_confirmed",true);
+            Intent action=new Intent(this,UnifiedTradingService.class);
+            action.setAction(UnifiedTradingService.MANUAL_PAPER_SELL);
+            action.putExtra("request",request.toString());
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(action);
+            else startService(action);
+            main.postDelayed(()->showManualPaperResult(requestId,0),1100);
+        }catch(Exception e){
+            new RuntimeCrashStore(this).add("paper_manual_sell_request",e);
+            new AlertDialog.Builder(this).setTitle("매도 요청 실패")
+                .setMessage(e.getClass().getSimpleName())
+                .setPositiveButton("확인",null).show();
+        }
+    }
+
+    private void showManualPaperResult(String requestId,int attempt){
+        if(isFinishing()||isDestroyed())return;
+        JSONObject result=null;
+        try{
+            String raw=getSharedPreferences("artitrade_manual_sale_v085",MODE_PRIVATE)
+                .getString("result_"+requestId,"{}");
+            result=new JSONObject(raw);
+        }catch(Exception e){new RuntimeCrashStore(this).add("paper_sell_result_read",e);}
+        boolean match=result!=null&&requestId.equals(result.optString("request_id",""));
+        String state=match?result.optString("status",""):"";
+        boolean pending="MANUAL_SELL_PENDING".equals(state)||
+            "MANUAL_SELL_RUNNING".equals(state);
+        if(!match||pending){
+            if(attempt<12){
+                main.postDelayed(()->showManualPaperResult(requestId,attempt+1),1300);
+                return;
+            }
+            String stage=match?result.optString("stage",""):"RESULT_NOT_STORED";
+            String detail="요청 ID: "+requestId+
+                "\n처리 단계: "+(stage.isEmpty()?"확인 불가":stage)+
+                "\n매도 실행 결과를 아직 확인하지 못했습니다. 거래 원장의 SELL 체결을 대조하기 전에는 재주문하지 않습니다.";
+            new AlertDialog.Builder(this).setTitle("강제매도 처리 지연")
+                .setMessage(detail)
+                .setNegativeButton("닫기",null)
+                .setPositiveButton("매도 요청 상태 다시 확인",
+                    (dialog,which)->showManualPaperResult(requestId,0)).show();
+            return;
+        }
+        boolean ok=result.optBoolean("ok",false);
+        boolean awaitingFill=ok&&state.startsWith("PENDING");
+        boolean partial=ok&&state.startsWith("PARTIAL");
+        String title=!ok?"강제매도 실패":awaitingFill?"강제매도 접수":
+            partial?"강제매도 부분체결":"강제매도 체결 확인";
+        String detail;
+        if(!ok){
+            detail="원인: "+result.optString("error","UNKNOWN")+
+                "\n상세: "+result.optString("detail",result.optString("message",""))+
+                "\n요청 ID: "+requestId;
+        }else if(awaitingFill){
+            detail="매도 의도만 접수되었습니다. 체결 근거가 아직 기록되지 않아 실현손익에 반영하지 않습니다."+
+                "\n주문 ID: "+result.optString("order_id","미기록")+
+                "\n요청 ID: "+requestId;
+        }else if(partial){
+            detail="가상계좌 원장에 확인된 수량만 부분매도 기록되었습니다."+
+                "\n체결수량: "+result.optString("qty","조회 필요")+
+                "\n체결가격: "+result.optString("price","조회 필요")+
+                "\n미체결 수량은 원장과 대조 후 확인하십시오. 이 요청 ID로 자동 재주문하지 않습니다."+
+                "\n요청 ID: "+requestId;
+        }else{
+            detail="가상계좌 원장에 매도 체결이 기록되었습니다."+
+                "\n체결수량: "+result.optString("qty","조회 필요")+
+                "\n체결가격: "+result.optString("price","조회 필요")+
+                "\n요청 ID: "+requestId;
+        }
+        new AlertDialog.Builder(this).setTitle(title).setMessage(detail)
             .setPositiveButton("확인",null).show();
+        refresh(false);
     }
     private void policyHistoryCell(LinearLayout row,String content,float weight,
                                     int color,boolean header){
@@ -3837,9 +4612,6 @@ public final class UnifiedVisualActivity extends Activity {
             int pageLast=HistoryPager.end(pageFirst,entries.size());
             queryTradeHistoryEvidence(entries.subList(pageFirst,pageLast));
         }
-        TextView note=text("표시 "+entries.size()+"건 · 좌우 스크롤: 거래별 정량·AI·매도후 고가 · 열 터치: 정렬",11);
-        note.setTextColor(PremiumUi.MUTED);note.setPadding(dp(3),0,0,dp(6));
-        content.addView(note);
         if(entries.isEmpty()){
             empty(scoped?"해당 종목의 기록 없음 / 적용한 필터 확인":
                 "조건에 맞는 실제 체결 기록 없음");
@@ -4322,109 +5094,85 @@ public final class UnifiedVisualActivity extends Activity {
         },"artitrade-full-ledger-export").start();
     }
 
+    /** Legacy research button shares the verified multipart SAF-folder path. */
     private void exportResearch(Stats st){
-        if(fullExportRunning.get()){
-            new AlertDialog.Builder(this).setTitle("백업 진행 중")
-                .setMessage("기존 백업이 끝난 뒤 다시 추출할 수 있습니다.")
-                .setPositiveButton("확인",null).show();
-            return;
-        }
-        try{
-            JSONObject rs=research(market,strategy);
-            JSONObject summary=new JSONObject()
-                .put("schema","ARTITRADE_RESEARCH_FULL_SOURCE_V079")
-                .put("market",market)
-                .put("strategy",strategy)
-                .put("strategy_name",strategyName(market,strategy))
-                .put("exported_at_kst",new SimpleDateFormat(
-                    "yyyy-MM-dd HH:mm:ss",Locale.KOREA).format(new Date())+" KST")
-                .put("source_total",rs.optInt("source_total",-1))
-                .put("displayed_preview_rows",rs.optInt("loaded_items",st.research.length()))
-                .put("preview_can_be_truncated",rs.optBoolean("partial_window",false))
-                .put("actual_research",rs.optJSONObject("actual_summary"))
-                .put("virtual_research",rs.optJSONObject("virtual_summary"))
-                .put("score_bands",rs.optJSONArray("bands"))
-                .put("evidence_table_counts",rs.optJSONObject("evidence_counts"))
-                .put("note","화면 일부 조회와 무관하게 stock/·coin/ 원본 SQLite 전체를 ZIP에 포함");
-            JSONObject reports=new JSONObject();
-            reports.put("analysis/research_summary.json",summary.toString(2));
-            String preview=rs.toString();
-            if(preview.getBytes(StandardCharsets.UTF_8).length<7*1024*1024){
-                reports.put("analysis/research_preview.json",preview);
-            }
-            reports.put("analysis/reason_guide_ko.txt",
-                "매수 원인: 원본 신호·점수·진입조건 기록을 기준으로 확인\n"+
-                "매도 원인: 원본 실제 체결의 reason / purpose / exit_reason 확인\n"+
-                "가상 연구: shadow / forward / milestone 등 별도 원본 테이블 확인\n"+
-                "체결시각: 원본의 UTC 시간대 정보가 있으면 한국시간(KST)으로 변환\n"+
-                "실제 매도가 없는 고가 접촉은 실제 매도 성공으로 처리하지 않음\n"+
-                "연구화면의 최근 표시건수와 ZIP의 전체 원본건수는 다를 수 있음\n");
-            pendingResearchReports=reports.toString();
-            pendingResearchExport=null; // Old preview-only in-memory ZIP is not full evidence.
-            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA)
-                .format(new Date());
-            beginPreparedLedgerExport(REQUEST_EXPORT_RESEARCH,
-                "ARTITRADE_"+market+"_"+strategy+
-                "_RESEARCH_ALL_ORIGINALS_"+stamp+".zip",
-                pendingResearchReports,"research");
-            pendingResearchReports=null;
-        }catch(Exception e){
-            pendingResearchReports=null;
-            new AlertDialog.Builder(this).setTitle("연구자료 추출 실패")
-                .setMessage(String.valueOf(e.getMessage()))
-                .setPositiveButton("확인",null).show();
-        }
+        requestCombinedResearch("coin".equals(market)?"coin":"stock");
     }
 
     /** Export the original error SQLite/JSON records, not just visible cards.
      * No user credential fields or market orders are created by this export.
      * The existing full-ledger backup verifies the saved ZIP with SHA-256.
      */
+    /** Legacy error ZIP button must never produce an oversized single file. */
     private void requestErrorHistoryExport(){
-        if(fullExportRunning.get()){
-            new AlertDialog.Builder(this).setTitle("오류이력 추출 진행 중")
-                .setMessage("기존 ZIP 추출 완료 후 다시 실행할 수 있습니다.")
-                .setPositiveButton("확인",null).show();
+        requestScopedErrorExport("coin".equals(market)?"coin":"stock");
+    }
+
+    private File scopedErrorCancelMarker(){
+        return new File(getCacheDir(),"artitrade_scoped_error_export_v082.cancel");
+    }
+
+    private void cancelScopedErrorExport(){
+        Thread worker=scopedErrorWorker;
+        if(worker==null||!worker.isAlive()){
+            if(pendingScopedErrorScope!=null){
+                pendingScopedErrorScope=null;
+                getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE)
+                    .edit().remove("errors").apply();
+                exportStage("errors","CANCELLED","폴더 선택 취소 요청",0,
+                    "파일 선택 화면에서 뒤로 가기를 눌러 닫을 수 있습니다.",false,false);
+            }else{
+                new AlertDialog.Builder(this).setTitle("오류 추출")
+                    .setMessage("현재 실행 중인 오류 ZIP 생성 작업이 없습니다.")
+                    .setPositiveButton("확인",null).show();
+            }
             return;
         }
+        errorExportCancelRequested.set(true);
         try{
-            JSONObject snapshot=copyCache();
-            JSONArray records=marketErrors();
-            JSONObject runtime=snapshot.optJSONObject("strategy_runtime");
-            JSONObject feed=runtime==null?null:runtime.optJSONObject("stock_feed");
-            JSONObject trend=runtime==null?null:runtime.optJSONObject("market_trend_status");
-            JSONObject summary=new JSONObject()
-                .put("schema","ARTITRADE_ERROR_HISTORY_V071")
-                .put("market",market)
-                .put("exported_at_kst",new SimpleDateFormat(
-                    "yyyy-MM-dd HH:mm:ss",Locale.KOREA).format(new Date())+" KST")
-                .put("displayed_error_rows",records.length())
-                .put("preview_may_be_truncated",true)
-                .put("source","현재 UI 진단 기록 + 기존 전체 원본 SQLite/JSON 무결성 백업")
-                .put("stock_feed",feed==null?new JSONObject():feed)
-                .put("market_trend_status",trend==null?new JSONObject():trend);
-            JSONObject reports=new JSONObject();
-            reports.put("analysis/error_history_summary.json",summary.toString(2));
-            reports.put("analysis/error_history_visible.json",records.toString(2));
-            reports.put("analysis/error_history_guide_ko.txt",
-                "화면에 표시된 오류는 최근·중복제거 기록으로 원본 전체와 다를 수 있음\\n"+
-                "ZIP의 원본 SQLite/JSON에서 주식 종가베팅·MA·수급매매·마켓트렌드·실시간 스트림 오류를 확인\\n"+
-                "REST 인증 성공과 WebSocket 실체결 수신은 별개의 상태임\\n"+
-                "TICK_PROCESS_DELAY 등 오류는 체결 실패와 반드시 일대일 대응하지 않음\\n"+
-                "실제 매수·매도는 주문/체결 원장의 확인된 기록으로만 판단\\n");
-            pendingErrorsReports=reports.toString();
-            String stamp=new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.KOREA).format(new Date());
-            beginPreparedLedgerExport(REQUEST_EXPORT_ERRORS,
-                "ARTITRADE_"+market+
-                "_ERROR_HISTORY_ALL_ORIGINALS_"+stamp+".zip",
-                pendingErrorsReports,"errors");
-            pendingErrorsReports=null;
-        }catch(Exception e){
-            pendingErrorsReports=null;
-            new AlertDialog.Builder(this).setTitle("오류이력 ZIP 준비 실패")
-                .setMessage(e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()))
-                .setPositiveButton("확인",null).show();
+            File marker=scopedErrorCancelMarker();
+            try(java.io.FileOutputStream out=new java.io.FileOutputStream(marker)){
+                out.write(1);
+                out.flush();
+            }
+        }catch(IOException error){
+            new RuntimeCrashStore(this).add("error_export_cancel_marker",error);
         }
+        worker.interrupt();
+        // Some Android document providers block inside write(). Close the
+        // current output from a separate thread, never on the UI thread.
+        final OutputStream stream=scopedErrorOutput;
+        if(stream!=null)new Thread(()->{
+            try{stream.close();}catch(IOException ignored){}
+        },"artitrade-error-export-abort-stream").start();
+        exportStage("errors","CANCEL_REQUESTED","오류 추출 중단 요청",0,
+            "현재 파일 작업 중단과 임시파일 정리를 진행 중",true,false);
+    }
+
+    private void requestScopedErrorExport(String scope){
+        if(!("stock".equals(scope)||"coin".equals(scope)||"all".equals(scope)))
+            return;
+        if(fullExportRunning.get()){
+            AlertDialog.Builder notice=new AlertDialog.Builder(this)
+                .setTitle("ZIP 추출 작업 진행 중")
+                .setMessage("기존 추출이 완료되지 않아 다음 작업이 차단됨. 오류 추출은 수동 취소할 수 있습니다.")
+                .setNegativeButton("닫기",null);
+            if(scopedErrorWorker!=null&&scopedErrorWorker.isAlive())
+                notice.setPositiveButton("오류 추출 취소",(d,w)->cancelScopedErrorExport());
+            notice.show();
+            return;
+        }
+        pendingScopedErrorScope=scope;
+        // Persist SAF picker scope across screen rotation and process restore.
+        getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE).edit()
+            .putString("errors",scope).commit();
+        exportStage("errors","SELECT_DIR","오류 ZIP 저장 폴더 선택",0,
+            "원본 주식·코인 오류자료를 파일당 95MB 이하로 분할",true,false);
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(picker,REQUEST_EXPORT_SCOPED_ERRORS);
     }
 
     private void requestCombinedResearch(String scope){
@@ -4437,6 +5185,8 @@ public final class UnifiedVisualActivity extends Activity {
             return;
         }
         pendingCombinedResearchScope=scope;
+        getSharedPreferences("artitrade_picker_scope_v088",MODE_PRIVATE).edit()
+            .putString("research",scope).commit();
         exportStage("research","SELECT_DIR","저장 폴더 선택",0,
             "선택한 폴더에 검증된 연구 ZIP 파트 저장",true,false);
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -4444,6 +5194,61 @@ public final class UnifiedVisualActivity extends Activity {
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION|
             Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(picker,REQUEST_EXPORT_COMBINED_RESEARCH);
+    }
+
+    /** Every exported ZIP part must be below 100 MB for file transfer tools. */
+    private static final long GPT_SAFE_ZIP_PART_BYTES=95_000_000L;
+
+
+    /** Store the same small, digest-verified JSON beside all ZIP pieces.
+      * Plain JSON can be read by the file service even when code execution
+      * and compressed ZIP extraction are unavailable. It is NOT a trade fill.
+      */
+    private void copyAnalysisSidecarToFolder(
+            File folder,Uri parent,JSONObject info,java.util.List<Uri> newDocuments,
+            boolean allowErrorCancel) throws Exception{
+        JSONObject meta=info.optJSONObject("analysis_file");
+        if(meta==null)throw new IOException("분석용 JSON 파일 목록 누락");
+        String name=meta.getString("name");
+        if(!name.matches("ARTITRADE_[A-Z]+_(ERROR_HISTORY|RESEARCH)_[A-Za-z0-9_]+_ANALYSIS_READY\\.json"))
+            throw new SecurityException("분석용 JSON 파일명 형식 오류");
+        File source=new File(folder,name).getCanonicalFile();
+        if(!source.getParentFile().equals(folder.getCanonicalFile()))
+            throw new SecurityException("분석 JSON 저장 위치가 임시폴더 외부");
+        long expectedSize=meta.getLong("bytes");
+        String sha=meta.getString("sha256");
+        if(!source.isFile()||expectedSize<=0L||expectedSize>2_000_000L||
+                expectedSize!=source.length()||!sha.matches("[0-9a-f]{64}"))
+            throw new IOException("분석용 JSON 크기 또는 SHA 정보 오류");
+        Uri target=DocumentsContract.createDocument(getContentResolver(),parent,
+            "application/json",name);
+        if(target==null)throw new IOException("분석용 JSON 문서 생성 실패");
+        newDocuments.add(target);
+        MessageDigest transfer=MessageDigest.getInstance("SHA-256");
+        try(InputStream in=new FileInputStream(source);
+            OutputStream out=getContentResolver().openOutputStream(target,"w")){
+            if(out==null)throw new IOException("분석용 JSON 저장 스트림 없음");
+            byte[] buffer=new byte[64*1024];int n;
+            while((n=in.read(buffer))!=-1){
+                if(allowErrorCancel)checkScopedErrorCancel();
+                out.write(buffer,0,n);transfer.update(buffer,0,n);
+            }
+            out.flush();
+        }
+        if(!sha.equalsIgnoreCase(hex(transfer.digest())))
+            throw new IOException("분석용 JSON 복사 SHA-256 불일치");
+        MessageDigest stored=MessageDigest.getInstance("SHA-256");
+        long size=0;
+        try(InputStream in=getContentResolver().openInputStream(target)){
+            if(in==null)throw new IOException("분석용 JSON 재조회 실패");
+            byte[] buffer=new byte[64*1024];int n;
+            while((n=in.read(buffer))!=-1){
+                if(allowErrorCancel)checkScopedErrorCancel();
+                stored.update(buffer,0,n);size+=n;
+            }
+        }
+        if(size!=expectedSize||!sha.equalsIgnoreCase(hex(stored.digest())))
+            throw new IOException("분석용 JSON 최종 해시 불일치");
     }
 
     private void exportCombinedResearchToFolder(Uri tree,String scope){
@@ -4470,7 +5275,7 @@ public final class UnifiedVisualActivity extends Activity {
                 File runtime=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
                 String raw=Python.getInstance().getModule("android_research_bundle")
                     .callAttr("make_bundle",runtime.getAbsolutePath(),
-                        folder.getAbsolutePath(),scope,500_000_000,
+                        folder.getAbsolutePath(),scope,GPT_SAFE_ZIP_PART_BYTES,
                         progressFile.getAbsolutePath()).toString();
                 JSONObject info=new JSONObject(raw);
                 if(!info.optBoolean("ok")||info.optInt("parts")<=0)
@@ -4490,8 +5295,8 @@ public final class UnifiedVisualActivity extends Activity {
                         throw new SecurityException("안전하지 않은 출력 파일명");
                     File source=new File(folder,filename);
                     if(!source.isFile()||source.length()!=item.getLong("bytes")||
-                       source.length()>500_000_000L)
-                        throw new IOException("500MB 한도 또는 원본 파일 크기 검사 실패");
+                       source.length()>GPT_SAFE_ZIP_PART_BYTES)
+                        throw new IOException("95MB 한도 또는 원본 파일 크기 검사 실패");
                     Uri saved=DocumentsContract.createDocument(getContentResolver(),
                         parent,"application/zip",filename);
                     if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
@@ -4523,13 +5328,14 @@ public final class UnifiedVisualActivity extends Activity {
                         String.format(Locale.KOREA,"%d/%d파트 · %,d바이트 검증",
                             i+1,parts.length(),verified),true,false);
                 }
+                copyAnalysisSidecarToFolder(folder,parent,info,newDocuments,false);
                 exportStage("research","DONE","연구 ZIP 저장 완료",100,
                     String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
                     false,false);
                 fullLedgerExportResult(true,
                     ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
                     " 연구이력 "+parts.length()+"개 ZIP 저장 완료\n"+
-                    "각 파일 500MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "각 ZIP 95MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
                     "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
                     "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",true);
             }catch(Throwable e){
@@ -4555,11 +5361,197 @@ public final class UnifiedVisualActivity extends Activity {
         },"artitrade-scoped-multipart-research").start();
     }
 
+    private void checkScopedErrorCancel() throws IOException {
+        if(errorExportCancelRequested.get()||
+            Thread.currentThread().isInterrupted()||scopedErrorCancelMarker().isFile())
+            throw new IOException("ARTITRADE_ERROR_EXPORT_CANCELLED");
+    }
+
+    private void exportScopedErrorToFolder(Uri tree,String scope){
+        if(!fullExportRunning.compareAndSet(false,true))return;
+        errorExportCancelRequested.set(false);
+        File cancelMarker=scopedErrorCancelMarker();
+        if(cancelMarker.exists()&&!cancelMarker.delete()){
+            fullExportRunning.set(false);
+            exportStage("errors","FAILED","취소 신호 정리 실패",0,
+                "이전 중단 표시 파일을 지울 수 없습니다.",false,true);
+            return;
+        }
+        exportStage("errors","PREPARE","원본 오류자료 준비",2,
+            "SQLite/WAL 스냅샷·ZIP 생성",true,false);
+        File progressFile=new File(getCacheDir(),PY_EXPORT_PROGRESS);
+        if(progressFile.exists())progressFile.delete();
+        Thread worker=new Thread(()->{
+            File folder=new File(getCacheDir(),"artitrade_error_bundle_"+System.nanoTime());
+            java.util.List<Uri> newDocuments=new java.util.ArrayList<>();
+            try{
+                checkScopedErrorCancel();
+                if(!folder.mkdirs()&&!folder.isDirectory())
+                    throw new IOException("사전 검증 임시폴더 생성 실패");
+                if(!Python.isStarted())
+                    throw new IllegalStateException("전략엔진 초기화 후 오류자료 추출 가능");
+                if(tree==null||!"content".equals(tree.getScheme()))
+                    throw new SecurityException("지원되지 않는 저장 폴더");
+                try{
+                    getContentResolver().takePersistableUriPermission(tree,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION|
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                }catch(SecurityException ignored){}
+                File runtime=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                JSONObject nativeReport=new JSONObject()
+                    .put("schema","ARTITRADE_ERROR_HISTORY_V088")
+                    .put("scope",scope)
+                    .put("exported_at_ms",System.currentTimeMillis())
+                    .put("runtime_faults",new RuntimeCrashStore(this).read());
+                android.content.SharedPreferences health=getSharedPreferences(
+                    "artitrade_process_health_v087",MODE_PRIVATE);
+                nativeReport.put("last_memory_sample",
+                    health.getString("last_memory_sample",""));
+                nativeReport.put("last_checked_exit_ms",
+                    health.getLong("last_checked_exit_ms",0L));
+                String raw=Python.getInstance().getModule("android_research_bundle")
+                    .callAttr("make_bundle",runtime.getAbsolutePath(),
+                        folder.getAbsolutePath(),scope,GPT_SAFE_ZIP_PART_BYTES,
+                        progressFile.getAbsolutePath(),"errors",
+                        nativeReport.toString(),cancelMarker.getAbsolutePath()).toString();
+                checkScopedErrorCancel();
+                JSONObject info=new JSONObject(raw);
+                if(!info.optBoolean("ok")||info.optInt("parts")<=0)
+                    throw new IOException("오류이력 ZIP 생성 검증 실패 · 범위="+scope);
+                Uri parent=DocumentsContract.buildDocumentUriUsingTree(
+                    tree,DocumentsContract.getTreeDocumentId(tree));
+                JSONArray parts=info.getJSONArray("files");
+                if(parts.length()!=info.optInt("parts"))
+                    throw new IOException("분할 파일 목록과 실제 개수 불일치");
+                exportStage("errors","COPY","ZIP 파트 저장",94,
+                    "기존 원장 "+info.optInt("source_files",0)+"개 검증 완료",true,false);
+                long verified=0;
+                for(int i=0;i<parts.length();i++){
+                    checkScopedErrorCancel();
+                    JSONObject item=parts.getJSONObject(i);
+                    String filename=item.getString("name");
+                    if(!filename.matches("ARTITRADE_[A-Z]+_ERROR_HISTORY_[A-Za-z0-9_]+_PART_[0-9]{3}_OF_[0-9]{3}\\.zip"))
+                        throw new SecurityException("안전하지 않은 출력 파일명");
+                    File source=new File(folder,filename);
+                    if(!source.isFile()||source.length()!=item.getLong("bytes")||
+                       source.length()>GPT_SAFE_ZIP_PART_BYTES)
+                        throw new IOException("95MB 한도 또는 원본 파일 크기 검사 실패");
+                    Uri saved=DocumentsContract.createDocument(getContentResolver(),
+                        parent,"application/zip",filename);
+                    if(saved==null)throw new IOException("선택한 폴더에 ZIP 파일 생성 불가");
+                    newDocuments.add(saved);
+                    MessageDigest streamed=MessageDigest.getInstance("SHA-256");
+                    try(InputStream input=new FileInputStream(source);
+                        OutputStream output=getContentResolver().openOutputStream(saved,"w")){
+                        if(output==null)throw new IOException("ZIP 저장 스트림 없음");
+                        scopedErrorOutput=output;
+                        byte[] buf=new byte[1024*1024];int n;
+                        while((n=input.read(buf))!=-1){
+                            checkScopedErrorCancel();
+                            output.write(buf,0,n);
+                            streamed.update(buf,0,n);
+                        }
+                        checkScopedErrorCancel();
+                        output.flush();
+                    }finally{
+                        scopedErrorOutput=null;
+                    }
+                    String expected=item.getString("sha256");
+                    if(!expected.equalsIgnoreCase(hex(streamed.digest())))
+                        throw new IOException("ZIP 출력 중 SHA-256 불일치");
+                    MessageDigest disk=MessageDigest.getInstance("SHA-256");
+                    long bytes=0;
+                    try(InputStream input=getContentResolver().openInputStream(saved)){
+                        if(input==null)throw new IOException("저장된 ZIP 재열기 실패");
+                        byte[] buf=new byte[1024*1024];int n;
+                        while((n=input.read(buf))!=-1){
+                            checkScopedErrorCancel();
+                            disk.update(buf,0,n);
+                            bytes+=n;
+                        }
+                    }
+                    if(bytes!=source.length()||
+                        !expected.equalsIgnoreCase(hex(disk.digest())))
+                        throw new IOException("저장된 ZIP 검증 불일치");
+                    verified+=bytes;
+                    exportStage("errors","COPY","ZIP 파트 저장",
+                        94+Math.min(5,(i+1)*5/Math.max(1,parts.length())),
+                        String.format(Locale.KOREA,"%d/%d파트 · %,d바이트 검증",
+                            i+1,parts.length(),verified),true,false);
+                }
+                checkScopedErrorCancel();
+                copyAnalysisSidecarToFolder(folder,parent,info,newDocuments,true);
+                exportStage("errors","DONE","오류 ZIP 저장 완료",100,
+                    String.format(Locale.KOREA,"모든 파트 %,d바이트 검증",verified),
+                    false,false);
+                fullLedgerExportResult(true,
+                    ("all".equals(scope)?"프로그램 전체":"stock".equals(scope)?"주식 통합":"코인 통합")+
+                    " 오류이력 "+parts.length()+"개 ZIP 저장 완료\n"+
+                    "각 ZIP 95MB 이하 · 원본 SQLite/JSON 전체 포함\n"+
+                    "검증한 용량 "+String.format(Locale.KOREA,"%,d",verified)+"바이트\n"+
+                    "분할 원본은 PC 복원 도구로 다시 결합할 수 있습니다.",false,"오류이력 분할 ZIP 추출");
+            }catch(Throwable e){
+                // A failed or canceled multi-file transfer is never complete.
+                for(Uri created:newDocuments){
+                    try{DocumentsContract.deleteDocument(getContentResolver(),created);}
+                    catch(Exception ignored){}
+                }
+                boolean cancelled=errorExportCancelRequested.get()||
+                    String.valueOf(e.getMessage()).contains("ARTITRADE_ERROR_EXPORT_CANCELLED")||
+                    e instanceof InterruptedException;
+                if(cancelled){
+                    exportStage("errors","CANCELLED","오류 ZIP 추출 중단",0,
+                        "사용자 요청에 따라 중단함. 불완전한 ZIP은 정리됨.",false,false);
+                    fullLedgerExportResult(false,"오류 추출을 취소했습니다. 기존 원장과 체결 기록은 유지됩니다.",
+                        false,"오류이력 추출 취소");
+                }else{
+                    new RuntimeCrashStore(this).add("combined_error_export",e);
+                    exportStage("errors","FAILED","오류 ZIP 저장 실패",0,
+                        e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
+                        false,true);
+                    fullLedgerExportResult(false,
+                        "통합 오류이력 저장 실패. 불완전한 신규 파일은 가능한 범위에서 정리했습니다.\\n"+
+                        e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),
+                        false,"오류이력 분할 ZIP 추출");
+                }
+            }finally{
+                File[] files=folder.listFiles();
+                if(files!=null)for(File file:files)if(file.isFile())file.delete();
+                folder.delete();
+                if(progressFile.exists())progressFile.delete();
+                if(cancelMarker.exists())cancelMarker.delete();
+                scopedErrorOutput=null;
+                scopedErrorWorker=null;
+                errorExportCancelRequested.set(false);
+                fullExportRunning.set(false);
+            }
+        },"artitrade-scoped-multipart-errors");
+        scopedErrorWorker=worker;
+        worker.start();
+    }
+
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==REQUEST_EXPORT_SCOPED_ERRORS){
+            String scope=pendingScopedErrorScope;
+            pendingScopedErrorScope=null;
+            android.content.SharedPreferences picker=getSharedPreferences(
+                "artitrade_picker_scope_v088",MODE_PRIVATE);
+            if(scope==null||scope.isEmpty())scope=picker.getString("errors",null);
+            picker.edit().remove("errors").apply();
+            if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
+                exportScopedErrorToFolder(data.getData(),scope);
+            else exportStage("errors","CANCELLED","오류 ZIP 추출 취소",0,
+                "저장 폴더 선택이 취소됨",false,false);
+            return;
+        }
         if(requestCode==REQUEST_EXPORT_COMBINED_RESEARCH){
             String scope=pendingCombinedResearchScope;
             pendingCombinedResearchScope=null;
+            android.content.SharedPreferences picker=getSharedPreferences(
+                "artitrade_picker_scope_v088",MODE_PRIVATE);
+            if(scope==null||scope.isEmpty())scope=picker.getString("research",null);
+            picker.edit().remove("research").apply();
             if(resultCode==RESULT_OK&&scope!=null&&data!=null&&data.getData()!=null)
                 exportCombinedResearchToFolder(data.getData(),scope);
             else exportStage("research","CANCELLED","연구 ZIP 추출 취소",0,
@@ -4815,19 +5807,19 @@ public final class UnifiedVisualActivity extends Activity {
         double price=num(row,"buy_price");
         Object at=firstValue(row,"buy_at");
         if(bought){
-            String prefix="gmo".equals(source.source)?"PAPER 매수":"원장 매수";
-            return new String[]{prefix+"  "+(finite(price)&&price>0?money(price):"미기록"),
+            String prefix="실거래 매수";
+            return new String[]{prefix+"  "+(finite(price)&&price>0?WonFormat.price(price):"미기록"),
                 researchMoment(at)};
         }
         double virtual=num(row,"virtual_buy_price");
         if(observed&&finite(virtual)&&virtual>0){
             String prefix="gmo".equals(source.source)?"D+1 공식시가":"가상 진입가";
-            return new String[]{prefix+"  "+money(virtual),
+            return new String[]{prefix+"  "+WonFormat.price(virtual),
                 researchMoment(firstValue(row,"virtual_buy_at","first_observed_limit_touch"))};
         }
         double reference=num(row,"limit_price","buy_reference_price");
         if(finite(reference)&&reference>0)
-            return new String[]{"매수 기준가  "+money(reference)+" (미체결)",
+            return new String[]{"매수 기준가  "+WonFormat.price(reference)+" (미체결)",
                 "체결일 없음"};
         return new String[]{"매수가 미기록","체결일 없음"};
     }
@@ -4849,20 +5841,20 @@ public final class UnifiedVisualActivity extends Activity {
         String precisionText=precision==60?"1분봉":"5분봉";
         boolean gotHigh=minuteVerified&&finite(fetchedHigh)&&fetchedHigh>0&&fetchedPeak!=null;
         String highLine=gotHigh?
-            "후속고가  "+money(fetchedHigh)+"  ("+precisionText+")":"";
+            "후속고가  "+WonFormat.price(fetchedHigh)+"  ("+precisionText+")":"";
         String peakLine=gotHigh?researchMoment(fetchedPeak):"";
         if(bought&&!evidence.isEmpty()&&finite(sold)&&sold>0&&at!=null){
-            String tag="gmo".equals(source.source)?"PAPER 매도":"원장 매도";
+            String tag="실거래 매도";
             return gotHigh?
-                new String[]{tag+" "+money(sold)+" · "+highLine,
+                new String[]{tag+" "+WonFormat.price(sold)+" · "+highLine,
                     "매도 "+researchMoment(at)+" · 고점 "+peakLine}:
-                new String[]{tag+"  "+money(sold),researchMoment(at)};
+                new String[]{tag+"  "+WonFormat.price(sold),researchMoment(at)};
         }
         double virtual=num(row,"virtual_sell_price");
         Object virtualAt=firstValue(row,"virtual_sell_at");
         if(!bought&&!row.optString("virtual_sell_evidence","").isEmpty()&&
            finite(virtual)&&virtual>0&&virtualAt!=null)
-            return new String[]{"가상매도  "+money(virtual)+" (모의체결)",
+            return new String[]{"가상매도  "+WonFormat.price(virtual)+" (모의체결)",
                 researchMoment(virtualAt)};
 
         // Observed one-minute highs / BOOK_BID price paths are NEVER a
@@ -4874,13 +5866,13 @@ public final class UnifiedVisualActivity extends Activity {
         // never advertise them as a verified intraday high or target touch.
         if(!"at".equals(source.source)&&finite(observed)&&observed>0&&observedAt!=null&&
            !row.optString("observed_target_evidence","").isEmpty()){
-            return new String[]{"목표 고가관측  "+money(observed)+" (매도 체결 아님)",
+            return new String[]{"목표 고가관측  "+WonFormat.price(observed)+" (매도 체결 아님)",
                 researchMoment(observedAt)};
         }
         Object touched=firstValue(row,"first_observed_target_after_touch");
         double threshold=num(row,"first_target","target");
         if(!"at".equals(source.source)&&touched!=null&&finite(threshold)&&threshold>0)
-            return new String[]{"목표가격 관측  "+money(threshold)+" (매도 체결 아님)",
+            return new String[]{"목표가격 관측  "+WonFormat.price(threshold)+" (매도 체결 아님)",
                 researchMoment(touched)};
         // The original GMO engine records PAPER last-exit time separately from
         // the *first-target* sale. Show it as final exit, never as first TP.
@@ -5064,11 +6056,6 @@ public final class UnifiedVisualActivity extends Activity {
         int listHeight=Math.min((int)(getResources().getDisplayMetrics().heightPixels*.55f),
             dp(91)*Math.max(1,Math.min(sourceRows.size(),8)));
         body.addView(list,new LinearLayout.LayoutParams(-1,listHeight));
-        TextView footer=text("O 확인된 목표 달성 · X 관측기간 종료 후 미달성 · "+
-            "— 판정보류. 고가관측과 실제 매도체결은 별도 근거임.",11);
-        footer.setTextColor(Color.rgb(174,179,194));
-        footer.setPadding(dp(6),dp(7),dp(5),dp(4));
-        body.addView(footer);
         final Runnable[] redraw=new Runnable[1];
         redraw[0]=()->{
             shown.clear();shown.addAll(sourceRows);
@@ -5277,11 +6264,6 @@ public final class UnifiedVisualActivity extends Activity {
         }
         panel.addView(text("실제 매수 후 추적 "+actual+"건 · PAPER 가상 추적 "+
             paper+"건 · 완료 "+complete+"건",13));
-        TextView basis=text("5분·30분 5일 / 1시간 10일 / 일봉 15일 / 수급·종가 5일"+
-            " · 주식 거래일, 코인 연속일 기준",12);
-        basis.setTextColor(PremiumUi.MUTED);
-        basis.setPadding(0,dp(6),0,dp(4));
-        panel.addView(basis);
         SimpleDateFormat display=new SimpleDateFormat("MM/dd HH:mm:ss",Locale.KOREA);
         display.setTimeZone(TimeZone.getTimeZone("Asia/Seoul"));
         JSONArray cases=data.optJSONArray("cases");
@@ -5308,7 +6290,7 @@ public final class UnifiedVisualActivity extends Activity {
                          " 예상":" 확인")+" "+soldLabel;
             if(peak){
                 String observed=display.format(new Date(peakAt*1000L));
-                first+=" · 후속 최고 "+money(item.optDouble("peak"))+
+                first+=" · 후속 최고 "+WonFormat.price(item.optDouble("peak"))+
                     " · 매수 대비 "+String.format(Locale.KOREA,"%+.2f%%",
                                   item.optDouble("peak_pct"))+
                     " · "+observed;
@@ -5328,7 +6310,7 @@ public final class UnifiedVisualActivity extends Activity {
                     if(step==null)continue;
                     TextView mark=text(" ↳ 최고가 갱신 "+
                         display.format(new Date(step.optLong("high_at")*1000L))+
-                        "  "+money(step.optDouble("price"))+
+                        "  "+WonFormat.price(step.optDouble("price"))+
                         "  ("+String.format(Locale.KOREA,"%+.2f%%",
                                step.optDouble("pct_from_buy"))+")",11);
                     mark.setTextColor(PremiumUi.MUTED);
@@ -5344,12 +6326,6 @@ public final class UnifiedVisualActivity extends Activity {
             warning.setPadding(0,dp(6),0,0);
             panel.addView(warning);
         }
-        TextView footer=text("전체 1분 관측값·고가 갱신이력: "+
-            data.optString("raw_research_db","POST_EXIT_HIGH_V053.sqlite3")+
-            " (분석 추출 ZIP에 포함)",11);
-        footer.setTextColor(PremiumUi.MUTED);
-        footer.setPadding(0,dp(8),0,0);
-        panel.addView(footer);
         content.addView(panel);
     }
 
@@ -5378,11 +6354,8 @@ public final class UnifiedVisualActivity extends Activity {
         summary.setPadding(0,dp(6),0,dp(4));
         panel.addView(summary);
         JSONObject modes=overall.optJSONObject("by_execution_mode");
-        String byMode="LIVE "+(modes==null?0:modes.optInt("LIVE",0))+
-            " · PAPER "+(modes==null?0:modes.optInt("PAPER",0))+
-            " · 가상추적 "+(modes==null?0:modes.optInt("SHADOW_UNFILLED",0))+
-            " · 미확인 "+(modes==null?0:
-               modes.optInt("UNKNOWN_FILLED_LEDGER",0));
+        String byMode="실거래(가상계좌) "+(modes==null?0:modes.optInt("PAPER",0)+modes.optInt("LIVE",0)+modes.optInt("UNKNOWN_FILLED_LEDGER",0))+
+            " · PAPER(미매수) "+(modes==null?0:modes.optInt("SHADOW_UNFILLED",0));
         TextView modeLine=text(byMode,12);
         modeLine.setTextColor(PremiumUi.MUTED);
         panel.addView(modeLine);
@@ -5432,11 +6405,6 @@ public final class UnifiedVisualActivity extends Activity {
             note.setPadding(0,dp(9),0,0);
             panel.addView(note);
         }
-        TextView exportHint=text("각 거래의 출처·관측시각·수치·누락 사유는 "+
-            "종합분석 SQLite 및 분석 추출 ZIP에 보존됨",11);
-        exportHint.setTextColor(PremiumUi.MUTED);
-        exportHint.setPadding(0,dp(8),0,0);
-        panel.addView(exportHint);
         content.addView(panel);
     }
 
@@ -5478,9 +6446,6 @@ public final class UnifiedVisualActivity extends Activity {
         stat.setTextColor(PremiumUi.MUTED);
         stat.setPadding(0,dp(8),0,dp(4));
         panel.addView(stat);
-        TextView note=text("상세 수치·미수신 사유·원천 기록은 분석 추출 ZIP에 포함",11);
-        note.setTextColor(Color.rgb(131,193,236));
-        panel.addView(note);
         content.addView(panel,new LinearLayout.LayoutParams(-1,-2));
     }
 
@@ -5600,10 +6565,6 @@ public final class UnifiedVisualActivity extends Activity {
         exLp.setMargins(dp(8),0,0,0);
         controls.addView(export,exLp);
         header.addView(controls,new LinearLayout.LayoutParams(-1,dp(51)));
-        TextView hint=text("정량 비교표·근거·시장점수·주문·AI원본 전체를 검증 ZIP으로 저장",11);
-        hint.setTextColor(PremiumUi.MUTED);
-        hint.setPadding(dp(1),dp(7),0,0);
-        header.addView(hint);
         content.addView(header);
 
         if(aiAnalysisRunning&&scope.equals(aiAnalysisScope)){
@@ -5787,7 +6748,10 @@ public final class UnifiedVisualActivity extends Activity {
                 ?new String[]{"5m","30m","60m","day","gmo","close"}
                 :new String[]{"5m","30m","60m","day"})
             :StrategyDashboardScope.showFrameCharts(scope)
-                ?new String[]{"5m","30m","60m","day"}:new String[]{scope};
+                ?("trend".equals(scope)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"})
+                :new String[]{scope};
         boolean matrixColumns=getResources().getConfiguration().screenWidthDp>=720;
         LinearLayout matrixPair=null;
         int matrixInRow=0,maxRowHeight=0;
@@ -5824,10 +6788,6 @@ public final class UnifiedVisualActivity extends Activity {
                 params.height=dp(height);matrixPair.setLayoutParams(params);
             }
         }
-        TextView note=text("실제 열 더블탭 → 실제 진입만 / 가상 열 → 가상 진입만 표시 · "+
-            "확인도달 비중=목표확인 건수÷전체 진입 건수 (판정보류는 실패로 간주하지 않음)",12);
-        note.setTextColor(Color.rgb(150,170,195));
-        note.setPadding(dp(3),dp(7),dp(3),dp(4));content.addView(note);
 
         LinearLayout researchHead=new LinearLayout(this);
         researchHead.setOrientation(LinearLayout.HORIZONTAL);
@@ -5879,8 +6839,7 @@ public final class UnifiedVisualActivity extends Activity {
             boolean actualEntry=bool(row,"bought");
             boolean unselected=bool(row,"unselected")||
                 row.optString("entry_status","").contains("UNSELECTED");
-            String tag=actualEntry?("gmo".equals(item.source)?"PAPER체결":"원장체결"):
-                unselected?"불채택":"가상";
+            String tag=actualEntry?"실거래":unselected?"불채택":"PAPER";
             String outcomeKo="HIT".equals(outcome)?
                 (actualEntry?"1차 매도 확인":"가상 목표관측"):
                 "MISS".equals(outcome)?
@@ -5907,8 +6866,8 @@ public final class UnifiedVisualActivity extends Activity {
 
             double entry=num(row,"buy_price","virtual_buy_price","limit_price","official_d1_open");
             double targetPrice=num(row,"first_target","target","observed_target_price");
-            String entryText=finite(entry)&&entry>0?money(entry):"미기록";
-            String goalText=finite(targetPrice)&&targetPrice>0?money(targetPrice):"미기록";
+            String entryText=finite(entry)&&entry>0?WonFormat.price(entry):"미기록";
+            String goalText=finite(targetPrice)&&targetPrice>0?WonFormat.price(targetPrice):"미기록";
             TextView priceFacts=text("매수·기준가 "+entryText+"  |  목표·관측가 "+goalText,12);
             priceFacts.setTextColor(Color.rgb(167,196,220));
             priceFacts.setMaxLines(3);
@@ -5931,14 +6890,14 @@ public final class UnifiedVisualActivity extends Activity {
             // Only originally recorded position/fill timestamps prove a trade.
             Object buyAt=firstValue(row,"buy_at");
             if(actualEntry&&buyAt!=null){
-                TextView bought=text(("gmo".equals(item.source)?"PAPER 매수":"원장 매수")+
+                TextView bought=text("실거래 매수"+
                     " · "+researchMoment(buyAt),12);
                 bought.setTextColor(PremiumUi.MUTED);
                 identityCol.addView(bought);
             }
             Object sellAt=firstValue(row,"sell_at");
             if(actualEntry&&sellAt!=null&&!row.optString("sell_evidence","").isEmpty()){
-                TextView sold=text(("gmo".equals(item.source)?"PAPER 매도":"원장 매도")+
+                TextView sold=text("실거래 매도"+
                     " · "+researchMoment(sellAt),12);
                 sold.setTextColor(PremiumUi.MUTED);observedCol.addView(sold);
                 TextView exit=text("매도 원인 · "+tradeReasonOf(row,"매도"),12);
@@ -6004,7 +6963,7 @@ public final class UnifiedVisualActivity extends Activity {
         sort.setTextSize(11);
         scoreHead.addView(sort,new LinearLayout.LayoutParams(dp(86),dp(37)));
         content.addView(scoreHead,new LinearLayout.LayoutParams(-1,dp(45)));
-        TextView sub=text("미선정 후보 포함 · 후보 당시 점수와 판정 상태 · 실제 계좌성과와 분리",13);sub.setTextColor(Color.rgb(135,160,190));sub.setPadding(0,dp(3),0,dp(9));content.addView(sub);
+
         LinearLayout k=card();LinearLayout kr=new LinearLayout(this);kr.setOrientation(LinearLayout.HORIZONTAL);
         addMini(kr,"후보",String.valueOf(items.length()));
         int hi=0,mid=0,low=0;for(int i=0;i<items.length();i++){JSONObject x=items.optJSONObject(i);double sc=x==null?Double.NaN:num(x,"score","diverse_11_score","gmo_score_at_signal");if(!finite(sc))continue;if(sc>=61)hi++;else if(sc>=41)mid++;else low++;}
@@ -6132,7 +7091,6 @@ public final class UnifiedVisualActivity extends Activity {
         zp.setMargins(dp(5),0,0,0);
         errorsHead.addView(zip,zp);
         content.addView(errorsHead,new LinearLayout.LayoutParams(-1,dp(45)));
-        TextView note=text("선택 전략과 무관하게 해당 시장의 실시간·전략·주문·원장 오류를 통합 표시",10);note.setTextColor(Color.rgb(135,160,190));note.setPadding(0,dp(3),0,dp(9));content.addView(note);
         LinearLayout summary=new LinearLayout(this);summary.setOrientation(LinearLayout.HORIZONTAL);
         addKpi(summary,"전체",String.valueOf(all.length()));
         int auth=0,feed=0,order=0;
@@ -6181,14 +7139,20 @@ public final class UnifiedVisualActivity extends Activity {
             JSONObject stock=new JSONObject(),coin=new JSONObject();
             for(String stg:new String[]{"at","ma","trend"}){
                 JSONObject frames=new JSONObject();
-                for(String tf:new String[]{"5m","30m","60m","day"})frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
+                for(String tf:("trend".equals(stg)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"}))
+                    frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
                 stock.put(stg,new JSONObject().put("frames",frames));
             }
             stock.put("close",new JSONObject().put("seed",2000000).put("max_positions",4));
             stock.put("gmo",new JSONObject().put("seed",2000000).put("max_positions",4));
             for(String stg:new String[]{"general","ma","trend"}){
                 JSONObject frames=new JSONObject();
-                for(String tf:new String[]{"5m","30m","60m","day"})frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
+                for(String tf:("trend".equals(stg)
+                    ?new String[]{"30m","60m","day"}
+                    :new String[]{"5m","30m","60m","day"}))
+                    frames.put(tf,new JSONObject().put("seed",2000000).put("max_positions",4));
                 coin.put(stg,new JSONObject().put("frames",frames));
             }
             root.put("stock",stock).put("coin",coin);
@@ -6334,11 +7298,13 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void addFrameOperationSection(String title,String m,String stg,JSONObject settings){
         TextView h=text(title,19);h.setTypeface(null,Typeface.BOLD);h.setTextColor(Color.rgb(224,226,236));h.setPadding(0,dp(18),0,dp(7));content.addView(h);
-        TextView note=text("5분 · 30분 · 1시간 · 일봉 각각 별도 시드 / 최대보유 설정",12);note.setTextColor(Color.rgb(120,131,154));note.setPadding(0,0,0,dp(8));content.addView(note);
-        String[] frames={"5m","30m","60m","day"};
-        for(int row=0;row<2;row++){
+        String[] frames="trend".equals(stg)
+            ?new String[]{"30m","60m","day"}
+            :new String[]{"5m","30m","60m","day"};
+        for(int row=0;row<(frames.length+1)/2;row++){
             LinearLayout line=new LinearLayout(this);line.setOrientation(LinearLayout.HORIZONTAL);
             for(int col=0;col<2;col++){
+                if(row*2+col>=frames.length)break;
                 String tf=frames[row*2+col];
                 LinearLayout card=operationFrameCard(m,stg,tf,settings);
                 LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(132),1);
@@ -6363,7 +7329,9 @@ public final class UnifiedVisualActivity extends Activity {
             if("stock".equals(market)){
                 for(String stg:new String[]{"at","ma","trend"}){
                     JSONObject frames=new JSONObject();
-                    for(String tf:new String[]{"5m","30m","60m","day"}){
+                    for(String tf:("trend".equals(stg)
+                        ?new String[]{"30m","60m","day"}
+                        :new String[]{"5m","30m","60m","day"})){
                         EditText[] e=operationFields.get("stock."+stg+"."+tf);if(e==null)continue;
                         frames.put(tf,new JSONObject().put("seed",operationLong(e[0],"시드")).put("max_positions",operationLong(e[1],"최대보유")));
                     }
@@ -6376,7 +7344,9 @@ public final class UnifiedVisualActivity extends Activity {
             }else{
                 for(String stg:new String[]{"general","ma","trend"}){
                     JSONObject frames=new JSONObject();
-                    for(String tf:new String[]{"5m","30m","60m","day"}){
+                    for(String tf:("trend".equals(stg)
+                        ?new String[]{"30m","60m","day"}
+                        :new String[]{"5m","30m","60m","day"})){
                         EditText[] e=operationFields.get("coin."+stg+"."+tf);if(e==null)continue;
                         frames.put(tf,new JSONObject().put("seed",operationLong(e[0],"시드")).put("max_positions",operationLong(e[1],"최대보유")));
                     }
@@ -6399,7 +7369,7 @@ public final class UnifiedVisualActivity extends Activity {
     private void renderOperation(){
         operationFields.clear();
         TextView h=text(("stock".equals(market)?"주식":"코인")+" 통합 운용",24);h.setTypeface(null,Typeface.BOLD);content.addView(h);
-        TextView dsc=text("각 실제 계좌 단위로 운용시드와 최대 보유종목을 설정 · 기본 2,000,000원 / 4종목",13);dsc.setTextColor(Color.rgb(137,147,169));dsc.setPadding(0,dp(4),0,dp(2));content.addView(dsc);
+
         JSONObject settings=operationSettings();
 
         if("stock".equals(market)){
@@ -6429,19 +7399,97 @@ public final class UnifiedVisualActivity extends Activity {
             }
         }catch(Exception ignored){}
 
-        JSONObject live=copyCache().optJSONObject("live_orders");boolean armed=live!=null&&live.optBoolean(market,false);
-        LinearLayout ctrl=card();TextView t=text("S21+ 메인 실행권한",17);t.setTypeface(null,Typeface.BOLD);ctrl.addView(t);
-        LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(9),0,0);dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(44),1);offp.setMargins(dp(8),0,0,0);dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);ctrl.addView(dr);
-        TextView lt=text("실거래 자동주문",17);lt.setTypeface(null,Typeface.BOLD);lt.setPadding(0,dp(14),0,0);ctrl.addView(lt);
-        LinearLayout lr=new LinearLayout(this);lr.setOrientation(LinearLayout.HORIZONTAL);lr.setPadding(0,dp(9),0,0);lr.addView(button("실거래 ON",armed,()->setLive(true)),new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams of=new LinearLayout.LayoutParams(0,dp(44),1);of.setMargins(dp(8),0,0,0);lr.addView(button("실거래 OFF",!armed,()->setLive(false)),of);ctrl.addView(lr);
-        TextView hint=text(armed?"실거래 ON · 최신 EXE 전략 신호가 실제 주문으로 연결됨":"실거래 OFF · 시세/전략은 계속 실행, 실제 주문만 차단",12);hint.setTextColor(armed?Color.rgb(62,224,181):Color.rgb(255,194,91));hint.setPadding(0,dp(9),0,0);ctrl.addView(hint);
+        LinearLayout ctrl=card();TextView t=text("실거래(가상계좌) · PAPER(미매수)",17);t.setTypeface(null,Typeface.BOLD);ctrl.addView(t);
+        LinearLayout dr=new LinearLayout(this);dr.setOrientation(LinearLayout.HORIZONTAL);dr.setPadding(0,dp(9),0,0);
+        dr.addView(button("PHONE MAIN",false,()->setDesired("phone")),new LinearLayout.LayoutParams(0,dp(44),1));
+        LinearLayout.LayoutParams offp=new LinearLayout.LayoutParams(0,dp(44),1);offp.setMargins(dp(8),0,0,0);
+        dr.addView(button("자동매매 정지",false,()->setDesired("off")),offp);ctrl.addView(dr);
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(12),0,0);content.addView(ctrl,cp);
+    }
+
+    private void showMserverBackupRecord(String selected){
+        String market="주식".equals(selected)?"stock":"coin";
+        new Thread(()->{
+            try{
+                JSONObject latest=DailyRecoveryV003.latest(this,market);
+                if(!latest.optBoolean("exists",false)){
+                    main.post(()->new AlertDialog.Builder(this)
+                        .setTitle("MSERVER 원장 백업")
+                        .setMessage("검증 완료된 저장본이 없음. 거래 원장은 변경하지 않았습니다.")
+                        .setPositiveButton("확인",null).show());
+                    return;
+                }
+                String date=latest.optString("date");
+                String hash=latest.optString("sha256");
+                long bytes=latest.optLong("bytes");
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("MSERVER 최신 원장 · "+selected)
+                    .setMessage("저장일 "+date+"\n크기 "+bytes+"바이트\nSHA256 "+
+                        (hash.length()>=16?hash.substring(0,16):hash)+
+                        "…\n복구 시점은 이 백업 생성 시각까지입니다.")
+                    .setNegativeButton("닫기",null)
+                    .setPositiveButton("백업 무결성 검증",(dlg,w)->
+                        verifyLatestDailyBackupInQuarantine(market))
+                    .show());
+            }catch(Throwable error){
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("MSERVER 백업 조회 실패")
+                    .setMessage("MSERVER 업데이트·연결 또는 저장본을 확인하십시오. "+
+                        error.getClass().getSimpleName())
+                    .setPositiveButton("확인",null).show());
+            }
+        },"artitrade-check-mserver-backup-"+market).start();
+    }
+
+    private void verifyLatestDailyBackupInQuarantine(String market){
+        new Thread(()->{
+            try{
+                JSONObject result=DailyRecoveryV003.downloadAndVerify(this,market);
+                String report="저장일 "+result.optString("date")+
+                    "\n검증 파일 "+result.optInt("files")+
+                    "개\nZIP SHA256 검증 완료"+
+                    "\n현재 원장은 변경하지 않았습니다.";
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("복구본 다운로드 · 검증 완료")
+                    .setMessage(report).setPositiveButton("확인",null).show());
+            }catch(Throwable ex){
+                main.post(()->new AlertDialog.Builder(this)
+                    .setTitle("복구본 검증 실패 · 원장 유지")
+                    .setMessage(ex.getClass().getSimpleName()+": "+
+                        String.valueOf(ex.getMessage()))
+                    .setPositiveButton("확인",null).show());
+            }
+        },"artitrade-readonly-backup-recovery").start();
     }
 
     private void renderMore(){
         TextView h=text("도구",18);h.setTypeface(null,Typeface.BOLD);h.setPadding(0,0,0,dp(8));content.addView(h);
         LinearLayout c=card();c.addView(text("키움 · 업비트 API",13));Button api=button("직접 API 키 설정",true,this::apiSettings);LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(42));ap.setMargins(0,dp(8),0,0);c.addView(api,ap);content.addView(c);
         LinearLayout p=card();p.addView(text("MSERVER(모바일 서버) · 토큰 등록 후 연결을 검사할 수 있음",13));Button pair=button("토큰 등록 · 연결 확인",true,this::pair);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(42));pp.setMargins(0,dp(8),0,0);p.addView(pair,pp);LinearLayout.LayoutParams pc=new LinearLayout.LayoutParams(-1,-2);pc.setMargins(0,dp(8),0,0);content.addView(p,pc);
+        LinearLayout daily=card();
+        daily.addView(text("MSERVER 원장 백업",15));
+        android.content.SharedPreferences dailyStatus=getSharedPreferences(
+            "artitrade_daily_backup_v003",MODE_PRIVATE);
+        for(String[] item:new String[][]{{"stock","주식 · 20:10"},{"coin","코인 · 11:30"}}){
+            String key=item[0],last=dailyStatus.getString("done_date_"+key,"");
+            String state=dailyStatus.getString("stage_"+key,"");
+            String display=item[1]+"  "+(last.isEmpty()?"저장본 미확인":last)+
+                (state.isEmpty()?"":" · "+state);
+            TextView stateLabel=text(display,12);
+            stateLabel.setPadding(0,dp(5),0,0);
+            daily.addView(stateLabel);
+        }
+        Button checkDaily=button("최근 저장본 확인·검증",true,()->{
+            new AlertDialog.Builder(this).setTitle("MSERVER 저장본")
+                .setItems(new String[]{"주식","코인"},(dialog,w)->
+                    showMserverBackupRecord(w==0?"주식":"코인"))
+                .setNegativeButton("취소",null).show();
+        });
+        LinearLayout.LayoutParams checkLp=new LinearLayout.LayoutParams(-1,dp(42));
+        checkLp.setMargins(0,dp(9),0,0);
+        daily.addView(checkDaily,checkLp);
+        content.addView(daily);
+
         LinearLayout b=card();
         b.addView(text("화면 꺼짐 · 자동매매 서비스 상태",15));
         android.content.SharedPreferences health=getSharedPreferences(
@@ -6496,6 +7544,32 @@ public final class UnifiedVisualActivity extends Activity {
         return TradeExplanation.side(raw);
     }
     /** Keep event/reference time separate from the actual broker/PAPER fill. */
+    /** The event key denotes a scheduled candle END, never future market data. */
+    private boolean rsiCandleEndIsFuture(Object rawValue){
+        if(rawValue==null||rawValue==JSONObject.NULL)return false;
+        String raw=String.valueOf(rawValue).trim();
+        try{return OffsetDateTime.parse(raw).toInstant().isAfter(Instant.now());}
+        catch(java.time.format.DateTimeParseException ignored){}
+        try{
+            java.time.LocalDateTime end=java.time.LocalDateTime.parse(raw);
+            return end.atZone(ZoneId.of("Asia/Seoul")).toInstant().isAfter(Instant.now());
+        }catch(java.time.format.DateTimeParseException ignored){}
+        try{
+            if(raw.matches("[0-9]{14}")){
+                java.time.LocalDateTime end=java.time.LocalDateTime.parse(raw,
+                    DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+                return end.atZone(ZoneId.of("Asia/Seoul")).toInstant().isAfter(Instant.now());
+            }
+            if(raw.matches("[0-9]{8}")){
+                java.time.LocalDate day=java.time.LocalDate.parse(raw,
+                    DateTimeFormatter.BASIC_ISO_DATE);
+                return day.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant()
+                    .isAfter(Instant.now());
+            }
+        }catch(java.time.format.DateTimeParseException ignored){}
+        return false;
+    }
+
     private String referenceTimelineOf(JSONObject row,String originStrategy){
         if("gmo".equals(originStrategy)){
             Object day=firstValue(row,"gmo_d_day","gmo_event_date",
@@ -6509,7 +7583,16 @@ public final class UnifiedVisualActivity extends Activity {
         }
         if("trend".equals(originStrategy)){
             Object bar=firstValue(row,"bar_key","signal_bar_end");
-            return "RSI 판정봉  "+(bar==null?"미기록":researchMoment(bar));
+            if(bar==null)return "RSI 판정 대상봉  미기록";
+            // bar_key is the scheduled candle END, not future market evidence.
+            String end=researchMoment(bar);
+            if(rsiCandleEndIsFuture(bar)){
+                Object observed=firstValue(row,"observed_at","signal_at",
+                    "decision_at","entry_at","buy_at","created_at","ts","at");
+                return "RSI 실시간 관측  "+(observed==null?"시각 미기록":researchMoment(observed))
+                    +"  ·  판정 대상봉 마감예정  "+end;
+            }
+            return "RSI 판정 대상봉 마감  "+end;
         }
         String maKind=row.optString("ma_v061_kind","");
         if("TURNPOINT".equals(maKind)||"DOWN_BEAR".equals(maKind)){
@@ -6733,26 +7816,6 @@ public final class UnifiedVisualActivity extends Activity {
         return "원장 게시 중 예외 발생 · 진단 코드 확인";
     }
 
-    private void requestPcMigrationApply(){
-        JSONObject live=copyCache().optJSONObject("live_orders");
-        if(live!=null&&(live.optBoolean("stock",false)||live.optBoolean("coin",false))){
-            new AlertDialog.Builder(this).setTitle("PC 원장 자동복원 차단")
-                .setMessage("실거래 주문이 켜져 있습니다. 주문이 완전히 종료되고 실거래를 OFF로 전환한 뒤 PC 원장을 검증하십시오. 실제 체결이 남은 기기의 자동 덮어쓰기는 별도로 차단됩니다.")
-                .setPositiveButton("확인",null).show();
-            return;
-        }
-        new AlertDialog.Builder(this).setTitle("기존 PC 원장 재적용 · 검증")
-            .setMessage("전략엔진을 안전하게 재시작하고 MSERVER의 PC 승계자료 또는 기기에 설치된 원장을 확인합니다. 매수·매도 주문 실행 기능을 새로 활성화하지 않습니다.")
-            .setNegativeButton("취소",null)
-            .setPositiveButton("원장 검증 시작",(d,w)->{
-                try{
-                    Intent intent=new Intent(this,UnifiedTradingService.class);
-                    intent.setAction(UnifiedTradingService.APPLY_PC_MIGRATION);
-                    if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    main.postDelayed(()->refresh(false),1500);
-                }catch(Throwable e){new RuntimeCrashStore(this).add("pc_migration_apply_ui",e);}
-            }).show();
-    }
     private void togglePcLiveSync(){
         boolean current=getSharedPreferences("artitrade_pc_live_sync_v1",
             MODE_PRIVATE).getBoolean("enabled",false);
@@ -6921,6 +7984,94 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void restartFeeds(){try{Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.RESTART_FEEDS);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Exception e){new RuntimeCrashStore(this).add("native_restart_feeds",e);}}
 
+    /** Mandatory one-time new PAPER epoch, isolated from all trading threads.
+      * Called before the first Activity-created START intent. No broker login,
+      * history import, order execution, or APK signing is performed here.
+      */
+    private void beginMandatoryPaperFreshStart(){
+        renderFreshStartBlocked("신규 PAPER 원장 생성 중 · 기존 8전략 보유/체결/연구 자료 폐기");
+        new Thread(()->{
+            try{
+                // An existing service or Python interpreter could still own
+                // SQLite WAL / exchange threads. Never delete under its feet.
+                if(UnifiedTradingService.isServiceActiveForFreshReset()){
+                    stopService(new Intent(this,UnifiedTradingService.class));
+                    throw new IllegalStateException(
+                        "SERVICE_WAS_ACTIVE_REOPEN_APP_FOR_COLD_RESET");
+                }
+                if(Python.isStarted()){
+                    throw new IllegalStateException(
+                        "PYTHON_ALREADY_RUNNING_REOPEN_APP_FOR_COLD_RESET");
+                }
+                android.content.SharedPreferences live=getSharedPreferences(
+                    "unified_live_orders",MODE_PRIVATE);
+                if(live.getBoolean("live_stock",false)||
+                   live.getBoolean("live_coin",false))
+                    throw new SecurityException(
+                        "LIVE_BROKER_ENABLED_PAPER_RESET_BLOCKED");
+                File ledger=new File(getFilesDir(),"ARTITRADE_PHONE_MAIN_V070");
+                if(!ledger.isDirectory()&&!ledger.mkdirs())
+                    throw new IOException("FRESH_LEDGER_DIRECTORY_CREATE_FAILED");
+                Python.start(new AndroidPlatform(getApplicationContext()));
+                String raw=Python.getInstance()
+                    .getModule("fresh_epoch_reset_v106")
+                    .callAttr("reset_once_json",ledger.getAbsolutePath())
+                    .toString();
+                JSONObject result=new JSONObject(raw);
+                String phase=result.optString("status","");
+                if(!"COMMITTED".equals(phase)&&
+                   !"ALREADY_COMMITTED".equals(phase))
+                    throw new IllegalStateException(
+                        "FRESH_PAPER_RESET_NOT_COMMITTED:"+phase);
+                // In-process caches can no longer refer to 2026-11-14 or
+                // any previous PC ZIP. Settings/API secrets are preserved.
+                FreshEpochGateV106.clearDerivedCachesIfNeeded(this);
+                if(FreshEpochGateV106.mandatoryFreshStartPending(this))
+                    throw new IllegalStateException(
+                        "FRESH_PAPER_MARKER_NOT_COMMITTED");
+                main.post(()->{
+                    renderFreshStartBlocked(
+                        "새 PAPER 원장 초기화 완료 · 주식·코인 8전략 모두 0건에서 시작");
+                    // Re-enter normal onCreate only AFTER durable commit.
+                    main.postDelayed(this::recreate,200);
+                });
+            }catch(Throwable error){
+                try{new RuntimeCrashStore(this).add(
+                    "mandatory_first_paper_epoch",error);}
+                catch(Throwable ignored){}
+                String code=error.getClass().getSimpleName()+": "+
+                    String.valueOf(error.getMessage());
+                main.post(()->renderFreshStartBlocked(
+                    "초기화 차단 · "+code+
+                    "\n기존 데이터는 자동 복구·승계하지 않습니다."+
+                    "\n앱을 완전히 종료한 뒤 다시 실행하십시오."));
+            }
+        },"artitrade-mandatory-fresh-epoch-no-broker").start();
+    }
+
+    private void renderFreshStartBlocked(String message){
+        if(root==null){
+            root=new FrameLayout(this);
+            root.setBackgroundColor(PremiumUi.BG);
+            setContentView(root);
+        }
+        root.removeAllViews();
+        LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(dp(28),dp(20),dp(28),dp(20));
+        TextView headline=text("ARTITRADE · 신규 PAPER 원장",21);
+        headline.setGravity(Gravity.CENTER);
+        panel.addView(headline);
+        TextView details=text(message,13);
+        details.setTextColor(PremiumUi.MUTED);
+        details.setPadding(0,dp(16),0,dp(18));
+        details.setGravity(Gravity.CENTER);
+        panel.addView(details);
+        // Never offer an option to bypass the first reset and use old data.
+        root.addView(panel,new FrameLayout.LayoutParams(-1,-1));
+    }
+
     private void startRuntimeLater(){
         if(runtimeStartIssued)return;runtimeStartIssued=true;
         main.postDelayed(()->{try{Intent i=new Intent(this,UnifiedTradingService.class);i.setAction(UnifiedTradingService.START);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Throwable e){new RuntimeCrashStore(this).add("native_runtime_start",e);}},140);
@@ -6932,12 +8083,69 @@ public final class UnifiedVisualActivity extends Activity {
         TextView h=text("ARTITRADE 네이티브 안전모드",22);h.setTypeface(null,Typeface.BOLD);p.addView(h);TextView d=text(e==null?"알 수 없는 오류":e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()),11);d.setTextColor(Color.rgb(255,145,155));d.setPadding(0,dp(10),0,dp(10));p.addView(d);p.addView(button("화면 다시 구성",true,()->{try{showShell();refresh(false);}catch(Throwable x){}}),new LinearLayout.LayoutParams(dp(240),dp(44)));root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
-    @Override protected void onResume(){super.onResume();ensureBackgroundServiceOnResume();main.removeCallbacks(periodic);main.postDelayed(periodic,REFRESH_MS);if(drawerOverlay!=null){main.removeCallbacks(drawerProgressTicker);main.post(drawerProgressTicker);}}
-    @Override protected void onPause(){persistNavigation();main.removeCallbacks(periodic);main.removeCallbacks(drawerProgressTicker);super.onPause();}
+    private void markUiVisible(boolean foreground){
+        getSharedPreferences("artitrade_ui_visibility_v087",MODE_PRIVATE)
+            .edit().putBoolean("foreground",foreground)
+            .putLong("at_ms",System.currentTimeMillis()).apply();
+    }
+    private void releaseHiddenUiSnapshots(){
+        // A hidden Activity has NO reason to pin every imported PC research
+        // row and its precomputed histories while the Python engine executes.
+        cachedLocalRaw=null;
+        cachedLocalFileVersion="";
+        cachedLocalParsed=new JSONObject();
+        cachedLocalMeaningful=false;
+        cachedHubGapRecords=new JSONObject();
+        tradeEvidenceCache.clear();
+        expandedTradeEvidenceKeys.clear();
+        pendingTradeEvidence.clear();
+        pendingResearchExport=null;
+        uiSnapshot=new UiSnapshot(new JSONObject(),new HashMap<>(),
+            new HashMap<>(),new HashMap<>(),new HashMap<>(),new HashMap<>(),
+            0L,0,false);
+    }
+    @Override public void onTrimMemory(int level){
+        super.onTrimMemory(level);
+        ProcessHealthV087.trim(this,"ui",level);
+        if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+            &&!isFinishing()){
+            releaseHiddenUiSnapshots();
+        }else if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW){
+            tradeEvidenceCache.clear();
+            expandedTradeEvidenceKeys.clear();
+            pendingTradeEvidence.clear();
+        }
+    }
+    @Override protected void onResume(){
+        super.onResume();
+        markUiVisible(true);
+        ensureBackgroundServiceOnResume();
+        main.removeCallbacks(periodic);
+        main.postDelayed(periodic,REFRESH_MS);
+        main.removeCallbacks(fastPriceViewTicker);
+        main.post(fastPriceViewTicker);
+        if(drawerOverlay!=null){
+            main.removeCallbacks(drawerProgressTicker);
+            main.post(drawerProgressTicker);
+        }
+    }
+    @Override protected void onPause(){
+        markUiVisible(false);
+        persistNavigation();
+        main.removeCallbacks(periodic);
+        main.removeCallbacks(fastPriceViewTicker);
+        main.removeCallbacks(drawerProgressTicker);
+        super.onPause();
+    }
     @Override protected void onDestroy(){
+        markUiVisible(false);
         uiDestroyed=true;
         main.removeCallbacksAndMessages(null);
         io.shutdownNow();
+        cachedLocalRaw=null;
+        cachedLocalFileVersion="";
+        cachedLocalParsed=new JSONObject();
+        tradeEvidenceCache.clear();
         super.onDestroy();
     }
 }

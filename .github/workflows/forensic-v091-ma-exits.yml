@@ -1,0 +1,57 @@
+name: ARTITRADE v091 read-only exact stock coin staged-sell provenance
+on:
+  push:
+    branches: [fix-artitrade-v091-ma-three-stage-sell-20261117]
+    paths: ['.github/workflows/forensic-v091-ma-exits.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract original 82 modules and print real stock/coin SELL transaction implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,base64,io,zipfile
+          root=Path("ARTITRADE_ANDROID/app/src/main")
+          b=base64.b64decode("".join((root/"assets/strategy_v070"/("part_%02d.txt"%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+            assert z.testzip() is None and len(z.namelist())==82
+            files={n:z.read(n).decode() for n in z.namelist() if n.endswith('.py')}
+          overlay={p.name:p.read_text() for p in (root/"python").glob("*.py")}
+          configs=[
+            ("stock_ma_engine.py",["on_tick","_exit","_sell","_connect","__init__"]),
+            ("coin_ma_engine.py",["process_book","_sell","_buy","__init__"]),
+            ("d_upbit.py",["qty_floor"]),
+            ("d_live.py",["_new_tick"]),
+            ("ma_v067_stock_runtime.py",["_exit_policy","_join_new_positions","_latest_0b"]),
+            ("ma_v067_coin_runtime.py",["_process_v067_exits","_on_real_buy"]),
+            ("ma_v067_policy.py",["up_exit","bear_exit","apply_up_fill","apply_bear_fill"])
+          ]
+          for filename,names in configs:
+            source=files.get(filename) or overlay.get(filename)
+            if not source:
+              print("V091_FILE_MISSING",filename);continue
+            lines=source.splitlines()
+            tree=ast.parse(source)
+            print("=== SOURCE",filename,"total",len(lines),"===")
+            for node in ast.walk(tree):
+              if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and node.name in names:
+                print("--- METHOD",node.name,node.lineno,node.end_lineno,"---")
+                for i in range(node.lineno-1,min(node.end_lineno,len(lines))):
+                  print("S%04d"%(i+1),lines[i][:280])
+          for filename in ("stock_ma_engine.py","coin_ma_engine.py"):
+            source=files[filename]
+            for line in source.splitlines():
+              if any(token in line for token in ("CREATE TABLE", "executions(", "first_qty", "state_json", "on_book", "book_time", "status='OPEN'")):
+                print("SCHEMA",filename,line[:260])
+          PY

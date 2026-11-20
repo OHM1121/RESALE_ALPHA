@@ -149,8 +149,8 @@ def install(core):
     if _INSTALLED:return
     _INSTALLED=True
     original=core.Runtime.hub_records
-    def chronologized(self):
-        raw=original(self)
+    def chronologized(self,for_ui=False):
+        raw=original(self,for_ui=for_ui)
         try:
             packet=json.loads(raw) if isinstance(raw,str) else raw
             if isinstance(packet,dict):

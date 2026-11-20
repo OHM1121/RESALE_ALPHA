@@ -1,0 +1,53 @@
+name: ARTITRADE v089 RSI four frames and MA120 0.0099 tests
+on:
+  push:
+    branches: [fix-artitrade-v089-rsi-ma-apk-20261117]
+    paths: ['.github/workflows/artitrade-v089-rsi-ma-tests.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Make embedded original strategy modules available in read-only temp directory
+        shell: bash
+        run: |
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile
+          root=Path("ARTITRADE_ANDROID/app/src/main/assets/strategy_v070")
+          packed=base64.b64decode("".join((root/("part_%02d.txt"%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(packed)) as z:
+              assert z.testzip() is None
+              z.extractall("/tmp/v089-core")
+          PY
+      - name: Run RSI timeframe and MA limit regressions
+        shell: bash
+        run: |
+          PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/v089-core" python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_rsi_ma120_correct_frame.py' -v
+
+      - name: Check actual original stock execution-table schema for MA stage reconciliation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile,re
+          from pathlib import Path
+          path=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          blob=base64.b64decode(''.join((path/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(blob)) as z:
+              for name in z.namelist():
+                  if not name.endswith('.py'):continue
+                  source=z.read(name).decode()
+                  if 'CREATE TABLE IF NOT EXISTS executions' in source or 'CREATE TABLE executions' in source:
+                      at=source.find('CREATE TABLE IF NOT EXISTS executions')
+                      if at<0:at=source.find('CREATE TABLE executions')
+                      print('EXECUTION_SCHEMA',name,source[at:at+550].replace('\\n',' '))
+                  if 'class StockMAService' in source:
+                      print('STOCK_MA_CORE',name,'has reason column ref',"'reason'" in source or 'reason TEXT' in source)
+          PY

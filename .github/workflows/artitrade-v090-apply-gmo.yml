@@ -1,0 +1,65 @@
+name: ARTITRADE apply GMO-only D+1 open priority fix to verified v089 source
+# Recheck maintenance scan started pre-08:50 while KRX open recovery remains live at 09:00.
+on:
+  push:
+    branches: [fix-artitrade-v090-gmo-d1-open-20261117]
+    paths: ['.github/workflows/artitrade-v090-apply-gmo.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Apply exactly one native GMO module, repack and verify other 81 untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ARTITRADE_ANDROID/ui_tests/apply_v090_gmo_open_priority.py
+          python3 ARTITRADE_ANDROID/ui_tests/apply_v090_gmo_open_priority.py
+      - name: Test blocking D scan reproduction now green, D+1 fills, and original GOP safeguards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests websockets holidays
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,io,zipfile
+          parts=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          packed=base64.b64decode(''.join((parts/('part_%02d.txt'%i)).read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(packed)) as z:
+              assert z.testzip() is None and len(z.namelist())==82
+              z.extractall('/tmp/artitrade-v090-core')
+          PY
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/artitrade-v090-core"
+          python3 -m compileall -q ARTITRADE_ANDROID/ui_tests
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v090_gmo_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v063_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v075_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v085_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v086_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v089_*.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v054_ui.py' -v
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v054_market_trend_audit.py' -v
+      - name: Persist only GMO engine archive, original core fingerprint, version and 2 version fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "artitrade-forensic-ci"
+          git config user.email "artitrade-ci@users.noreply.github.com"
+          git add ARTITRADE_ANDROID/app/src/main/assets/strategy_v070/part_*.txt
+          git add ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java
+          git add ARTITRADE_ANDROID/app/build.gradle
+          git add ARTITRADE_ANDROID/ui_tests/test_v054_ui.py ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py
+          git diff --cached --name-only
+          git diff --cached --quiet && { echo 'PATCH_NOT_APPLIED'; exit 1; } || true
+          git commit -m "fix(gmo): 09:00 official open retry independent from D universe maintenance, code96"
+          git push origin HEAD:fix-artitrade-v090-gmo-d1-open-20261117
+          echo "V090_COMMITTED_SHA=$(git rev-parse HEAD)"
+          git status --short

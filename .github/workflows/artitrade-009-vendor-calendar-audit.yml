@@ -1,0 +1,30 @@
+name: ARTITRADE v009 read-only bar history/calendar and 0D FID source audit
+on:
+  push:
+    branches: [fix-artitrade-009-v007-forensic-rootcause-20261119]
+    paths: [.github/workflows/artitrade-009-vendor-calendar-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print targeted original source in CI only
+        run: |
+          python3 - <<'PY'
+          import zipfile,io,base64,re,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          raw=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              print('MODULES',z.namelist())
+              for name in ('d_multiframe_recovery_fix14.py','d_minute_repair_fast.py','d_live.py','d_gmo_runtime.py','d_v19_portfolio.py','projectgmo/engine.py'):
+                  if name not in z.namelist():continue
+                  lines=z.read(name).decode('utf8').splitlines()
+                  print('SOURCE',name,len(lines))
+                  for i,line in enumerate(lines):
+                      if re.search(r'09:00|0900|0855|1540|15:30|1530|_repair_gmo_depth_on_existing_ws|on_book_message|_new_book|GMO_PRIORITY_START|KRX.*(60|61|6044|6054)|PARENT_SEQUENCE_GAP|expected|bar_end|def regular|def .*repair|except Exception as exc|_frame_repair_retry',line,re.I):
+                          a=max(0,i-2);b=min(len(lines),i+3)
+                          print('HIT',name,i+1,' '.join(f'{j+1}:{lines[j][:180]}' for j in range(a,b)))
+          PY

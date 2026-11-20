@@ -1,0 +1,41 @@
+name: ARTITRADE v085 focused native API and GMO scan evidence (read-only)
+on:
+  push:
+    branches: [ fix-artitrade-v085-manual-exit-research-gmo-display-20261117 ]
+    paths: [ '.github/workflows/artitrade-v085-audit-focus.yml' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print only immutable original strategy slices
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,io,zipfile
+          from pathlib import Path
+          r=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          a=base64.b64decode(''.join((r/f'part_{i:02d}.txt').read_text() for i in range(22)))
+          z=zipfile.ZipFile(io.BytesIO(a))
+          choices={
+            'd_live.py':[(875,925),(430,465)],
+            'd_v19_portfolio.py':[(1375,1436),(1518,1560)],
+            'd_upbit.py':[(2100,2135),(2544,2572)],
+            'stock_ma_engine.py':[(265,332)],
+            'projectgmo/engine.py':[(344,428)],
+            'd_gmo_runtime.py':[(1,100),(125,185),(270,358),(870,920),(1013,1097),(1102,1165),(1166,1238)],
+            'android_live_bridge.py':[(235,323),(362,395),(421,477)],
+            'd_gmo_runtime.py':[(205,255),(500,600),(655,775)],
+            'projectgmo/engine.py':[(185,228),(520,650)],
+            'coin_ma_engine.py':[(1,110)],
+          }
+          for filename,ranges in choices.items():
+              lines=z.read(filename).decode().splitlines()
+              for lo,hi in ranges:
+                  print(f'===== {filename} {lo}-{hi} =====')
+                  for i in range(lo-1,min(len(lines),hi)):
+                      print(f'CODE:{i+1}: {lines[i][:330]}')
+          PY

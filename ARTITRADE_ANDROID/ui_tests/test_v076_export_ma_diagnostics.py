@@ -36,10 +36,10 @@ class Ma120ToleranceTests(unittest.TestCase):
                              Decimal(str(v120)))}
         return out
 
-    def test_ma120_inclusive_through_positive_0050_and_not_beyond(self):
-        for val in ('-0.01','0','0.0016666666667','0.0049','0.0050'):
+    def test_ma120_inclusive_through_positive_0099_and_not_beyond(self):
+        for val in ('-0.01','0','0.0016666666667','0.0049','0.0050','0.0099'):
             self.assertTrue(ma.ma120_down_for_entry(self.movement(val)),val)
-        for val in ('0.00500000000001','0.0051','0.025'):
+        for val in ('0.00990000000001','0.0100','0.025'):
             self.assertFalse(ma.ma120_down_for_entry(self.movement(val)),val)
 
     def test_skr_095955_would_form_candidate_given_verified_trade_and_full_history(self):

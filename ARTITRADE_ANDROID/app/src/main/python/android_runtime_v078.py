@@ -113,6 +113,12 @@ def _phone_runtime_snapshot(self):
         stock['status'] = status
         snapshot['stock'] = stock
         last = dict(getattr(self, '_phone_stock_progress', {}) or {})
+        # The original Runtime._stock_progress only reports generic phases,
+        # not per-stock completions. 0.0.16's phase/checklist denominator could
+        # oscillate, and 0.0.17's interim stage-based guess never counted 459.
+        # Count uniquely proven native recover_frame successes instead.
+        from stock_pending_recovery_v017 import loading_snapshot as _stock_loading
+        native_load=_stock_loading(runner)
         try:
             from at_close_bridge import broker_transport_snapshot
             transport = broker_transport_snapshot()
@@ -130,6 +136,9 @@ def _phone_runtime_snapshot(self):
         snapshot['stock_feed'] = {
             'stage': last.get('stage') or status,
             'detail': last.get('detail') or (transport.get('reason') or ''),
+            'preload_stock_done': native_load['done'],
+            'preload_stock_total': native_load['total'],
+            'preload_stock_counter_source': native_load['source'],
             'state': last.get('state') or 'waiting',
             'updated_at_ms': last.get('updated_at_ms') or 0,
             'subscribed': len(getattr(runner, 'subscriptions', []) or []) if runner else 0,
@@ -184,6 +193,17 @@ def _phone_runtime_snapshot(self):
         coin_node['connected']=coin_trade
         snapshot['coin']=coin_node
         trend=getattr(self,'market_trend',None)
+        # Read-only TOP40 comparison: requested vs submitted vs genuine frames.
+        # This is diagnostic evidence, not a synthetic quote or execution gate.
+        try:
+            trend_codes=()
+            if trend is not None:
+                with trend.lock:
+                    trend_codes=tuple(trend._candidates.get('coin',{}))
+            if cr is not None and hasattr(cr,'_v084_ws_health'):
+                snapshot['upbit_ws_top40_v084']=cr._v084_ws_health(trend_codes)
+        except Exception as exc:
+            snapshot['upbit_ws_top40_v084']={'diagnostic_error':type(exc).__name__}
         warm={}
         for m in ('stock','coin'):
             required=0
@@ -217,6 +237,29 @@ def _phone_runtime_snapshot(self):
             'rsi_history':warm,
             'both_feeds_available':bool(coin_trade and
                 (not stock_session or not stock_keys or stock_ws))}
+        # Native source-only startup audit. Observe the ORIGINAL ongoing
+        # missing-candle recovery, venue-qualified 0B/0D and Upbit WS book.
+        # Never start a second socket or convert last/REST marks to fills.
+        try:
+            from market_feed_health_v004 import snapshot as _v016_feed
+            from preload_audit_v016 import audit as _v016_audit
+            snapshot['market_feed_health_v004']=_v016_feed(self)
+            snapshot['startup_preload_v081']['work_audit']=_v016_audit(self,snapshot)
+        except Exception as preflight_error:
+            self._err('preload_audit_v016',preflight_error)
+            snapshot['startup_preload_v081']['work_audit']={
+                'status':'AUDIT_FAILED','ready':False,'percent':0,
+                'work_units_done':0,'work_units_total':0,
+                'first_missing':type(preflight_error).__name__}
+        # Publish tiny authentic held-stock 0B/official REST prices in the
+        # 2.5-second heartbeat. The slow 6.5-17-second full SQLite view
+        # cannot be the only route for prices or the trading executor.
+        try:
+            from stock_quote_truth_v066 import live_quote_snapshot
+            snapshot['stock_quote_live_v086']=live_quote_snapshot(runner)
+        except (AttributeError,ValueError,RuntimeError,TypeError) as quote_error:
+            snapshot['stock_quote_live_v086']={'quotes':{},'revision':'',
+                'error':type(quote_error).__name__}
         return json.dumps(snapshot, ensure_ascii=False, default=str)
     except Exception:
         return raw
@@ -751,10 +794,33 @@ def _close_full(self):
         'bought_count':bought,'open_count':len(positions),'closed_count':closed,'pending_count':len(pending),
         'actual_target_rate_pct':target['rate_pct'],'actual_target_evaluated':target['evaluated'],
         'actual_target_hit':target['hit'],'actual_target_miss':target['miss'],'actual_target_pending':target['pending']}}
+    # Explain a genuine empty CLOSE screen without fabricating candidates.
+    # Read-only AT shared feed coverage vs original CW scanner scope.
+    close_diag={}
+    close_runner=getattr(self,'close_runner',None)
+    if close_runner is not None:
+        try:
+            close_diag=dict(close_runner.snapshot_state() or {})
+            stock_runner=getattr(self,'stock_runner',None)
+            subscribed={str(x).replace('_NX','')
+                        for x in (getattr(stock_runner,'subscriptions',()) or ())}
+            requested=set(close_runner.shared_pinned())
+            missing=sorted(requested-subscribed)
+            close_diag['requested_shared_codes']=len(requested)
+            close_diag['subscribed_shared_codes']=len(requested&subscribed)
+            close_diag['not_subscribed_count']=len(missing)
+            close_diag['not_subscribed_sample']=missing[:12]
+            close_diag['actual_stock_subscriptions']=len(subscribed)
+            close_diag['research_rows_retained']=len(
+                self.close_store.recent_candidates(250))
+            close_diag['diagnostic_scope']='READ_ONLY_ORIGINAL_CW_NO_SYNTHETIC_SIGNALS'
+        except Exception as exc:
+            close_diag={'error':type(exc).__name__,'diagnostic_scope':'READ_ONLY'}
     return {'schema':'phone-v078','origin':'phone','accounts':wallets,'positions':positions,'pending':pending,'executions':executions,
         'performance_by_frame':performance,'actual_target':target,'realized_pnl':round(realized),'unrealized_pnl':round(unreal),
         'total_pnl':round(realized+unreal),'win_rate':win_rate,
-        'positions_count':len(positions),'pending_count':len(pending)}
+        'positions_count':len(positions),'pending_count':len(pending),
+        'cw_runtime_diagnostic_v087':close_diag}
 
 
 def _close_research(root):
@@ -1233,6 +1299,45 @@ def _research_source_audit(db,primary,evidence):
                 'source_error':type(exc).__name__,'evidence_counts':{}}
 
 
+def _v085_preserve_research(native, upstream):
+    """Preserve independently persisted strategy decisions attached to the core.
+
+    Legacy hub builds attached V074 MA decision evidence and then discarded it
+    by replacing the entire research object. This is a read-only merge: neither
+    simulated balances nor confirmed fills are modified or synthesized.
+    """
+    if not isinstance(native,dict):native={}
+    if not isinstance(upstream,dict):return native
+    merged=dict(native)
+    def identity(row):
+        if not isinstance(row,dict):return ('invalid',str(row))
+        eid=row.get('id') or row.get('event_key')
+        if eid:return ('event',str(eid))
+        return ('case',str(row.get('strategy') or ''),str(row.get('tf') or row.get('frame') or ''),
+                str(row.get('code') or row.get('symbol') or ''),
+                str(row.get('at') or row.get('ts') or row.get('created_at') or ''),
+                str(row.get('ref_ts') or row.get('ref_at') or ''),
+                str(row.get('reason') or row.get('decision') or ''))
+    preserved=0
+    for bucket in ('items','score_items'):
+        fresh=list(native.get(bucket) or [])
+        existing={identity(row) for row in fresh}
+        for row in upstream.get(bucket) or []:
+            if not isinstance(row,dict):continue
+            key=identity(row)
+            if key in existing:continue
+            fresh.append(row.copy())
+            existing.add(key)
+            preserved+=1
+        if fresh:
+            fresh.sort(key=lambda row:str(row.get('at') or row.get('ts') or ''),reverse=True)
+        merged[bucket]=fresh
+    merged['loaded_items']=len(merged.get('items') or [])
+    merged['upstream_decisions_preserved_v085']=preserved
+    # Preserve diagnostic error state even when upstream evidence is displayed.
+    return merged
+
+
 def _research_history(self, out):
     """Read every strategy independently: one legacy table failure must not mask other research.
 
@@ -1284,15 +1389,72 @@ def _research_history(self, out):
             result.update(audit)
             return result
     stock=out.setdefault('stock',{}).setdefault('at',{})
-    stock['research']=read('AT',lambda:_stock_at_research(self.root))
-    stock['research']['ma']=read('MA',lambda:_stock_ma_research(self.root))
+    prior_stock=stock.get('research') or {}
+    original_ma=prior_stock.get('ma') if isinstance(prior_stock,dict) else None
+    stock['research']=_v085_preserve_research(
+        read('AT',lambda:_stock_at_research(self.root)),prior_stock)
+    stock['research']['ma']=_v085_preserve_research(
+        read('MA',lambda:_stock_ma_research(self.root)),original_ma)
     out.setdefault('stock',{}).setdefault('cw',{})['research']=read(
         'CLOSE',lambda:_close_research(self.root))
     out.setdefault('coin',{}).setdefault('general',{})['research']=read(
         'COIN_BASE',lambda:_coin_research(self.root,'base'))
-    out.setdefault('coin',{}).setdefault('ma',{})['research']=read(
-        'COIN_MA',lambda:_coin_research(self.root,'ma'))
+    coin_ma=out.setdefault('coin',{}).setdefault('ma',{})
+    coin_ma['research']=_v085_preserve_research(
+        read('COIN_MA',lambda:_coin_research(self.root,'ma')),
+        coin_ma.get('research'))
     return out
+
+def _v086_enrich_gmo_executions(rows):
+    """Source-only cash/cost evidence for BUY and partial SELL fills.
+
+    Original GMO engine.fill() records net_profit AFTER cost basis, sell fee
+    and stock sell tax. Therefore a SELL lot's exact allocated acquisition
+    cost equals sell gross minus SELL fee/tax minus the recorded net P&L.
+    No candle/high, unfilled order, virtual fill or guessed basis is used.
+    """
+    if not isinstance(rows,list):return rows
+    for fill in rows:
+        if not isinstance(fill,dict):continue
+        try:
+            qty=float(fill.get('qty'))
+            price=float(fill.get('price'))
+        except (TypeError,ValueError,OverflowError):continue
+        if not (math.isfinite(qty) and qty>0 and math.isfinite(price) and price>0):
+            continue
+        side=str(fill.get('side') or '').upper()
+        if side=='BUY':
+            fill['buy_amount']=round(price*qty,2)
+            fill['buy_price']=price
+            fill['buy_qty']=qty
+            fill['gmo_buy_amount_basis']='ORIGINAL_BUY_FILL_PRICE_X_QTY'
+        elif side=='SELL':
+            fill['sell_qty']=qty
+            try:
+                net=float(fill['net_profit'])
+                fees=float(fill['fees'])
+                tax=float(fill['tax'])
+            except (KeyError,ValueError,TypeError,OverflowError):
+                # Missing fee/tax or net evidence must not become a fake ROI.
+                continue
+            if not all(math.isfinite(x) and x>=0 for x in (fees,tax)):
+                continue
+            if not math.isfinite(net):continue
+            allocated_cost=price*qty-fees-tax-net
+            if allocated_cost<=0 or not math.isfinite(allocated_cost):
+                continue
+            fill['buy_amount']=round(allocated_cost,2)
+            fill['gmo_allocated_buy_cost']=round(allocated_cost,2)
+            # If the original linked BUY fill supplied an exact purchase
+            # price, preserve it. Otherwise show effective per-unit cost
+            # WITH buy fees rather than pretend a historical fill price.
+            if fill.get('buy_price') in (None,''):
+                fill['buy_price']=round(allocated_cost/qty,6)
+                fill['gmo_buy_unit_basis']='ALLOCATED_COST_INCLUDES_BUY_FEE'
+            fill['realized_pct']=round(net/allocated_cost*100,5)
+            fill['gmo_realized_pct_basis']='ORIGINAL_NET_PROFIT_OVER_ALLOCATED_COST'
+    return rows
+
 
 def _gmo_original_record(root):
     """Read the unmodified PC GMO SQLite + full JSON state without an engine restart.
@@ -1342,9 +1504,10 @@ def _gmo_original_record(root):
         qty = int(p.get('qty') or 0)
         if qty <= 0: continue
         original_buy=entry_fill(dict(p,code=code),buys) or {}
-        active.append({'tf':'gmo','strategy':'gmo','code':code,
+        active.append({'tf':'gmo','strategy':'gmo','code':code,'gmo':True,
             'name':p.get('name') or names.get(code,code),'qty':qty,
             'entry_price':p.get('entry_price'),'last_price':None,
+            'gmo_cost_basis':p.get('cost_basis'),
             'entry_at':original_buy.get('entry_at'),
             'buy_at':original_buy.get('entry_at'),
             'buy_reason':original_buy.get('buy_reason'),
@@ -1390,6 +1553,7 @@ def _gmo_original_record(root):
             _attach_fill_cost(e,{'entry_price':unique_price})
         elif str(e.get('side') or '').upper()=='BUY':
             _attach_fill_cost(e)
+    _v086_enrich_gmo_executions(executions)
     executions.sort(key=lambda x:str(x.get('ts') or ''),reverse=True)
     # Use exactly the EXE's original 15-session evidence and paper-fill
     # attribution. A candle HIGH is not a broker/paper SELL execution.
@@ -1603,13 +1767,108 @@ def _merge_gmo_pc_evidence(live,original):
     return merged
 
 
-def _hub_records_v078(self):
+
+def _ui_view_only_v104(tree, array_cap=128, string_cap=1024):
+    """A screen-only view; NEVER used for trading or as the source DB backup.
+
+    Original SQLite/WAL and research/log history remain full and immutable.
+    Cap Python objects BEFORE serializing for the Java 256MB heap.
+    """
+    omitted={}
+    def copy(node, path=(), depth=0):
+        if depth>24:
+            return None
+        if isinstance(node,dict):
+            return {key:copy(value,path+(str(key),),depth+1)
+                    for key,value in node.items()}
+        if isinstance(node,list):
+            label=path[-1] if path else ''
+            limit=(512 if label=='positions' else
+                   300 if label in ('executions','pending','wallets','accounts')
+                   else array_cap)
+            if len(node)>limit:
+                omitted['/'.join(path)]=len(node)-limit
+            return [copy(item,path+(str(i),),depth+1)
+                    for i,item in enumerate(node[:limit])]
+        if isinstance(node,str) and len(node)>string_cap:
+            # A hidden view string is NOT a stored strategy/execution value.
+            omitted['/'.join(path)]=len(node)-string_cap
+            return node[:string_cap]+' [UI_VIEW_TRUNCATED_ORIGINAL_IN_SQLITE]'
+        return node
+    view=copy(tree)
+    view['ui_snapshot_v104']={
+        'source':'READ_ONLY_DISPLAY_WINDOW_NOT_EXPORT',
+        'omitted_count_by_path':omitted,
+        'full_original_records_in_sqlite_unchanged':True}
+    return view
+
+
+def _serialize_hub_v104(payload,for_ui=False):
+    if not for_ui:
+        return json.dumps(payload,ensure_ascii=False,default=str)
+    view=_ui_view_only_v104(payload)
+    serialized=json.dumps(view,ensure_ascii=False,default=str,separators=(',',':'))
+    if len(serialized)>5_000_000:
+        view=_ui_view_only_v104(payload,array_cap=32,string_cap=256)
+        serialized=json.dumps(view,ensure_ascii=False,default=str,separators=(',',':'))
+    if len(serialized)>5_000_000:
+        # Fail this read-only UI refresh closed, never create fake executions.
+        raise ValueError('UI_VIEW_MEMORY_BUDGET_EXCEEDED_ORIGINAL_SQLITE_PRESERVED')
+    return serialized
+
+
+def hub_records_ui_v104():
+    runtime=getattr(_core,'_RUNTIME',None)
+    if runtime is None or not getattr(runtime,'started',False):
+        return '{}'
+    return runtime.hub_records(for_ui=True)
+
+
+def score_snapshot_v005():
+    """Fast read-only score lane for Android market screen, no heavy ledger.
+
+    Market-score SQL event timestamps and all position/execution SQL remain
+    authoritative. This is an independent display snapshot, not a trade signal
+    or an alternative market-score database.
+    """
+    rt=getattr(_core,'_RUNTIME',None)
+    if rt is None or not getattr(rt,'started',False):
+        return json.dumps({'schema':'ARTITRADE_MARKET_SCORE_PLANE_V005',
+            'generated_at_ms':int(time.time()*1000),
+            'stock':{'score':None,'stale':True,'status':'시장점수 엔진 시작 대기'},
+            'coin':{'score':None,'stale':True,'status':'시장점수 엔진 시작 대기'}},
+            ensure_ascii=False)
+    try:
+        from market_research_v033 import compact_snapshot
+        payload=compact_snapshot(rt.root)
+        return json.dumps(payload,ensure_ascii=False,separators=(',',':'))
+    except Exception as exc:
+        return json.dumps({'schema':'ARTITRADE_MARKET_SCORE_PLANE_V005',
+            'generated_at_ms':int(time.time()*1000),
+            'stock':{'score':None,'stale':True,
+                     'status':'시장점수 수집기 오류: '+type(exc).__name__},
+            'coin':{'score':None,'stale':True,
+                    'status':'시장점수 수집기 오류: '+type(exc).__name__}},
+            ensure_ascii=False)
+
+
+def _hub_records_v078(self,for_ui=False):
+    # Start/revive genuine market-score collection independently of the
+    # potentially heavy original wallet snapshot. A newly reset PAPER ledger
+    # has zero score rows; never require old PC cache to bootstrap scoring.
+    try:
+        from market_research_v033 import ensure_worker
+        ensure_worker(self.root)
+    except Exception as score_boot_error:
+        self._err('market_score_worker_start_v1118',score_boot_error)
     _capture_pc_research_evidence_async(self)
     raw=_ORIG_HUB_RECORDS(self)
     try:
         out=json.loads(raw) if isinstance(raw,str) else raw
     except Exception:
-        return raw
+        # Never bypass the bounded display serializer on malformed source.
+        # The full original remains available to the non-UI hub_records path.
+        return '{}' if for_ui else raw
     # Read-only forensic summaries use a separate asynchronous reader;
     # the original GMO/CW strategy, broker and wallet databases are NOT modified.
     # Existing full error ZIP already contains the original source SQLite.
@@ -1645,10 +1904,15 @@ def _hub_records_v078(self):
                     out.setdefault('coin',{}).setdefault('ma',{})['ledger']=_coin_full(self.coin_runner.ma_ledger)
             except Exception as exc:
                 self._err('coin_ma_history_v078',exc)
-        try:
-            _research_history(self,out)
-        except Exception as exc:
-            self._err('research_history_all_v078',exc)
+        # The dedicated Research screen is removed from v0.0.1. Its full
+        # historical SQLite joins/legacy score reconciliation must not run
+        # again on every 6.5s UI snapshot; full original ledger/AI export
+        # remains unchanged when a full (non-UI) snapshot is requested.
+        if not for_ui:
+            try:
+                _research_history(self,out)
+            except Exception as exc:
+                self._err('research_history_all_v078',exc)
         gmo=getattr(self.stock_runner,'gmo',None) if self.stock_runner else None
         if gmo is not None:
             snap=gmo.snapshot() or {}
@@ -1672,6 +1936,22 @@ def _hub_records_v078(self):
                 queue_phone_buy_evidence(self.root,captured)
             except Exception as evidence_exc:
                 self._err('gmo_phone_buy_evidence',evidence_exc)
+            # Preserve the exact original position cost basis and sell fees
+            # for a consistent net liquidation estimate. This does not
+            # modify GMO engine holdings or turn REST marks into live fills.
+            try:
+                cfg=gmo.engine.cfg
+                for pos in (snap.get('positions') or []):
+                    original=gmo.engine.positions.get(str(pos.get('code') or ''))
+                    if original is None:continue
+                    pos['gmo']=True
+                    pos['strategy']='gmo'
+                    pos['gmo_cost_basis']=float(original.cost_basis)
+                    pos['gmo_sell_fee_rate']=float(cfg.sell_fee)
+                    pos['gmo_sell_tax_rate']=float(cfg.sell_tax)
+            except Exception as cost_exc:
+                self._err('gmo_original_cost_basis_v086',cost_exc)
+            _v086_enrich_gmo_executions(snap.get('executions') or [])
             wallet=snap.get('wallet') or {}
             sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']
             wins=sum(1 for x in sells if float(x.get('net_profit') or 0)>0)
@@ -1737,74 +2017,38 @@ def _hub_records_v078(self):
             # Always prefer the original EXE's paper SELL-fill + 15-session
             # virtual-result research rules over a condensed dashboard's
             # 'high touched' status. Keep current live balances/positions.
-            try:
-                originals=_gmo_original_record(self.root)
-                if originals is not None:
-                    source_ledger,source_research=originals
-                    if source_research.get('load_status')=='OK':
-                        stock['research']['gmo']=source_research
-                        stock['ledger']['gmo']['actual_target']=source_research.get(
-                            'actual_summary') or {}
-                        stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
-            except Exception as original_error:
-                self._err('gmo_original_research_parity',original_error)
-        else:
-            # The same PC import already holds the GMO originals. Display their
-            # verified original state even if the live GMO service is not ready.
-            try:
-                restored=_gmo_original_record(self.root)
-                if restored is not None:
-                    source_ledger,source_research=restored
-                    stock=out.setdefault('stock',{}).setdefault('at',{})
-                    stock.setdefault('ledger',{})['gmo']=source_ledger
-                    stock.setdefault('research',{})['gmo']=source_research
-                else:
-                    pass
-            except Exception as gmo_exc:
-                self._err('gmo_original_record',gmo_exc)
-                restored=None
-            if restored is not None:
+            # GMO snapshot() and research_dashboard() already read the current
+            # original wallet. Running a second full PC-era SQLite/JSON
+            # reconciliation for the removed Research page would double the
+            # work and risk reintroducing old rows into the fresh UI.
+            if not for_ui:
                 try:
-                    from market_research_v033 import offer_records
-                    out['market_research']=offer_records(self.root,out)
-                except Exception as score_error:
-                    self._err('market_research_v033',score_error)
-                return json.dumps(out,ensure_ascii=False,default=str)
-            # Do not report an empty GMO screen as a successful PC ledger load.
-            # Read-only source-file diagnostics distinguish absent data from
-            # a strategy engine which has not initialized its account state.
-            gmo_root=Path(self.root)/'stock'
-            present=[name for name in ('PROJECTGMO_V1.0_research.sqlite3',
-                'PROJECTGMO_V1.0_account_state.json') if (gmo_root/name).is_file()]
+                    originals=_gmo_original_record(self.root)
+                    if originals is not None:
+                        source_ledger,source_research=originals
+                        if source_research.get('load_status')=='OK':
+                            stock['research']['gmo']=source_research
+                            stock['ledger']['gmo']['actual_target']=source_research.get(
+                                'actual_summary') or {}
+                            stock['ledger']['gmo']=_merge_gmo_pc_evidence(ledger,source_ledger)
+                except Exception as original_error:
+                    self._err('gmo_original_research_parity',original_error)
+        else:
+            # Fresh PAPER epoch has NO old PC GMO positions or prior scores.
+            # An uninitialized native GMO engine is genuinely not ready;
+            # querying old files for restoration here could revive stale
+            # 2026-11-14 history or double-load a previously deleted wallet.
             stock=out.setdefault('stock',{}).setdefault('at',{})
-            stock.setdefault('ledger',{}).setdefault('gmo',{})
-            stock['ledger']['gmo']['load_diagnostic']={
-                'stage':'ENGINE_NOT_READY' if present else 'PC_SOURCE_NOT_PRESENT',
-                'files_present':present,'files_expected':2,
-                'message':'GMO original file present but its runtime is not ready'
-                          if present else 'No GMO original files located in phone root'
-            }
-            research=stock.setdefault('research',{})
-            if not isinstance(research.get('gmo'),dict):
-                state=_research_source_audit(Path(self.root)/'stock'/
-                    'PROJECTGMO_V1.0_research.sqlite3','gmo_candidates',
-                    ('gmo_events','gmo_fills','gmo_position_history'))
-                research['gmo']={'items':[],'score_items':[],'bands':[],
-                    'origin':'IMPORTED_PC_AND_PHONE','load_status':'ENGINE_NOT_READY',
-                    'loaded_items':0,**state}
+            stock.setdefault('ledger',{})['gmo']={
+                'load_diagnostic':{'stage':'ENGINE_NOT_READY',
+                                   'message':'NATIVE_GMO_ENGINE_START_PENDING'}}
+            stock.setdefault('research',{})['gmo']={
+                'items':[],'load_status':'ENGINE_NOT_READY',
+                'source':'FRESH_NATIVE_GMO_ONLY'}
     except Exception as exc:
         self._err('hub_records_v078',exc)
-        try:
-            restored=_gmo_original_record(self.root)
-            if restored is not None:
-                original_ledger,original_research=restored
-                stock=out.setdefault('stock',{}).setdefault('at',{})
-                ledger=stock.setdefault('ledger',{})
-                ledger['gmo']=_merge_gmo_pc_evidence(
-                    ledger.get('gmo') or {},original_ledger)
-                stock.setdefault('research',{})['gmo']=original_research
-        except Exception as recovery_error:
-            self._err('hub_records_gmo_last_resort',recovery_error)
+        # Never read an old imported PC GMO database to fill holes in a
+        # failed current wallet snapshot; leave the error visible.
         try:
             # Passive, read-only worker. Network and SQLite work only on its
             # daemon thread; this hub snapshot/order thread only enqueues.
@@ -1823,7 +2067,15 @@ def _hub_records_v078(self):
         out['market_research']={
             'stock':{'score':None,'status':'시장점수 처리 오류'},
             'coin':{'score':None,'status':'시장점수 처리 오류'}}
-    return json.dumps(out,ensure_ascii=False,default=str)
+    # Read-only source freshness diagnostics: one KRX 0B/0D status, Upbit
+    # WS-vs-REST distinction and original public score factor failures.
+    # No second market socket, no order, no persisted wallet mutation.
+    try:
+        from market_feed_health_v004 import snapshot as feed_health
+        out['market_feed_health_v004']=feed_health(self)
+    except Exception as feed_exc:
+        self._err('market_feed_health_v004',feed_exc)
+    return _serialize_hub_v104(out,for_ui)
 
 def _stock_at_ledger_v19(self):
     out=_ORIG_STOCK_AT_LEDGER(self)
@@ -1868,8 +2120,7 @@ def _stock_at_ledger_v19(self):
         from phone_buy_evidence_v035 import (
             attach_buy_evidence,read_at_open_buy_fills,queue_phone_buy_evidence)
         from at_hold_diagnostic_v035 import diagnose_at_position
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+        from datetime import datetime, timezone, timedelta
         stock_db=Path(self.root)/'stock'/'ARTITRADE_D.sqlite3'
         from phone_buy_evidence_v035 import read_open_signal_evidence
         source_signals=read_open_signal_evidence(stock_db,'stock','at')
@@ -1879,7 +2130,8 @@ def _stock_at_ledger_v19(self):
         buy_records=attach_buy_evidence(positions,read_at_open_buy_fills(stock_db),
                         source_signals,market='stock',strategy='at',linked_ids=link_map)
         queue_phone_buy_evidence(self.root,buy_records)
-        now=datetime.now(ZoneInfo("Asia/Seoul"))
+        # Android Chaquopy may not package IANA tzdata. KRX uses KST +09:00.
+        now=datetime.now(timezone(timedelta(hours=9)))
         for position in positions:
             # Saved hold_days is authoritative; these diagnostics are not
             # scheduled sell actions and never imply a broker fill.
@@ -1972,12 +2224,18 @@ def _patched_gmo(self):
                                     float(fill["price"]),quote.at)
                         self.on_live_fill("stock",order.side,order.code,fill["qty"],
                                           order.limit,fill,order.purpose)
-                    except _core.LiveOrderNoFill:
-                        try:
-                            engine._cancel(order,"BROKER_FOK_NO_FILL",quote.at)
-                            engine.acknowledge_cancel(order.id,quote.at)
-                        except Exception:
-                            pass
+                    except _core.LiveOrderNoFill as nofill:
+                        # The original core treated EVERY FOK_NOT_FULL as an
+                        # authoritative zero-fill cancellation. Kiwoom may
+                        # have real PARTIAL fills on the matching order ID.
+                        # Preserve SUBMITTED and the broker journal, never
+                        # fake a cancel acknowledgement or retry into a
+                        # potentially existing physical broker position.
+                        engine._log(order.code,"BROKER_RECONCILIATION_REQUIRED",
+                            "order="+str(order.id)+" broker="+str(key)+
+                            " reason="+type(nofill).__name__+
+                            " state=SUBMITTED; no new BUY until order-ID reconciliation",
+                            quote.at)
                     except Exception as error:
                         self._err("gmo_live_order",error)
                         engine._log(order.code,"LIVE_ORDER_HALTED",
@@ -2036,6 +2294,11 @@ _core.Runtime._stock_at_ledger = _stock_at_ledger_v19
 _core.Runtime.hub_records = _hub_records_v078
 _core.Runtime.stop = _patched_stop
 
+# Verified kt00009 status watcher preserves real PARTIAL quantities and
+# distinguishes missing inquiry evidence from an actual FOK no-fill.
+from kiwoom_fill_reconcile_v082 import install as _install_kiwoom_fills_v082
+_install_kiwoom_fills_v082()
+
 # v0.7.59: integrity guard on *completed* reference candles. Reuses the
 # current original Upbit/KRX scanner and account-specific source ledgers.
 from reference_integrity_v059 import install as _install_reference_integrity_v059
@@ -2080,10 +2343,20 @@ _install_ma_v067_stock()
 from market_trend_runtime_v043 import install as _install_market_trend_v043
 _install_market_trend_v043(_core)
 
+# v093: one Kiwoom socket for all stock strategies. Keep existing order
+# execution and market-trend holdings intact; only rank quote REG cohorts.
+from stock_priority_runtime_v093 import install as _install_stock_priority_v093
+_install_stock_priority_v093(_core)
+
 # The coin price observer is installed on the already existing MarketTrend
 # Upbit ticker memory. Both markets retain their original broker/FOK owner.
 from ma_v067_coin_runtime import install as _install_ma_v067_coin
 _install_ma_v067_coin()
+
+# 0.0.18: low-latency held coin MA SELL on existing original Upbit WS books.
+# No extra exchange connection; native original PAPER wallet and depth gate.
+from ma_fast_held_exit_v018 import install as _install_ma_fast_held_exit_v018
+_install_ma_fast_held_exit_v018()
 
 # Keep Kiwoom socket receive/PONG independent from periodic universe REST
 # and local DB refresh. Never add a second Kiwoom WebSocket login.
@@ -2112,6 +2385,41 @@ _install_ma_v062_packet(_core)
 # It cannot modify engine SQLite or the existing live/paper order pathways.
 from stock_quote_truth_v066 import install as _install_stock_quote_truth_v066
 _install_stock_quote_truth_v066(_core)
+
+# Fresh PAPER-only successor: no v061/v062 historical MA positions
+# survive the first mandatory epoch reset. The old historical-only SELL
+# watcher MUST NOT patch the current MA feed/order methods anymore.
+# Active MA v067 native BUY/SELL policy modules remain unchanged.
+
+# v094: finish incomplete initial slot funding ONLY from verified first
+# execution +2 true exchange ticks, using same original public-quote owner.
+from coin_partial_entry_v094 import install as _install_coin_partial_v094
+_install_coin_partial_v094()
+from trend_partial_entry_v094 import install as _install_trend_partial_v094
+_install_trend_partial_v094()
+
+# GMO continues only original D+1 partially funded positions at +2 KRX ticks.
+# Original quote freshness, user D+1 day and confirmed ledger remain mandatory.
+from gmo_partial_entry_v094 import install as _install_gmo_partial_v094
+_install_gmo_partial_v094()
+
+# v0.8.0: preplan D+1 PAPER buys at 07:50 NXT / 08:50 KRX;
+# only real same-venue 0B/0D may execute the three staged +0/+1/+2 prices.
+# Original GMO SELL, DATE, funding and native ledgers remain authoritative.
+from gmo_d1_preplan_v097 import install as _install_gmo_d1_preplan_v097
+_install_gmo_d1_preplan_v097(_core)
+
+# Research-only integrity for CLOSE 5m/15m/30m/EOD/1D+ horizon labels.
+# Never substitutes for the original CLOSE BUY/SELL or native orderbook.
+from close_followup_integrity_v008 import install as _install_close_followup_v008
+_install_close_followup_v008()
+
+# v0.8.1: stock+coin MarketTrend RSI35 watches prepare three 0/1/2
+# *exchange tick* entry budgets. Original MT54 wallet, KRX 0D/Upbit
+# verified books and preclose constraints still own fills. Neither
+# preplanner may transmit a real broker BUY or create a fake execution.
+from market_trend_preplan_v099 import install as _install_trend_preplan_v099
+_install_trend_preplan_v099()
 
 def ledger_audit(manifest_json):
     """Read actual phone SQLite files with the same sqlite3 used by strategy engines.
@@ -2176,11 +2484,239 @@ def ledger_audit(manifest_json):
         return json.dumps({'ok':False,'message':type(exc).__name__+': '+str(exc)[:240],
             'files_checked':0},ensure_ascii=False)
 
+# v086: permit exact 3LEG31 stock AT stage1+stage2 catch-up from one
+# post-disconnect genuine KRX 0B, with native same-SQLite SELL evidence.
+# No replay of stale OHLCV and no new real brokerage permission.
+from stock_at_catchup_v086 import install as _install_stock_at_catchup_v086
+_install_stock_at_catchup_v086()
+
+# D19 AT portfolio uses its OWN independent BUY/SELL methods. The old
+# PaperEngine-only 3LEG31 installer did not initialize D19's durable
+# exit_policy/first_target or price its catch-up sales at observed 0B.
+# Preserve all original member/legacy holdings and repair ONLY provably
+# post-phone unsold D19 buys; then arm the same three-leg native engine.
+from stock_at_policy_reconcile_v091 import install as _install_at_policy_v091
+_install_at_policy_v091()
+
+# v107: current signed score <0 forbids only NEW AT/coin-general
+# reference-bar buys. Existing positions and SELL callbacks stay untouched.
+from at_market_score_gate_v107 import install as _install_reference_score_gate_v107
+_install_reference_score_gate_v107()
+
+# v107: observe original qualifying BUY candidates/targets for all 8
+# strategy wallets. This never makes an order or modifies any SELL policy.
+from entry_plan_hooks_v107 import install as _install_entry_plan_hooks_v107
+_install_entry_plan_hooks_v107(_core)
+
+# One recovery plan shared by five stock and three coin strategy ledgers.
+# It monitors genuine 0B/Upbit authenticated events, prioritizes held-stock
+# paper decision queue traffic and records recovery evidence. It NEVER
+# substitutes REST/current display prices for an original strategy SELL,
+# creates an off-line historical fill or calls a second broker REST API.
+from unified_recovery_v092 import install as _install_unified_recovery_v092
+_install_unified_recovery_v092(_core)
+
+# Final workbook (NEW LEGACY 11.18): overrides obsolete RSI first-close
+# next-open entry, but leaves all original market quote/FOK wallet SELL safety.
+from market_trend_1118_runtime import install as _install_nl1118_trend
+_install_nl1118_trend()
+
+# The 11.18 workbook is the last reference-bar execution policy overlay.
+# Original verified quote/order owners remain intact.
+from reference_1118_runtime import install as _install_nl1118_reference
+_install_nl1118_reference()
+
+# 0.0.12: This final MA-only rule disables the now-disallowed historical
+# bearish/old next-open scanners. Live 10..2s upward MA entry remains on
+# its independent source-proven worker; GMO and CLOSE/CW are excluded.
+from nl1118_strict_entry_v012 import install as _install_nl1118_strict_entry
+_install_nl1118_strict_entry()
+
+# 0.0.13 root-cause of zero KRX D19 BUY receipts despite historical
+# positive market-score rows: D19's DStore.root points at <phone>/stock,
+# while market-score publisher is registered at <phone>. Normalize its
+# lookup in at_market_score_gate_v107 and start the publisher BEFORE
+# native stock queue/subscription/order engines run. Never use a UI
+# snapshot or stale historical score as a replacement order signal.
+_ORIGINAL_NL1118_SCORE_BOOTSTRAP_START = _core.Runtime.start
+def _start_with_signed_score_publisher(self):
+    from market_research_v033 import ensure_worker
+    ensure_worker(self.root)
+    return _ORIGINAL_NL1118_SCORE_BOOTSTRAP_START(self)
+_core.Runtime.start = _start_with_signed_score_publisher
+
+
+# Only Android knows whether the current active network is validated.
+# This has no ability to make an order or authorize stale 0B/0D.
+def set_network_v092(validated):
+    rt=getattr(_core,"_RUNTIME",None)
+    observer=getattr(rt,"_v092_recovery",None) if rt is not None else None
+    if observer is not None:observer.set_android_network(bool(validated))
+    return True
+
+# 0.0.15 read-only global position identifiers. This installer wraps
+# the FINAL strategy/UI hub and Runtime.start, so each original wallet remains
+# the only owner of BUY/SELL receipts, cash and native position primary keys.
+from position_uid_v015 import install as _install_position_uid_v015
+_install_position_uid_v015(_core)
+
+# v017: the original FIX14 completed-bar REST reader lost retry ownership on
+# DNS faults and on wake-ups earlier than its own 55s throttle. Keep source
+# validation + original eight ledgers, repair only scheduling and the stale
+# global-checkpoint reblock of already officially VERIFIED pending rows.
+from stock_pending_recovery_v017 import install as _install_stock_pending_recovery_v017
+_install_stock_pending_recovery_v017()
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
 snapshot = _core.snapshot
 hub_records = _core.hub_records
-set_live = _core.set_live
+hub_records_ui = hub_records_ui_v104
+# This APK has ONLY real-quote simulated fills and shadow/PAPER research.
+# Its original LIVE switch is a broker-order adapter, never the user-facing
+# "실거래" simulated-wallet label. A future real-account APK is separate.
+def set_live(market,enabled):
+    if enabled:
+        return json.dumps({'ok':False,'error':'SIMULATED_ACCOUNT_ONLY_NO_BROKER_ORDERS',
+            'live_enabled':{'stock':False,'coin':False}},ensure_ascii=False)
+    return _core.set_live(market,False)
+
+def broker_sells_v008():
+    """Explicit, read-only broker outstanding SELL evidence; not order execution."""
+    from broker_sell_receipt_v008 import audit_stock_sells
+    try:
+        return json.dumps(audit_stock_sells(getattr(_core,"_RUNTIME",None)),
+                          ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok":False,"orders":[],
+                           "error":"READ_ONLY_BROKER_QUERY_"+type(exc).__name__},
+                          ensure_ascii=False)
+
+
+def manual_paper_sell(request):
+    from android_manual_paper_sell_v085 import perform
+    return perform(request)
+
+# v089: UI-only fast price lane, in-memory genuine WS observations ONLY.
+# Does not issue an HTTP request, subscribe to a second socket, read SQLite,
+# modify a price/order decision or write any source/original journal.
+def price_snapshot_v089():
+    from stock_quote_truth_v066 import live_quote_snapshot
+    import datetime as _dt
+    try:
+        runtime=getattr(_core,'_RUNTIME',None)
+        if runtime is None or not getattr(runtime,'started',False):
+            return json.dumps({'ready':False,'stock':{'quotes':{}},
+                               'coin':{'quotes':{}},'revision':''})
+        sr=getattr(runtime,'stock_runner',None)
+        if sr is not None and getattr(sr,'_v066_quote_lock',None) is None:
+            # Hook the ONE original verified 0B observer as early as the
+            # price publisher starts; do not wait for a 6.5s SQLite snapshot.
+            try:
+                from stock_quote_truth_v066 import install_ui_quote_tap
+                install_ui_quote_tap(sr)
+            except (AttributeError,TypeError,ValueError,RuntimeError):
+                pass
+        stock=live_quote_snapshot(sr)
+        # Unlike a timestamp-only receipt, a disconnected WebSocket must
+        # never show its last print as continuously streaming LIVE.
+        try:
+            from at_close_bridge import broker_transport_snapshot
+            alive=bool(sr is not None and getattr(sr,'_confirmed_ws_session',False)
+                       and broker_transport_snapshot().get('state')=='connected')
+        except (ImportError,AttributeError,TypeError):
+            alive=False
+        if not alive:
+            for q in (stock.get('quotes') or {}).values():
+                if q.get('status')=='FRESH':
+                    q['status']='LAST_0B'
+                    q['expires_ms']=0
+            stock['revision']=stock.get('revision','')+'|SOCKET_DISCONNECTED'
+        # Pending/candidate UI can reuse only already-subscribed, truly
+        # received 0B prints. No extra REG slots or research REST calls.
+        if sr is not None and getattr(sr,'_v066_quote_lock',None) is not None:
+            try:
+                from stock_quote_truth_v066 import _choose_for_code,KST
+                with sr._v066_quote_lock:
+                    by_venue=dict(getattr(sr,'_v066_quote_by_venue',{}) or {})
+                held=dict(stock.get('quotes') or {})
+                codes=sorted({k[0] for k in by_venue
+                              if isinstance(k,tuple) and len(k)==2})[:220]
+                now_stock=_dt.datetime.now(KST)
+                connected=alive
+                for code in codes:
+                    if code in held:continue
+                    valid,last=_choose_for_code(by_venue,code,now_stock,connected)
+                    price=valid or last
+                    if price is None:continue
+                    held[code]={
+                        'price':price['price'],
+                        'status':'FRESH' if valid else 'LAST_0B',
+                        'source':'KIWOOM_REAL_0B' if valid else 'KIWOOM_LAST_0B',
+                        'venue':price['venue'],
+                        'exchange_at':price['exchange_at'],
+                        'received_at':price['received_at'],
+                        'expires_ms':price['expires_ms'] if valid else 0}
+                stock['quotes']=held
+                stock['revision']='|'.join(
+                    str(k)+':'+str(v.get('price'))+':'+
+                    str(v.get('status'))+':'+str(v.get('received_at',''))
+                    for k,v in sorted(held.items()))
+            except (AttributeError,TypeError,ValueError,RuntimeError):
+                pass
+        cr=getattr(runtime,'coin_runner',None)
+        now_epoch_ms=int(time.time()*1000)
+        now_mono=time.monotonic()
+        coin_quotes={}
+        if cr is not None:
+            # A 0B-equivalent Upbit trade timestamp is stored at WS receipt
+            # BEFORE the slower coin strategy callback is queued.
+            # No REST-derived latest_prices (which may be stale) are used.
+            try:
+                seen=dict(getattr(cr,'_v086_last_trade_by_code',{}) or {})
+            except RuntimeError:
+                seen={}
+            held=list(getattr(cr,'_held_codes',()) or ())
+            tracked=list(getattr(cr,'tracked',()) or ())
+            codes=list(dict.fromkeys(str(code) for code in held+tracked
+                                     if str(code).startswith('KRW-')))[:280]
+            socket=bool(getattr(cr,'_ws_connected',False) and
+                        0<=now_mono-float(getattr(cr,'_ws_last_frame',0) or 0)<=15.0)
+            for code in codes:
+                point=seen.get(code)
+                if not isinstance(point,(tuple,list)) or len(point)<2:continue
+                try:
+                    stamp=int(point[0])
+                    price=float(point[1])
+                    age_ms=now_epoch_ms-stamp
+                except (ValueError,TypeError,OverflowError):continue
+                if not (price>0 and -500<=age_ms<=3_600_000):continue
+                fresh=socket and age_ms<=10_000
+                coin_quotes[code]={
+                    'price':price,
+                    'status':'FRESH' if fresh else 'LAST_WS',
+                    'source':'UPBIT_VERIFIED_WS_TICKER',
+                    'exchange_ms':stamp,
+                    'expires_ms':stamp+10_000 if fresh else 0,
+                    'age_ms':max(0,age_ms)}
+        coin={'quotes':coin_quotes,'ws_reception_verified_only':True}
+        # Small stable signature. A status flip also changes the signature,
+        # but an unchanged quote does not create redundant XML writes.
+        token=json.dumps([stock.get('revision',''),
+                          [(k,v['price'],v['status'],v['exchange_ms'])
+                           for k,v in sorted(coin_quotes.items())]],
+                          ensure_ascii=True,separators=(',',':'))
+        return json.dumps({
+            'ready':True,'generated_ms':now_epoch_ms,
+            'stock':stock,'coin':coin,
+            'revision':hashlib.sha256(token.encode('ascii')).hexdigest(),
+            'ui_only':True,'fills_allowed':False},
+            ensure_ascii=False,separators=(',',':'))
+    except Exception as exc:
+        return json.dumps({'ready':False,'stock':{'quotes':{}},
+                           'coin':{'quotes':{}},
+                           'error':type(exc).__name__})
+
 # v045 explicit score-independent market trend entry selection.
 from market_trend_runtime_v043 import set_manual_mode as set_trend_manual

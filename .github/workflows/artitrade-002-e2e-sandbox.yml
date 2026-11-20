@@ -1,0 +1,67 @@
+name: ARTITRADE 0.0.2 original source export for E2E local isolation
+on:
+  push:
+    branches: [test-artitrade-002-eight-virtual-paper-e2e-20261119]
+    paths:
+      - .github/workflows/artitrade-002-e2e-sandbox.yml
+      - ARTITRADE_ANDROID/ui_tests/test_v002_eight_virtual_paper_end_to_end.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixture-source-and-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract original 8-engine binary-coded archive and verify before tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,io,zipfile,hashlib,ast
+          from pathlib import Path
+          root=Path('ARTITRADE_ANDROID/app/src/main/assets/strategy_v070')
+          payload=base64.b64decode(''.join((root/f'part_{i:02d}.txt').read_text('ascii') for i in range(22)))
+          with zipfile.ZipFile(io.BytesIO(payload)) as z:
+              assert z.testzip() is None
+              for n in z.namelist():
+                  if n.endswith('.py'):ast.parse(z.read(n).decode('utf8'),filename=n)
+              z.extractall('/tmp/ARTITRADE_E2E_ORIGINAL_CORE')
+          print('ORIGINAL_CORE_SHA256',hashlib.sha256(payload).hexdigest())
+          PY
+      - name: Original strategy and NOV18 synthetic preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q requests==2.32.5 websockets==15.0.1 holidays
+          export PYTHONPATH="$PWD/ARTITRADE_ANDROID/app/src/main/python:/tmp/ARTITRADE_E2E_ORIGINAL_CORE:$PWD/ARTITRADE_ANDROID/ui_tests"
+          for test in test_v086_stock_manual_all.py test_new_legacy_1118_workbook.py; do
+            echo ">>> $test"
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$test" -v
+          done
+          if test -f ARTITRADE_ANDROID/ui_tests/test_v002_eight_virtual_paper_end_to_end.py; then
+            python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v002_eight_virtual_paper_end_to_end.py' -v
+          fi
+      - name: Export immutable relevant source for local fixture engineering
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARTITRADE_V002_FIXTURE_SOURCE_NO_SECRETS
+          path: |
+            ARTITRADE_ANDROID/app/src/main/python/
+            ARTITRADE_ANDROID/ui_tests/test_v091_ma_three_stage_real_ledger.py
+            ARTITRADE_ANDROID/ui_tests/test_v086_stock_manual_all.py
+            ARTITRADE_ANDROID/ui_tests/test_v091_d19_original_at_reconnect_and_portrait.py
+            ARTITRADE_ANDROID/ui_tests/test_v054_market_trend_audit.py
+            ARTITRADE_ANDROID/ui_tests/test_new_legacy_1118_workbook.py
+            ARTITRADE_ANDROID/ui_tests/test_v051_gmo_paper_research.py
+            ARTITRADE_ANDROID/ui_tests/test_v075_gmo_cw_original_failure_audit.py
+            ARTITRADE_ANDROID/ui_tests/test_v002_eight_virtual_paper_end_to_end.py
+          retention-days: 1
+          if-no-files-found: warn

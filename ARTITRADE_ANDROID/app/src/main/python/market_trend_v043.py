@@ -184,7 +184,10 @@ class SignalLatch:
         if v>RSI_ARM:
             self.armed=True
             self.fired=False
-        elif self.last_bar==str(bar_key) and self.fired:
+        else:
+            # RSI was already at/below 30 on the completed candle:
+            # NO delayed entry in a later bar. A new completed RSI >30 is
+            # required to arm a future first downward crossing.
             self.armed=False
         self.last_bar=str(bar_key)
 

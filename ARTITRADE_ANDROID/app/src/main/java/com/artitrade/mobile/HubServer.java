@@ -20,6 +20,7 @@ final class HubServer {
     private static final String TAG="ArtitradeHub";
     private final SecureBox secrets;
     private final SyncStore store;
+    private final DailyBackupStoreV003 daily;
     private final ExecutorService clients=Executors.newFixedThreadPool(4);
     private volatile boolean running=false;
     private volatile boolean tailnetEnabled=false;
@@ -27,7 +28,10 @@ final class HubServer {
     private volatile String vpnBoundIp="";
     private Thread loopThread, vpnThread;
 
-    HubServer(SecureBox secrets, SyncStore store){this.secrets=secrets;this.store=store;}
+    HubServer(SecureBox secrets, SyncStore store,android.content.Context app){
+        this.secrets=secrets;this.store=store;
+        this.daily=new DailyBackupStoreV003(app,secrets);
+    }
     boolean isRunning(){return running;}
     String tailnetIp(){return vpnBoundIp;}
     void setTailnetEnabled(boolean value){
@@ -235,6 +239,27 @@ final class HubServer {
         }catch(Exception e){Log.w(TAG,"Request aborted (no credentials logged)");}
     }
     private JSONObject route(String method,String path,Map<String,String> q,JSONObject b){
+        // New immutable back-ups are distinct from the DEPRECATED PC import
+        // APIs. They NEVER replace or import active PAPER ledgers.
+        if("POST".equals(method)&&"/v1/daily/begin".equals(path))
+            return daily.begin(b.optString("market"),b.optString("date"),
+                b.optString("epoch_id"),b.optString("session"),
+                b.optLong("bytes",-1),b.optString("sha256"),b.optInt("chunks",-1));
+        if("POST".equals(method)&&"/v1/daily/chunk".equals(path))
+            return daily.upload(b.optString("market"),b.optString("date"),
+                b.optString("session"),b.optInt("index",-1),
+                b.optString("data_b64"),b.optString("sha256"));
+        if("POST".equals(method)&&"/v1/daily/commit".equals(path))
+            return daily.commit(b.optString("market"),b.optString("date"),
+                b.optString("session"));
+        if("GET".equals(method)&&"/v1/daily/latest".equals(path))
+            return daily.latest(val(q,"market"),val(q,"epoch_id"));
+        if("GET".equals(method)&&"/v1/daily/chunk".equals(path)){
+            int index=-1;
+            try{index=Integer.parseInt(val(q,"index"));}catch(Exception ignored){}
+            return daily.download(val(q,"market"),val(q,"date"),index,
+                val(q,"epoch_id"));
+        }
         if("POST".equals(method)&&"/v1/migration/begin".equals(path)){
             return store.migrationBegin(b.optString("session"),b.optInt("total_chunks",-1),
                 b.optLong("total_bytes",-1),b.optString("archive_sha256"),b.optJSONObject("source"));

@@ -1,0 +1,35 @@
+name: ARTITRADE v096 manual sell result lifecycle source checks
+on:
+  push:
+    branches: [fix-artitrade-v096-manual-result-stall-20261117]
+    paths:
+      - '.github/workflows/verify-v096-manual-result.yml'
+      - 'ARTITRADE_ANDROID/ui_tests/test_v096_*.py'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java'
+      - 'ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact manual sell request and result lifecycle
+        run: |
+          python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p 'test_v096_*.py' -v
+      - name: Verify shared app source compiles without APK signing
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Compile Java without installing or publishing an APK
+        working-directory: ARTITRADE_ANDROID
+        run: gradle --no-daemon :app:compileUnifiedDebugJavaWithJavac
