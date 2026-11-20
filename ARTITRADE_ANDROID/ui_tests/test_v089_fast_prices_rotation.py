@@ -73,7 +73,7 @@ class ReadOnlyQuoteLane(unittest.TestCase):
         self.assertIn('FAST_PRICE_VIEW_MS=900L',JAVA)
         self.assertIn('refreshVisiblePriceViews()',JAVA)
         self.assertIn('livePriceBindings.clear()',JAVA)
-        self.assertIn('item.status.setText',JAVA)
+        self.assertIn('setQuoteDot(item.status',JAVA)  # 0.1.7: status is a colour dot, not a sentence
         self.assertIn("'fills_allowed':False",PY)
 
 if __name__=='__main__':unittest.main()
