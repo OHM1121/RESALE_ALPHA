@@ -1711,7 +1711,7 @@
       "root": "VENDOR_BOOK_QUEUE_NO_COALESCING_DROP_NEWEST (queue 4096, one worker, two SQLite ledgers per frame)",
       "status": "SOURCE_FIXED",
       "fix_version": "0.2.3",
-      "ci": "PENDING",
+      "ci": "PASSED",
       "device": "UNVERIFIED",
       "nodes": [
         "WS_BOOK_COALESCE_V0230",
@@ -2107,8 +2107,10 @@
     "version": "0.2.3",
     "versionCode": 156,
     "base": "0.2.2",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.4"
+    "next_version": "0.2.4",
+    "source_commit": "b3f3bffe239b91b46f4a0ea76c4217425b7bfca3",
+    "apk_sha256": "1ac48f87fd748641d0262d79662ca3294734601387a9ae10dc809878926beabb"
   }
 }

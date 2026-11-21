@@ -388,4 +388,4 @@ Based on 0.2.2 (versionCode 156 for 0.2.3).
 2. `ws_book_coalesce_v0230.install` (called from `android_runtime_v078` right after the v081 preload wrapper) keeps only the newest frame per market and queues one token per market; `dispatch` hands the latest frame to the original dispatcher. Marks/ticker are unchanged. Held-exit gate `coin_held_depth_v014.book_sell_evidence` (book age <= 3 s) and the vendor arrival check (`MAX_BOOK_AGE_SEC`) are unchanged.
 3. Evidence for the next export: `UPBIT_WS_BOOK_BACKLOG` (frame waited > 3 s, with received/coalesced/dispatched/queue_full counts), together with the existing `UPBIT_WS_EVENT_QUEUE_PRESSURE` and `UPBIT_WS_RECONNECT` rows.
 
-Status: SOURCE_FIXED; unit tests passed, install verified against the real vendor module; CI and device not verified. The cost per frame (SQLite) is not measured; the 22:49 engine stop (#136) is a separate, still-unexplained event.
+Status: CI_VERIFIED (source b3f3bff, APK sha256 1ac48f87…beabb); install verified against the real vendor module; device not verified. The cost per frame (SQLite) is not measured; the 22:49 engine stop (#136) is a separate, still-unexplained event.
