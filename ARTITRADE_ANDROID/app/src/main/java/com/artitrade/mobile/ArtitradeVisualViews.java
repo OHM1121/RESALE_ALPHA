@@ -141,7 +141,7 @@ final class PnlSparklineView extends View {
         for(double v:values)if(Double.isFinite(v)){axisMin=Math.min(axisMin,v);axisMax=Math.max(axisMax,v);}
         boolean hasData=values.length>0;
         double last=hasData?values[values.length-1]:0d;
-        int lineColor=!hasData?Color.rgb(255,194,91):last<0?ChartStyle.DOWN:last>0?ChartStyle.UP:Color.rgb(255,194,91);
+        int lineColor=!hasData?Color.rgb(255,194,91):last<0?ChartStyle.DOWN:ChartStyle.UP;   // 0 and above = green, below 0 = red
         // Header: the headline gets the room it needs, the caption takes only what is left (never overlaps).
         p.setStyle(Paint.Style.FILL);p.setShader(null);p.setTextAlign(Paint.Align.RIGHT);p.setFakeBoldText(true);
         String headline=hasData?WonFormat.signed(last):"—";
@@ -190,29 +190,44 @@ final class PnlSparklineView extends View {
             ys[i]=(float)(bottom-(values[i]-min)/(max-min)*(bottom-top));
         }
         float zeroY=(float)(bottom-(0-min)/(max-min)*(bottom-top));
-        // Zero baseline (profit / loss boundary) in the line's own tint.
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.9f));p.setColor(ChartStyle.withAlpha(lineColor,120));
+        // Zero baseline (profit / loss boundary): neutral, so it belongs to neither colour.
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(.9f));p.setColor(Color.argb(150,150,162,180));
         c.drawLine(left,zeroY,right,zeroY,p);
         if(n==1){
+            int one=values[0]<0?ChartStyle.DOWN:ChartStyle.UP;
             p.setStyle(Paint.Style.FILL);p.setColor(PremiumUi.BG);c.drawCircle(xs[0],ys[0],sp(5.2f),p);
-            p.setColor(lineColor);c.drawCircle(xs[0],ys[0],sp(3.4f),p);
+            p.setColor(one);c.drawCircle(xs[0],ys[0],sp(3.4f),p);
             drawXAxisLabels(c,left,right,bottom);return;
         }
         Path curve=smooth(xs,ys,n);
         Path area=new Path(curve);
         area.lineTo(xs[n-1],zeroY);area.lineTo(xs[0],zeroY);area.close();
-        p.setStyle(Paint.Style.FILL);ChartStyle.areaPaint(p,Math.min(top,zeroY),Math.max(bottom,zeroY),lineColor);
-        c.drawPath(area,p);ChartStyle.clear(p);
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(2.4f));
-        p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setColor(lineColor);
-        c.drawPath(curve,p);
+        // ONE line whose colour follows the sign: everything on/above the zero line is green, everything
+        // below it is red. The same curve is drawn twice and clipped at zeroY, so the colour changes exactly
+        // where the line crosses zero.
+        float clipTop=Math.min(top,zeroY)-sp(6),clipBottom=Math.max(bottom,zeroY)+sp(6);
+        for(int side=0;side<2;side++){
+            boolean upper=side==0;
+            int col=upper?ChartStyle.UP:ChartStyle.DOWN;
+            c.save();
+            if(upper)c.clipRect(left-sp(8),clipTop,right+sp(8),zeroY);
+            else c.clipRect(left-sp(8),zeroY,right+sp(8),clipBottom);
+            p.setStyle(Paint.Style.FILL);
+            if(upper)ChartStyle.areaPaint(p,Math.min(top,zeroY),zeroY,col);
+            else ChartStyle.areaPaintDown(p,zeroY,Math.max(bottom,zeroY),col);
+            c.drawPath(area,p);ChartStyle.clear(p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(sp(2.4f));
+            p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setColor(col);
+            c.drawPath(curve,p);
+            c.restore();
+        }
         // Best and worst point markers (small rings) so the swing is readable without text.
         int hi=0,lo=0;
         for(int i=1;i<n;i++){if(values[i]>values[hi])hi=i;if(values[i]<values[lo])lo=i;}
         p.setStyle(Paint.Style.FILL);
         if(hi!=n-1&&values[hi]>0){p.setColor(PremiumUi.BG);c.drawCircle(xs[hi],ys[hi],sp(3.8f),p);p.setColor(ChartStyle.UP);c.drawCircle(xs[hi],ys[hi],sp(2.2f),p);}
         if(lo!=n-1&&values[lo]<0){p.setColor(PremiumUi.BG);c.drawCircle(xs[lo],ys[lo],sp(3.8f),p);p.setColor(ChartStyle.DOWN);c.drawCircle(xs[lo],ys[lo],sp(2.2f),p);}
-        // Latest value: halo + dot.
+        // Latest value: halo + dot, coloured by the sign of the latest value.
         p.setColor(ChartStyle.withAlpha(lineColor,60));c.drawCircle(xs[n-1],ys[n-1],sp(7f),p);
         p.setColor(PremiumUi.BG);c.drawCircle(xs[n-1],ys[n-1],sp(4.6f),p);
         p.setColor(lineColor);c.drawCircle(xs[n-1],ys[n-1],sp(3f),p);

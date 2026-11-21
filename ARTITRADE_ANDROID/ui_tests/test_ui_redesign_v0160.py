@@ -31,7 +31,7 @@ class UiRedesignV0160(unittest.TestCase):
                       "buildHoldingCard(p,holding.scopeMarket,holding.scopeStrategy"):
             self.assertIn(token, body)
         card = ui[ui.index("private LinearLayout buildHoldingCard"):ui.index("private String positionBuyReason")]
-        for token in ("ReturnGaugeView", 'holdingStat(row1,"매수가"', 'holdingStat(row2,"평가손익"',
+        for token in ("ReturnGaugeView", 'panelRow(invested,"매수가"', 'heroStat(resultRow,"평가손익"',
                       "bindFastVisiblePrice(p,scopeMarket,nowValue,dot"):
             self.assertIn(token, card)
         # every strategy of both markets gets its own section

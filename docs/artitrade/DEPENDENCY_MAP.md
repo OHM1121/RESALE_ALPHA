@@ -389,3 +389,11 @@ Based on 0.2.2 (versionCode 156 for 0.2.3).
 3. Evidence for the next export: `UPBIT_WS_BOOK_BACKLOG` (frame waited > 3 s, with received/coalesced/dispatched/queue_full counts), together with the existing `UPBIT_WS_EVENT_QUEUE_PRESSURE` and `UPBIT_WS_RECONNECT` rows.
 
 Status: CI_VERIFIED (source b3f3bff, APK sha256 1ac48f87…beabb); install verified against the real vendor module; device not verified. The cost per frame (SQLite) is not measured; the 22:49 engine stop (#136) is a separate, still-unexplained event.
+
+## 0.2.4 — how the changed parts connect (issue #138)
+Based on 0.2.3 (versionCode 157 for 0.2.4). Display only; no ledger, order, stop or target is touched.
+1. `PnlSparklineView` (the only time-series line chart; used by the integrated dashboard, every strategy tile and every strategy page) draws its curve twice, clipped at the zero line: green for 0 and above, red below. `ChartStyle.areaPaintDown` mirrors the area fade.
+2. `UnifiedVisualActivity.renderIntegratedHome`: hero tiles "확정 손익 / 보유 손익" (`addLargeMoneyMetric` with a caption), `PnlSplitView` per strategy tile, `collapsibleHeader` per market (`home/stock`, `home/coin`). `renderIntegratedPositions`: per-strategy fold (`pos/<market>/<strategy>`) plus fold-all/unfold-all; `SignedAmountBarView` is added before the fold decision. Fold state: `artitrade_ui_navigation_v1.collapsed_groups_v1`.
+3. `buildHoldingCard` (integrated page and every strategy holdings page): result row, `ReturnGaugeView`, `PriceLadderView(stop_loss_price, entry, first_profit_target, current)`, panels 청산 기준 / 투입 / 시점; `position_view_v0200` still supplies `stop_loss_price/pct` and `first_profit_target`.
+
+Status: SOURCE_FIXED; compiled locally against the Android 15 platform jar; static regression passed; CI and device not verified.

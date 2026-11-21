@@ -261,3 +261,158 @@ final class TradeCycleView extends View {
         }
     }
 }
+
+/**
+ * Confirmed (realized) vs holding (evaluated) profit, two rows on ONE shared scale so the reader can tell
+ * them apart at a glance. Solid bar + filled dot = confirmed (the sell is done, the money is locked in);
+ * outlined bar + ring = holding (still open, moves with the price). Green = 0 or more, red = below 0.
+ */
+final class PnlSplitView extends View {
+    static final int HEIGHT_DP=50;
+    private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private double realized=Double.NaN,holding=Double.NaN,scale=1;
+    PnlSplitView(Context c){super(c);}
+    void set(double realized,double holding,double scale){
+        this.realized=realized;this.holding=holding;this.scale=scale>0?scale:1;invalidate();
+    }
+    private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
+    private float dp(float v){return v*getResources().getDisplayMetrics().density;}
+    private static boolean known(double v){return !Double.isNaN(v)&&!Double.isInfinite(v);}
+    @Override protected void onDraw(Canvas c){
+        super.onDraw(c);
+        float w=getWidth(),h=getHeight();if(w<=0||h<=0)return;
+        float rowH=h/2f;
+        float labelW=dp(52),valueW=Math.min(w*.34f,dp(112));
+        float barL=labelW,barR=w-valueW-dp(6);
+        if(barR-barL<dp(40)){barL=dp(40);barR=Math.max(barL+dp(20),w-dp(70));}
+        float mid=(barL+barR)/2f;
+        for(int row=0;row<2;row++){
+            boolean confirmed=row==0;
+            double v=confirmed?realized:holding;
+            float cy=row*rowH+rowH/2f,th=dp(8);
+            int tone=!known(v)?Color.rgb(120,132,150):v>=0?ChartStyle.UP:ChartStyle.DOWN;
+            // label: dot style tells the two kinds apart without relying on colour
+            p.setStyle(Paint.Style.FILL);p.setShader(null);p.setColor(Color.rgb(176,190,208));
+            if(confirmed)c.drawCircle(dp(6),cy,dp(4),p);
+            else{p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.6f));c.drawCircle(dp(6),cy,dp(3.6f),p);p.setStyle(Paint.Style.FILL);}
+            p.setTextAlign(Paint.Align.LEFT);p.setTextSize(sp(12));p.setColor(PremiumUi.TEXT);p.setFakeBoldText(true);
+            c.drawText(confirmed?"확정":"보유",dp(15),cy+sp(4),p);p.setFakeBoldText(false);
+            // track + zero tick
+            p.setColor(ChartStyle.TRACK);
+            c.drawRoundRect(new RectF(barL,cy-th/2,barR,cy+th/2),th/2,th/2,p);
+            if(known(v)&&v!=0){
+                float span=(float)Math.min(1d,Math.abs(v)/scale)*((barR-barL)/2f-dp(1));
+                if(span<dp(3))span=dp(3);
+                boolean up=v>0;
+                RectF bar=up?new RectF(mid,cy-th/2,mid+span,cy+th/2):new RectF(mid-span,cy-th/2,mid,cy+th/2);
+                if(confirmed){
+                    ChartStyle.barPaint(p,bar,tone,up);c.drawRoundRect(bar,th/2,th/2,p);ChartStyle.clear(p);
+                }else{
+                    p.setColor(ChartStyle.withAlpha(tone,60));c.drawRoundRect(bar,th/2,th/2,p);
+                    p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.4f));p.setColor(tone);
+                    p.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(4),dp(3)},0));
+                    c.drawRoundRect(bar,th/2,th/2,p);p.setPathEffect(null);p.setStyle(Paint.Style.FILL);
+                }
+            }
+            p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(120,132,150));
+            c.drawRect(mid-dp(.5f),cy-th/2-dp(1.5f),mid+dp(.5f),cy+th/2+dp(1.5f),p);
+            // value in its own right-hand column
+            p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(sp(13));p.setFakeBoldText(true);p.setColor(tone);
+            String text=known(v)?WonFormat.signed(v):"—";
+            c.drawText(ChartStyle.ellipsize(p,text,valueW),w,cy+sp(4.5f),p);p.setFakeBoldText(false);
+        }
+    }
+}
+
+/**
+ * Price map of one holding. Left of the buy price is the loss zone (red) down to the stop, right of it the
+ * profit zone (green) up to the first profit target; the dot is the current price. Missing stop/target
+ * draws a dashed open end instead of an invented number. Display only.
+ */
+final class PriceLadderView extends View {
+    static final int HEIGHT_DP=58;
+    private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private double stop=Double.NaN,entry=Double.NaN,target=Double.NaN,current=Double.NaN;
+    PriceLadderView(Context c){super(c);}
+    void set(double stop,double entry,double target,double current){
+        this.stop=stop;this.entry=entry;this.target=target;this.current=current;invalidate();
+    }
+    private float sp(float v){return v*getResources().getDisplayMetrics().scaledDensity;}
+    private float dp(float v){return v*getResources().getDisplayMetrics().density;}
+    private static boolean ok(double v){return !Double.isNaN(v)&&!Double.isInfinite(v)&&v>0;}
+    @Override protected void onDraw(Canvas c){
+        super.onDraw(c);
+        float w=getWidth(),h=getHeight();if(w<=0||h<=0)return;
+        float left=dp(10),right=w-dp(10),y=h*.56f,th=dp(8);
+        p.setStyle(Paint.Style.FILL);p.setShader(null);
+        if(!ok(entry)){
+            p.setColor(ChartStyle.TRACK);c.drawRoundRect(new RectF(left,y-th/2,right,y+th/2),th/2,th/2,p);
+            p.setTextAlign(Paint.Align.CENTER);p.setTextSize(sp(11));p.setColor(PremiumUi.MUTED);
+            c.drawText("매수가 확인 중",w/2f,y-dp(10),p);
+            return;
+        }
+        double lo=entry,hi=entry;
+        for(double v:new double[]{stop,target,current})if(ok(v)){lo=Math.min(lo,v);hi=Math.max(hi,v);}
+        if(hi<=lo){hi=lo*1.01;lo=lo*0.99;}
+        double pad=(hi-lo)*.12;lo-=pad;hi+=pad;
+        final double flo=lo,fhi=hi;
+        float ex=x(entry,flo,fhi,left,right);
+        p.setColor(ChartStyle.TRACK);c.drawRoundRect(new RectF(left,y-th/2,right,y+th/2),th/2,th/2,p);
+        // loss zone: stop .. entry
+        if(ok(stop)){
+            float sx=x(stop,flo,fhi,left,right);
+            RectF r=new RectF(Math.min(sx,ex),y-th/2,Math.max(sx,ex),y+th/2);
+            p.setColor(ChartStyle.withAlpha(ChartStyle.DOWN,170));c.drawRoundRect(r,th/2,th/2,p);
+        }else openEnd(c,ex,left,y,ChartStyle.DOWN);
+        // profit zone: entry .. target
+        if(ok(target)){
+            float tx=x(target,flo,fhi,left,right);
+            RectF r=new RectF(Math.min(tx,ex),y-th/2,Math.max(tx,ex),y+th/2);
+            p.setColor(ChartStyle.withAlpha(ChartStyle.UP,170));c.drawRoundRect(r,th/2,th/2,p);
+        }else openEnd(c,ex,right,y,ChartStyle.UP);
+        // tick labels above the bar, pushed apart so they never overlap
+        p.setTextSize(sp(10.5f));p.setTextAlign(Paint.Align.CENTER);
+        String[] names={"손절","매수","목표"};
+        double[] values={stop,entry,target};
+        int[] colors={ChartStyle.DOWN,PremiumUi.TEXT,ChartStyle.UP};
+        float[] xs=new float[3];boolean[] on=new boolean[3];
+        for(int i=0;i<3;i++){on[i]=ok(values[i]);if(on[i])xs[i]=x(values[i],flo,fhi,left,right);}
+        float[] lx=xs.clone();
+        float minGap=sp(30);
+        for(int pass=0;pass<3;pass++)
+            for(int i=0;i<3;i++)for(int j=i+1;j<3;j++){
+                if(!on[i]||!on[j])continue;
+                if(lx[j]-lx[i]<minGap){float push=(minGap-(lx[j]-lx[i]))/2f;lx[i]-=push;lx[j]+=push;}
+            }
+        for(int i=0;i<3;i++){
+            if(!on[i])continue;
+            p.setColor(colors[i]);p.setStrokeWidth(dp(i==1?2f:1.6f));p.setStyle(Paint.Style.STROKE);
+            c.drawLine(xs[i],y-th/2-dp(4),xs[i],y+th/2+dp(4),p);
+            p.setStyle(Paint.Style.FILL);
+            float tx=Math.max(left+sp(10),Math.min(right-sp(10),lx[i]));
+            c.drawText(names[i],tx,y-th/2-dp(8),p);
+        }
+        // current price
+        if(ok(current)){
+            float cx=x(current,flo,fhi,left,right);
+            int tone=current>=entry?ChartStyle.UP:ChartStyle.DOWN;
+            p.setStyle(Paint.Style.FILL);p.setColor(ChartStyle.withAlpha(tone,70));c.drawCircle(cx,y,dp(9),p);
+            p.setColor(PremiumUi.BG);c.drawCircle(cx,y,dp(6.2f),p);
+            p.setColor(tone);c.drawCircle(cx,y,dp(4.2f),p);
+            p.setTextAlign(Paint.Align.CENTER);p.setTextSize(sp(11));p.setFakeBoldText(true);
+            String label="현재 "+WonFormat.price(current);
+            float half=p.measureText(label)/2f;
+            float tx=Math.max(left+half,Math.min(right-half,cx));
+            c.drawText(label,tx,y+th/2+sp(15),p);p.setFakeBoldText(false);
+        }
+    }
+    private static float x(double v,double lo,double hi,float left,float right){
+        return left+(float)((v-lo)/(hi-lo))*(right-left);
+    }
+    /** Dashed open end when the stop or target is not known: the zone exists but has no number. */
+    private void openEnd(Canvas c,float fromX,float toX,float y,int color){
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.6f));p.setColor(ChartStyle.withAlpha(color,150));
+        p.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(4),dp(4)},0));
+        c.drawLine(fromX,y,toX,y,p);p.setPathEffect(null);p.setStyle(Paint.Style.FILL);
+    }
+}

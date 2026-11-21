@@ -43,6 +43,11 @@ final class ChartStyle {
         p.setShader(new LinearGradient(0,top,0,bottom,withAlpha(color,92),withAlpha(color,0),
             Shader.TileMode.CLAMP));
     }
+    /** Area below the zero line: transparent at the zero line, strongest at the curve (mirror of areaPaint). */
+    static void areaPaintDown(Paint p,float zero,float bottom,int color){
+        p.setShader(new LinearGradient(0,zero,0,bottom,withAlpha(color,0),withAlpha(color,92),
+            Shader.TileMode.CLAMP));
+    }
     static void clear(Paint p){p.setShader(null);}
     /** Text that never runs past maxWidth: cut with an ellipsis instead of overlapping its neighbour. */
     static String ellipsize(Paint p,String text,float maxWidth){

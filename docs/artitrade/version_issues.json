@@ -1721,6 +1721,26 @@
         "test_v0230_ws_book_coalesce.py"
       ],
       "notes": "Overlay keeps the newest book per market. 3 s held-exit gate NOT relaxed. Per-frame SQLite cost not measured; UPBIT_WS_BOOK_BACKLOG issue rows in the next export prove or disprove the fix. Earlier hypothesis (orderbook channel stalls while ticker continues) withdrawn."
+    },
+    {
+      "id": "UI-0240-01",
+      "issue": 138,
+      "found": "owner request 2026-11-22 (app 0.2.2 screenshots)",
+      "category": "UX_PRESENTATION",
+      "title": "Line charts coloured by sign; foldable dashboard markets and holdings strategies; confirmed vs holding profit; categorised holding card with price map",
+      "evidence": "PnlSparklineView used one colour from the last value (zero amber); one 누적손익 figure per strategy tile; holding card was a flat key/value grid",
+      "root": "PRESENTATION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.4",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "UI_DASHBOARD_CARDS_V0240"
+      ],
+      "tests": [
+        "test_v0240_ui_dashboard_cards.py"
+      ],
+      "notes": "Display only. Compiled locally against the Android 15 platform jar. Rendering on the phone not seen."
     }
   ],
   "known_normal": [
@@ -2112,5 +2132,13 @@
     "next_version": "0.2.4",
     "source_commit": "b3f3bffe239b91b46f4a0ea76c4217425b7bfca3",
     "apk_sha256": "1ac48f87fd748641d0262d79662ca3294734601387a9ae10dc809878926beabb"
+  },
+  "candidate_024": {
+    "version": "0.2.4",
+    "versionCode": 157,
+    "base": "0.2.3",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.2.5"
   }
 }

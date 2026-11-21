@@ -135,9 +135,9 @@ class UiWiring(unittest.TestCase):
     def test_labels_and_fields_in_every_holding_card(self):
         ui = (BASE / 'app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java').read_text(encoding='utf-8')
         card = ui[ui.index('private LinearLayout buildHoldingCard'):ui.index('private String positionBuyReason')]
-        self.assertIn('"1차 수익목표"', card)
+        self.assertIn('1차 수익목표', card)
         self.assertNotIn('"1차 목표"', card)
-        self.assertIn('"손절가"', card)
+        self.assertIn('▼ 손절가', card)
         self.assertIn('stop_loss_pct', ui)
         self.assertIn('first_profit_target', ui)
         reason = ui[ui.index('private String positionBuyReason'):ui.index('private void renderIntegratedPositions')]

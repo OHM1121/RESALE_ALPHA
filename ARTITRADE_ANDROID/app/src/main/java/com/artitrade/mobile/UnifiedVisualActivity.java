@@ -3142,7 +3142,7 @@ public final class UnifiedVisualActivity extends Activity {
         hero.setPadding(dp(15),dp(10),dp(15),dp(10));
         TextView info=text("전략 8개 · 주식 5 / 코인 3 · 보유 "+held.size()+"종목",12);
         info.setTextColor(PremiumUi.MUTED);hero.addView(info);
-        TextView totalTitle=text("전체 누적손익",12);
+        TextView totalTitle=text("전체 손익  =  확정 + 보유",12);
         totalTitle.setTextColor(PremiumUi.MUTED);
         totalTitle.setPadding(0,dp(6),0,dp(2));hero.addView(totalTitle);
         double aggregate=realized+unrealized;
@@ -3153,23 +3153,23 @@ public final class UnifiedVisualActivity extends Activity {
         hero.addView(total);
         LinearLayout sums=new LinearLayout(this);
         sums.setOrientation(LinearLayout.HORIZONTAL);
-        addLargeMoneyMetric(sums,"●","실현 ("+knownR+"/"+totalScopes+")",knownR>0?realized:Double.NaN,
-                            Color.rgb(79,210,247));
-        addLargeMoneyMetric(sums,"◇","평가 ("+knownU+"/"+totalScopes+")",knownU>0?unrealized:Double.NaN,
-                            Color.rgb(184,158,255));
-        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(55));
+        addLargeMoneyMetric(sums,"●","확정 손익"+(knownR<totalScopes?" ("+knownR+"/"+totalScopes+")":""),
+                            "매도 완료 · 금액 확정",knownR>0?realized:Double.NaN,Color.rgb(176,190,208));
+        addLargeMoneyMetric(sums,"○","보유 손익"+(knownU<totalScopes?" ("+knownU+"/"+totalScopes+")":""),
+                            "보유 중 · 시세 따라 변동",knownU>0?unrealized:Double.NaN,Color.rgb(176,190,208));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(76));
         sp.setMargins(0,dp(7),0,0);hero.addView(sums,sp);
         LinearLayout.LayoutParams h=new LinearLayout.LayoutParams(-1,-2);
         h.setMargins(0,dp(7),0,0);content.addView(hero,h);
 
         // Visual summary: realized vs evaluated, then every strategy's P&L on one shared scale.
-        TextView splitTitle=text("손익 구성",15);
+        TextView splitTitle=text("손익 구성 · 확정 vs 보유",15);
         splitTitle.setTypeface(null,Typeface.BOLD);
         splitTitle.setPadding(dp(2),dp(13),0,dp(4));
         content.addView(splitTitle);
         java.util.ArrayList<HorizontalStrategyBarsView.Item> compItems=new java.util.ArrayList<>();
-        compItems.add(new HorizontalStrategyBarsView.Item("실현",knownR>0?realized:Double.NaN));
-        compItems.add(new HorizontalStrategyBarsView.Item("평가",knownU>0?unrealized:Double.NaN));
+        compItems.add(new HorizontalStrategyBarsView.Item("확정",knownR>0?realized:Double.NaN));
+        compItems.add(new HorizontalStrategyBarsView.Item("보유",knownU>0?unrealized:Double.NaN));
         compItems.add(new HorizontalStrategyBarsView.Item("합계",complete?realized+unrealized:Double.NaN));
         LinearLayout compCard=card();
         compCard.setPadding(dp(6),dp(6),dp(6),dp(6));
@@ -3204,13 +3204,40 @@ public final class UnifiedVisualActivity extends Activity {
             "주식 + 코인 · 실현손익 합산",151);
         content.addView(graph,new LinearLayout.LayoutParams(-1,dp(151)));
 
-        TextView strategyTitle=text("전략별 실적 · 실현손익 추세",15);
+        TextView strategyTitle=text("전략별 실적 · 확정 / 보유 손익",15);
         strategyTitle.setTypeface(null,Typeface.BOLD);
         strategyTitle.setPadding(dp(2),dp(13),0,dp(6));
         content.addView(strategyTitle);
+        // One shared scale for every 확정/보유 bar on this page.
+        double splitScale=1;
+        for(String m:new String[]{"stock","coin"})
+            for(String[] def:strategyList(m)){
+                Stats v=stats(m,def[0]);
+                if(finite(v.realized))splitScale=Math.max(splitScale,Math.abs(v.realized));
+                if(finite(v.unrealized))splitScale=Math.max(splitScale,Math.abs(v.unrealized));
+            }
         boolean wide=getResources().getConfiguration().screenWidthDp>=720;
-        LinearLayout pair=null;int count=0;
         for(String m:new String[]{"stock","coin"}){
+            double groupR=0,groupU=0;boolean anyR=false,anyU=false;int groupHeld=0;
+            for(String[] def:strategyList(m)){
+                Stats v=stats(m,def[0]);
+                if(finite(v.realized)){groupR+=v.realized;anyR=true;}
+                if(finite(v.unrealized)){groupU+=v.unrealized;anyU=true;}
+                groupHeld+=v.positions.length();
+            }
+            double groupScale=Math.max(splitScale,1d);
+            if(anyR)groupScale=Math.max(groupScale,Math.abs(groupR));
+            if(anyU)groupScale=Math.max(groupScale,Math.abs(groupU));
+            final String groupKey="home/"+m;
+            boolean collapsed=isGroupCollapsed(groupKey);
+            LinearLayout groupHeader=collapsibleHeader(groupKey,("stock".equals(m)?"주식":"코인")+" · 전략 "+strategyList(m).length+"개",
+                "보유 "+groupHeld+"종목",collapsed,anyR?groupR:Double.NaN,anyU?groupU:Double.NaN,groupScale,
+                m.equals("stock")?Color.rgb(112,166,255):Color.rgb(74,222,160));
+            LinearLayout.LayoutParams ghLp=new LinearLayout.LayoutParams(-1,-2);
+            ghLp.setMargins(0,dp(4),0,dp(6));
+            content.addView(groupHeader,ghLp);
+            if(collapsed)continue;
+            LinearLayout pair=null;int count=0;
             for(String[] def:strategyList(m)){
                 String s=def[0];
                 Stats v=stats(m,s);
@@ -3226,20 +3253,20 @@ public final class UnifiedVisualActivity extends Activity {
                 LinearLayout.LayoutParams dotLp=new LinearLayout.LayoutParams(dp(10),dp(10));
                 dotLp.setMargins(0,0,dp(7),0);
                 heading.addView(tileDot,0,dotLp);
-                TextView hold=text("보유 "+v.positions.length(),11);
+                TextView hold=text("보유 "+v.positions.length()+" · 매도 "+v.flowSold+"건",11);
                 hold.setTextColor(PremiumUi.MUTED);
                 heading.addView(hold);
                 tile.addView(heading);
-                LinearLayout figures=new LinearLayout(this);
-                figures.setGravity(Gravity.CENTER_VERTICAL);
                 TextView current=text(finite(v.total)?WonFormat.signed(v.total):(v.sourceError?"원장 조회 오류":"원장 확인 중"),20);
                 current.setTypeface(null,Typeface.BOLD);
                 autoSingle(current,12,20);
                 if(finite(v.total))paintProfit(current,v.total);
-                figures.addView(current,new LinearLayout.LayoutParams(0,dp(29),1));
-                TextView win=text("매도 "+v.flowSold+"건",11);
-                win.setTextColor(PremiumUi.MUTED);figures.addView(win);
-                tile.addView(figures);
+                tile.addView(current,new LinearLayout.LayoutParams(-1,dp(29)));
+                PnlSplitView split=new PnlSplitView(this);
+                split.set(v.realized,v.unrealized,splitScale);
+                LinearLayout.LayoutParams splitLp=new LinearLayout.LayoutParams(-1,dp(PnlSplitView.HEIGHT_DP));
+                splitLp.setMargins(0,dp(2),0,dp(2));
+                tile.addView(split,splitLp);
                 MetricProgressView winBar=new MetricProgressView(this);
                 winBar.setMetric("승률",v.win);
                 tile.addView(winBar,new LinearLayout.LayoutParams(-1,dp(30)));
@@ -3248,10 +3275,12 @@ public final class UnifiedVisualActivity extends Activity {
                 PnlSparklineView chart=new PnlSparklineView(this);
                 chart.setSeries(series==null?
                     new RealizedTrend.Series(new long[0],new double[0]):series,
-                    "실현 "+(finite(v.realized)?WonFormat.signed(v.realized):"—"));
+                    "확정 "+(finite(v.realized)?WonFormat.signed(v.realized):"—"));
                 tile.addView(chart,new LinearLayout.LayoutParams(-1,dp(108)));
                 tile.setContentDescription(scopeTitle(m,s)+" · 손익 "+
                     (finite(v.total)?WonFormat.signed(v.total):(v.sourceError?"원장 조회 오류":"원장 확인 중"))+
+                    " · 확정 "+(finite(v.realized)?WonFormat.signed(v.realized):"—")+
+                    " · 보유 "+(finite(v.unrealized)?WonFormat.signed(v.unrealized):"—")+
                     " · 탭하면 해당 전략 열기");
                 final String chosenMarket=m,chosenStrategy=s;
                 tile.setOnClickListener(view->{
@@ -3277,6 +3306,61 @@ public final class UnifiedVisualActivity extends Activity {
                 count++;
             }
         }
+    }
+    // ---- collapsible sections (dashboard markets, holdings strategies) -----------------------------------------
+    private java.util.HashSet<String> collapsedGroups;
+    private boolean isGroupCollapsed(String key){
+        if(collapsedGroups==null){
+            collapsedGroups=new java.util.HashSet<>();
+            try{
+                java.util.Set<String> saved=getSharedPreferences("artitrade_ui_navigation_v1",MODE_PRIVATE)
+                    .getStringSet("collapsed_groups_v1",null);
+                if(saved!=null)collapsedGroups.addAll(saved);
+            }catch(Exception ignored){}
+        }
+        return collapsedGroups.contains(key);
+    }
+    private void setGroupsCollapsed(java.util.Collection<String> keys,boolean collapsed){
+        isGroupCollapsed("");   // make sure the saved state is loaded
+        for(String key:keys){if(collapsed)collapsedGroups.add(key);else collapsedGroups.remove(key);}
+        try{
+            getSharedPreferences("artitrade_ui_navigation_v1",MODE_PRIVATE).edit()
+                .putStringSet("collapsed_groups_v1",new java.util.HashSet<>(collapsedGroups)).apply();
+        }catch(Exception ignored){}
+        render();
+    }
+    /**
+     * Section header that folds its content. The 확정/보유 profit bars stay visible while it is folded, so a
+     * folded section still shows how much it has made or lost.
+     */
+    private LinearLayout collapsibleHeader(final String key,String title,String sub,boolean collapsed,
+                                            double realized,double holding,double scale,int accent){
+        LinearLayout box=card();
+        box.setPadding(dp(11),dp(8),dp(11),dp(6));
+        LinearLayout row=new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView chevron=text(collapsed?"▸":"▾",18);
+        chevron.setTextColor(accent);
+        chevron.setGravity(Gravity.CENTER);
+        row.addView(chevron,new LinearLayout.LayoutParams(dp(24),dp(30)));
+        TextView t=text(title,16);
+        t.setTypeface(null,Typeface.BOLD);
+        t.setSingleLine(true);
+        row.addView(t,new LinearLayout.LayoutParams(0,dp(30),1));
+        TextView hint=text(sub+"  ·  "+(collapsed?"펼치기":"접기"),11);
+        hint.setTextColor(PremiumUi.MUTED);
+        hint.setSingleLine(true);
+        row.addView(hint);
+        box.addView(row);
+        PnlSplitView split=new PnlSplitView(this);
+        split.set(realized,holding,scale);
+        LinearLayout.LayoutParams sl=new LinearLayout.LayoutParams(-1,dp(PnlSplitView.HEIGHT_DP));
+        sl.setMargins(0,dp(2),0,0);
+        box.addView(split,sl);
+        box.setContentDescription(title+(collapsed?" · 접힘":" · 펼침")+" · 탭하면 "+(collapsed?"펼치기":"접기"));
+        box.setOnClickListener(v->setGroupsCollapsed(java.util.Collections.singletonList(key),!collapsed));
+        PremiumUi.tapMotion(box);
+        return box;
     }
     /** Small coloured dot instead of a footnote: green = live exchange tick, amber = last/stale, grey = unknown. */
     private void setQuoteDot(TextView dot,int color,String description){
@@ -3365,35 +3449,73 @@ public final class UnifiedVisualActivity extends Activity {
         top.addView(pill,new LinearLayout.LayoutParams(-2,dp(28)));
         body.addView(top);
 
-        ReturnGaugeView gauge=new ReturnGaugeView(this);
-        gauge.setReturn(rate);
-        LinearLayout.LayoutParams gaugeLp=new LinearLayout.LayoutParams(-1,dp(34));
-        gaugeLp.setMargins(0,dp(6),0,dp(4));
-        body.addView(gauge,gaugeLp);
-
         double qty=usefulNumber(p,"qty","quantity","holding_qty");
         double entry=positionBuyPrice(p);
         double current=positionMark(p);
         double paid=usefulNumber(p,"buy_amount","gmo_cost_basis");
         if(!finite(paid)&&finite(entry)&&entry>0&&finite(qty)&&qty>0)paid=entry*qty;
+
+        // 1. Result first: evaluated profit (big) and the current price, then the +-20 % gauge.
         TextView dot=quoteDot();
-        LinearLayout row1=new LinearLayout(this);
-        holdingStat(row1,"매수가",finite(entry)&&entry>0?WonFormat.price(entry):"—",PremiumUi.TEXT,1f);
+        LinearLayout resultRow=new LinearLayout(this);
+        resultRow.setPadding(0,dp(6),0,0);
+        heroStat(resultRow,"평가손익",finite(pnl)?WonFormat.signed(pnl):"—",tone,1.35f,null);
         String quoteLabel=isStockPosition(p)&&"LAST_LEDGER".equals(p.optString("stock_quote_status",""))?"저장가":"현재가";
-        TextView nowValue=holdingStat(row1,quoteLabel,finite(current)&&current>0?WonFormat.price(current):"조회 중",tone,1f,dot);
-        holdingStat(row1,"수량",finite(qty)?number(qty):"—",PremiumUi.TEXT,.8f);
-        body.addView(row1);
-        LinearLayout row2=new LinearLayout(this);
-        row2.setPadding(0,dp(4),0,0);
-        holdingStat(row2,"매수금액",finite(paid)?WonFormat.won(paid):"—",PremiumUi.TEXT,1f);
-        holdingStat(row2,"1차 수익목표",firstProfitTargetText(p,sourceStrategy),ChartStyle.UP,1.15f);
-        holdingStat(row2,"평가손익",finite(pnl)?WonFormat.signed(pnl):"—",tone,1.2f);
-        body.addView(row2);
-        LinearLayout row3=new LinearLayout(this);
-        row3.setPadding(0,dp(4),0,0);
-        holdingStat(row3,"손절가",stopLossText(p),ChartStyle.DOWN,1.4f);
-        holdingStat(row3,"매수 시각",fillTimeOf(p,"positions",sourceStrategy),Color.rgb(168,193,219),1f);
-        body.addView(row3);
+        TextView nowValue=heroStat(resultRow,quoteLabel,finite(current)&&current>0?WonFormat.price(current):"조회 중",tone,1f,dot);
+        body.addView(resultRow);
+        ReturnGaugeView gauge=new ReturnGaugeView(this);
+        gauge.setReturn(rate);
+        LinearLayout.LayoutParams gaugeLp=new LinearLayout.LayoutParams(-1,dp(34));
+        gaugeLp.setMargins(0,dp(2),0,dp(2));
+        body.addView(gauge,gaugeLp);
+
+        // 2. Price map: stop - buy price - first profit target with the current price on it.
+        double stopPrice=usefulNumber(p,"stop_loss_price");
+        double targetPrice=firstProfitTargetValue(p,scopeMarket,sourceStrategy);
+        double stopPct=p.optDouble("stop_loss_pct",Double.NaN);
+        if(!finite(stopPct)&&finite(stopPrice)&&stopPrice>0&&finite(entry)&&entry>0)stopPct=(stopPrice/entry-1d)*100d;
+        double targetPct=finite(targetPrice)&&targetPrice>0&&finite(entry)&&entry>0?(targetPrice/entry-1d)*100d:Double.NaN;
+        PriceLadderView ladder=new PriceLadderView(this);
+        ladder.set(stopPrice,entry,targetPrice,current);
+        LinearLayout.LayoutParams ladderLp=new LinearLayout.LayoutParams(-1,dp(PriceLadderView.HEIGHT_DP));
+        ladderLp.setMargins(0,dp(2),0,dp(6));
+        body.addView(ladder,ladderLp);
+
+        // 3. Category panels. Exit levels (profit target and stop) belong together; so do what was put in
+        //    and when.
+        String rewardRisk="";
+        if(finite(targetPrice)&&finite(stopPrice)&&finite(entry)&&stopPrice<entry&&targetPrice>entry)
+            rewardRisk="손익비 1 : "+number(Math.round((targetPrice-entry)/(entry-stopPrice)*10d)/10d);
+        LinearLayout exits=infoPanel("청산 기준",Color.rgb(255,201,94),rewardRisk);
+        LinearLayout exitCols=new LinearLayout(this);
+        exitCols.setPadding(0,dp(3),0,0);
+        boolean targetKnown=finite(targetPrice)&&targetPrice>0;
+        exitColumn(exitCols,"▲ 1차 수익목표",targetKnown?WonFormat.price(targetPrice):firstProfitTargetText(p,sourceStrategy),
+            targetKnown&&finite(targetPct)?signedPct(targetPct):"",targetKnown?ChartStyle.UP:PremiumUi.MUTED,false);
+        boolean stopKnown=finite(stopPrice)&&stopPrice>0;
+        exitColumn(exitCols,"▼ 손절가",stopKnown?WonFormat.price(stopPrice):"미확인",
+            stopKnown&&finite(stopPct)?String.format(Locale.KOREA,"%.1f%%",stopPct):"",stopKnown?ChartStyle.DOWN:PremiumUi.MUTED,true);
+        exits.addView(exitCols);
+        LinearLayout.LayoutParams exitsLp=new LinearLayout.LayoutParams(-1,-2);
+        body.addView(exits,exitsLp);
+
+        LinearLayout invested=infoPanel("투입",Color.rgb(112,166,255),"");
+        panelRow(invested,"매수가",finite(entry)&&entry>0?WonFormat.price(entry):"—",PremiumUi.TEXT);
+        panelRow(invested,"수량",finite(qty)?number(qty):"—",PremiumUi.TEXT);
+        panelRow(invested,"매수금액",finite(paid)?WonFormat.won(paid):"—",PremiumUi.TEXT);
+        long boughtAt=rowTimestamp(p);
+        LinearLayout when=infoPanel("시점",Color.rgb(176,150,255),"");
+        panelRow(when,"매수 시각",boughtAt>0?shortKst(boughtAt):fillTimeOf(p,"positions",sourceStrategy),Color.rgb(168,193,219));
+        String held=holdDuration(boughtAt,System.currentTimeMillis());
+        panelRow(when,"보유 기간",held.isEmpty()?"—":held,Color.rgb(168,193,219));
+        LinearLayout lower=new LinearLayout(this);
+        LinearLayout.LayoutParams lowerLp=new LinearLayout.LayoutParams(-1,-2);
+        lowerLp.setMargins(0,dp(6),0,0);
+        lower.addView(invested,new LinearLayout.LayoutParams(0,-1,1.15f));
+        LinearLayout.LayoutParams whenLp=new LinearLayout.LayoutParams(0,-1,1f);
+        whenLp.setMargins(dp(6),0,0,0);
+        lower.addView(when,whenLp);
+        body.addView(lower,lowerLp);
         bindFastVisiblePrice(p,scopeMarket,nowValue,dot,"","");
 
         if(withActions){
@@ -3439,6 +3561,115 @@ public final class UnifiedVisualActivity extends Activity {
         if(!uid.isEmpty())return "uid|"+uid;
         return scopeMarket+"|"+sourceStrategy+"|"+p.optString("code",p.optString("market",""))+"|"+
             p.optString("position_id",p.optString("source_position_id",""))+"|"+p.optString("tf","");
+    }
+    /** Numeric first profit target (0 = unknown). Saved plan first, then the legacy per-strategy fields. */
+    private double firstProfitTargetValue(JSONObject p,String scopeMarket,String sourceStrategy){
+        double planned=usefulNumber(p,"first_profit_target");
+        if(finite(planned)&&planned>0)return planned;
+        if("stock".equals(scopeMarket)&&("at".equalsIgnoreCase(sourceStrategy)||"기준봉".equals(sourceStrategy))){
+            double t=usefulNumber(p,"exit_first_target");
+            if(!finite(t)||t<=0)t=usefulNumber(p,"ref_bodytop");
+            return finite(t)&&t>0?t:Double.NaN;
+        }
+        double t=usefulNumber(p,"first_target","target","target_price");
+        return finite(t)&&t>0?t:Double.NaN;
+    }
+    /** Big two-line figure (key above, large value below) used for the result of a holding. */
+    private TextView heroStat(LinearLayout parent,String key,String value,int color,float weight,TextView dot){
+        LinearLayout col=new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout keyRow=new LinearLayout(this);
+        keyRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView k=text(key,11);
+        k.setTextColor(PremiumUi.MUTED);
+        k.setSingleLine(true);
+        keyRow.addView(k);
+        if(dot!=null){
+            LinearLayout.LayoutParams dlp=new LinearLayout.LayoutParams(dp(14),dp(14));
+            dlp.setMargins(dp(3),0,0,0);
+            keyRow.addView(dot,dlp);
+        }
+        col.addView(keyRow);
+        TextView v=text(value,20);
+        v.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        v.setTextColor(color);
+        v.setPadding(0,dp(1),dp(4),0);
+        autoSingle(v,13,20);
+        col.addView(v,new LinearLayout.LayoutParams(-1,dp(30)));
+        parent.addView(col,new LinearLayout.LayoutParams(0,-2,weight));
+        return v;
+    }
+    /** Titled sub-panel: one category of information (e.g. exit levels, what was put in, timing). */
+    private LinearLayout infoPanel(String title,int accent,String note){
+        LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(9),dp(6),dp(9),dp(7));
+        panel.setBackground(bg(Color.rgb(16,22,31),Color.rgb(36,48,64),11));
+        LinearLayout head=new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        View bar=new View(this);
+        bar.setBackground(bg(accent,0,2));
+        head.addView(bar,new LinearLayout.LayoutParams(dp(3),dp(11)));
+        TextView t=text(title,11);
+        t.setTypeface(null,Typeface.BOLD);
+        t.setTextColor(ChartStyle.lighten(accent,.25f));
+        t.setSingleLine(true);
+        LinearLayout.LayoutParams tl=new LinearLayout.LayoutParams(0,-2,1);
+        tl.setMargins(dp(6),0,0,0);
+        head.addView(t,tl);
+        if(note!=null&&!note.isEmpty()){
+            TextView n=text(note,11);
+            n.setTextColor(PremiumUi.MUTED);
+            n.setSingleLine(true);
+            head.addView(n);
+        }
+        panel.addView(head);
+        return panel;
+    }
+    private void panelRow(LinearLayout panel,String key,String value,int color){
+        LinearLayout row=new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView k=text(key,11);
+        k.setTextColor(PremiumUi.MUTED);
+        k.setSingleLine(true);
+        row.addView(k,new LinearLayout.LayoutParams(0,dp(22),.9f));
+        TextView v=text(value,13);
+        v.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        v.setTextColor(color);
+        v.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        v.setSingleLine(true);
+        autoSingle(v,10,13);
+        row.addView(v,new LinearLayout.LayoutParams(0,dp(22),1.3f));
+        panel.addView(row);
+    }
+    /** One exit level: caption, price, and the distance from the buy price. */
+    private void exitColumn(LinearLayout parent,String key,String value,String pct,int color,boolean second){
+        LinearLayout col=new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        TextView k=text(key,11);
+        k.setTextColor(PremiumUi.MUTED);
+        k.setSingleLine(true);
+        col.addView(k);
+        LinearLayout line=new LinearLayout(this);
+        line.setGravity(Gravity.CENTER_VERTICAL|Gravity.BOTTOM);
+        TextView v=text(value,15);
+        v.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        v.setTextColor(color);
+        v.setSingleLine(true);
+        autoSingle(v,11,15);
+        line.addView(v,new LinearLayout.LayoutParams(0,dp(24),1));
+        if(!pct.isEmpty()){
+            TextView r=text(pct,12);
+            r.setTextColor(ChartStyle.withAlpha(color,225));
+            r.setBackground(bg(ChartStyle.withAlpha(color,34),0,8));
+            r.setPadding(dp(6),dp(1),dp(6),dp(1));
+            r.setSingleLine(true);
+            line.addView(r);
+        }
+        col.addView(line);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+        if(second)lp.setMargins(dp(10),0,0,0);
+        parent.addView(col,lp);
     }
     /** First PROFIT target: the strategy's own saved plan first, then the legacy per-strategy fields. */
     private String firstProfitTargetText(JSONObject p,String sourceStrategy){
@@ -3530,7 +3761,7 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams moodLp=new LinearLayout.LayoutParams(-1,dp(SegmentBarView.heightDp(3)));
         moodLp.setMargins(0,dp(6),0,0);
         overview.addView(moodBar,moodLp);
-        TextView sumLine=text("평가손익 합계 "+(knownN>0?WonFormat.signed(sumPnl):"—")+
+        TextView sumLine=text("보유 손익 합계 "+(knownN>0?WonFormat.signed(sumPnl):"—")+
             (knownN<count?"  ("+knownN+"/"+count+"종목 반영)":""),14);
         sumLine.setTypeface(null,Typeface.BOLD);
         if(knownN>0)paintProfit(sumLine,sumPnl);
@@ -3540,33 +3771,77 @@ public final class UnifiedVisualActivity extends Activity {
         overviewLp.setMargins(0,0,0,dp(8));
         content.addView(overview,overviewLp);
 
+        // Fold / unfold every strategy at once. A folded strategy still shows its profit bar.
+        final java.util.ArrayList<String> sectionKeys=new java.util.ArrayList<>();
+        for(String key:groups.keySet())if(!groups.get(key).isEmpty())sectionKeys.add("pos/"+key);
+        LinearLayout foldRow=new LinearLayout(this);
+        Button foldAll=button("전략 모두 접기",false,()->setGroupsCollapsed(sectionKeys,true));
+        foldAll.setTextSize(12);
+        foldRow.addView(foldAll,new LinearLayout.LayoutParams(0,dp(36),1));
+        Button unfoldAll=button("모두 펼치기",false,()->setGroupsCollapsed(sectionKeys,false));
+        unfoldAll.setTextSize(12);
+        LinearLayout.LayoutParams ufLp=new LinearLayout.LayoutParams(0,dp(36),1);
+        ufLp.setMargins(dp(6),0,0,0);
+        foldRow.addView(unfoldAll,ufLp);
+        LinearLayout.LayoutParams foldLp=new LinearLayout.LayoutParams(-1,-2);
+        foldLp.setMargins(0,0,0,dp(4));
+        content.addView(foldRow,foldLp);
+
         for(String key:groups.keySet()){
             java.util.ArrayList<Integer> list=groups.get(key);
             if(list.isEmpty())continue;
             String[] d=groupDef.get(key);
             int accent=IntegratedPalette.strategy(d[0],d[1]);
+            final String foldKey="pos/"+key;
+            final boolean folded=isGroupCollapsed(foldKey);
+            Double sub=subtotal.get(key);
+            // Section header = a button: chevron, strategy, count and the summed holding P&L. The bar below it
+            // stays visible when the section is folded.
             LinearLayout header=new LinearLayout(this);
             header.setGravity(Gravity.CENTER_VERTICAL);
-            header.setPadding(dp(2),dp(8),dp(2),0);
+            header.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,12));
+            header.setPadding(dp(8),dp(6),dp(10),dp(6));
+            TextView chevron=text(folded?"▸":"▾",18);
+            chevron.setTextColor(accent);
+            chevron.setGravity(Gravity.CENTER);
+            header.addView(chevron,new LinearLayout.LayoutParams(dp(22),dp(28)));
             View dot=new View(this);
             dot.setBackground(bg(accent,0,6));
-            header.addView(dot,new LinearLayout.LayoutParams(dp(12),dp(12)));
+            LinearLayout.LayoutParams dotLp=new LinearLayout.LayoutParams(dp(11),dp(11));
+            dotLp.setMargins(dp(4),0,0,0);
+            header.addView(dot,dotLp);
             TextView secTitle=text(scopeTitle(d[0],d[1])+" · "+list.size()+"종목",15);
             secTitle.setTypeface(null,Typeface.BOLD);
+            secTitle.setSingleLine(true);
             LinearLayout.LayoutParams stLp=new LinearLayout.LayoutParams(0,-2,1);
             stLp.setMargins(dp(8),0,dp(6),0);
             header.addView(secTitle,stLp);
-            Double sub=subtotal.get(key);
-            TextView subText=text(sub==null?"—":WonFormat.signed(sub),14);
+            LinearLayout sumCol=new LinearLayout(this);
+            sumCol.setOrientation(LinearLayout.VERTICAL);
+            sumCol.setGravity(Gravity.RIGHT);
+            TextView sumKey=text("보유 손익 합계",10);
+            sumKey.setTextColor(PremiumUi.MUTED);
+            sumKey.setGravity(Gravity.RIGHT);
+            sumCol.addView(sumKey);
+            TextView subText=text(sub==null?"—":WonFormat.signed(sub),15);
             subText.setTypeface(null,Typeface.BOLD);
+            subText.setGravity(Gravity.RIGHT);
             if(sub!=null)paintProfit(subText,sub);
-            header.addView(subText);
-            content.addView(header);
+            sumCol.addView(subText);
+            header.addView(sumCol);
+            header.setContentDescription(scopeTitle(d[0],d[1])+" "+list.size()+"종목 · "+
+                (folded?"접힘":"펼침")+" · 탭하면 "+(folded?"펼치기":"접기"));
+            header.setOnClickListener(v->setGroupsCollapsed(java.util.Collections.singletonList(foldKey),!folded));
+            PremiumUi.tapMotion(header);
+            LinearLayout.LayoutParams headerLp=new LinearLayout.LayoutParams(-1,-2);
+            headerLp.setMargins(0,dp(8),0,0);
+            content.addView(header,headerLp);
             SignedAmountBarView subBar=new SignedAmountBarView(this);
             subBar.set(sub==null?Double.NaN:sub,maxSub);
-            LinearLayout.LayoutParams sbLp=new LinearLayout.LayoutParams(-1,dp(8));
-            sbLp.setMargins(0,dp(4),0,dp(6));
+            LinearLayout.LayoutParams sbLp=new LinearLayout.LayoutParams(-1,dp(10));
+            sbLp.setMargins(dp(6),dp(5),dp(6),dp(6));
             content.addView(subBar,sbLp);
+            if(folded)continue;
             for(int idx:list){
                 IntegratedHolding holding=all.get(idx);
                 JSONObject p=holding.row;
@@ -3669,9 +3944,9 @@ public final class UnifiedVisualActivity extends Activity {
         autoSingle(totalValue,19,37);paintProfit(totalValue,selected.total);
         pnl.addView(totalValue,new LinearLayout.LayoutParams(-1,dp(53)));
         LinearLayout split=new LinearLayout(this);split.setOrientation(LinearLayout.HORIZONTAL);
-        addLargeMoneyMetric(split,"●","실현",selected.realized,Color.rgb(79,210,247));
-        addLargeMoneyMetric(split,"◇","평가",selected.unrealized,Color.rgb(184,158,255));
-        pnl.addView(split,new LinearLayout.LayoutParams(-1,dp(55)));
+        addLargeMoneyMetric(split,"●","확정 손익","매도 완료 · 금액 확정",selected.realized,Color.rgb(176,190,208));
+        addLargeMoneyMetric(split,"○","보유 손익","보유 중 · 시세 따라 변동",selected.unrealized,Color.rgb(184,190,208));
+        pnl.addView(split,new LinearLayout.LayoutParams(-1,dp(76)));
         pnl.setContentDescription(strategyName(market,strategy)+" 누적손익 "+
             money(selected.total)+", 실현손익 "+money(selected.realized)+
             ", 평가손익 "+money(selected.unrealized));
@@ -3729,8 +4004,8 @@ public final class UnifiedVisualActivity extends Activity {
 
         // Realized vs evaluated P&L as bars, then the realized-P&L trend line right below.
         java.util.ArrayList<HorizontalStrategyBarsView.Item> splitItems=new java.util.ArrayList<>();
-        splitItems.add(new HorizontalStrategyBarsView.Item("실현",selected.realized));
-        splitItems.add(new HorizontalStrategyBarsView.Item("평가",selected.unrealized));
+        splitItems.add(new HorizontalStrategyBarsView.Item("확정",selected.realized));
+        splitItems.add(new HorizontalStrategyBarsView.Item("보유",selected.unrealized));
         LinearLayout splitCard=card();
         splitCard.setPadding(dp(6),dp(6),dp(6),dp(6));
         HorizontalStrategyBarsView splitView=new HorizontalStrategyBarsView(this);
@@ -3862,21 +4137,30 @@ public final class UnifiedVisualActivity extends Activity {
 
     private void addLargeMoneyMetric(LinearLayout row,String glyph,String label,
                                       double amount,int accent){
+        addLargeMoneyMetric(row,glyph,label,"",amount,accent);
+    }
+    /** Titled money figure; the caption says in words what kind of profit this is (confirmed or still open). */
+    private void addLargeMoneyMetric(LinearLayout row,String glyph,String label,String caption,
+                                      double amount,int accent){
         LinearLayout tile=new LinearLayout(this);tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(9),dp(5),dp(7),dp(3));
         tile.setBackground(bg(PremiumUi.SURFACE_HIGH,PremiumUi.LINE,11));
         LinearLayout labelRow=new LinearLayout(this);labelRow.setOrientation(LinearLayout.HORIZONTAL);
         TextView icon=text(glyph,12);icon.setTextColor(accent);
         labelRow.addView(icon,new LinearLayout.LayoutParams(dp(19),dp(17)));
-        TextView caption=text(label,12);caption.setTextColor(PremiumUi.MUTED);
-        labelRow.addView(caption,new LinearLayout.LayoutParams(-1,dp(17)));
+        TextView cap=text(label,12);cap.setTextColor(PremiumUi.TEXT);cap.setTypeface(null,Typeface.BOLD);
+        labelRow.addView(cap,new LinearLayout.LayoutParams(-1,dp(17)));
         tile.addView(labelRow);
         TextView value=text(WonFormat.signed(amount),21);
         value.setTypeface(null,Typeface.BOLD);autoSingle(value,13,21);
         paintProfit(value,amount);
         tile.addView(value,new LinearLayout.LayoutParams(-1,dp(30)));
-        tile.setContentDescription(label+"손익 "+money(amount));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(55),1);
+        if(!caption.isEmpty()){
+            TextView note=text(caption,11);note.setTextColor(PremiumUi.MUTED);note.setSingleLine(true);
+            tile.addView(note,new LinearLayout.LayoutParams(-1,dp(16)));
+        }
+        tile.setContentDescription(label+" "+money(amount)+(caption.isEmpty()?"":" · "+caption));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);
         if(row.getChildCount()>0)lp.setMargins(dp(6),0,0,0);
         row.addView(tile,lp);
     }

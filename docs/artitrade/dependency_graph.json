@@ -1475,6 +1475,28 @@
       "tests": [
         "test_v0230_ws_book_coalesce.py"
       ]
+    },
+    {
+      "id": "UI_DASHBOARD_CARDS_V0240",
+      "kind": "java-ui",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/IntegratedVisualViews.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ArtitradeVisualViews.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ChartStyle.java"
+      ],
+      "depends_on": [
+        "POSITION_VIEW_V0200"
+      ],
+      "issues": [
+        138
+      ],
+      "contract": "Display only. PnlSparklineView: >=0 green, <0 red along one curve (clip at the zero line). PnlSplitView shows 확정(realized) vs 보유(unrealized) on a shared scale. Dashboard markets (key home/<market>) and holdings strategies (key pos/<market>/<strategy>) fold; state in artitrade_ui_navigation_v1.collapsed_groups_v1; the profit bars are rendered before the fold decision. buildHoldingCard: result row, PriceLadderView(stop,entry,target,current), panels 청산 기준 / 투입 / 시점. Values come from existing position fields (stop_loss_price/pct, first_profit_target, buy_amount, qty, entry time).",
+      "tests": [
+        "test_v0240_ui_dashboard_cards.py",
+        "test_ui_redesign_v0160.py",
+        "test_v0200_position_view_and_basis.py"
+      ]
     }
   ],
   "audit_scope": {
