@@ -372,4 +372,4 @@ Based on 0.2.0 (versionCode 154 for 0.2.1).
 2. `UnifiedVisualActivity.tradeGroupKey` accepts `symbol` as the code fallback (uid → position_id+market+source+frame+code → single row).
 3. Drawer state (`expandedBuyReasons` for "매수 근거", `expandedTradeGroups`, `expandedTradeEvidenceKeys`) is held in activity sets, not in views, and is not cleared by the 3.5 s refresh, memory trim or a size cap. No timer closes a drawer.
 
-Status: SOURCE_FIXED, local regression passed; CI and device not verified.
+Status: CI_VERIFIED (run 44863707282, source 43968fc, APK sha256 fc8a4685…f094a6); device not verified.

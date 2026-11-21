@@ -1651,7 +1651,7 @@
       "root": "DISPLAY_WINDOW_DROPPED_OLD_BUY_ROWS",
       "status": "SOURCE_FIXED",
       "fix_version": "0.2.1",
-      "ci": "PENDING",
+      "ci": "PASSED",
       "device": "UNVERIFIED",
       "nodes": [
         "UI_EXEC_WINDOW_V0210"
@@ -1671,7 +1671,7 @@
       "root": "UI_STATE_NOT_PERSISTED",
       "status": "SOURCE_FIXED",
       "fix_version": "0.2.1",
-      "ci": "PENDING",
+      "ci": "PASSED",
       "device": "UNVERIFIED",
       "nodes": [
         "UI_EXEC_WINDOW_V0210"
@@ -2045,8 +2045,11 @@
     "version": "0.2.1",
     "versionCode": 154,
     "base": "0.2.0",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.2"
+    "next_version": "0.2.2",
+    "source_commit": "43968fcf3ae4603006bc6a9c65683d66c6996f8c",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44863707282",
+    "apk_sha256": "fc8a4685b212d54442d40e7eeed5bfb6d91dcfc7cb081bb76f6a16cf20f094a6"
   }
 }
