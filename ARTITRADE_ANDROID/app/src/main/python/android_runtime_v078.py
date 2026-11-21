@@ -761,6 +761,17 @@ def _coin_research(root,which):
     return _research_record(items,candidates)
 
 
+def _position_facts(kind,positions,db_path):
+    """Attach first profit target / nearest stop-loss to each holding (display only, fail-soft)."""
+    try:
+        import position_view_v0200 as view
+        if kind=='ma':view.enrich_ma(positions,db_path)
+        elif kind=='close':view.enrich_close(positions)
+        else:view.enrich_reference(positions,db_path)
+    except Exception:
+        pass
+
+
 def _close_full(self):
     db=Path(self.root)/'stock'/'close'/'AT_CLOSE_PAPER.sqlite3'
     wallets=_core._db_rows(db,"SELECT * FROM wallets")
@@ -774,6 +785,7 @@ def _close_full(self):
     buy_records=attach_buy_evidence(positions,executions,original_signals,
                                    market='stock',strategy='close')
     queue_phone_buy_evidence(self.root,buy_records)
+    _position_facts('close',positions,db)
     day=_core.datetime.now(_core.timezone(_core.timedelta(hours=9))).date().isoformat()
     pending=_core._db_rows(db, """SELECT s.id AS signal_id,s.ts AS ref_ts,s.ts AS at,s.strategy,s.code,s.name,
         s.decision,s.rank_no,s.trading_value_krw,s.price,s.feature_json AS reason
@@ -1073,6 +1085,7 @@ def _stock_ma_full(self):
     buy_records=attach_buy_evidence(ma_positions,full_exec,ma_candidates,
                                     market='stock',strategy='ma')
     queue_phone_buy_evidence(self.root,buy_records)
+    _position_facts('ma',ma_positions,db)
     out=dict(snap)
     out['executions']=full_exec
     out['performance_by_frame']=perf
@@ -1262,6 +1275,7 @@ def _coin_full(ledger):
     buy_records=attach_buy_evidence(positions,executions,coin_candidates,
                                    market='coin',strategy=source_variant)
     queue_phone_buy_evidence(Path(ledger.path).parents[2],buy_records)
+    _position_facts('ma' if source_variant=='ma' else 'reference',positions,ledger.path)
     realized=sum(float(x.get('realized_pnl') or 0) for x in accounts)
     holding=sum(float(x.get('unrealized_pnl') or 0) for x in accounts)
     win_rate=_closed_position_win_rate(all_positions,executions)
@@ -2130,6 +2144,7 @@ def _stock_at_ledger_v19(self):
         buy_records=attach_buy_evidence(positions,read_at_open_buy_fills(stock_db),
                         source_signals,market='stock',strategy='at',linked_ids=link_map)
         queue_phone_buy_evidence(self.root,buy_records)
+        _position_facts('reference',positions,stock_db)
         # Android Chaquopy may not package IANA tzdata. KRX uses KST +09:00.
         now=datetime.now(timezone(timedelta(hours=9)))
         for position in positions:

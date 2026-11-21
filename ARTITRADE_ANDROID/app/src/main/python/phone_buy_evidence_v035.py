@@ -121,6 +121,11 @@ def attach_buy_evidence(positions,executions,candidates=(),*,market,strategy,
             if len(hits)==1:
                 candidate=hits[0]
         original_signal=_candidate_reason(candidate) if candidate else ""
+        try:
+            from position_view_v0200 import attach_basis
+            attach_basis(market,strategy,position,first,candidate)
+        except Exception:
+            pass
         # Never replace a written reason by a later BUY, selection change or
         # a different PC-imported position with the same symbol.
         if not _value(position,"buy_reason"):

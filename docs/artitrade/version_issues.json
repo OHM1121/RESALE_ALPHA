@@ -1590,7 +1590,7 @@
       "root": "OWNER_DECISION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.9",
-      "ci": "PENDING",
+      "ci": "PASSED_RELEASE_0.1.9",
       "device": "UNVERIFIED",
       "nodes": [
         "NL1120_LOOKBACK_STOP_V0120"
@@ -1599,6 +1599,47 @@
         "test_nl1120_2_lookback_stop_and_first_close.py"
       ],
       "notes": "Open positions re-fixed once from the full window. Stock Trend uses the same code, not seen in an export."
+    },
+    {
+      "id": "SZ-0200-01",
+      "issue": 132,
+      "found": "owner request 2026-11-21",
+      "category": "USER_POLICY_DECISION",
+      "title": "Market score <= -10 halves the per-symbol buy limit for MA and MarketTrend (stock+coin)",
+      "evidence": "owner examples: 200k->100k (10 slots), 400k->200k (5 slots); restores when score improves",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.0",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "MARKET_SCORE_SIZE_V0200"
+      ],
+      "tests": [
+        "test_v0200_market_score_half_limit.py"
+      ],
+      "notes": "Does not stop buys (2026-11-20 rule kept). Stock MA sizing is inside the vendor engine and is clamped through the shared order book during the MA tick only."
+    },
+    {
+      "id": "UI-0200-02",
+      "issue": 133,
+      "found": "owner request 2026-11-21",
+      "category": "UX_PRESENTATION",
+      "title": "Preload shows 0% then opens; generic buy basis; no stop-loss / first profit target on holdings",
+      "evidence": "bar driven only by the stock per-symbol counter; positionBuyReason generic ledger wording; Trend payload dropped",
+      "root": "PRESENTATION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.0",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "POSITION_VIEW_V0200"
+      ],
+      "tests": [
+        "test_v0200_position_view_and_basis.py",
+        "test_v0200_preload_progress.py"
+      ],
+      "notes": "GMO stop not shown (rule unverified). Display only; no order, stop or target changed."
     }
   ],
   "known_normal": [
@@ -1859,19 +1900,12 @@
     "apk_sha256": "de312a2fb76ea67201863a9548ecacc3a365298d6629fd54afe92b41c344a6ba"
   },
   "candidate_020": {
-    "version": "0.0.20",
-    "versionCode": 142,
-    "base": "0.0.18 (2f3b85d)",
-    "status": "DELIVERED_CI_VERIFIED",
-    "signer_sha256": "37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6",
+    "version": "0.2.0",
+    "versionCode": 153,
+    "base": "0.1.9",
+    "status": "SOURCE_FIXED_CI_PENDING",
     "device_verified": false,
-    "source_commit": "e24c1fb850cb2601e59f1149173af37549e5a827",
-    "apk_sha256": "94ded9419d57908153b0935acc96db0da0f61dc1bfaab28333f4aba929620d0f",
-    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44716291848",
-    "ci_artifact": "ARTITRADE_0_0_20_SIGNED_APK",
-    "build_history": "run 3 failed at lintVital (network_security_config.xml includeSubdomains, exposed by removing debuggable, #112) -> fixed in e24c1fb; run 4 built, signed (original signer) and verified",
-    "release_publish": "GitHub release step returned HTTP 403 (token); APK handed to the owner from the workflow artifact",
-    "next_version": "0.1.0"
+    "next_version": "0.2.1"
   },
   "candidate_010": {
     "version": "0.1.0",
@@ -1961,8 +1995,10 @@
     "version": "0.1.9",
     "versionCode": 152,
     "base": "0.1.8",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.0"
+    "next_version": "0.2.0",
+    "source_commit": "16baa079c68a5fe59e61a14abda56ecf8954d6a9",
+    "apk_sha256": "911aa933bfdd2fc79dcd8aba3f18d0125564fcefd014ec60211c1479a7d3b8fc"
   }
 }

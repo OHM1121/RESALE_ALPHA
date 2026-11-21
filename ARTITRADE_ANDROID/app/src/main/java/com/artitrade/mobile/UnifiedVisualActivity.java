@@ -159,6 +159,10 @@ public final class UnifiedVisualActivity extends Activity {
     private int startupStockLoaded=0;
     private int startupStockTotal=0;
     private long startupStockFirstProgressAtMs=0L;
+    private int startupDisplayPercent=0;
+    private int startupUnitsDone=0,startupUnitsTotal=0;
+    private long startupRateAtMs=0L;
+    private int startupRateDone=-1;
     private int startupStockFirstProgressCount=0;
     private String startupMissingCause="";
     private String market="stock";
@@ -420,14 +424,10 @@ public final class UnifiedVisualActivity extends Activity {
                         state.getInt("v017_stock_loading_done",0)));
                     startupStockFirstProgressAtMs=android.os.SystemClock.elapsedRealtime();
                     startupStockFirstProgressCount=startupStockLoaded;
-                    if(startupProgress!=null)startupProgress.setProgress(
-                        startupStockTotal>0 ? 100*startupStockLoaded/startupStockTotal : 0);
-                    if(startupPercent!=null && startupStockTotal>0)
-                        startupPercent.setText((100*startupStockLoaded/startupStockTotal)+
-                            "% · "+startupStockLoaded+" / "+startupStockTotal+"종목");
-                    if(startupStage!=null)startupStage.setText(
-                        state.getString("v089_preload_stage",
-                            "원장 · 전략별 시세 사전 준비 중"));
+                    startupDisplayPercent=Math.max(0,state.getInt("v089_preload_pct",0));
+                    renderMeasuredStartupProgress(state.getInt("v0200_units_done",0),
+                        state.getInt("v0200_units_total",0),
+                        state.getString("v089_preload_stage",""));
                 }
                 // Even if the local-hub request stalls, never trap the user in
                 // the full-screen boot view waiting for an I/O worker.
@@ -566,6 +566,8 @@ public final class UnifiedVisualActivity extends Activity {
                 "ARTITRADE_VERIFIED_PRELOAD_AUDIT_V016".equals(
                     audit.optString("schema",""))&&
                 audit.optInt("work_units_total",0)>0;
+            int measuredDone=0,measuredTotal=0;
+            StringBuilder measuredDetail=new StringBuilder();
             if(audited){
                 int units=audit.optInt("work_units_done",0);
                 int total=audit.optInt("work_units_total",0);
@@ -582,10 +584,25 @@ public final class UnifiedVisualActivity extends Activity {
                 updateVerifiedStartupProgress(audit.optInt("percent",0),
                     verified,units,total,firstMissing);
                 updateOriginalStockLoadingCounter(all.optJSONObject("stock_feed"));
+                measuredDone+=units;measuredTotal+=total;
+                measuredDetail.append(verified);
             }else{
                 startupMissingCause="원본 사전점검 결과 수신 대기";
                 updateStartupProgress(progress,stage);
                 updateOriginalStockLoadingCounter(all.optJSONObject("stock_feed"));
+            }
+            if(startupStockTotal>0){
+                measuredDone+=startupStockLoaded;measuredTotal+=startupStockTotal;
+                if(measuredDetail.length()>0)measuredDetail.append("\n");
+                measuredDetail.append("주식 로딩 ").append(startupStockLoaded)
+                    .append(" / ").append(startupStockTotal).append("종목");
+            }
+            if(measuredTotal>0){
+                measuredTotal+=1;
+                if(uiReady)measuredDone+=1;
+                renderMeasuredStartupProgress(measuredDone,measuredTotal,measuredDetail.toString());
+            }else if(engine){
+                renderMeasuredStartupProgress(0,0,stage);
             }
             if(engine&&uiReady&&stockReady&&coinReady){
                 // Preserve the original verified feed/ledger checkpoint for
@@ -776,9 +793,10 @@ public final class UnifiedVisualActivity extends Activity {
                 startupProgress==null?0:startupProgress.getProgress());
             state.putInt("v017_stock_loading_done",startupStockLoaded);
             state.putInt("v017_stock_loading_total",startupStockTotal);
+            state.putInt("v0200_units_done",startupUnitsDone);
+            state.putInt("v0200_units_total",startupUnitsTotal);
             state.putString("v089_preload_stage",
-                startupStage==null?"원장 · 전략별 시세 사전 준비 중":
-                startupStage.getText().toString());
+                startupStage==null?"":startupStage.getText().toString());
         }
         state.putString("market",market);
         state.putString("strategy",strategy);
@@ -913,29 +931,78 @@ public final class UnifiedVisualActivity extends Activity {
         p.setOrientation(LinearLayout.VERTICAL);p.setGravity(Gravity.CENTER);
         p.setPadding(dp(32),dp(24),dp(32),dp(24));
         p.setBackgroundColor(PremiumUi.BG);
-        TextView brand=text("ARTITRADE",28);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.12f);p.addView(brand);
-        TextView sub=text("S21+ PHONE MAIN · NATIVE SAFEBOOT",12);sub.setTextColor(Color.rgb(139,164,194));sub.setPadding(0,dp(8),0,dp(18));p.addView(sub);
+        TextView brand=text("ARTITRADE",28);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.12f);
+        brand.setPadding(0,0,0,dp(22));p.addView(brand);
         startupProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
         startupProgress.setIndeterminate(false);startupProgress.setMax(100);startupProgress.setProgress(0);
-        p.addView(startupProgress,new LinearLayout.LayoutParams(dp(Math.min(320,Math.max(180,getResources().getConfiguration().screenWidthDp-76))),dp(10)));
-        startupPercent=text("0% · 종목별 로딩 실적 확인 중",18);
+        startupProgress.setProgressDrawable(startupBarDrawable());
+        p.addView(startupProgress,new LinearLayout.LayoutParams(dp(Math.min(320,Math.max(180,getResources().getConfiguration().screenWidthDp-76))),dp(12)));
+        startupPercent=text("0% · 작업량 확인 중",18);
         startupPercent.setTextColor(Color.rgb(178,218,255));
-        startupPercent.setPadding(0,dp(11),0,0);p.addView(startupPercent);
-        startupStage=text("원장 · 전략별 요약 · 화면 자료를 준비 중",12);
-        startupStage.setTextColor(Color.rgb(116,143,178));
-        startupStage.setPadding(0,dp(14),0,0);p.addView(startupStage);
-        startupChecks=text("확정봉 연속성 · 시세 · 실시간 매도호가 · 원장 검증",12);
-        startupChecks.setTextColor(Color.rgb(135,160,188));
-        startupChecks.setPadding(0,dp(10),0,0);p.addView(startupChecks);
-        startupEta=text("완료예상: 수신속도 확인 중",12);
+        startupPercent.setPadding(0,dp(12),0,0);p.addView(startupPercent);
+        startupStage=text("",12);
+        startupStage.setTextColor(Color.rgb(135,160,188));
+        startupStage.setGravity(Gravity.CENTER);
+        startupStage.setPadding(0,dp(10),0,0);p.addView(startupStage);
+        // The remaining time appears only once a real processing rate has been measured.
+        startupEta=text("",12);
         startupEta.setTextColor(Color.rgb(215,195,140));
-        startupEta.setPadding(0,dp(10),0,0);p.addView(startupEta);
+        startupEta.setPadding(0,dp(8),0,0);startupEta.setVisibility(View.GONE);p.addView(startupEta);
+        startupChecks=null;
         root.addView(p,new FrameLayout.LayoutParams(-1,-1));
     }
 
-    // Stock progress must come from completed, individual symbols in the native
-    // feed; never turn volatile feed-health check totals into a stock percentage.
-    // A reconnect or a new scan stage cannot roll this screen backward.
+    /** Rounded dark track + gradient fill for the preparation bar. */
+    private android.graphics.drawable.Drawable startupBarDrawable(){
+        GradientDrawable track=new GradientDrawable();
+        track.setColor(Color.rgb(26,30,38));track.setCornerRadius(dp(6));
+        GradientDrawable fill=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+            new int[]{Color.rgb(74,134,235),ChartStyle.UP});
+        fill.setCornerRadius(dp(6));
+        android.graphics.drawable.ClipDrawable clip=new android.graphics.drawable.ClipDrawable(
+            fill,Gravity.LEFT,android.graphics.drawable.ClipDrawable.HORIZONTAL);
+        android.graphics.drawable.LayerDrawable layers=new android.graphics.drawable.LayerDrawable(
+            new android.graphics.drawable.Drawable[]{track,clip});
+        layers.setId(0,android.R.id.background);
+        layers.setId(1,android.R.id.progress);
+        return layers;
+    }
+
+    /**
+     * ONE progress for ALL measured start-up work: official candle checks and gates, the stock loading
+     * counter and the screen data. Every number is a real count reported by the original workers; the
+     * percentage is done/total of those counts. A denominator that grows while more work is discovered
+     * never moves the bar backwards, and 100% is only shown by the real completion gate.
+     */
+    private void renderMeasuredStartupProgress(int done,int total,String detail){
+        if(preloadScreenReady)return;
+        startupUnitsDone=Math.max(0,done);startupUnitsTotal=Math.max(0,total);
+        int percent=total>0?(int)Math.min(99L,(100L*Math.min(done,total))/total):0;
+        startupDisplayPercent=Math.max(startupDisplayPercent,percent);
+        if(startupProgress!=null){
+            if(Build.VERSION.SDK_INT>=24)startupProgress.setProgress(startupDisplayPercent,true);
+            else startupProgress.setProgress(startupDisplayPercent);
+        }
+        if(startupPercent!=null)startupPercent.setText(total>0
+            ?startupDisplayPercent+"% · "+done+" / "+total+" 작업":"0% · 작업량 확인 중");
+        if(startupStage!=null)startupStage.setText(detail==null?"":detail);
+        long nowMs=android.os.SystemClock.elapsedRealtime();
+        if(startupRateDone<0||done<startupRateDone){startupRateDone=done;startupRateAtMs=nowMs;}
+        int gain=done-startupRateDone;
+        long elapsed=nowMs-startupRateAtMs;
+        if(startupEta!=null){
+            if(gain>=2&&elapsed>=1500L&&total>done){
+                long seconds=(long)Math.ceil((total-done)*elapsed/(1000.0*gain));
+                if(seconds>0&&seconds<86400){
+                    startupEta.setText("남은 시간 약 "+String.format(Locale.KOREA,"%02d:%02d",seconds/60,seconds%60));
+                    startupEta.setVisibility(View.VISIBLE);
+                    return;
+                }
+            }
+            startupEta.setVisibility(View.GONE);
+        }
+    }
+
     private void updateOriginalStockLoadingCounter(JSONObject feed){
         if(preloadScreenReady||feed==null)return;
         int observedTotal=feed.optInt("preload_stock_total",0);
@@ -949,25 +1016,9 @@ public final class UnifiedVisualActivity extends Activity {
             startupStockFirstProgressAtMs=android.os.SystemClock.elapsedRealtime();
             startupStockFirstProgressCount=observedDone;
         }
+        // The count itself is only recorded here; the bar/percent/ETA are drawn once, from ALL measured
+        // work, by renderMeasuredStartupProgress.
         startupStockLoaded=Math.max(startupStockLoaded,observedDone);
-        int percent=(int)((100L*startupStockLoaded)/startupStockTotal);
-        if(startupProgress!=null)startupProgress.setProgress(percent);
-        if(startupPercent!=null)startupPercent.setText(
-            percent+"% · "+startupStockLoaded+" / "+startupStockTotal+"종목");
-        if(startupStage!=null)startupStage.setText(
-            "주식 원본 종목별 로딩 "+startupStockLoaded+"/"+startupStockTotal);
-        long elapsed=android.os.SystemClock.elapsedRealtime()-startupStockFirstProgressAtMs;
-        int gain=startupStockLoaded-startupStockFirstProgressCount;
-        String eta="실제 로딩 속도 확인 중";
-        if(startupStockLoaded==startupStockTotal)eta="종목 로딩 완료";
-        else if(gain>=2&&elapsed>=1500L){
-            long seconds=(long)Math.ceil((startupStockTotal-startupStockLoaded)
-                *elapsed/(1000.0*gain));
-            if(seconds>0&&seconds<86400)
-                eta="약 "+String.format(Locale.KOREA,"%02d:%02d",seconds/60,seconds%60)
-                    +" · 실제 종목 처리속도 기준";
-        }
-        if(startupEta!=null)startupEta.setText("완료예상: "+eta);
     }
 
     private void updateStartupProgress(int percent,String stage){
@@ -975,9 +1026,7 @@ public final class UnifiedVisualActivity extends Activity {
             if(preloadScreenReady||startupNativeAuditSeen)return;
             // Before native per-symbol counts arrive, do not show guessed 16/38/
             // 60/94 percentages. The native feed owns the completion metric.
-            if(startupStage!=null&&startupStockTotal==0)startupStage.setText(stage);
-            if(startupPercent!=null&&startupStockTotal==0)
-                startupPercent.setText("0% · 원본 종목별 로딩 실적 수신 대기");
+            if(startupUnitsTotal==0&&startupStage!=null)startupStage.setText(stage);
         });
     }
 
@@ -987,12 +1036,7 @@ public final class UnifiedVisualActivity extends Activity {
         startupNativeAuditSeen=true;
         // Dynamic check totals are deliberately NOT a load-progress denominator.
         // Network readiness changes independently of the stock loading counter.
-        if(startupChecks!=null)
-            startupChecks.setText(firstMissing.isEmpty()
-                ?"별도 점검: 공식봉·시세·호가·원장 유효성 확인"
-                :"별도 점검 미완료: "+firstMissing+" · 원본 수신기에서 복구 중");
-        if(startupStockTotal==0&&startupStage!=null)
-            startupStage.setText(detail+" · 종목별 완료 건수 수신 대기");
+        // Measured work is drawn by renderMeasuredStartupProgress; no explanatory footnotes here.
     }
 
     private void finishPreload(boolean engineReady){
@@ -3306,12 +3350,12 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout row2=new LinearLayout(this);
         row2.setPadding(0,dp(4),0,0);
         holdingStat(row2,"매수금액",finite(paid)?WonFormat.won(paid):"—",PremiumUi.TEXT,1f);
-        if("positions".equals("positions")&&withActions)
-            holdingStat(row2,"1차 목표",stockAtFirstTargetDisplay(p,sourceStrategy),PremiumUi.TEXT,1f);
-        holdingStat(row2,"평가손익",finite(pnl)?WonFormat.signed(pnl):"—",tone,1.4f);
+        holdingStat(row2,"1차 수익목표",firstProfitTargetText(p,sourceStrategy),ChartStyle.UP,1.15f);
+        holdingStat(row2,"평가손익",finite(pnl)?WonFormat.signed(pnl):"—",tone,1.2f);
         body.addView(row2);
         LinearLayout row3=new LinearLayout(this);
         row3.setPadding(0,dp(4),0,0);
+        holdingStat(row3,"손절가",stopLossText(p),ChartStyle.DOWN,1.4f);
         holdingStat(row3,"매수 시각",fillTimeOf(p,"positions",sourceStrategy),Color.rgb(168,193,219),1f);
         body.addView(row3);
         bindFastVisiblePrice(p,scopeMarket,nowValue,dot,"","");
@@ -3347,7 +3391,25 @@ public final class UnifiedVisualActivity extends Activity {
             (finite(rate)?" ("+signedPct(rate)+")":""));
         return tile;
     }
+    /** First PROFIT target: the strategy's own saved plan first, then the legacy per-strategy fields. */
+    private String firstProfitTargetText(JSONObject p,String sourceStrategy){
+        double planned=usefulNumber(p,"first_profit_target");
+        if(finite(planned)&&planned>0)return WonFormat.price(planned);
+        return stockAtFirstTargetDisplay(p,sourceStrategy);
+    }
+    /** Nearest stop-loss price with the expected loss rate in brackets, number only. */
+    private String stopLossText(JSONObject p){
+        double price=usefulNumber(p,"stop_loss_price");
+        if(!finite(price)||price<=0)return "미확인";
+        double pct=p.optDouble("stop_loss_pct",Double.NaN);
+        String rate=finite(pct)?String.format(Locale.KOREA,"%.1f%%",pct):"";
+        return WonFormat.price(price)+(rate.isEmpty()?"":" ("+rate+")");
+    }
     private String positionBuyReason(JSONObject r){
+        // A concrete basis (reference-bar time/low/buy price, MA signal bar, MarketTrend RSI/Bollinger
+        // facts) composed from the strategy's own stored facts replaces the generic ledger wording.
+        String basis=r.optString("buy_basis","").trim();
+        if(!basis.isEmpty())return basis;
         String actualReason=tradeReasonOf(r,"매수");
         String recorded=r.optString("buy_reason_source","");
         if(recorded.isEmpty()&&actualReason.equals("원장에 매수 사유가 기록되지 않음"))
@@ -3902,7 +3964,7 @@ public final class UnifiedVisualActivity extends Activity {
                 case "c":
                     double last=positionMark(r);
                     return finite(last)?"현재가 "+WonFormat.price(last):"현재가 조회 중";
-                default:return "1차 목표 "+stockAtFirstTargetDisplay(r,strategy);
+                default:return "1차 수익목표 "+stockAtFirstTargetDisplay(r,strategy);
             }
         }
         if("pending".equals(kind)){
@@ -4726,7 +4788,7 @@ public final class UnifiedVisualActivity extends Activity {
                 fastAmount=tradeMetricTile(figures,quoteLabel,
                     finite(current)&&current>0?WonFormat.price(current):"가격 조회 중",true);
                 tradeMetricTile(figures,"보유수량",finite(qty)?number(qty):"—",false);
-                tradeMetricTile(figures,"1차 목표",stockAtFirstTargetDisplay(r,source),false);
+                tradeMetricTile(figures,"1차 수익목표",stockAtFirstTargetDisplay(r,source),false);
             }else if("pending".equals(kind)){
                 tradeMetricTile(figures,"점수",formatMaybeNumber(r,"score","signal_score"),true);
                 tradeMetricTile(figures,"매수대기",formatMaybePrice(r,"limit_price","entry_price","price"),true);

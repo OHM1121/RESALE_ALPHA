@@ -16,7 +16,8 @@ class StockPreloadAndPositiveScoreRegression(unittest.TestCase):
         self.assertIn("startupStockLoaded=Math.max(startupStockLoaded,observedDone)",src)
         self.assertIn("observedDone>observedTotal",src)
         self.assertIn("startupStockLoaded==startupStockTotal",src)
-        self.assertIn('startupStockLoaded+" / "+startupStockTotal+"종목"',src)
+        self.assertIn('append(startupStockLoaded)',src)       # 0.2.0: counted in the one measured progress
+        self.assertIn('renderMeasuredStartupProgress(',src)
         self.assertNotIn('startupPercent=text("5%',src)
 
     def test_stock_counter_only_from_original_native_symbol_progress(self):

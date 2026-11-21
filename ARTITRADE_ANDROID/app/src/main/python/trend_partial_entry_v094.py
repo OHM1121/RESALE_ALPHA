@@ -69,7 +69,10 @@ def topup_trend(wallet,pos,quote,now):
             account=c.execute('SELECT * FROM accounts WHERE tf=?',
                               (pos.frame,)).fetchone()
             if account is None:return 0
-            per_symbol=int(account['seed'])//max(1,int(account['max_positions']))
+            import market_score_size_v0200 as size
+            per_symbol=size.limit_krw(
+                int(account['seed'])//max(1,int(account['max_positions'])),
+                size.factor(wallet.root,market))
             if not qualified_topup(market,first,ask,spent,per_symbol,False,True,
                                    symbol=symbol,instrument_tick=instrument_tick):
                 return 0

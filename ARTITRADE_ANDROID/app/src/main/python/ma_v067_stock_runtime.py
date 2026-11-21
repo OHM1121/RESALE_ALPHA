@@ -458,6 +458,51 @@ def _exit_policy(self,c,p,bid,now,book,previous):
                     _exit_policy(self,c,current,bid,now,book,previous)
 
 
+_SIZE_CTX=threading.local()
+
+
+def _install_score_size_clamp(book):
+    """Owner rule 2026-11-21 for the vendor's inline stock MA sizing.
+
+    The vendor computes `budget=min(cash, seed//max_positions)` inside on_tick and then asks the shared
+    order book for `available(...)`. While the signed stock market score is <= -10 the quantity it
+    returns is capped to HALF the per-symbol limit - only inside the MA tick call of the current
+    thread (other strategies sharing the same book are never affected).
+    """
+    if getattr(book,'_v0200_size_clamp',False):return
+    original=book.available
+    def available(code,venue,now,limit,desired_qty):
+        proof,why=original(code,venue,now,limit,desired_qty)
+        ctx=getattr(_SIZE_CTX,'ctx',None)
+        if proof is None or ctx is None or str(code)!=ctx[1]:return proof,why
+        try:
+            import market_score_size_v0200 as size
+            service=ctx[0]
+            score,factor=size.evidence(service.market_store.root,'stock')
+            if factor>=1:return proof,why
+            with sqlite3.connect('file:%s?mode=ro'%service.db,uri=True,timeout=2) as ro:
+                ro.row_factory=sqlite3.Row
+                rows=ro.execute("""SELECT a.seed,a.max_positions FROM candidates c
+                    JOIN accounts a ON a.tf=c.tf WHERE c.code=? AND c.status='PENDING'
+                    AND c.limit_price=?""",(str(code),int(limit))).fetchall()
+            limits=[size.limit_krw(int(r['seed'])//max(1,int(r['max_positions'])),factor)
+                    for r in rows if int(r['max_positions'])>0]
+            if not limits:return proof,why
+            from stock_ma_engine import FEE
+            ask=proof[0]
+            cap_qty=int(min(limits)//(ask*(1+FEE)))
+            quantity=min(int(proof[1]),cap_qty)
+            if quantity<1:return None,'MARKET_SCORE_HALF_LIMIT_BELOW_ONE_SHARE'
+            return (ask,quantity)+tuple(proof[2:]),why
+        except (sqlite3.Error,ImportError,AttributeError,TypeError,ValueError,ArithmeticError):
+            return proof,why
+    try:
+        book.available=available
+        book._v0200_size_clamp=True
+    except AttributeError:
+        pass
+
+
 def _topup_partial_stock(self,tick,shared_book):
     """Complete an ACTUALLY underfilled MA BUY, not create a new entry.
 
@@ -515,7 +560,10 @@ def _topup_partial_stock(self,tick,shared_book):
                 wallet=c.execute('SELECT seed,cash,max_positions FROM accounts WHERE tf=?',
                                  (p['tf'],)).fetchone()
                 if wallet is None or int(wallet['max_positions'])<=0:continue
-                per_symbol=int(wallet['seed'])//int(wallet['max_positions'])
+                import market_score_size_v0200 as size
+                per_symbol=size.limit_krw(
+                    int(wallet['seed'])//int(wallet['max_positions']),
+                    size.factor(self.market_store.root,'stock'))
                 if not qualified_topup('stock',first,ask,spent,per_symbol,False,True):
                     continue
                 cash=int(wallet['cash'])
@@ -839,7 +887,12 @@ def install():
         now=dt.datetime.fromisoformat(str(data[6]))
         self._ma_v067_last_trade[str(data[0])]=(data[4],now)
         _expire_old_or_rebounded(self,data,now)
-        result=original_tick(self,data,book)
+        _install_score_size_clamp(book)
+        _SIZE_CTX.ctx=(self,str(data[0]))
+        try:
+            result=original_tick(self,data,book)
+        finally:
+            _SIZE_CTX.ctx=None
         if result:
             with self.lock,native._connect(self.db) as c:
                 _join_new_positions(self,c,str(data[0]))

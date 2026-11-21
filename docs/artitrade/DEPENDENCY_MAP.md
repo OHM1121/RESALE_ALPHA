@@ -356,3 +356,12 @@ Based on 0.1.8 (versionCode 152 for 0.1.9).
 3. Stock MarketTrend shares the same functions; its deep rows come from the verified KRX bar store.
 
 Status: SOURCE_FIXED, local regression passed; CI and device not verified.
+
+
+## 0.2.0 — how the changed parts connect (issue #132)
+Based on 0.1.9 (versionCode 153 for 0.2.0).
+1. `market_score_size_v0200.evidence(root,market)` reads `at_market_score_gate_v107.score_evidence` (signed score, unknown stays None) and returns factor 0.5 when score <= -10. Consumers: coin MA `buy` wrapper in `ma_v067_coin_runtime` (caps `available`), `coin_partial_entry_v094` (MA ledger cap), `market_trend_wallet_v054.buy` + `trend_partial_entry_v094` + `market_trend_preplan_v099` (stock and coin Trend), `ma_v067_stock_runtime` (thread-scoped clamp of `shared_book.available` during the MA tick, and the top-up). Sells, AT, GMO, CW untouched.
+2. `position_view_v0200` is called from `android_runtime_v078._position_facts` (after each `attach_buy_evidence`), from `phone_buy_evidence_v035.attach_buy_evidence` (buy basis) and from the Trend wallet snapshot (saved payload). It only adds view fields `first_profit_target`, `stop_loss_*`, `buy_basis`.
+3. `UnifiedVisualActivity.buildHoldingCard` shows them for the integrated page and every strategy page; `renderMeasuredStartupProgress` draws the single measured preload progress from `work_audit`, the stock loading counter and screen readiness.
+
+Status: SOURCE_FIXED, local regression passed; CI and device not verified.

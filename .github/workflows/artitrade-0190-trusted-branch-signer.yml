@@ -192,7 +192,10 @@ jobs:
             test_history_reset_v0140.py \
             test_candidate_reset_v0150.py \
             test_ui_redesign_v0160.py \
-            test_v0170_pieverse_dust_sells_and_plan_goal.py; do
+            test_v0170_pieverse_dust_sells_and_plan_goal.py \
+            test_v0200_market_score_half_limit.py \
+            test_v0200_position_view_and_basis.py \
+            test_v0200_preload_progress.py; do
             echo "TESTING $pattern"
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
           done

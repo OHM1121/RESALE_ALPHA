@@ -65,6 +65,15 @@ def topup_verified_coin_book(self,book,now):
                 setup=self.settings.snapshot()['frames'][p['tf']]
                 max_symbols=max(1,int(setup['max_positions']))
                 cap=D(int(setup['allocated_krw'])//max_symbols)
+                if self.account_variant=='ma':
+                    # Owner rule 2026-11-21: half the per-symbol limit while market score <= -10.
+                    import market_score_size_v0200 as size
+                    from pathlib import Path
+                    try:
+                        cap=D(size.limit_krw(int(cap),size.factor(
+                            Path(self.path).resolve().parent.parent.parent,'coin')))
+                    except Exception:
+                        pass
                 instrument_tick=(book.get('sr_tick_size') or
                                  self.sr_instrument_ticks.get(symbol))
                 if not qualified_topup('coin',first,ask,spent,cap,

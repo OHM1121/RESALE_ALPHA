@@ -219,7 +219,10 @@ class TrendWalletV054:
                                    (frame,)).fetchone()[0]
                     if int(held)>=int(r['max_positions']):return None,'FRAME_MAX_POSITIONS'
                     if int(r['cash'])<=0:return None,'NO_WALLET_CASH'
-                    budget=min(int(r['cash']),int(r['seed'])//int(r['max_positions']))
+                    import market_score_size_v0200 as size
+                    score_at_buy,size_factor=size.evidence(self.root,market)
+                    budget=min(int(r['cash']),size.limit_krw(
+                        int(r['seed'])//int(r['max_positions']),size_factor))
                     amount=self._price_qty(market,ask,ask_size,budget)
                     if amount is None:return None,'INSUFFICIENT_DEPTH_OR_CASH'
                     price,qty,fee=amount
@@ -256,7 +259,9 @@ class TrendWalletV054:
                     pos=TrendPosition(market,'trend',frame,symbol,at,real_price,real_qty,bar_key)
                     pos.__dict__.update({'entry_mode':'MARKET_TREND','execution_mode':filled['mode'],
                                          'broker_order_id':str(filled.get('order_id') or ''),
-                                         'rsi20_live':rsi20_live,'bar_finalized':False})
+                                         'rsi20_live':rsi20_live,'bar_finalized':False,
+                                         'market_score_at_buy':score_at_buy,
+                                         'buy_size_factor':str(size_factor)})
                     with self._connect(market) as c:
                         c.execute('BEGIN IMMEDIATE')
                         current=int(c.execute('SELECT cash FROM accounts WHERE tf=?',(frame,)).fetchone()[0])
@@ -507,6 +512,19 @@ class TrendWalletV054:
                 p['unrealized_pct']=(float(p['mark'])/float(p['entry'])-1.)*100.
             else:
                 p['valuation_status']='NATIVE_SOURCE_MARK_OR_ENTRY_UNVERIFIED' if holding else 'CLOSED'
+            try:
+                saved=json.loads(p.get('payload') or '{}')
+            except (ValueError,TypeError):
+                saved={}
+            try:
+                from position_view_v0200 import enrich_trend_row,basis_trend
+                enrich_trend_row(p,saved)
+                basis=basis_trend(p,saved)
+                if basis:
+                    p['buy_basis']=basis
+                    p['buy_reason_source']='ORIGINAL_MT54_POSITION_ENTRY'
+            except Exception:
+                pass
             p.pop('payload',None)
         for x in executions:
             x.update({'code':x['symbol'],'market':x['symbol'] if market=='coin' else 'KRX',

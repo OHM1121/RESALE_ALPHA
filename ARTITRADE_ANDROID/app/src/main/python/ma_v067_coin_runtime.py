@@ -646,6 +646,32 @@ def _install_shadow_guard(d_upbit):
     d_upbit.shadow_observe_book=guarded
 
 
+def _buy_size_evidence(self):
+    """(market score or None, size factor) for the coin MA ledger at this BUY."""
+    import market_score_size_v0200 as size
+    try:
+        from pathlib import Path
+        root=Path(self.path).resolve().parent.parent.parent
+        return size.evidence(root,'coin')
+    except Exception:
+        return None,size.FULL
+
+
+def _record_buy_size(c,position_id,score,factor):
+    """Keep the score and size factor that applied at the BUY in the MA sidecar (evidence only)."""
+    try:
+        row=c.execute('SELECT state_json FROM ma_v067_positions WHERE position_id=?',
+                      (position_id,)).fetchone()
+        if row is None:return
+        state=json.loads(row['state_json'] or '{}')
+        state['market_score_at_buy']=score
+        state['buy_size_factor']=str(factor)
+        c.execute('UPDATE ma_v067_positions SET state_json=? WHERE position_id=?',
+                  (json.dumps(state,ensure_ascii=False),position_id))
+    except (sqlite3.Error,TypeError,ValueError,KeyError):
+        pass
+
+
 def _reconcile_resting_plan(c,p,state):
     """Make the PAPER resting plan follow the policy's CURRENT goals (never fills or cancels)."""
     try:
@@ -968,12 +994,28 @@ def install():
         _expire_or_rebound(self,c,book,now)
         refreshed=c.execute('SELECT status FROM orders WHERE id=?',(order['id'],)).fetchone()
         if refreshed is None or refreshed['status']!='PENDING':return 0
+        score_at_buy,size_factor=_buy_size_evidence(self)
+        if size_factor<1:
+            # Owner rule 2026-11-21: market score <= -10 -> half the per-symbol limit (see
+            # market_score_size_v0200). The vendor sizes by min(cash, per-symbol limit, `available`),
+            # so capping `available` (gross value that already leaves room for the fee) enforces it.
+            try:
+                import market_score_size_v0200 as size
+                from d_upbit import FEE_RATE
+                opt=self.settings.snapshot()['frames'][order['tf']]
+                per=int(opt['allocated_krw'])//max(1,int(opt['max_positions']))
+                available=min(Decimal(str(available)),
+                              Decimal(size.limit_krw(per,size_factor))/(Decimal(1)+FEE_RATE))
+            except (KeyError,TypeError,ValueError,ArithmeticError,ImportError):
+                pass
         res=old_buy(self,c,order,book,seen,available)
         if res:
             pos=c.execute("""SELECT * FROM positions
                 WHERE tf=? AND market=? AND ref_at=? ORDER BY id DESC LIMIT 1""",
                 (order['tf'],order['market'],order['ref_at'])).fetchone()
-            if pos:_on_real_buy(self,c,pos)
+            if pos:
+                _on_real_buy(self,c,pos)
+                _record_buy_size(c,pos['id'],score_at_buy,size_factor)
         return res
     ma.MACoinLedger._buy=buy
 
