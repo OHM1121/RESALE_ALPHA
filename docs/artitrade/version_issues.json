@@ -1691,7 +1691,7 @@
       "root": "NO_RECOVERY_WHILE_SCREEN_OPEN_AND_EXIT_REASON_NOT_RECORDED (stop cause UNKNOWN)",
       "status": "SOURCE_FIXED",
       "fix_version": "0.2.2",
-      "ci": "PENDING",
+      "ci": "PASSED",
       "device": "UNVERIFIED",
       "nodes": [
         "ENGINE_WATCHDOG_V0220"
@@ -2094,8 +2094,10 @@
     "version": "0.2.2",
     "versionCode": 155,
     "base": "0.2.1",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.3"
+    "next_version": "0.2.3",
+    "source_commit": "39652299b0d8818de896a005e6d36a854b457d55",
+    "apk_sha256": "f57d60ad9c2e8ec7f10d902fca59a9cb08dd28ac28002a4325d1aac3bdb80292"
   }
 }

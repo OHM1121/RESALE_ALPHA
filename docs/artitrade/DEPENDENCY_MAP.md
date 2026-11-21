@@ -380,4 +380,4 @@ Based on 0.2.1 (versionCode 155 for 0.2.2).
 2. `ProcessHealthV087.recordPreviousSystemExits` records every `ApplicationExitInfo` (named reasons, incl. battery-manager/freezer kills) as `SYSTEM_PROCESS_EXIT_*` in the same store.
 3. Open (#137): held-position order-book silence of 2.5-5 min; the vendor WS supervisor (not editable) only rebuilds after 45 s with no frame at all. The 3 s book-age gate is unchanged.
 
-Status: SOURCE_FIXED; static regression passed; CI and device not verified. The cause of the 22:49 stop is UNKNOWN until an export contains an OS exit reason.
+Status: CI_VERIFIED (source 3965229, APK sha256 f57d60ad…b80292); device not verified. The cause of the 22:49 stop is UNKNOWN until an export contains an OS exit reason.
