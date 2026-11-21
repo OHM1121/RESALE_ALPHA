@@ -1752,7 +1752,7 @@
       "root": "MARKET_TREND_WIN_RATE_NOT_COMPUTED + PRESENTATION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.2.5",
-      "ci": "PENDING",
+      "ci": "PASSED",
       "device": "UNVERIFIED",
       "nodes": [
         "UI_DASHBOARD_CARDS_V0240",
@@ -2169,8 +2169,10 @@
     "version": "0.2.5",
     "versionCode": 158,
     "base": "0.2.4",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.6"
+    "next_version": "0.2.6",
+    "source_commit": "e291988a4fa6a4e33771e9a313d374e1e03bbafb",
+    "apk_sha256": "6095f3c030218fdc5de722261fa262a1ab6c0b47f7e53a08b0a78f555fe822ca"
   }
 }

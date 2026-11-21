@@ -405,4 +405,4 @@ Based on 0.2.4 (versionCode 158 for 0.2.5). Display plus one derived statistic.
 3. `UnifiedVisualActivity` Stats builder, MarketTrend branch: win rate = wins / SELL fills with a known net result (`net_profit`/`net_pnl`...). Before 0.2.5 the branch returned before this code, so stock and coin MarketTrend showed "—".
 4. `position_view_v0200._apply` adds `profit_stage` and `second_profit_target` (AT reference plan, MA state, MarketTrend payload); `buildHoldingCard` shows "2차 수익목표" + "1차 매도 완료" after the first sell.
 
-Status: SOURCE_FIXED; compiled locally against the Android 15 platform jar; static regression passed; CI and device not verified.
+Status: CI_VERIFIED (source e291988, APK sha256 6095f3c0…e822ca); compiled locally against the Android 15 platform jar; device not verified (rendering on the phone unseen).
