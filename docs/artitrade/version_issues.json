@@ -1490,7 +1490,7 @@
       "root": "PRESENTATION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.7",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44772125315_BUILD_PUBLISH_403",
       "device": "UNVERIFIED",
       "nodes": [
         "UI_REDESIGN_V0160"
@@ -1519,6 +1519,66 @@
         "test_nl1120_2_lookback_stop_and_first_close.py"
       ],
       "notes": "Never-asked is now None. The stop is only fixed later (not wrongly sold); a phone has uptime above 60 s so the effect was a one-minute delay in fixing the stop right after a device reboot. No order, ledger or threshold changed."
+    },
+    {
+      "id": "MA-0180-01",
+      "issue": 128,
+      "found": "coin error export 2026-11-21 (app 0.1.7)",
+      "category": "SILENT_FAILURE",
+      "title": "PIEVERSE: 1,557 dust SELL fills and 1,589 rejected real SELLs; PAPER plan not following partial top-up; best-level-only depth without minimum order",
+      "evidence": "positions.qty0 46.948 vs resting order_qty 7.042; 1,565 SELL rows of 0.00000001-0.00000046 coin; 1,589 MA_BOOK_PROCESS_FAIL ValueError NL1118_RESTING_SELL_MISMATCH.",
+      "root": "PLAN_NOT_RESIZED_AND_DUST_LIQUIDITY",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.8",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_MA",
+        "STOCK_MA",
+        "NL1118_PAPER_RESTING_V011"
+      ],
+      "tests": [
+        "test_v0170_pieverse_dust_sells_and_plan_goal.py"
+      ],
+      "notes": "Stock fixed by the same plan contract from static reading only (no stock export). Thresholds, fees, cash and resets unchanged."
+    },
+    {
+      "id": "MA-0180-02",
+      "issue": 129,
+      "found": "coin error export 2026-11-21 (app 0.1.7)",
+      "category": "SILENT_FAILURE",
+      "title": "Shadow research KeyError('high') aborted the real book transaction (4,267 times)",
+      "evidence": "MA_BOOK_PROCESS_FAIL KeyError 'high' origin=observe_book:199; shadow trials with V067 features lack high/low.",
+      "root": "VENDOR_SCHEMA_MISMATCH",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.8",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_MA"
+      ],
+      "tests": [
+        "test_v0170_pieverse_dust_sells_and_plan_goal.py"
+      ],
+      "notes": "Overlay guard only; vendor engine hash unchanged."
+    },
+    {
+      "id": "FD-0180-03",
+      "issue": 130,
+      "found": "coin error export 2026-11-21 (app 0.1.7)",
+      "category": "OPEN_OBSERVATION",
+      "title": "Held-exit book gate blocked 7,245 times (BOOK_STALE median 6 s); MSERVER daily backup endpoint unknown",
+      "evidence": "6,683 BOOK_STALE (min 3.0 s, median 6.0 s), 509 BOOK_STALE_AFTER_TICKER; daily_backup_* unknown_endpoint x2 per market.",
+      "root": "UNKNOWN",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "",
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_FEED"
+      ],
+      "tests": [],
+      "notes": "Safety gate (book age <= 3 s) deliberately not relaxed. Re-export after 0.1.8 to compare."
     }
   ],
   "known_normal": [
@@ -1760,23 +1820,21 @@
     "version": "0.1.7",
     "versionCode": 150,
     "base": "0.1.6",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.1.8"
+    "next_version": "0.1.8",
+    "source_commit": "9fe877c2200d3def70f98696a360c8f16a018712",
+    "apk_sha256": "bec405291cffd25c0390503263e99e0ccf39ecf1809a24bf24cd3975ba4899d8",
+    "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44772125315",
+    "release_publish": "GitHub release 0.1.7 published (tag placed on default branch head; the integration token refused tagging the source commit)."
   },
   "candidate_018": {
-    "versionName": "0.0.18",
-    "versionCode": 140,
-    "package": "com.artitrade.unified.s21dex",
-    "baseline_release": "0.0.17",
-    "baseline_sha": "85b20dc39f247c9d7883c86977af62eab4ac5098",
-    "issue": 107,
-    "pr": 108,
+    "version": "0.1.8",
+    "versionCode": 151,
+    "base": "0.1.7",
+    "status": "SOURCE_FIXED_CI_PENDING",
     "device_verified": false,
-    "original_wallets_protected": true,
-    "original_upbit_single_ws": true,
-    "unverified_phone_sell_latency": true,
-    "comment": "CI may prove synthetic original PAPER SELL only; no genuine broker order; do not describe original user's POD missed TP1 as fixed historical trade."
+    "next_version": "0.1.9"
   },
   "candidate_020": {
     "version": "0.0.20",

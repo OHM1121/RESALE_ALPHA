@@ -336,3 +336,14 @@ Based on 0.1.6 (versionCode 150 for 0.1.7). Presentation only.
 4. `PnlSparklineView` (realized P&L line), `HorizontalStrategyBarsView`, `MetricProgressView` measure text through `ChartStyle.ellipsize` so captions cannot overlap values.
 
 Status: SOURCE_FIXED, local source-level tests passed; CI, overlap/readability and speed on the phone not verified.
+
+
+## 0.1.8 — how the changed parts connect (issues #128 #129, open #130)
+Based on 0.1.7 (versionCode 151 for 0.1.8). Source: coin error export 2026-11-21 (PIEVERSE).
+
+1. `ma_v067_coin_runtime._process_v067_exits` now reads the book's visible bid levels (50% each, best first, <= 15) through `_exit_bid_levels` / `_take_levels`. A target stage only consumes levels at/above its own target price, the fill price is the volume-weighted price, and no order below `MIN_VIRTUAL_ORDER_KRW` is placed unless it completes the stage or empties the position. The vendor `_sell` wallet path and the policy (`ma_v067_policy.up_exit`) are unchanged; the policy is now given the full position quantity and liquidity caps the order afterwards.
+2. `new_legacy_1118_resting.place()` is idempotent AND self-healing: an unfinished plan follows `up_stage_quantities` / `up_targets` (called before every exit in both `ma_v067_coin_runtime` and `ma_v067_stock_runtime`). `confirmed_fill()` can no longer reject a genuine SELL: it grows the plan and writes `nl1118_resting_faults` (same transaction, bounded to 200 rows). A missing SELL receipt still raises.
+3. `d_upbit.shadow_observe_book` is wrapped by `_install_shadow_guard`: V067 shadow trials without `high`/`low` become `FEATURES_INCOMPLETE_NOT_OBSERVED` before the vendor code can raise out of the real book transaction. Research tables only.
+4. Not changed: entry rules, thresholds, fees, cash, resets, vendor engine hash, the 3 s held-exit book freshness gate (open observation #130).
+
+Status: SOURCE_FIXED, replay test against a real SQLite wallet passes (fails on 0.1.7 code); CI and device not verified.

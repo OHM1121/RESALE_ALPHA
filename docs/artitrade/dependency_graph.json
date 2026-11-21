@@ -277,9 +277,13 @@
         95,
         98,
         107,
-        116
+        116,
+        128
       ],
-      "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority."
+      "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority.",
+      "tests": [
+        "test_v0170_pieverse_dust_sells_and_plan_goal.py"
+      ]
     },
     {
       "id": "MA_TICK_QUEUE",
@@ -416,9 +420,13 @@
         94,
         95,
         98,
-        107
+        107,
+        128
       ],
-      "contract": "Missing source high/low rejected; never abort other eligible book work."
+      "contract": "Missing source high/low rejected; never abort other eligible book work. 0.1.8 (#128,#129): V067 exit loop sweeps visible bid levels (50% each) instead of the best level only; a target stage uses only levels at/above its own target; VWAP fill; no order below the minimum order value unless it completes the stage or empties the position. Shadow-research KeyError is quarantined before the vendor call (research state FEATURES_INCOMPLETE_NOT_OBSERVED), vendor engine unchanged.",
+      "tests": [
+        "test_v0170_pieverse_dust_sells_and_plan_goal.py"
+      ]
     },
     {
       "id": "COIN_TREND",
@@ -847,9 +855,13 @@
       ],
       "issues": [
         92,
-        94
+        94,
+        128
       ],
-      "contract": "Two durable 30%/35% PAPER RESTING rows created at verified native BUY (per wallet). SELL allocation requires original native SELL receipt ID/qty/price; repeated receipt ignored. No real broker LIMIT placement or remote receipt; LIVE is PLAN_NOT_SUBMITTED. Protective exits cancel pending PAPER targets; original wallets own cash/shares and the historical ledger remains intact."
+      "contract": "Two durable 30%/35% PAPER RESTING rows created at verified native BUY (per wallet). SELL allocation requires original native SELL receipt ID/qty/price; repeated receipt ignored. No real broker LIMIT placement or remote receipt; LIVE is PLAN_NOT_SUBMITTED. Protective exits cancel pending PAPER targets; original wallets own cash/shares and the historical ledger remains intact. 0.1.8 (#128): an unfinished plan follows the policy's current stage goals/targets (never below filled, never revives cancelled); a genuine SELL is never rejected by the plan - it grows the plan and writes nl1118_resting_faults; missing native receipt still refuses.",
+      "tests": [
+        "test_v0170_pieverse_dust_sells_and_plan_goal.py"
+      ]
     },
     {
       "id": "NL1118_OLD_POLICY_RETIRE_V011",

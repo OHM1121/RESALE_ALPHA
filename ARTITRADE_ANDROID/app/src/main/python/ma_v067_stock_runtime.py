@@ -349,6 +349,16 @@ def _exit_policy(self,c,p,bid,now,book,previous):
         forced='MA_V067_SECOND_FOLLOWUP_BELOW_ENTRY'
     available=int(p['qty'])
     if available<=0:return
+    if kind=='REVERSAL_UP':
+        # A partial top-up BUY changes the initial quantity and target; the PAPER plan must follow
+        # the policy's current goals or every normal-sized SELL would exceed it.
+        try:
+            one,two=policy.up_targets(p['entry'],p['tf'])
+            q1,q2=policy.up_stage_quantities(state,p['qty0'])
+            resting.place(c,int(p['id']),'stock',str(p['code']),str(p['tf']),
+                str(p['entry_at']),p['qty0'],one,two,q1,q2,paper=True)
+        except (ValueError,TypeError,KeyError):
+            pass
     if kind=='REVERSAL_BEAR':
         changed,wanted,reason=policy.bear_exit(
             state,bid,p['entry'],available,p['qty0'],now,forced)
@@ -377,9 +387,13 @@ def _exit_policy(self,c,p,bid,now,book,previous):
     if filled is None:return
     px=filled['price']
     if reason in ('MA_V1118_UP_FIRST_30PCT','MA_V1118_UP_SECOND_35PCT'):
-        resting.confirmed_fill(c,int(p['id']),
-            1 if reason=='MA_V1118_UP_FIRST_30PCT' else 2,
-            int(filled['id']))
+        stage_no=1 if reason=='MA_V1118_UP_FIRST_30PCT' else 2
+        try:
+            resting.confirmed_fill(c,int(p['id']),stage_no,int(filled['id']))
+        except (ValueError,sqlite3.Error) as sidecar:
+            # The wallet SELL is the authority; the plan sidecar must never undo or block it.
+            resting.record_fault(c,int(p['id']),stage_no,
+                'CONFIRMED_FILL_FAILED '+type(sidecar).__name__+': '+str(sidecar))
     else:
         resting.cancel_remaining(c,int(p['id']),reason)
     if kind=='REVERSAL_BEAR':

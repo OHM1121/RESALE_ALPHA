@@ -11,7 +11,8 @@ import math
 import queue
 import threading
 import time
-from decimal import Decimal
+from decimal import Decimal,ROUND_DOWN
+import sqlite3
 import ma_v067_policy as policy
 import new_legacy_1118_resting as resting
 from coin_held_depth_v014 import book_sell_evidence
@@ -600,8 +601,98 @@ def _rev1_coin_closed_bar_state_old(state,position,now):
                      entry_bar_start=state.get('entry_bar_start'))
 
 
-def _process_v067_exits(self,book,now):
+SHADOW_INCOMPLETE_STATE='FEATURES_INCOMPLETE_NOT_OBSERVED'
+
+
+def _quarantine_incomplete_shadow_trials(c,market):
+    """Research-only: stop shadow trials that cannot be simulated from aborting the real book.
+
+    The vendor shadow simulator reads f['high'] / f['low'] of the candidate when a waiting trial
+    would fill. MA V067 candidates carry their own feature schema (no reference high/low), so every
+    such touch raised KeyError('high') (4,267 times in one export) out of process_book and rolled
+    back the whole book transaction. Missing evidence is recorded as its own state instead of
+    inventing a reference high/low; nothing here touches a real wallet.
+    """
+    if not market.startswith('KRW-'):return 0
+    try:
+        rows=c.execute("""SELECT candidate_id,features_json FROM coin_shadow_trials
+            WHERE market=? AND state='WAITING_QUOTE'""",(market,)).fetchall()
+    except sqlite3.Error:
+        return 0
+    moved=0
+    for row in rows:
+        try:
+            features=json.loads(row['features_json'] or '{}')
+        except (TypeError,ValueError,IndexError):
+            features=None
+        if (not isinstance(features,dict) or
+                ('v24_first_fraction' in features and
+                 any(k not in features for k in ('high','low')))):
+            c.execute("""UPDATE coin_shadow_trials SET state=?,updated_at=datetime('now')
+                WHERE candidate_id=? AND state='WAITING_QUOTE'""",
+                (SHADOW_INCOMPLETE_STATE,row['candidate_id']))
+            moved+=1
+    return moved
+
+
+def _install_shadow_guard(d_upbit):
+    original=d_upbit.shadow_observe_book
+    if getattr(original,'_v0170_guard',False):return
+    def guarded(c,book,now,variant='ACCUMULATE'):
+        market=str(book.get('market') or '') if isinstance(book,dict) else ''
+        _quarantine_incomplete_shadow_trials(c,market)
+        return original(c,book,now,variant=variant)
+    guarded._v0170_guard=True
+    d_upbit.shadow_observe_book=guarded
+
+
+def _reconcile_resting_plan(c,p,state):
+    """Make the PAPER resting plan follow the policy's CURRENT goals (never fills or cancels)."""
+    try:
+        one,two=policy.up_targets(p['entry'],p['tf'])
+        q1,q2=policy.up_stage_quantities(state,p['qty0'])
+        resting.place(c,int(p['id']),'coin',str(p['market']),str(p['tf']),
+                      str(p['entry_at']),p['qty0'],one,two,q1,q2,paper=True)
+    except (ValueError,TypeError,KeyError):
+        pass
+
+
+def _exit_bid_levels(self,book,bid,bid_qty):
+    """Visible bid levels, best first, 50% of each size (the vendor's own paper-liquidity rule).
+
+    Falls back to the best level alone when the frame carries no usable depth list.
+    """
     from d_upbit import dec,qty_floor
+    rows=[]
+    try:
+        raw=book.get('bid_levels') or []
+        if isinstance(raw,list):
+            for unit in raw[:15]:
+                price=dec(unit['price']);remain=qty_floor(dec(unit['size'])*Decimal('.5'))
+                if price<=0 or price>bid or remain<=0:continue
+                if rows and price>rows[-1]['price']:continue   # malformed (ascending) depth
+                rows.append({'price':price,'remain':remain})
+    except (TypeError,ValueError,KeyError,ArithmeticError,AttributeError):
+        rows=[]
+    if rows:return rows
+    top=qty_floor(bid_qty*Decimal('.5'))
+    return [{'price':bid,'remain':top}] if top>0 else []
+
+
+def _take_levels(levels,desired):
+    """Consume `desired` from the given levels, best first. Returns (quantity, volume-weighted price)."""
+    from d_upbit import qty_floor
+    needed=qty_floor(desired);used=Decimal(0);gross=Decimal(0)
+    for unit in levels:
+        if needed<=0:break
+        piece=min(needed,unit['remain'])
+        if piece<=0:continue
+        unit['remain']-=piece;needed-=piece;used+=piece;gross+=piece*unit['price']
+    return used,(gross/used if used>0 else Decimal(0))
+
+
+def _process_v067_exits(self,book,now):
+    from d_upbit import dec,qty_floor,MIN_VIRTUAL_ORDER_KRW
     if not isinstance(book,dict):return
     symbol=str(book.get('market') or '')
     trade=_recent_trade(self,symbol,now)
@@ -624,7 +715,7 @@ def _process_v067_exits(self,book,now):
             WHERE p.market=? AND p.status='OPEN' ORDER BY p.id""",
             (symbol,)).fetchall()
         if not rows:return
-        depth=qty_floor(bid_qty*Decimal('.5'))
+        levels=_exit_bid_levels(self,book,bid,bid_qty)
         for item in rows:
             if item['kind']!='REVERSAL_UP':
                 # The workbook removes the former MA bearish scenario.
@@ -633,6 +724,7 @@ def _process_v067_exits(self,book,now):
                 # A single genuine post-reconnect order book may be above
                 # BOTH profit targets; consume at most two confirmed stages.
                 # Protect against a slow SQLite operation aging that book.
+                depth=sum((x['remain'] for x in levels),Decimal(0))
                 if depth<=0:
                     break
                 if time.monotonic()-began>2.5:
@@ -661,6 +753,8 @@ def _process_v067_exits(self,book,now):
                     state['coin_qty_step']='0.00000001'
                     c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
                               (json.dumps(state,ensure_ascii=False),now.isoformat(),p['id']))
+                if p['kind']=='REVERSAL_UP':
+                    _reconcile_resting_plan(c,p,state)
                 closes=_prior_verified_closes(p['tf'],symbol,now)
                 forced=(policy.forced_ma_exit(closes,trade)
                         if trade is not None and p['kind']=='REVERSAL_BEAR'
@@ -677,10 +771,10 @@ def _process_v067_exits(self,book,now):
                         c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
                                   (json.dumps(state,ensure_ascii=False),now.isoformat(),p['id']))
                     updated,want,reason=policy.up_exit(
-                        state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
+                        state,bid,p['entry'],qty,p['qty0'],now,forced)
                 else:
                     updated,want,reason=policy.bear_exit(
-                        state,bid,p['entry'],min(qty,depth),p['qty0'],now,forced)
+                        state,bid,p['entry'],qty,p['qty0'],now,forced)
                 if attempt==1 and reason not in (
                         'MA_V065_SECOND_HALF_REMAINING',
                         'MA_V1118_UP_SECOND_35PCT'):
@@ -688,11 +782,33 @@ def _process_v067_exits(self,book,now):
                 if updated!=state:
                     c.execute('UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?',
                               (json.dumps(updated,ensure_ascii=False),now.isoformat(),p['id']))
-                desired=qty_floor(min(want,qty,depth))
-                if desired<=0 or not reason:break
+                if not reason:break
+                # A profit-target stage may only consume bid levels AT or ABOVE its own target
+                # price; protective full exits may sweep every visible level.
+                limit=Decimal(0)
+                if reason=='MA_V1118_UP_FIRST_30PCT':
+                    limit=policy.up_targets(p['entry'],p['tf'])[0]
+                elif reason=='MA_V1118_UP_SECOND_35PCT':
+                    limit=policy.up_targets(p['entry'],p['tf'])[1]
+                eligible=[x for x in levels if x['price']>=limit and x['remain']>0]
+                available=sum((x['remain'] for x in eligible),Decimal(0))
+                desired=qty_floor(min(want,qty,available))
+                if desired<=0:break
+                trial=[dict(x) for x in eligible]
+                used,avg=_take_levels(trial,desired)
+                if used<=0 or avg<=0:break
+                # Upbit never accepts an order below the minimum order value. The old code sold the
+                # best level's leftover dust (e.g. 0.0000002 coin) on every book frame and wrote
+                # 1,500+ worthless "fills" without ever finishing the stage. Sell less than the
+                # minimum only when it completes the stage or empties the position.
+                if (used*avg<MIN_VIRTUAL_ORDER_KRW and used<want and used<qty):
+                    break
+                _take_levels(eligible,desired)
+                desired=used
+                fill_price=avg.quantize(Decimal('0.00000001'),rounding=ROUND_DOWN)
                 key=('MA_V067:'+symbol+':'+str(p['id'])+':'+
                      reason+':'+str(int(book['timestamp'])))
-                if not self._sell(c,p,desired,bid,now.isoformat(),reason,event_key=key):
+                if not self._sell(c,p,desired,fill_price,now.isoformat(),reason,event_key=key):
                     failed.append(('NATIVE_SELL_REJECTED',
                                    {'position_id':int(p['id']),
                                     'exit_reason':reason,'order_qty':str(desired)}))
@@ -711,9 +827,13 @@ def _process_v067_exits(self,book,now):
                     break
                 px=executed['price']
                 if reason in ('MA_V1118_UP_FIRST_30PCT','MA_V1118_UP_SECOND_35PCT'):
-                    resting.confirmed_fill(c,int(p['id']),
-                        1 if reason=='MA_V1118_UP_FIRST_30PCT' else 2,
-                        int(executed['id']))
+                    stage_no=1 if reason=='MA_V1118_UP_FIRST_30PCT' else 2
+                    try:
+                        resting.confirmed_fill(c,int(p['id']),stage_no,int(executed['id']))
+                    except (ValueError,sqlite3.Error) as sidecar:
+                        # The wallet SELL above is the authority; the plan sidecar must never undo it.
+                        resting.record_fault(c,int(p['id']),stage_no,
+                            'CONFIRMED_FILL_FAILED '+type(sidecar).__name__+': '+str(sidecar))
                 else:
                     resting.cancel_remaining(c,int(p['id']),reason)
                 if p['kind']=='REVERSAL_BEAR':
@@ -738,7 +858,6 @@ def _process_v067_exits(self,book,now):
                     if verified>existing:
                         c.execute('UPDATE positions SET first_sold_qty=? WHERE id=?',
                                   (str(verified),p['id']))
-                depth=max(Decimal(0),depth-actually)
                 # Only a FULLY booked first stage may immediately arm second.
                 # Otherwise await a new authentic orderbook with enough depth.
                 if not first_reason or confirmed<first_goal:break
@@ -976,4 +1095,5 @@ def install():
     # No second Upbit socket, REST-as-book, lease or LIVE order is created.
     from coin_held_depth_v014 import install as install_ma_held_depth
     install_ma_held_depth(d_upbit)
+    _install_shadow_guard(d_upbit)
     _INSTALLED=True
