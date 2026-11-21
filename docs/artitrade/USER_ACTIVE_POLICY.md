@@ -257,3 +257,11 @@ a new instruction appears different. Cross-check original
 - Explanatory footnote lines (unique trade id, Kiwoom official REST wording, "screen only" captions, recovery captions) are removed from lists and dashboards.
 - Unchanged: price freshness is still shown, as a colour dot (green live exchange tick / amber last or stale / grey unknown); no trading, ledger, order or reset rule is affected.
 - Execution history is displayed one card per unique trade (buy and sell together). Display only; ledger rows are untouched.
+
+## 2026-11-21: MarketTrend lookback stop = LOWEST low (owner decision, issue #131, version 0.1.9)
+- **기존 기준 설정일 / 기존 기준:** 2026-11-20 workbook `11.20(2)`: MarketTrend stop = AVERAGE of the LOWs of the last 200 (30m) / 90 (60m, day) completed bars before the buy; a stop above the buy price is ignored.
+- **새 지시와 충돌하는 부분:** the owner reported NEAR below its stop point but not sold. Cause: the average was above the buy price (MarketTrend buys a rebound after RSI<=30), so the stop was ignored for NEAR, XLM and PENGU (all open Trend positions in the 2026-11-21 export). Owner chose option 2.
+- **예상 결함:** the lowest low is lower than the average, so the stop triggers later than an average stop would; a position can still be ignored if even the lowest low is above its buy price.
+- **Now active (stock and coin MarketTrend):** stop = lowest LOW of the same 200/90/90 completed bars before the buy; completed-bar CLOSE below it sells everything; ignore-if-above-buy-price, -15%, holding expiry and every other rule unchanged. MA stop (lowest low of 50) unchanged. Rule name `NL1120_3_LOOKBACK_MIN_LOW_CLOSE_STOP`.
+- **Open positions:** MarketTrend positions that are still open, not triggered and carry the old average stop are re-fixed once, only from the full window, and bars already closed after the buy are judged against the new stop. This can sell an already-open position at its next sell check (owner request, NEAR).
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.

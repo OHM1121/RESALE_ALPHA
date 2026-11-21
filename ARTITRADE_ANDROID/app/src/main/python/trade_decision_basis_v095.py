@@ -173,7 +173,7 @@ def _trend_entry(pos,fill,frame):
 def _trend_exit(reason,pos,fill,frame):
     tags={
        'MT1118_STOP_15PCT':'NEW LEGACY 11.18 손절: 매수가 대비 -15% 전량',
-       'NL1120_LOOKBACK_LOW_CLOSE_STOP':'NEW LEGACY 11.20(2) 손절: 매수 직전 완성봉 200/90/90개 저가 평균을 손절가로 정하고 완성봉 종가가 아래로 마감, 전량매도',
+       'NL1120_LOOKBACK_LOW_CLOSE_STOP':'NEW LEGACY 11.20(2) 손절: 매수 직전 완성봉 200/90/90개 중 최저 저가를 손절가로 정하고 완성봉 종가가 아래로 마감, 전량매도',
        'MT1118_HOLD_DEADLINE':'NEW LEGACY 11.18 보유기한 100시간/8일/15일 만료 전량',
        'NL1118_AFTER_FIRST_PLUS_1_STOP':'NEW LEGACY 11.18 첫 익절 뒤 매수가+1% 방어선까지 회귀, 잔량 전량',
        'NL1118_AFTER_SECOND_FIRST_FLOOR':'NEW LEGACY 11.18 두번째 익절 뒤 첫 목표가까지 회귀, 잔량 전량',

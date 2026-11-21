@@ -7,8 +7,12 @@ original MA / Trend owner still performs every SELL from a separate fresh bid.
    right after the BUY, take the COMPLETED bars that ended before the purchase
    (the bar just before the buy is the newest one) and fix a stop price once:
      - MA (5m/30m/60m/day): lowest LOW of the last 50 completed bars;
-     - MarketTrend 30m: AVERAGE of the LOWs of the last 200 completed bars;
-       MarketTrend 60m and day: AVERAGE of the LOWs of the last 90 bars.
+     - MarketTrend 30m: lowest LOW of the last 200 completed bars;
+       MarketTrend 60m and day: lowest LOW of the last 90 bars.
+       (0.1.9, owner decision 2026-11-21: this was the AVERAGE of those LOWs in
+       0.1.2-0.1.8. The average sat above the buy price for almost every
+       MarketTrend entry - they buy a rebound after RSI<=30 - so the stop was
+       ignored and never protected the position. The lowest low is used instead.)
    If that price is HIGHER than the buy price the stop is ignored. Afterwards a
    completed bar whose CLOSE is below the stop marks a full exit. Touching,
    intrabar prints and unverified bars never qualify.
@@ -28,6 +32,7 @@ from new_legacy_rev1_low_close import (
     AUTHENTIC_SOURCES, FRAME_SECONDS, _clock, _positive_number)
 
 STOP_RULE="NL1120_2_LOOKBACK_LOW_CLOSE_STOP"
+STOP_RULE_TREND_MIN="NL1120_3_LOOKBACK_MIN_LOW_CLOSE_STOP"
 MA_STOP_BARS=50
 TREND_STOP_BARS={"30m":200,"60m":90,"day":90}
 # Fewer completed bars than this is not a lookback window at all (RSI20 and
@@ -73,8 +78,20 @@ def lookback_stop(kind,frame,bars,entered_at):
     before=[b for b in bars if b[0]<=entered_at][-need:]
     if len(before)<MIN_STOP_BARS:return "HISTORY_SHORT",None,len(before)
     lows=[b[1] for b in before]
-    price=min(lows) if kind=="ma" else fmean(lows)
+    price=min(lows)
     return "CANDIDATE",price,len(before)
+
+
+def stop_rule_for(kind):
+    return STOP_RULE_TREND_MIN if kind=="trend" else STOP_RULE
+
+
+def stop_needs_refix(kind,state):
+    """An OPEN, not yet triggered MarketTrend position still carrying the old average-of-lows stop."""
+    return bool(kind=="trend" and isinstance(state,dict)
+                and state.get("nl1120_stop_confirmed") is not True
+                and state.get("nl1120_stop_status") in ("ACTIVE","IGNORED_ABOVE_ENTRY")
+                and state.get("nl1120_stop_rule")!=STOP_RULE_TREND_MIN)
 
 
 def reconcile(state,kind,frame,original_bars,entry_at,entry_price,now):
@@ -88,8 +105,16 @@ def reconcile(state,kind,frame,original_bars,entry_at,entry_price,now):
         return state
     bars=_completed(original_bars,frame,observed)
     status=state.get("nl1120_stop_status")
-    if status not in ("ACTIVE","IGNORED_ABOVE_ENTRY"):
+    refix=stop_needs_refix(kind,state)
+    if status not in ("ACTIVE","IGNORED_ABOVE_ENTRY") or refix:
         found,price,used=lookback_stop(kind,frame,bars,entered)
+        if refix:
+            # Re-fix once under the new rule, but only from the FULL window: a shorter window would
+            # give a HIGHER minimum than the real one. Until then the old stop stays untouched.
+            if found!="CANDIDATE" or used<(stop_bar_count(kind,frame) or 0):
+                return state
+            # Bars already judged against the old stop are judged again against the new one.
+            state.pop("nl1120_last_bar_end",None)
         if found=="CANDIDATE":
             if price>float(entry):
                 state.update({"nl1120_stop_status":"IGNORED_ABOVE_ENTRY",
@@ -99,7 +124,7 @@ def reconcile(state,kind,frame,original_bars,entry_at,entry_price,now):
                 state.update({"nl1120_stop_status":"ACTIVE",
                               "nl1120_stop_price":repr(float(price)),
                               "nl1120_stop_bars":used})
-            state["nl1120_stop_rule"]=STOP_RULE
+            state["nl1120_stop_rule"]=stop_rule_for(kind)
         else:
             # Evidence only: nothing is invented, the next cycle tries again.
             state["nl1120_stop_status"]=found

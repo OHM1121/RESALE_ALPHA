@@ -438,7 +438,14 @@ def _nl1120_after_closed(self,current,histories,now=None):
     for p in current:
         if not p.__dict__.get("bar_finalized"):continue
         rows=histories.get((p.market,p.symbol,p.frame),[])
-        if getattr(p,"nl1120_stop_status",None) not in ("ACTIVE","IGNORED_ABOVE_ENTRY"):
+        from new_legacy_1120_policy import stop_needs_refix
+        refix=stop_needs_refix("trend",{k:getattr(p,k,None) for k in _NL1120_KEYS})
+        if refix and not p.__dict__.get("nl1120_refix_deep_reset"):
+            # One more deep history read for a position bought under the old average-of-lows rule.
+            p.__dict__["nl1120_refix_deep_reset"]=True
+            p.__dict__["nl1120_deep_tried"]=False
+            p.__dict__["nl1120_deep_at"]=None
+        if refix or getattr(p,"nl1120_stop_status",None) not in ("ACTIVE","IGNORED_ABOVE_ENTRY"):
             # Deeper history is needed only until the stop is fixed, and at most
             # once a minute, so a short history cannot hammer the KRX store.
             # None = never asked. The old 0.0 default silently skipped the very first read

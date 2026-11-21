@@ -60,18 +60,64 @@ class LookbackStopPure(unittest.TestCase):
         self.assertEqual(float(s["nl1120_stop_price"]), 90.0)
         self.assertEqual(s["nl1120_stop_bars"], 50)
 
-    def test_trend_stop_is_the_average_low_with_200_90_90_windows(self):
+    def test_trend_stop_is_the_lowest_low_with_200_90_90_windows(self):
+        # 0.1.9 (owner decision 2026-11-21): lowest LOW of the window, not the average.
         for frame, need in (("30m", 200), ("60m", 90), ("day", 90)):
             bars = history(need + 25, T0, low=100.0)
             for b in bars[-need:-need + 10]:
-                b.update(low=110.0, close=130.0, high=131.0)   # 10 bars inside the window
+                b.update(low=90.0, close=130.0, high=131.0)    # 10 bars inside the window
             for b in bars[:25]:
-                b["low"] = 1.0              # outside the window
-            avg = (100.0 * (need - 10) + 110.0 * 10) / need
+                b["low"] = 1.0              # outside the window: must not count
             s = p20.reconcile({}, "trend", frame, bars, T0, 120.0, self.NOW)
             self.assertEqual(s["nl1120_stop_status"], "ACTIVE", frame)
-            self.assertAlmostEqual(float(s["nl1120_stop_price"]), avg, places=6)
+            self.assertAlmostEqual(float(s["nl1120_stop_price"]), 90.0, places=6)
             self.assertEqual(s["nl1120_stop_bars"], need, frame)
+            self.assertEqual(s["nl1120_stop_rule"], p20.STOP_RULE_TREND_MIN)
+
+    def test_near_replay_average_was_above_entry_but_lowest_low_is_a_real_stop(self):
+        # NEAR 30m export: buy 3955, average of 200 lows 4347 (> buy => old rule IGNORED the stop).
+        bars = history(200, T0, low=4400.0, close=4450.0)
+        bars[10]["low"] = 3300.0; bars[10]["close"] = 3400.0
+        average = sum(b["low"] for b in bars) / 200
+        self.assertGreater(average, 3955.0)
+        s = p20.reconcile({}, "trend", "30m", bars, T0, 3955.0, T0 + dt.timedelta(hours=1))
+        self.assertEqual(s["nl1120_stop_status"], "ACTIVE")
+        self.assertAlmostEqual(float(s["nl1120_stop_price"]), 3300.0)
+        # A completed bar CLOSING below 3300 after the buy sells; a close above does not.
+        after = bars + [bar(T0 + dt.timedelta(seconds=1800), 3290.0, 3310.0)]
+        calm = p20.reconcile(s, "trend", "30m", after, T0, 3955.0, T0 + dt.timedelta(hours=1))
+        self.assertIsNot(calm.get("nl1120_stop_confirmed"), True)
+        after2 = after + [bar(T0 + dt.timedelta(seconds=3600), 3200.0, 3250.0)]
+        hit = p20.reconcile(calm, "trend", "30m", after2, T0, 3955.0, T0 + dt.timedelta(hours=2))
+        self.assertIs(hit["nl1120_stop_confirmed"], True)
+
+    def test_open_position_bought_under_the_average_rule_is_refixed_once_from_the_full_window(self):
+        bars = history(200, T0, low=4400.0, close=4450.0)
+        bars[10]["low"] = 3300.0; bars[10]["close"] = 3400.0
+        old = {"nl1120_stop_status": "IGNORED_ABOVE_ENTRY", "nl1120_stop_price": "4347.1",
+               "nl1120_stop_bars": 199, "nl1120_stop_rule": p20.STOP_RULE}
+        self.assertTrue(p20.stop_needs_refix("trend", old))
+        s = p20.reconcile(old, "trend", "30m", bars, T0, 3955.0, T0 + dt.timedelta(hours=1))
+        self.assertEqual(s["nl1120_stop_status"], "ACTIVE")
+        self.assertAlmostEqual(float(s["nl1120_stop_price"]), 3300.0)
+        self.assertEqual(s["nl1120_stop_rule"], p20.STOP_RULE_TREND_MIN)
+        self.assertFalse(p20.stop_needs_refix("trend", s))       # done once
+        # Bars already closed after the buy are judged against the NEW stop as well.
+        below = bars + [bar(T0 + dt.timedelta(seconds=1800), 3100.0, 3200.0)]
+        t = p20.reconcile(old, "trend", "30m", below, T0, 3955.0, T0 + dt.timedelta(hours=2))
+        self.assertIs(t["nl1120_stop_confirmed"], True)
+
+    def test_refix_waits_for_the_full_window_and_never_touches_ma_or_triggered_positions(self):
+        short = history(120, T0, low=4400.0, close=4450.0)
+        old = {"nl1120_stop_status": "IGNORED_ABOVE_ENTRY", "nl1120_stop_price": "4347.1",
+               "nl1120_stop_bars": 120, "nl1120_stop_rule": p20.STOP_RULE}
+        s = p20.reconcile(old, "trend", "30m", short, T0, 3955.0, T0 + dt.timedelta(hours=1))
+        self.assertEqual(s["nl1120_stop_status"], "IGNORED_ABOVE_ENTRY")   # unchanged, nothing invented
+        self.assertEqual(s["nl1120_stop_rule"], p20.STOP_RULE)
+        self.assertFalse(p20.stop_needs_refix("ma", old))
+        self.assertFalse(p20.stop_needs_refix("trend", dict(old, nl1120_stop_confirmed=True)))
+        ma = p20.reconcile({}, "ma", "30m", history(60, T0, low=100.0), T0, 104.0, self.NOW)
+        self.assertEqual(ma["nl1120_stop_rule"], p20.STOP_RULE)
 
     def test_stop_above_the_buy_price_is_ignored(self):
         bars = history(60, T0, low=100.0, close=101.0)
@@ -419,6 +465,30 @@ class TrendObserverAndExit(unittest.TestCase):
         self.assertTrue(p.nl1120_stop_confirmed)
         self.assertEqual(nl._trend_exit_action(p, 106.0, later),
                          ("NL1120_LOOKBACK_LOW_CLOSE_STOP", 1.0))
+
+    def test_open_position_with_the_old_average_stop_gets_one_deep_read_and_is_refixed(self):
+        p = self.position()
+        # State exactly as the 0.1.2-0.1.8 observer left it: average stop above the buy price, ignored.
+        p.__dict__.update({"nl1120_stop_status": "IGNORED_ABOVE_ENTRY", "nl1120_stop_price": "140.0",
+                           "nl1120_stop_bars": 199, "nl1120_stop_rule": p20.STOP_RULE,
+                           "nl1120_deep_tried": True})
+        shallow = history(100, T0, low=120.0, close=125.0)           # in-memory cache is short
+        full = history(210, T0, low=120.0, close=125.0)
+        full[-50]["low"] = 98.0                                         # real minimum below the buy price
+        co, saved = self.co(shallow)
+        calls = []
+        def deep(self_, pos, r):
+            calls.append(1)
+            return full
+        for minute in range(3):
+            with patch.object(nl, "_nl1120_deep_rows", side_effect=deep):
+                nl._nl1120_after_closed(co, [p], {("coin", "KRW-TEST", "30m"): shallow},
+                                        now=T0 + dt.timedelta(minutes=10 + minute))
+        self.assertEqual(p.nl1120_stop_status, "ACTIVE")
+        self.assertAlmostEqual(float(p.nl1120_stop_price), 98.0)
+        self.assertEqual(p.nl1120_stop_rule, p20.STOP_RULE_TREND_MIN)
+        self.assertEqual(len(calls), 1, "one deep read, then the position is on the new rule")
+        self.assertTrue(saved, "the re-fixed stop must be persisted")
 
     def test_deep_history_is_read_only_until_the_stop_is_fixed(self):
         """A fixed stop must stop the per-cycle deep KRX/Upbit history read."""

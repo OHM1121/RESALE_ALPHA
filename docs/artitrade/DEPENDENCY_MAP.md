@@ -347,3 +347,12 @@ Based on 0.1.7 (versionCode 151 for 0.1.8). Source: coin error export 2026-11-21
 4. Not changed: entry rules, thresholds, fees, cash, resets, vendor engine hash, the 3 s held-exit book freshness gate (open observation #130).
 
 Status: SOURCE_FIXED, replay test against a real SQLite wallet passes (fails on 0.1.7 code); CI and device not verified.
+
+
+## 0.1.9 — how the changed parts connect (issue #131)
+Based on 0.1.8 (versionCode 152 for 0.1.9).
+1. `new_legacy_1120_policy.lookback_stop` returns the lowest low for MA and MarketTrend; `reconcile` fixes the stop once. For a MarketTrend position still on the old rule (`stop_needs_refix`) it re-fixes once, only when the full 200/90/90 window exists, and clears `nl1120_last_bar_end` so closed bars after the buy are judged again.
+2. `market_trend_1118_runtime._nl1120_after_closed` gives such a position one more deep-history read (`nl1120_refix_deep_reset`), then persists the re-fixed stop via `save_position`. The SELL itself is still produced by the existing trend exit action from a fresh bid (`NL1120_LOOKBACK_LOW_CLOSE_STOP`); nothing here sells.
+3. Stock MarketTrend shares the same functions; its deep rows come from the verified KRX bar store.
+
+Status: SOURCE_FIXED, local regression passed; CI and device not verified.

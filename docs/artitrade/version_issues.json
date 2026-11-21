@@ -1530,7 +1530,7 @@
       "root": "PLAN_NOT_RESIZED_AND_DUST_LIQUIDITY",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.8",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_RELEASE_0.1.8",
       "device": "UNVERIFIED",
       "nodes": [
         "COIN_MA",
@@ -1552,7 +1552,7 @@
       "root": "VENDOR_SCHEMA_MISMATCH",
       "status": "SOURCE_FIXED",
       "fix_version": "0.1.8",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_RELEASE_0.1.8",
       "device": "UNVERIFIED",
       "nodes": [
         "COIN_MA"
@@ -1579,6 +1579,26 @@
       ],
       "tests": [],
       "notes": "Safety gate (book age <= 3 s) deliberately not relaxed. Re-export after 0.1.8 to compare."
+    },
+    {
+      "id": "TR-0190-01",
+      "issue": 131,
+      "found": "owner report + coin error export 2026-11-21 (app 0.1.8)",
+      "category": "USER_POLICY_DECISION",
+      "title": "MarketTrend lookback stop used the average of lows and was ignored above the buy price (NEAR, XLM, PENGU)",
+      "evidence": "3 open Trend positions all IGNORED_ABOVE_ENTRY (avg of 200/90 lows above buy price); owner chose the lowest low.",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.1.9",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "NL1120_LOOKBACK_STOP_V0120"
+      ],
+      "tests": [
+        "test_nl1120_2_lookback_stop_and_first_close.py"
+      ],
+      "notes": "Open positions re-fixed once from the full window. Stock Trend uses the same code, not seen in an export."
     }
   ],
   "known_normal": [
@@ -1832,9 +1852,11 @@
     "version": "0.1.8",
     "versionCode": 151,
     "base": "0.1.7",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.1.9"
+    "next_version": "0.1.9",
+    "source_commit": "581758751c9b4f32e5070ec8a18f5b5f57b0a0da",
+    "apk_sha256": "de312a2fb76ea67201863a9548ecacc3a365298d6629fd54afe92b41c344a6ba"
   },
   "candidate_020": {
     "version": "0.0.20",
@@ -1934,5 +1956,13 @@
     "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44760501786",
     "apk_sha256": "12271b95d39d8d27b8a79e0fe27efbb204f7fafb92c0c895392cbdb2c34aeed2",
     "release_publish": "GitHub release 0.1.6 published."
+  },
+  "candidate_019": {
+    "version": "0.1.9",
+    "versionCode": 152,
+    "base": "0.1.8",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.2.0"
   }
 }
