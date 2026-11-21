@@ -21,8 +21,8 @@ jobs:
       # ONLY. No v-prefix, date, FIX/TEST or any other text.
       VERSION: 0.2.1
       VERSION_CODE: '154'
-      PREVIOUS_VERSION: 0.1.9
-      PREVIOUS_VERSION_CODE: '152'
+      PREVIOUS_VERSION: 0.2.0
+      PREVIOUS_VERSION_CODE: '153'
       # Pinned source commit (the signing key cache is only visible on the trusted
       # branch, so this workflow lives there and checks out this exact commit).
       SOURCE: 43968fcf3ae4603006bc6a9c65683d66c6996f8c
