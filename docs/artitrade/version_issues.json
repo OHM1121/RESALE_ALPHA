@@ -2026,9 +2026,11 @@
     "version": "0.2.0",
     "versionCode": 153,
     "base": "0.1.9",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.1"
+    "next_version": "0.2.1",
+    "source_commit": "bf5ecd3724a3e606c690d98e1e3d9a7f9c43da76",
+    "apk_sha256": "69df60d05aa39759f5dc3367196ac678ce9dfab57f28b9ecf40a779ebc87def5"
   },
   "candidate_010": {
     "version": "0.1.0",
