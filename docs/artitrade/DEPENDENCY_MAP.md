@@ -378,6 +378,14 @@ Status: CI_VERIFIED (run 44863707282, source 43968fc, APK sha256 fc8a4685…f094
 Based on 0.2.1 (versionCode 155 for 0.2.2).
 1. `UnifiedTradingService.monitorLoop` writes `artitrade_background_health_v1.last_heartbeat_ms` every ~2.5 s. `UnifiedVisualActivity.periodic` (3.5 s) now also calls `backgroundWatchdogTick`: stale heartbeat -> `ensureBackgroundServiceOnResume()` (idempotent START, 30 s throttle); stale >= 150 s -> `restartFeeds()` (service `RESTART_FEEDS` -> `safeRestartStrategy`), once per 10 min; evidence goes to `RuntimeCrashStore` (`ui_watchdog_engine_heartbeat_stale` / `ui_watchdog_engine_recovered`) and therefore into the error export.
 2. `ProcessHealthV087.recordPreviousSystemExits` records every `ApplicationExitInfo` (named reasons, incl. battery-manager/freezer kills) as `SYSTEM_PROCESS_EXIT_*` in the same store.
-3. Open (#137): held-position order-book silence of 2.5-5 min; the vendor WS supervisor (not editable) only rebuilds after 45 s with no frame at all. The 3 s book-age gate is unchanged.
+3. Held-position order-book silence of 2.5-9 min (#137): root cause found in 0.2.3, see below.
 
 Status: CI_VERIFIED (source 3965229, APK sha256 f57d60ad…b80292); device not verified. The cause of the 22:49 stop is UNKNOWN until an export contains an OS exit reason.
+
+## 0.2.3 — how the changed parts connect (issue #137)
+Based on 0.2.2 (versionCode 156 for 0.2.3).
+1. Vendor `UpbitPaperRunner._ws` (socket reader) -> `_enqueue_ws_event('book', frame)` -> `Queue(4096)` -> single `_ws_event_worker` -> `_dispatch_public_book` -> `ledger.process_book` + `ma_ledger.process_book` (MA exits, shadow research, price path, resting fills). Previously every frame was queued; a slow worker filled the queue, the NEWEST frames were dropped and old ones processed.
+2. `ws_book_coalesce_v0230.install` (called from `android_runtime_v078` right after the v081 preload wrapper) keeps only the newest frame per market and queues one token per market; `dispatch` hands the latest frame to the original dispatcher. Marks/ticker are unchanged. Held-exit gate `coin_held_depth_v014.book_sell_evidence` (book age <= 3 s) and the vendor arrival check (`MAX_BOOK_AGE_SEC`) are unchanged.
+3. Evidence for the next export: `UPBIT_WS_BOOK_BACKLOG` (frame waited > 3 s, with received/coalesced/dispatched/queue_full counts), together with the existing `UPBIT_WS_EVENT_QUEUE_PRESSURE` and `UPBIT_WS_RECONNECT` rows.
+
+Status: SOURCE_FIXED; unit tests passed, install verified against the real vendor module; CI and device not verified. The cost per frame (SQLite) is not measured; the 22:49 engine stop (#136) is a separate, still-unexplained event.

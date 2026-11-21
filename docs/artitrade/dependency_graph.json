@@ -1457,6 +1457,24 @@
       "tests": [
         "test_v0220_engine_watchdog_and_exit_log.py"
       ]
+    },
+    {
+      "id": "WS_BOOK_COALESCE_V0230",
+      "kind": "python",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/ws_book_coalesce_v0230.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py"
+      ],
+      "depends_on": [
+        "COIN_FEED"
+      ],
+      "issues": [
+        137
+      ],
+      "contract": "Wraps UpbitPaperRunner._enqueue_ws_event/_dispatch_public_book after the v081 preload wrapper. Only the newest order-book frame per market is kept; one token per market is queued; the worker dispatches the latest frame. Marks and other kinds pass through. Creates no order/fill/price/book, vendor engine file unchanged, 3 s held-exit gate and vendor arrival age check unchanged. Writes UPBIT_WS_BOOK_BACKLOG (rate-limited) when a frame waited > 3 s.",
+      "tests": [
+        "test_v0230_ws_book_coalesce.py"
+      ]
     }
   ],
   "audit_scope": {

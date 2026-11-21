@@ -303,6 +303,11 @@ def _v081_coin_verified_ws_prime_before_orders(self,kind,*args,**kwargs):
 _v081_upbit.UpbitPaperRunner._universe=_v081_coin_universe_then_single_ws
 _v081_upbit.UpbitPaperRunner._enqueue_ws_event=_v081_coin_verified_ws_prime_before_orders
 
+# 0.2.3 (#137): keep only the NEWEST order-book frame per market instead of queueing every frame
+# (a full queue dropped the newest frames and the worker processed minutes-old books).
+from ws_book_coalesce_v0230 import install as _install_ws_book_coalesce_v0230
+_install_ws_book_coalesce_v0230(_v081_upbit)
+
 _ORIG_PATCH_GMO = _core.Runtime._patch_gmo
 _ORIG_STOP = _core.Runtime.stop
 _ORIG_STOCK_AT_LEDGER = _core.Runtime._stock_at_ledger

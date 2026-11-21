@@ -1705,19 +1705,22 @@
       "id": "FD-0220-02",
       "issue": 137,
       "found": "coin error export 2026-11-22 (app 0.2.1)",
-      "category": "OPEN_OBSERVATION",
-      "title": "Held-position order-book feed silent for 2.5-5 min about 25 times a day (all symbols at once)",
-      "evidence": "30 BOOK_BID gaps >150 s, 11 TICKER gaps; scan_runs continuous; vendor WS rebuild only after 45 s with no frame at all",
-      "root": "UNKNOWN (hypothesis: orderbook channel stalls while ticker frames continue)",
-      "status": "OPEN_UNVERIFIED",
-      "fix_version": "",
-      "ci": "NOT_APPLICABLE",
+      "category": "FEED_BACKLOG",
+      "title": "Coin order-book frames queued without coalescing: full queue dropped the newest frames, worker processed minutes-old books (gaps 2.5-9 min, BOOK_STALE)",
+      "evidence": "base ledger UPBIT_WS_EVENT_QUEUE_PRESSURE x161, 906,540 frames dropped, 18 keepalive ping-timeout reconnects; best_book_observations lag 0.28-3.0 s (median 0.57) but 7 all-symbol gaps of 2-9 min; BOOK_STALE 9,806 with engine alive",
+      "root": "VENDOR_BOOK_QUEUE_NO_COALESCING_DROP_NEWEST (queue 4096, one worker, two SQLite ledgers per frame)",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.3",
+      "ci": "PENDING",
       "device": "UNVERIFIED",
       "nodes": [
+        "WS_BOOK_COALESCE_V0230",
         "COIN_FEED"
       ],
-      "tests": [],
-      "notes": "Safety gate (book age <= 3 s) not relaxed. Needs best_book_observations from export part 001."
+      "tests": [
+        "test_v0230_ws_book_coalesce.py"
+      ],
+      "notes": "Overlay keeps the newest book per market. 3 s held-exit gate NOT relaxed. Per-frame SQLite cost not measured; UPBIT_WS_BOOK_BACKLOG issue rows in the next export prove or disprove the fix. Earlier hypothesis (orderbook channel stalls while ticker continues) withdrawn."
     }
   ],
   "known_normal": [
@@ -2099,5 +2102,13 @@
     "next_version": "0.2.3",
     "source_commit": "39652299b0d8818de896a005e6d36a854b457d55",
     "apk_sha256": "f57d60ad9c2e8ec7f10d902fca59a9cb08dd28ac28002a4325d1aac3bdb80292"
+  },
+  "candidate_023": {
+    "version": "0.2.3",
+    "versionCode": 156,
+    "base": "0.2.2",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.2.4"
   }
 }
