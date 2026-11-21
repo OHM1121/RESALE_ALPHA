@@ -115,6 +115,20 @@ class Coalesce(unittest.TestCase):
         r._dispatch_public_book({wc.TOKEN_KEY: True, 'market': 'KRW-Z'})
         self.assertEqual(r.dispatched, [])
 
+    def test_first_backlog_report_does_not_depend_on_monotonic_clock_origin(self):
+        # A freshly booted runner/phone has a tiny time.monotonic(); the first report must still be written.
+        real = wc.time.monotonic
+        try:
+            wc.time.monotonic = lambda: 5.0
+            r = _module()()
+            r._enqueue_ws_event('book', _book('KRW-A', 1))
+            book, _ = wc._state(r)['latest']['KRW-A']
+            wc._state(r)['latest']['KRW-A'] = (book, 5.0 - 10)
+            r.drain()
+            self.assertEqual(len(r.issues), 1)
+        finally:
+            wc.time.monotonic = real
+
     def test_backlog_is_reported_once_per_interval(self):
         r = _module()()
         for n in (1, 2):

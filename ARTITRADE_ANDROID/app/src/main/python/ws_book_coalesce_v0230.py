@@ -29,7 +29,7 @@ def _state(runner):
     if state is None:
         state = {'lock': threading.Lock(), 'latest': {}, 'pending': set(),
                  'received': 0, 'coalesced': 0, 'dispatched': 0, 'queue_full': 0,
-                 'max_lag': 0.0, 'issue_at': 0.0}
+                 'max_lag': 0.0, 'issue_at': None}
         runner._v0230_book_state = state
     return state
 
@@ -111,7 +111,7 @@ def install(d_upbit):
         if lag > LAG_ISSUE_SECONDS:
             st = _state(self)
             now = time.monotonic()
-            if now - st['issue_at'] > ISSUE_INTERVAL_SECONDS:
+            if st['issue_at'] is None or now - st['issue_at'] > ISSUE_INTERVAL_SECONDS:
                 st['issue_at'] = now
                 try:
                     s = stats(self)
