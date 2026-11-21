@@ -373,3 +373,11 @@ Based on 0.2.0 (versionCode 154 for 0.2.1).
 3. Drawer state (`expandedBuyReasons` for "매수 근거", `expandedTradeGroups`, `expandedTradeEvidenceKeys`) is held in activity sets, not in views, and is not cleared by the 3.5 s refresh, memory trim or a size cap. No timer closes a drawer.
 
 Status: CI_VERIFIED (run 44863707282, source 43968fc, APK sha256 fc8a4685…f094a6); device not verified.
+
+## 0.2.2 — how the changed parts connect (issues #136, #137)
+Based on 0.2.1 (versionCode 155 for 0.2.2).
+1. `UnifiedTradingService.monitorLoop` writes `artitrade_background_health_v1.last_heartbeat_ms` every ~2.5 s. `UnifiedVisualActivity.periodic` (3.5 s) now also calls `backgroundWatchdogTick`: stale heartbeat -> `ensureBackgroundServiceOnResume()` (idempotent START, 30 s throttle); stale >= 150 s -> `restartFeeds()` (service `RESTART_FEEDS` -> `safeRestartStrategy`), once per 10 min; evidence goes to `RuntimeCrashStore` (`ui_watchdog_engine_heartbeat_stale` / `ui_watchdog_engine_recovered`) and therefore into the error export.
+2. `ProcessHealthV087.recordPreviousSystemExits` records every `ApplicationExitInfo` (named reasons, incl. battery-manager/freezer kills) as `SYSTEM_PROCESS_EXIT_*` in the same store.
+3. Open (#137): held-position order-book silence of 2.5-5 min; the vendor WS supervisor (not editable) only rebuilds after 45 s with no frame at all. The 3 s book-age gate is unchanged.
+
+Status: SOURCE_FIXED; static regression passed; CI and device not verified. The cause of the 22:49 stop is UNKNOWN until an export contains an OS exit reason.

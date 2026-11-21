@@ -1439,6 +1439,24 @@
       "tests": [
         "test_v0210_exec_window_and_drawers.py"
       ]
+    },
+    {
+      "id": "ENGINE_WATCHDOG_V0220",
+      "kind": "java-ui",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/ProcessHealthV087.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java"
+      ],
+      "depends_on": [],
+      "issues": [
+        136,
+        137
+      ],
+      "contract": "While the screen is open the 3.5 s refresh runs backgroundWatchdogTick: stale heartbeat (>14 s) -> idempotent START every 30 s; stale >=150 s -> RESTART_FEEDS at most once per 10 min; both written to the runtime error log. ProcessHealthV087 logs every OS exit reason except our own exit and app update. No LIVE arming, order, ledger or stop/target change.",
+      "tests": [
+        "test_v0220_engine_watchdog_and_exit_log.py"
+      ]
     }
   ],
   "audit_scope": {

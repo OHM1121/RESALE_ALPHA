@@ -1680,6 +1680,44 @@
         "test_v0210_exec_window_and_drawers.py"
       ],
       "notes": "No timer closes any drawer; only the user's tap."
+    },
+    {
+      "id": "RT-0220-01",
+      "issue": 136,
+      "found": "owner report + coin error export 2026-11-22 (app 0.2.1)",
+      "category": "RUNTIME_RECOVERY",
+      "title": "Engine stopped at 22:49 and stayed stopped (heartbeat 7,000 s old) with the screen open; non-crash OS process exits were not logged",
+      "evidence": "last scan_runs 22:48:41, last issue 22:49:08, export 00:43; START retried only in onResume; exit log allow-list skipped USER_REQUESTED/OTHER/FREEZER",
+      "root": "NO_RECOVERY_WHILE_SCREEN_OPEN_AND_EXIT_REASON_NOT_RECORDED (stop cause UNKNOWN)",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.2",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "ENGINE_WATCHDOG_V0220"
+      ],
+      "tests": [
+        "test_v0220_engine_watchdog_and_exit_log.py"
+      ],
+      "notes": "Why the process stopped is not proven. The next export will show the OS exit reason. Watchdog never arms LIVE or creates orders."
+    },
+    {
+      "id": "FD-0220-02",
+      "issue": 137,
+      "found": "coin error export 2026-11-22 (app 0.2.1)",
+      "category": "OPEN_OBSERVATION",
+      "title": "Held-position order-book feed silent for 2.5-5 min about 25 times a day (all symbols at once)",
+      "evidence": "30 BOOK_BID gaps >150 s, 11 TICKER gaps; scan_runs continuous; vendor WS rebuild only after 45 s with no frame at all",
+      "root": "UNKNOWN (hypothesis: orderbook channel stalls while ticker frames continue)",
+      "status": "OPEN_UNVERIFIED",
+      "fix_version": "",
+      "ci": "NOT_APPLICABLE",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_FEED"
+      ],
+      "tests": [],
+      "notes": "Safety gate (book age <= 3 s) not relaxed. Needs best_book_observations from export part 001."
     }
   ],
   "known_normal": [
@@ -2051,5 +2089,13 @@
     "source_commit": "43968fcf3ae4603006bc6a9c65683d66c6996f8c",
     "ci_run": "https://github.com/OHM1121/RESALE_ALPHA/actions/runs/44863707282",
     "apk_sha256": "fc8a4685b212d54442d40e7eeed5bfb6d91dcfc7cb081bb76f6a16cf20f094a6"
+  },
+  "candidate_022": {
+    "version": "0.2.2",
+    "versionCode": 155,
+    "base": "0.2.1",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.2.3"
   }
 }

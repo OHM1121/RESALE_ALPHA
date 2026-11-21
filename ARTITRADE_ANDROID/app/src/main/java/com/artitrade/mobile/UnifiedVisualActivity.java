@@ -333,6 +333,7 @@ public final class UnifiedVisualActivity extends Activity {
             refresh(false);
             updateClock();
             markUiVisible(true);
+            backgroundWatchdogTick();
             main.postDelayed(this,REFRESH_MS);
         }
     };
@@ -684,6 +685,41 @@ public final class UnifiedVisualActivity extends Activity {
         String restart="PROCESS_RESTARTED".equals(entry)?" · 앱 프로세스 재생성 감지":
             "ACTIVITY_RECREATED".equals(entry)?" · 화면 재생성 감지":"";
         return freshness+" · 마지막 동작 "+ageText+lock+restart;
+    }
+
+    private long staleHeartbeatSinceMs=0L,lastFeedRestartMs=0L;
+    private static final long STALE_BEFORE_FEED_RESTART_MS=150_000L;
+    private static final long FEED_RESTART_COOLDOWN_MS=600_000L;
+    /**
+     * 0.2.2: the engine start was retried only in onResume(). With the screen kept open a stopped
+     * engine stayed stopped (heartbeat 7,000+ s old). While the screen is visible: retry the idempotent
+     * START every 30 s, and if the heartbeat is still stale after 150 s ask the service to rebuild the
+     * market feeds (at most once per 10 minutes). The stale period is written to the error log so the
+     * next export shows when and for how long the engine was silent.
+     */
+    private void backgroundWatchdogTick(){
+        try{
+            long now=System.currentTimeMillis();
+            if(isRecentBackgroundHeartbeat()){
+                if(staleHeartbeatSinceMs>0L){
+                    long silent=now-staleHeartbeatSinceMs;
+                    staleHeartbeatSinceMs=0L;
+                    if(silent>=STALE_BEFORE_FEED_RESTART_MS)
+                        new RuntimeCrashStore(this).add("ui_watchdog_engine_recovered",
+                            new IllegalStateException("ENGINE_HEARTBEAT_RECOVERED_AFTER_SECONDS="+silent/1000L));
+                }
+                return;
+            }
+            if(staleHeartbeatSinceMs<=0L)staleHeartbeatSinceMs=now;
+            ensureBackgroundServiceOnResume();
+            long stale=now-staleHeartbeatSinceMs;
+            if(stale>=STALE_BEFORE_FEED_RESTART_MS&&now-lastFeedRestartMs>=FEED_RESTART_COOLDOWN_MS){
+                lastFeedRestartMs=now;
+                new RuntimeCrashStore(this).add("ui_watchdog_engine_heartbeat_stale",
+                    new IllegalStateException("ENGINE_HEARTBEAT_STALE_SECONDS="+stale/1000L+" feed_restart_requested"));
+                restartFeeds();
+            }
+        }catch(Throwable ignored){}
     }
 
     private void ensureBackgroundServiceOnResume(){

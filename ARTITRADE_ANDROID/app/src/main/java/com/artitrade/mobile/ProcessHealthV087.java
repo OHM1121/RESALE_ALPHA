@@ -47,6 +47,13 @@ final class ProcessHealthV087 {
             case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:return "EXCESSIVE_RESOURCE_USAGE";
             case ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:return "INITIALIZATION_FAILURE";
             case ApplicationExitInfo.REASON_SIGNALED:return "SIGNAL_OR_UNVERIFIED_LOW_MEMORY";
+            case 8:return "PERMISSION_CHANGE";
+            case 10:return "USER_REQUESTED_OR_BATTERY_MANAGER";
+            case 11:return "USER_STOPPED";
+            case 12:return "DEPENDENCY_DIED";
+            case 13:return "OS_OTHER";
+            case 14:return "OS_FREEZER";
+            case 15:return "PACKAGE_STATE_CHANGE";
             default:return "OTHER_"+reason;
         }
     }
@@ -71,13 +78,12 @@ final class ProcessHealthV087 {
                     if(t<=seen||t>System.currentTimeMillis()+5000L)continue;
                     if(t>newest)newest=t;
                     int reason=x.getReason();
-                    if(reason!=ApplicationExitInfo.REASON_LOW_MEMORY
-                        &&reason!=ApplicationExitInfo.REASON_CRASH
-                        &&reason!=ApplicationExitInfo.REASON_CRASH_NATIVE
-                        &&reason!=ApplicationExitInfo.REASON_ANR
-                        &&reason!=ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE
-                        &&reason!=ApplicationExitInfo.REASON_INITIALIZATION_FAILURE
-                        &&reason!=ApplicationExitInfo.REASON_SIGNALED)continue;
+                    // 0.2.2: every OS exit is recorded, not only the crash/low-memory kinds. A
+                    // kill by the phone's battery manager (USER_REQUESTED/OTHER/FREEZER/...)
+                    // used to leave NO record, so a silent engine stop could not be explained.
+                    // Only our own clean exit and an app update are benign.
+                    if(reason==ApplicationExitInfo.REASON_EXIT_SELF
+                        ||reason==16/*REASON_PACKAGE_UPDATED*/)continue;
                     String prior=p.getString("last_memory_sample","");
                     String message="Android OS exit reason="+exitReason(reason)
                         +" reason_code="+reason+" status="+x.getStatus()
