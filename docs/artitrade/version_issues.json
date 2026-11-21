@@ -1640,6 +1640,46 @@
         "test_v0200_preload_progress.py"
       ],
       "notes": "GMO stop not shown (rule unverified). Display only; no order, stop or target changed."
+    },
+    {
+      "id": "UI-0210-01",
+      "issue": 134,
+      "found": "owner request 2026-11-21",
+      "category": "UX_DATA_WINDOW",
+      "title": "MA (and every strategy) execution history shows sells without their buy",
+      "evidence": "_ui_view_only_v104 cuts executions to newest 300; exported coin MA ledger: 1579 SELL vs 14 BUY rows, every sold position has its BUY in SQLite",
+      "root": "DISPLAY_WINDOW_DROPPED_OLD_BUY_ROWS",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.1",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "UI_EXEC_WINDOW_V0210"
+      ],
+      "tests": [
+        "test_v0210_exec_window_and_drawers.py"
+      ],
+      "notes": "Display copy only; SQLite and exports untouched. Extra rows capped (600 BUY + 1200 other)."
+    },
+    {
+      "id": "UI-0210-02",
+      "issue": 135,
+      "found": "owner request 2026-11-21",
+      "category": "UX_PRESENTATION",
+      "title": "\"매수 근거\" drawer closes by itself a few seconds after opening",
+      "evidence": "view-local visibility flag recreated closed on every 3.5 s refresh; trim handlers cleared expanded keys",
+      "root": "UI_STATE_NOT_PERSISTED",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.1",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "UI_EXEC_WINDOW_V0210"
+      ],
+      "tests": [
+        "test_v0210_exec_window_and_drawers.py"
+      ],
+      "notes": "No timer closes any drawer; only the user's tap."
     }
   ],
   "known_normal": [
@@ -2000,5 +2040,13 @@
     "next_version": "0.2.0",
     "source_commit": "16baa079c68a5fe59e61a14abda56ecf8954d6a9",
     "apk_sha256": "911aa933bfdd2fc79dcd8aba3f18d0125564fcefd014ec60211c1479a7d3b8fc"
+  },
+  "candidate_021": {
+    "version": "0.2.1",
+    "versionCode": 154,
+    "base": "0.2.0",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.2.2"
   }
 }

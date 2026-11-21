@@ -3372,13 +3372,19 @@ public final class UnifiedVisualActivity extends Activity {
             pl.setMargins(dp(6),0,0,0);
             actions.addView(policy,pl);
             // The buy reason stays available, but only when asked for.
+            // The open/closed state lives in expandedBuyReasons, NOT in this view: the screen is rebuilt on
+            // every refresh, and a view-local flag made the drawer close itself a few seconds after opening.
+            final String reasonKey=holdingDrawerKey(p,scopeMarket,sourceStrategy);
             final TextView why=text(positionBuyReason(p),12);
             why.setTextColor(Color.rgb(181,202,221));
-            why.setVisibility(View.GONE);
+            why.setVisibility(expandedBuyReasons.contains(reasonKey)?View.VISIBLE:View.GONE);
             why.setPadding(0,dp(6),0,0);
-            Button reason=button("매수 근거 ▾",false,()->{
-                boolean show=why.getVisibility()!=View.VISIBLE;
+            final Button reason=button(expandedBuyReasons.contains(reasonKey)?"매수 근거 ▴":"매수 근거 ▾",false,null);
+            reason.setOnClickListener(v->{
+                boolean show=!expandedBuyReasons.contains(reasonKey);
+                if(show)expandedBuyReasons.add(reasonKey);else expandedBuyReasons.remove(reasonKey);
                 why.setVisibility(show?View.VISIBLE:View.GONE);
+                reason.setText(show?"매수 근거 ▴":"매수 근거 ▾");
             });
             reason.setTextSize(12);
             LinearLayout.LayoutParams rl=new LinearLayout.LayoutParams(0,dp(35),1);
@@ -3390,6 +3396,13 @@ public final class UnifiedVisualActivity extends Activity {
         tile.setContentDescription(nameOf(p)+" · 평가손익 "+(finite(pnl)?WonFormat.signed(pnl):"—")+
             (finite(rate)?" ("+signedPct(rate)+")":""));
         return tile;
+    }
+    private final java.util.Set<String> expandedBuyReasons=new java.util.HashSet<>();
+    private String holdingDrawerKey(JSONObject p,String scopeMarket,String sourceStrategy){
+        String uid=p.optString("position_uid","").trim();
+        if(!uid.isEmpty())return "uid|"+uid;
+        return scopeMarket+"|"+sourceStrategy+"|"+p.optString("code",p.optString("market",""))+"|"+
+            p.optString("position_id",p.optString("source_position_id",""))+"|"+p.optString("tf","");
     }
     /** First PROFIT target: the strategy's own saved plan first, then the legacy per-strategy fields. */
     private String firstProfitTargetText(JSONObject p,String sourceStrategy){
@@ -4441,7 +4454,7 @@ public final class UnifiedVisualActivity extends Activity {
         String uid=r.optString("position_uid","").trim();
         if(!uid.isEmpty())return "uid|"+uid;
         String pid=r.optString("position_id",r.optString("source_position_id","")).trim();
-        String code=r.optString("code",r.optString("market","")).trim();
+        String code=r.optString("code",r.optString("market",r.optString("symbol",""))).trim();
         if(!pid.isEmpty()&&!code.isEmpty())
             return "pid|"+market+"|"+item.source+"|"+item.frame+"|"+code+"|"+pid;
         return "row|"+tradeEvidenceKey(item);
@@ -4623,7 +4636,6 @@ public final class UnifiedVisualActivity extends Activity {
         final boolean opened=expandedTradeEvidenceKeys.contains(detailKey);
         Button detail=button(opened?"상세 접기  ▴":"체결 상세  ▾",false,()->{
             if(!expandedTradeEvidenceKeys.remove(detailKey)){
-                if(expandedTradeEvidenceKeys.size()>180)expandedTradeEvidenceKeys.clear();
                 expandedTradeEvidenceKeys.add(detailKey);
                 tradeEvidenceCache.remove(detailKey);
                 queryTradeHistoryEvidence(java.util.Collections.singletonList(chosen));
@@ -4927,8 +4939,6 @@ public final class UnifiedVisualActivity extends Activity {
                     if(!expandedTradeEvidenceKeys.remove(detailKey)){
                         // Every explicit open requests fresh read-only details.
                         // Original executions stay in their SQLite ledger.
-                        if(expandedTradeEvidenceKeys.size()>180)
-                            expandedTradeEvidenceKeys.clear();
                         expandedTradeEvidenceKeys.add(detailKey);
                         tradeEvidenceCache.remove(detailKey);
                         queryTradeHistoryEvidence(
@@ -8356,8 +8366,7 @@ public final class UnifiedVisualActivity extends Activity {
         cachedLocalParsed=new JSONObject();
         cachedLocalMeaningful=false;
         cachedHubGapRecords=new JSONObject();
-        tradeEvidenceCache.clear();
-        expandedTradeEvidenceKeys.clear();
+        tradeEvidenceCache.keySet().retainAll(expandedTradeEvidenceKeys);
         pendingTradeEvidence.clear();
         pendingResearchExport=null;
         uiSnapshot=new UiSnapshot(new JSONObject(),new HashMap<>(),
@@ -8371,8 +8380,7 @@ public final class UnifiedVisualActivity extends Activity {
             &&!isFinishing()){
             releaseHiddenUiSnapshots();
         }else if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW){
-            tradeEvidenceCache.clear();
-            expandedTradeEvidenceKeys.clear();
+            tradeEvidenceCache.keySet().retainAll(expandedTradeEvidenceKeys);
             pendingTradeEvidence.clear();
         }
     }

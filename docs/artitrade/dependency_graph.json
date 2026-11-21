@@ -1421,6 +1421,24 @@
         "test_v0200_position_view_and_basis.py",
         "test_v0200_preload_progress.py"
       ]
+    },
+    {
+      "id": "UI_EXEC_WINDOW_V0210",
+      "kind": "python+java-ui",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/ui_exec_window_v0210.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [],
+      "issues": [
+        134,
+        135
+      ],
+      "contract": "Display only. The phone UI window keeps newest 300 executions plus every BUY (<=600) and up to 1200 other rows of any position visible in the window, so trade-group cards always show their buy. Drawer open state (expandedBuyReasons, expandedTradeGroups, expandedTradeEvidenceKeys) is held outside views and never cleared by a timer, refresh or memory trim.",
+      "tests": [
+        "test_v0210_exec_window_and_drawers.py"
+      ]
     }
   ],
   "audit_scope": {

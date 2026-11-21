@@ -1800,10 +1800,14 @@ def _ui_view_only_v104(tree, array_cap=128, string_cap=1024):
             limit=(512 if label=='positions' else
                    300 if label in ('executions','pending','wallets','accounts')
                    else array_cap)
-            if len(node)>limit:
-                omitted['/'.join(path)]=len(node)-limit
+            visible=node[:limit]
+            if len(node)>limit and label=='executions':
+                from ui_exec_window_v0210 import linked_fills
+                visible=visible+linked_fills(visible,node[limit:])
+            if len(node)>len(visible):
+                omitted['/'.join(path)]=len(node)-len(visible)
             return [copy(item,path+(str(i),),depth+1)
-                    for i,item in enumerate(node[:limit])]
+                    for i,item in enumerate(visible)]
         if isinstance(node,str) and len(node)>string_cap:
             # A hidden view string is NOT a stored strategy/execution value.
             omitted['/'.join(path)]=len(node)-string_cap

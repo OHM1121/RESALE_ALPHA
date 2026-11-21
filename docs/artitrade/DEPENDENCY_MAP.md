@@ -365,3 +365,11 @@ Based on 0.1.9 (versionCode 153 for 0.2.0).
 3. `UnifiedVisualActivity.buildHoldingCard` shows them for the integrated page and every strategy page; `renderMeasuredStartupProgress` draws the single measured preload progress from `work_audit`, the stock loading counter and screen readiness.
 
 Status: SOURCE_FIXED, local regression passed; CI and device not verified.
+
+## 0.2.1 — how the changed parts connect (issues #134, #135)
+Based on 0.2.0 (versionCode 154 for 0.2.1).
+1. `android_runtime_v078._ui_view_only_v104` (the phone's display window, newest 300 `executions`) now calls `ui_exec_window_v0210.linked_fills`, which re-adds the BUY rows (<=600) and other rows (<=1200) of every position that is visible in the window (identity: `position_uid`, else `position_id`/`source_position_id`). Reason: a position sold hundreds of times lost its older BUY row and `UnifiedVisualActivity.buildTradeGroupCard` showed sells without a buy. Display copy only; SQLite, ledgers and exports are unchanged.
+2. `UnifiedVisualActivity.tradeGroupKey` accepts `symbol` as the code fallback (uid → position_id+market+source+frame+code → single row).
+3. Drawer state (`expandedBuyReasons` for "매수 근거", `expandedTradeGroups`, `expandedTradeEvidenceKeys`) is held in activity sets, not in views, and is not cleared by the 3.5 s refresh, memory trim or a size cap. No timer closes a drawer.
+
+Status: SOURCE_FIXED, local regression passed; CI and device not verified.
