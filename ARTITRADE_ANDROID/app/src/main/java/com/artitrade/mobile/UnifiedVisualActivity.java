@@ -2468,14 +2468,22 @@ public final class UnifiedVisualActivity extends Activity {
                     st.research.put(observation);
             }
             st.candidates=st.research.length();
-            int bought=0,sold=0;
+            int bought=0,sold=0,knownPnl=0,winSells=0;
             for(int i=0;i<st.executions.length();i++){
                 JSONObject x=st.executions.optJSONObject(i);
                 if(x==null)continue;
                 String side=x.optString("side","");
                 if("BUY".equalsIgnoreCase(side))bought++;
-                if("SELL".equalsIgnoreCase(side))sold++;
+                if("SELL".equalsIgnoreCase(side)){
+                    sold++;
+                    // 0.2.5: the MarketTrend path returned here without ever computing the win rate, so the
+                    // 실현손익 승률 stayed "—" for stock and coin MarketTrend even with 13 sells. Same rule as
+                    // every other strategy: SELL fills with a known net result, wins / known.
+                    double sellPnl=num(x,"net_profit","net_realized","net_pnl","pnl","profit");
+                    if(finite(sellPnl)){knownPnl++;if(sellPnl>0)winSells++;}
+                }
             }
+            if(knownPnl>0)st.win=winSells*100.0/knownPnl;
             st.bought=bought;st.closed=sold;
             st.flowPending=st.pending.length();st.flowHolding=st.positions.length();
             st.flowBought=bought;st.flowSold=sold;st.flowKnown=true;
@@ -3154,10 +3162,10 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout sums=new LinearLayout(this);
         sums.setOrientation(LinearLayout.HORIZONTAL);
         addLargeMoneyMetric(sums,"●","확정 손익"+(knownR<totalScopes?" ("+knownR+"/"+totalScopes+")":""),
-                            "매도 완료 · 금액 확정",knownR>0?realized:Double.NaN,Color.rgb(176,190,208));
+                            knownR>0?realized:Double.NaN,Color.rgb(176,190,208));
         addLargeMoneyMetric(sums,"○","보유 손익"+(knownU<totalScopes?" ("+knownU+"/"+totalScopes+")":""),
-                            "보유 중 · 시세 따라 변동",knownU>0?unrealized:Double.NaN,Color.rgb(176,190,208));
-        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(76));
+                            knownU>0?unrealized:Double.NaN,Color.rgb(176,190,208));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(55));
         sp.setMargins(0,dp(7),0,0);hero.addView(sums,sp);
         LinearLayout.LayoutParams h=new LinearLayout.LayoutParams(-1,-2);
         h.setMargins(0,dp(7),0,0);content.addView(hero,h);
@@ -3329,6 +3337,27 @@ public final class UnifiedVisualActivity extends Activity {
         }catch(Exception ignored){}
         render();
     }
+    /** Folded / open must be unmistakable: a labelled pill (접기 = filled, 펼치기 = outlined) plus a container that
+     *  gets an accent border when open and a plain dim one when folded. */
+    private TextView foldPill(boolean folded,int accent){
+        TextView t=text(folded?"펼치기  ▾":"접기  ▴",12);
+        t.setTypeface(null,Typeface.BOLD);
+        t.setGravity(Gravity.CENTER);
+        t.setSingleLine(true);
+        t.setPadding(dp(11),dp(4),dp(11),dp(4));
+        if(folded){
+            t.setTextColor(Color.rgb(176,190,208));
+            t.setBackground(bg(Color.rgb(12,16,22),ChartStyle.withAlpha(accent,150),14));
+        }else{
+            t.setTextColor(Color.rgb(8,12,18));
+            t.setBackground(bg(accent,0,14));
+        }
+        return t;
+    }
+    private void foldContainerStyle(View box,boolean folded,int accent){
+        if(folded)box.setBackground(bg(Color.rgb(11,15,21),PremiumUi.LINE,13));
+        else box.setBackground(bg(PremiumUi.SURFACE,ChartStyle.withAlpha(accent,190),13));
+    }
     /**
      * Section header that folds its content. The 확정/보유 profit bars stay visible while it is folded, so a
      * folded section still shows how much it has made or lost.
@@ -3337,20 +3366,25 @@ public final class UnifiedVisualActivity extends Activity {
                                             double realized,double holding,double scale,int accent){
         LinearLayout box=card();
         box.setPadding(dp(11),dp(8),dp(11),dp(6));
+        foldContainerStyle(box,collapsed,accent);
         LinearLayout row=new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView chevron=text(collapsed?"▸":"▾",18);
-        chevron.setTextColor(accent);
-        chevron.setGravity(Gravity.CENTER);
-        row.addView(chevron,new LinearLayout.LayoutParams(dp(24),dp(30)));
+        View bar=new View(this);
+        bar.setBackground(bg(accent,0,2));
+        LinearLayout.LayoutParams barLp=new LinearLayout.LayoutParams(dp(4),dp(22));
+        barLp.setMargins(0,0,dp(8),0);
+        row.addView(bar,barLp);
         TextView t=text(title,16);
         t.setTypeface(null,Typeface.BOLD);
         t.setSingleLine(true);
         row.addView(t,new LinearLayout.LayoutParams(0,dp(30),1));
-        TextView hint=text(sub+"  ·  "+(collapsed?"펼치기":"접기"),11);
+        TextView hint=text(sub,11);
         hint.setTextColor(PremiumUi.MUTED);
         hint.setSingleLine(true);
-        row.addView(hint);
+        LinearLayout.LayoutParams hintLp=new LinearLayout.LayoutParams(-2,dp(30));
+        hintLp.setMargins(0,0,dp(8),0);
+        row.addView(hint,hintLp);
+        row.addView(foldPill(collapsed,accent),new LinearLayout.LayoutParams(-2,dp(30)));
         box.addView(row);
         PnlSplitView split=new PnlSplitView(this);
         split.set(realized,holding,scale);
@@ -3811,17 +3845,11 @@ public final class UnifiedVisualActivity extends Activity {
             // stays visible when the section is folded.
             LinearLayout header=new LinearLayout(this);
             header.setGravity(Gravity.CENTER_VERTICAL);
-            header.setBackground(bg(PremiumUi.SURFACE,PremiumUi.LINE,12));
-            header.setPadding(dp(8),dp(6),dp(10),dp(6));
-            TextView chevron=text(folded?"▸":"▾",18);
-            chevron.setTextColor(accent);
-            chevron.setGravity(Gravity.CENTER);
-            header.addView(chevron,new LinearLayout.LayoutParams(dp(22),dp(28)));
+            foldContainerStyle(header,folded,accent);
+            header.setPadding(dp(10),dp(6),dp(10),dp(6));
             View dot=new View(this);
             dot.setBackground(bg(accent,0,6));
-            LinearLayout.LayoutParams dotLp=new LinearLayout.LayoutParams(dp(11),dp(11));
-            dotLp.setMargins(dp(4),0,0,0);
-            header.addView(dot,dotLp);
+            header.addView(dot,new LinearLayout.LayoutParams(dp(11),dp(11)));
             TextView secTitle=text(scopeTitle(d[0],d[1])+" · "+list.size()+"종목",15);
             secTitle.setTypeface(null,Typeface.BOLD);
             secTitle.setSingleLine(true);
@@ -3841,6 +3869,9 @@ public final class UnifiedVisualActivity extends Activity {
             if(sub!=null)paintProfit(subText,sub);
             sumCol.addView(subText);
             header.addView(sumCol);
+            LinearLayout.LayoutParams pillLp=new LinearLayout.LayoutParams(-2,dp(30));
+            pillLp.setMargins(dp(8),0,0,0);
+            header.addView(foldPill(folded,accent),pillLp);
             header.setContentDescription(scopeTitle(d[0],d[1])+" "+list.size()+"종목 · "+
                 (folded?"접힘":"펼침")+" · 탭하면 "+(folded?"펼치기":"접기"));
             header.setOnClickListener(v->setGroupsCollapsed(java.util.Collections.singletonList(foldKey),!folded));
@@ -3956,9 +3987,9 @@ public final class UnifiedVisualActivity extends Activity {
         autoSingle(totalValue,19,37);paintProfit(totalValue,selected.total);
         pnl.addView(totalValue,new LinearLayout.LayoutParams(-1,dp(53)));
         LinearLayout split=new LinearLayout(this);split.setOrientation(LinearLayout.HORIZONTAL);
-        addLargeMoneyMetric(split,"●","확정 손익","매도 완료 · 금액 확정",selected.realized,Color.rgb(176,190,208));
-        addLargeMoneyMetric(split,"○","보유 손익","보유 중 · 시세 따라 변동",selected.unrealized,Color.rgb(184,190,208));
-        pnl.addView(split,new LinearLayout.LayoutParams(-1,dp(76)));
+        addLargeMoneyMetric(split,"●","확정 손익",selected.realized,Color.rgb(176,190,208));
+        addLargeMoneyMetric(split,"○","보유 손익",selected.unrealized,Color.rgb(184,190,208));
+        pnl.addView(split,new LinearLayout.LayoutParams(-1,dp(55)));
         pnl.setContentDescription(strategyName(market,strategy)+" 누적손익 "+
             money(selected.total)+", 실현손익 "+money(selected.realized)+
             ", 평가손익 "+money(selected.unrealized));
@@ -3968,11 +3999,6 @@ public final class UnifiedVisualActivity extends Activity {
         win.setMetric("실현손익 승률",selected.win,pct(selected.win));
         winCard.addView(win,new LinearLayout.LayoutParams(-1,-1));
         hero.addView(winCard,new LinearLayout.LayoutParams(0,-1,1));
-        LinearLayout hitCard=card();DonutMetricView hit=new DonutMetricView(this);
-        hit.setMetric("목표확인 비중",selected.target,pct(selected.target));
-        hitCard.addView(hit,new LinearLayout.LayoutParams(-1,-1));
-        LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(0,-1,1);
-        hp.setMargins(dp(6),0,0,0);hero.addView(hitCard,hp);
 
         if(wide){
             LinearLayout overview=new LinearLayout(this);
@@ -4000,20 +4026,6 @@ public final class UnifiedVisualActivity extends Activity {
         LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,dp(65));
         ap.setMargins(0,dp(7),0,0);content.addView(activity,ap);
 
-        // Trading flow as one proportional bar (wait -> bought -> holding -> sold).
-        java.util.ArrayList<SegmentBarView.Segment> flowSegments=new java.util.ArrayList<>();
-        flowSegments.add(new SegmentBarView.Segment("대기",selected.flowPending,Color.rgb(255,196,102)));
-        flowSegments.add(new SegmentBarView.Segment("매수",selected.flowBought,Color.rgb(95,154,253)));
-        flowSegments.add(new SegmentBarView.Segment("보유",selected.flowHolding,Color.rgb(177,152,255)));
-        flowSegments.add(new SegmentBarView.Segment("매도",selected.flowSold,Color.rgb(74,224,180)));
-        LinearLayout flowCard=card();
-        flowCard.setPadding(dp(12),dp(10),dp(12),dp(6));
-        SegmentBarView flowBar=new SegmentBarView(this);
-        flowBar.setData("매매 흐름",(selected.flowPending+selected.flowBought+selected.flowHolding+selected.flowSold)+"건",flowSegments);
-        flowCard.addView(flowBar,new LinearLayout.LayoutParams(-1,dp(SegmentBarView.heightDp(4))));
-        LinearLayout.LayoutParams flowLp=new LinearLayout.LayoutParams(-1,-2);
-        flowLp.setMargins(0,dp(7),0,0);content.addView(flowCard,flowLp);
-
         // Realized vs evaluated P&L as bars, then the realized-P&L trend line right below.
         java.util.ArrayList<HorizontalStrategyBarsView.Item> splitItems=new java.util.ArrayList<>();
         splitItems.add(new HorizontalStrategyBarsView.Item("확정",selected.realized));
@@ -4031,61 +4043,91 @@ public final class UnifiedVisualActivity extends Activity {
         firstTrendTitle.setPadding(dp(2),dp(10),0,dp(3));content.addView(firstTrendTitle);
         addTrendCard("all",strategyName(market,strategy)+" 누적",null);
 
+        // One card per time frame: performance and realized-P&L trend together, foldable. The confirmed/holding
+        // bars stay visible when the card is folded.
         if(StrategyDashboardScope.showFrameCharts(strategy)){
-            TextView sec=text("시간봉별 성과",17);
+            final String[] frames="trend".equals(strategy)?new String[]{"30m","60m","day"}
+                :new String[]{"5m","30m","60m","day"};
+            TextView sec=text("시간봉별 성과 · 추세",17);
             sec.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
             sec.setTextColor(PremiumUi.TEXT);
             sec.setPadding(dp(2),dp(10),0,dp(5));
             content.addView(sec);
-            boolean sideBySide=getResources().getConfiguration().screenWidthDp>=720;
-            LinearLayout pair=null;
-            int pairCount=0;
-            for(String tf:("trend".equals(strategy)
-                ?new String[]{"30m","60m","day"}
-                :new String[]{"5m","30m","60m","day"})){
+            final java.util.ArrayList<String> frameKeys=new java.util.ArrayList<>();
+            for(String tf:frames)frameKeys.add("tf/"+market+"/"+strategy+"/"+tf);
+            LinearLayout foldRow=new LinearLayout(this);
+            Button foldAll=button("시간봉 모두 접기",false,()->setGroupsCollapsed(frameKeys,true));
+            foldAll.setTextSize(12);
+            foldRow.addView(foldAll,new LinearLayout.LayoutParams(0,dp(36),1));
+            Button unfoldAll=button("모두 펼치기",false,()->setGroupsCollapsed(frameKeys,false));
+            unfoldAll.setTextSize(12);
+            LinearLayout.LayoutParams ufLp=new LinearLayout.LayoutParams(0,dp(36),1);
+            ufLp.setMargins(dp(6),0,0,0);
+            foldRow.addView(unfoldAll,ufLp);
+            content.addView(foldRow,new LinearLayout.LayoutParams(-1,-2));
+            double frameScale=1;
+            for(String tf:frames){
                 Stats q=statsTf(market,strategy,tf);
-                TimeframeAccountFlowView flow=new TimeframeAccountFlowView(this);
-                flow.setData(tfLabel(tf),q.total,q.realized,q.unrealized,q.win,q.target,
-                    q.flowPending,q.flowBought,q.flowHolding,q.flowSold);
-                flow.setContentDescription(tfLabel(tf)+" 누적손익 "+money(q.total)+
-                    ", 실현손익 "+money(q.realized)+", 평가손익 "+money(q.unrealized)+
-                    ", 실현 승률 "+pct(q.win)+", 목표확인 비중 "+pct(q.target)+
-                    ", 대기 "+q.flowPending+", 매수 "+q.flowBought+
-                    ", 보유 "+q.flowHolding+", 매도 "+q.flowSold);
-                if(!sideBySide){
-                    LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(172));
-                    if(!"5m".equals(tf))fp.setMargins(0,dp(6),0,0);
-                    content.addView(flow,fp);
-                    continue;
-                }
-                if(pairCount==0){
-                    pair=new LinearLayout(this);
-                    pair.setOrientation(LinearLayout.HORIZONTAL);
-                    LinearLayout.LayoutParams pairParams=new LinearLayout.LayoutParams(-1,dp(172));
-                    pairParams.setMargins(0,dp(6),0,0);
-                    content.addView(pair,pairParams);
-                }
-                LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(172),1);
-                if(pairCount>0)fp.setMargins(dp(7),0,0,0);
-                pair.addView(flow,fp);
-                pairCount=(pairCount+1)%2;
+                if(finite(q.realized))frameScale=Math.max(frameScale,Math.abs(q.realized));
+                if(finite(q.unrealized))frameScale=Math.max(frameScale,Math.abs(q.unrealized));
             }
+            for(String tf:frames)addFrameCard(tf,frameScale);
         }
+    }
 
-        // Current strategy only; never merge AT, MA, CLOSE or GMO automatically.
-        if(StrategyDashboardScope.showFrameCharts(strategy)){
-            TextView frameTrendTitle=text("⌁  시간봉별 실현손익 추세",16);
-            frameTrendTitle.setTypeface(null,Typeface.BOLD);
-            frameTrendTitle.setTextColor(Color.rgb(213,228,245));
-            frameTrendTitle.setPadding(dp(2),dp(10),0,dp(3));content.addView(frameTrendTitle);
-            if("trend".equals(strategy)){
-                addTrendCard("30m","30분봉","60m");
-                addTrendCard("day","일봉",null);
-            }else{
-                addTrendCard("5m","5분봉","30m");
-                addTrendCard("60m","1시간봉","day");
-            }
+    /** One time frame: header (fold state), confirmed/holding bars (always visible), then counts and trend. */
+    private void addFrameCard(String tf,double scale){
+        final String key="tf/"+market+"/"+strategy+"/"+tf;
+        final boolean folded=isGroupCollapsed(key);
+        final int accent=IntegratedPalette.strategy(market,strategy);
+        Stats q=statsTf(market,strategy,tf);
+        LinearLayout box=card();
+        box.setPadding(dp(11),dp(8),dp(11),dp(8));
+        foldContainerStyle(box,folded,accent);
+        LinearLayout head=new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name=text(tfLabel(tf),16);
+        name.setTypeface(null,Typeface.BOLD);
+        name.setSingleLine(true);
+        head.addView(name,new LinearLayout.LayoutParams(0,dp(30),1));
+        TextView total=text(finite(q.total)?WonFormat.signed(q.total):"—",15);
+        total.setTypeface(null,Typeface.BOLD);
+        total.setSingleLine(true);
+        if(finite(q.total))paintProfit(total,q.total);
+        LinearLayout.LayoutParams tl=new LinearLayout.LayoutParams(-2,dp(30));
+        tl.setMargins(0,0,dp(8),0);
+        head.addView(total,tl);
+        head.addView(foldPill(folded,accent),new LinearLayout.LayoutParams(-2,dp(30)));
+        box.addView(head);
+        PnlSplitView split=new PnlSplitView(this);
+        split.set(q.realized,q.unrealized,scale);
+        LinearLayout.LayoutParams sl=new LinearLayout.LayoutParams(-1,dp(PnlSplitView.HEIGHT_DP));
+        sl.setMargins(0,dp(2),0,0);
+        box.addView(split,sl);
+        if(!folded){
+            LinearLayout counts=new LinearLayout(this);
+            counts.setPadding(0,dp(6),0,dp(2));
+            holdingStat(counts,"승률",pct(q.win),PremiumUi.TEXT,1f);
+            holdingStat(counts,"보유",String.valueOf(q.flowHolding),PremiumUi.TEXT,.8f);
+            holdingStat(counts,"대기",String.valueOf(q.flowPending),PremiumUi.TEXT,.8f);
+            holdingStat(counts,"매수",String.valueOf(q.flowBought),PremiumUi.TEXT,.8f);
+            holdingStat(counts,"매도",String.valueOf(q.flowSold),PremiumUi.TEXT,.8f);
+            box.addView(counts);
+            PnlSparklineView chart=new PnlSparklineView(this);
+            RealizedTrend.Series series=uiSnapshot.trends.get(StrategyDashboardScope.trend(market,strategy,tf));
+            if(series==null)series=new RealizedTrend.Series(new long[0],new double[0]);
+            chart.setSeries(series,tfLabel(tf)+" 실현손익 추세");
+            chart.setContentDescription(tfLabel(tf)+" 실현손익 추세, 최근 "+
+                (series.values.length>0?WonFormat.signed(series.values[series.values.length-1]):"체결기록 없음"));
+            box.addView(chart,new LinearLayout.LayoutParams(-1,dp(136)));
         }
+        box.setContentDescription(tfLabel(tf)+" · 누적손익 "+money(q.total)+" · 확정 "+money(q.realized)+
+            " · 보유 "+money(q.unrealized)+" · "+(folded?"접힘":"펼침")+" · 탭하면 "+(folded?"펼치기":"접기"));
+        box.setOnClickListener(v->setGroupsCollapsed(java.util.Collections.singletonList(key),!folded));
+        PremiumUi.tapMotion(box);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+        lp.setMargins(0,dp(6),0,0);
+        content.addView(box,lp);
     }
 
     private void addDashboardKpi(LinearLayout row,String glyph,String label,int value,String destination){

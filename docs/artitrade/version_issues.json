@@ -1741,6 +1741,28 @@
         "test_v0240_ui_dashboard_cards.py"
       ],
       "notes": "Display only. Compiled locally against the Android 15 platform jar. Rendering on the phone not seen."
+    },
+    {
+      "id": "UI-0250-01",
+      "issue": 139,
+      "found": "owner request 2026-11-22 (app 0.2.4 screenshots)",
+      "category": "UX_PRESENTATION",
+      "title": "Dashboard cleanup, merged foldable time-frame cards, obvious fold state, MarketTrend win rate never computed, next profit target after first sell",
+      "evidence": "MarketTrend Stats branch returned before the win-rate code (13 sells, win '—'); fixed-height tiles clipped captions; one 18sp chevron as the only fold cue; card always drew first_profit_target (SOL: stage 1 sold, 2nd target 98,283.63 not yet reached)",
+      "root": "MARKET_TREND_WIN_RATE_NOT_COMPUTED + PRESENTATION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.5",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "UI_DASHBOARD_CARDS_V0240",
+        "POSITION_VIEW_V0200"
+      ],
+      "tests": [
+        "test_v0250_dashboard_merge_and_fold.py",
+        "test_v0250_next_profit_target.py"
+      ],
+      "notes": "Win rate rule = wins/SELL fills with known net result (same as other strategies); closed-position win rate from the Python ledger still overrides where it exists. Rendering not seen on a phone."
     }
   ],
   "known_normal": [
@@ -2142,5 +2164,13 @@
     "next_version": "0.2.5",
     "source_commit": "f3f6544f845f84fd5c93fda089f02ee85249f1c4",
     "apk_sha256": "6fe8fec023cd775e90edf292823a27dae186a5536a81a336dc9c9737db966d18"
+  },
+  "candidate_025": {
+    "version": "0.2.5",
+    "versionCode": 158,
+    "base": "0.2.4",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.2.6"
   }
 }

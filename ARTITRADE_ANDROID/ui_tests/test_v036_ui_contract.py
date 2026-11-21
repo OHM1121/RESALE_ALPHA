@@ -32,7 +32,8 @@ class ComprehensiveUi(unittest.TestCase):
         self.assertIn("logMserverIssue(",UI)
 
     def test_home_target_label_never_calls_incomplete_100pct_success(self):
-        self.assertIn('hit.setMetric("목표확인 비중"',UI)
+        # 0.2.5 (owner request 2026-11-22): the 목표확인 비중 donut was removed from the dashboard.
+        self.assertNotIn('hit.setMetric("목표확인 비중"',UI)
         self.assertIn('win.setMetric("실현손익 승률"',UI)
         self.assertIn('actual.optInt("pending"',UI)
 

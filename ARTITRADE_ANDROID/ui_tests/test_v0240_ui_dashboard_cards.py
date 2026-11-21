@@ -60,8 +60,11 @@ class Dashboard(unittest.TestCase):
 
     def test_profit_kinds_are_named_in_words(self):
         home = self.ui[self.ui.index('private void renderIntegratedHome()'):self.ui.index('private TextView quoteDot()')]
-        for text in ('확정 손익', '보유 손익', '매도 완료 · 금액 확정', '보유 중 · 시세 따라 변동', '확정 / 보유 손익'):
+        for text in ('확정 손익', '보유 손익', '확정 / 보유 손익'):
             self.assertIn(text, home)
+        # 0.2.5: the explanatory captions under the two figures were cut off on the phone and were removed.
+        self.assertNotIn('매도 완료 · 금액 확정', home)
+        self.assertNotIn('보유 중 · 시세 따라 변동', home)
         self.assertNotIn('"실현 ("', home)
         self.assertIn('PnlSplitView split=new PnlSplitView(this);', home)      # per strategy tile
 

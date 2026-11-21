@@ -397,3 +397,12 @@ Based on 0.2.3 (versionCode 157 for 0.2.4). Display only; no ledger, order, stop
 3. `buildHoldingCard` (integrated page and every strategy holdings page): result row, `ReturnGaugeView`, `PriceLadderView(stop_loss_price, entry, first_profit_target, current)`, panels 청산 기준 / 투입 / 시점; `position_view_v0200` still supplies `stop_loss_price/pct` and `first_profit_target`.
 
 Status: CI_VERIFIED (source f3f6544, APK sha256 6fe8fec0…966d18); compiled locally against the Android 15 platform jar; device not verified (rendering on the phone unseen).
+
+## 0.2.5 — how the changed parts connect (issue #139)
+Based on 0.2.4 (versionCode 158 for 0.2.5). Display plus one derived statistic.
+1. Strategy dashboard (`renderHome`): hero figures without captions; only the win-rate donut remains (the 목표확인 donut and the 매매 흐름 bar were removed). "시간봉별 성과 · 추세" is one foldable card per frame (`addFrameCard`): header with `foldPill`, `PnlSplitView` always drawn, counts and the realized-P&L line only when open; fold-all / unfold-all buttons. Fold state shares `collapsed_groups_v1` with the other folds (`tf/<market>/<strategy>/<tf>`).
+2. `foldPill` / `foldContainerStyle` are used by the integrated dashboard markets (`home/<market>`), the integrated holdings strategies (`pos/<market>/<strategy>`) and the frame cards.
+3. `UnifiedVisualActivity` Stats builder, MarketTrend branch: win rate = wins / SELL fills with a known net result (`net_profit`/`net_pnl`...). Before 0.2.5 the branch returned before this code, so stock and coin MarketTrend showed "—".
+4. `position_view_v0200._apply` adds `profit_stage` and `second_profit_target` (AT reference plan, MA state, MarketTrend payload); `buildHoldingCard` shows "2차 수익목표" + "1차 매도 완료" after the first sell.
+
+Status: SOURCE_FIXED; compiled locally against the Android 15 platform jar; static regression passed; CI and device not verified.
