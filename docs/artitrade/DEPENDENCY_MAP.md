@@ -396,4 +396,4 @@ Based on 0.2.3 (versionCode 157 for 0.2.4). Display only; no ledger, order, stop
 2. `UnifiedVisualActivity.renderIntegratedHome`: hero tiles "확정 손익 / 보유 손익" (`addLargeMoneyMetric` with a caption), `PnlSplitView` per strategy tile, `collapsibleHeader` per market (`home/stock`, `home/coin`). `renderIntegratedPositions`: per-strategy fold (`pos/<market>/<strategy>`) plus fold-all/unfold-all; `SignedAmountBarView` is added before the fold decision. Fold state: `artitrade_ui_navigation_v1.collapsed_groups_v1`.
 3. `buildHoldingCard` (integrated page and every strategy holdings page): result row, `ReturnGaugeView`, `PriceLadderView(stop_loss_price, entry, first_profit_target, current)`, panels 청산 기준 / 투입 / 시점; `position_view_v0200` still supplies `stop_loss_price/pct` and `first_profit_target`.
 
-Status: SOURCE_FIXED; compiled locally against the Android 15 platform jar; static regression passed; CI and device not verified.
+Status: CI_VERIFIED (source f3f6544, APK sha256 6fe8fec0…966d18); compiled locally against the Android 15 platform jar; device not verified (rendering on the phone unseen).

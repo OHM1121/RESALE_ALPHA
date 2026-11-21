@@ -1732,7 +1732,7 @@
       "root": "PRESENTATION",
       "status": "SOURCE_FIXED",
       "fix_version": "0.2.4",
-      "ci": "PENDING",
+      "ci": "PASSED",
       "device": "UNVERIFIED",
       "nodes": [
         "UI_DASHBOARD_CARDS_V0240"
@@ -2137,8 +2137,10 @@
     "version": "0.2.4",
     "versionCode": 157,
     "base": "0.2.3",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "DELIVERED_CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.5"
+    "next_version": "0.2.5",
+    "source_commit": "f3f6544f845f84fd5c93fda089f02ee85249f1c4",
+    "apk_sha256": "6fe8fec023cd775e90edf292823a27dae186a5536a81a336dc9c9737db966d18"
   }
 }
