@@ -37,3 +37,7 @@ build/
 **/*.sqlite
 **/*.sqlite3
 **/*.sqlite-*
+
+# Python bytecode from local test runs
+__pycache__/
+*.pyc
