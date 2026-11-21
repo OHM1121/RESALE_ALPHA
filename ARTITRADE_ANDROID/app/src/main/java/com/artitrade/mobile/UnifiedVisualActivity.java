@@ -3471,7 +3471,14 @@ public final class UnifiedVisualActivity extends Activity {
 
         // 2. Price map: stop - buy price - first profit target with the current price on it.
         double stopPrice=usefulNumber(p,"stop_loss_price");
-        double targetPrice=firstProfitTargetValue(p,scopeMarket,sourceStrategy);
+        double firstTarget=firstProfitTargetValue(p,scopeMarket,sourceStrategy);
+        double secondTarget=usefulNumber(p,"second_profit_target");
+        int profitStage=(int)Math.round(p.optDouble("profit_stage",0d));
+        // Once the first profit stage has been SOLD, the next target is the second one; showing the already
+        // filled first target made a normal holding look like "target reached but not sold".
+        boolean showSecond=profitStage==1&&finite(secondTarget)&&secondTarget>0;
+        boolean allStagesSold=profitStage>=2;
+        double targetPrice=showSecond?secondTarget:(allStagesSold?Double.NaN:firstTarget);
         double stopPct=p.optDouble("stop_loss_pct",Double.NaN);
         if(!finite(stopPct)&&finite(stopPrice)&&stopPrice>0&&finite(entry)&&entry>0)stopPct=(stopPrice/entry-1d)*100d;
         double targetPct=finite(targetPrice)&&targetPrice>0&&finite(entry)&&entry>0?(targetPrice/entry-1d)*100d:Double.NaN;
@@ -3483,18 +3490,23 @@ public final class UnifiedVisualActivity extends Activity {
 
         // 3. Category panels. Exit levels (profit target and stop) belong together; so do what was put in
         //    and when.
-        String rewardRisk="";
+        String exitNote="";
         if(finite(targetPrice)&&finite(stopPrice)&&finite(entry)&&stopPrice<entry&&targetPrice>entry)
-            rewardRisk="손익비 1 : "+number(Math.round((targetPrice-entry)/(entry-stopPrice)*10d)/10d);
-        LinearLayout exits=infoPanel("청산 기준",Color.rgb(255,201,94),rewardRisk);
+            exitNote="손익비 1 : "+number(Math.round((targetPrice-entry)/(entry-stopPrice)*10d)/10d);
+        if(profitStage==1)exitNote=("1차 매도 완료"+(exitNote.isEmpty()?"":" · "+exitNote));
+        else if(allStagesSold)exitNote="1·2차 매도 완료";
+        LinearLayout exits=infoPanel("청산 기준",Color.rgb(255,201,94),exitNote);
         LinearLayout exitCols=new LinearLayout(this);
         exitCols.setPadding(0,dp(3),0,0);
         boolean targetKnown=finite(targetPrice)&&targetPrice>0;
-        exitColumn(exitCols,"▲ 1차 수익목표",targetKnown?WonFormat.price(targetPrice):firstProfitTargetText(p,sourceStrategy),
+        String targetLabel=showSecond?"▲ 2차 수익목표":(allStagesSold?"▲ 수익목표":"▲ 1차 수익목표");
+        String targetText=targetKnown?WonFormat.price(targetPrice):
+            (allStagesSold?"고점 추적":firstProfitTargetText(p,sourceStrategy));
+        exitColumn(exitCols,targetLabel,targetText,
             targetKnown&&finite(targetPct)?signedPct(targetPct):"",targetKnown?ChartStyle.UP:PremiumUi.MUTED,false);
         boolean stopKnown=finite(stopPrice)&&stopPrice>0;
         exitColumn(exitCols,"▼ 손절가",stopKnown?WonFormat.price(stopPrice):"미확인",
-            stopKnown&&finite(stopPct)?String.format(Locale.KOREA,"%.1f%%",stopPct):"",stopKnown?ChartStyle.DOWN:PremiumUi.MUTED,true);
+            stopKnown&&finite(stopPct)?String.format(Locale.KOREA,"%+.1f%%",stopPct):"",stopKnown?ChartStyle.DOWN:PremiumUi.MUTED,true);
         exits.addView(exitCols);
         LinearLayout.LayoutParams exitsLp=new LinearLayout.LayoutParams(-1,-2);
         body.addView(exits,exitsLp);

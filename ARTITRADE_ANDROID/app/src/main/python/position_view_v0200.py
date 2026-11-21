@@ -114,9 +114,14 @@ def stops_ma_trend(entry,stage,hard,lookback_status,lookback_price,lookback_conf
     return out
 
 
-def _apply(position,first_target,candidates,mark,entry):
+def _apply(position,first_target,candidates,mark,entry,second_target=None,stage=0):
     if num(first_target) and num(first_target)>0:
         position["first_profit_target"]=num(first_target)
+    # 0.2.5: how many profit stages are already SOLD, and the next target. After the first sell the card must
+    # show the second target, not the first one that is already filled.
+    position["profit_stage"]=max(0,min(2,int(stage or 0)))
+    if num(second_target) and num(second_target)>0:
+        position["second_profit_target"]=num(second_target)
     pick=nearest_stop(candidates,mark,entry)
     if pick:
         position["stop_loss_price"]=pick["price"]
@@ -175,7 +180,8 @@ def enrich_reference(positions,db_path):
             entry,mark=_entry_mark(position)
             entry=entry or num(plan.get("entry"))
             if not entry:continue
-            _apply(position,plan.get("first"),stops_reference(plan,entry),mark,entry)
+            _apply(position,plan.get("first"),stops_reference(plan,entry),mark,entry,
+                   second_target=plan.get("second"),stage=int(num(plan.get("stage")) or 0))
         except Exception:
             continue
 
@@ -216,7 +222,7 @@ def enrich_ma(positions,db_path):
                 state.get("nl1120_stop_status"),state.get("nl1120_stop_price"),
                 state.get("nl1120_stop_confirmed"),first_target=first_t,
                 peak=num(state.get("peak_after_second")),trail=trail)
-            _apply(position,first_t,candidates,mark,entry)
+            _apply(position,first_t,candidates,mark,entry,second_target=_second_t,stage=stage)
         except Exception:
             continue
 
@@ -231,7 +237,8 @@ def enrich_trend_row(position,payload):
             payload.get("nl1120_stop_status"),payload.get("nl1120_stop_price"),
             payload.get("nl1120_stop_confirmed"),first_target=num(payload.get("target1")),
             peak=num(payload.get("peak_after_second")),trail=None)
-        _apply(position,payload.get("target1"),candidates,mark,entry)
+        _apply(position,payload.get("target1"),candidates,mark,entry,
+               second_target=payload.get("target2"),stage=stage)
     except Exception:
         return
 
