@@ -473,3 +473,5 @@ Based on 0.3.0 (versionCode 164 for 0.3.1).
 
 Status: SOURCE_FIXED; local regression (17 Python tests, JVM `EngineHangPolicyTest`); the Android-dependent Java compiles only in CI; CI and device not verified. The blocking lock of the 2026-11-22 19:39 freeze is NOT proven; the next export will carry the dump.
 
+0.3.1 delivered: CI_VERIFIED (run 45019130055, source 7fc6c64, APK sha256 163068dc…8ba1b); device not verified.
+

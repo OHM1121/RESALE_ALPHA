@@ -124,3 +124,15 @@ rule headings disappear.
   `tools/artitrade/fetch_latest_apk.bat` (or `.ps1`) on the PC: it downloads the newest release APK into
   Desktop `artitrade apk`, verifies SHA-256 and opens the folder for the "휴대폰과 연결" share. Every delivery report names this
   script when step 1 could not be done.
+
+## R12 — Everything the owner can read is in Korean, in EVERY session and for EVERY job (2026-11-22)
+- Owner instruction: "영어로 진행상태 적지말고 앞으로 모든세션 어떤직업을 하든 한국어로 진행해".
+- This covers ALL text shown to the owner, not only the final report: the short notes written between tool calls
+  (what is being checked, what was found, what is being fixed), plan and progress lines, questions, error
+  explanations and the final R10 report. No English progress narration.
+- Allowed in English: code, file and function names, commands, identifiers, quoted log lines, GitHub issue/commit
+  text that other tools read, and tool arguments. Explain anything the owner reads in plain Korean; never leave a bare
+  English sentence or an untranslated error message as the explanation.
+- Applies to every kind of session: coding, analysis, build and delivery, scheduled or automatically resumed sessions
+  and sessions in other repositories started for this owner (for example the claude-auto repository).
+

@@ -1934,9 +1934,9 @@
       "title": "Python engine froze for 55 min with the app alive; UI-watchdog feed restarts could not run behind the synchronized bridge monitor",
       "evidence": "all recorders silent 19:40-20:30 (last BUY 19:39:22.9, last scan 19:39:05, best-book 19:39:31.9, MA 19:39:42); UI watchdog fired x6 and coin score worker lived to 20:29:37; resumed only after the 20:34:31 restart; same signature as #136 (0.2.1)",
       "root": "CONFIRMED_IN_CODE: recovery went through StrategyRuntimeBridge.restart() synchronized on the monitor held by the blocked snapshot(); NOT_PROVEN: the lock/call that blocked the Python threads",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.3.1",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_45019130055",
       "device": "UNVERIFIED",
       "nodes": [
         "ENGINE_HANG_SUPERVISOR_V0310",
@@ -2426,8 +2426,12 @@
     "version": "0.3.1",
     "versionCode": 164,
     "base": "0.3.0",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.3.2"
+    "next_version": "0.3.2",
+    "source_commit": "7fc6c64fcc1c9feae7bde375a01f271d16c90399",
+    "ci_run": 45019130055,
+    "apk_sha256": "163068dc98ab6991ccad601c3288a70734da11fb1b8bc579ea8f74860998ba1b",
+    "apk_bytes": 30094311
   }
 }
