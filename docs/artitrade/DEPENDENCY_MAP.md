@@ -460,3 +460,5 @@ Based on 0.2.9 (versionCode 163 for 0.3.0).
 3. Install: `market_regime_v0290.install()` at the end of `android_runtime_v078` (replaces `start_worker`).
 
 Status: SOURCE_FIXED; local regression (26 tests in test_v0290; CI test list: no new failure); CI and device not verified.
+
+0.3.0 delivered: CI_VERIFIED (run 45017368198, source a3da48a, APK sha256 ff69e703…59307); device not verified. (Run 45017012634 named 0.2.10 stopped at the R1 version check; nothing built.)

@@ -1903,9 +1903,9 @@
       "title": "Regime judged on each bought symbol on its own timeframe instead of KOSPI/BTC daily",
       "evidence": "Owner instruction; live 2026-11-22 showed BTC 5m/30m/60m UP vs daily DOWN, so one daily benchmark mislabels short frames",
       "root": "OWNER_DECISION",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.3.0",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_45017368198",
       "device": "UNVERIFIED",
       "nodes": [
         "MARKET_REGIME_V0290",
@@ -2390,8 +2390,12 @@
     "version": "0.3.0",
     "versionCode": 163,
     "base": "0.2.9",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.3.1"
+    "next_version": "0.3.1",
+    "source_commit": "a3da48aa4131de31df25d2f2b9f5a8ef20f1eea6",
+    "ci_run": 45017368198,
+    "apk_sha256": "ff69e7035e69cfc3b5243671c2f939b5d9374b93ac8618605ac0cbbb8fb59307",
+    "apk_bytes": 30093591
   }
 }
