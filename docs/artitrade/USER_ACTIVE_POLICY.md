@@ -318,3 +318,10 @@ a new instruction appears different. Cross-check original
   - An unreadable stock bar window does not block.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified. Live check 2026-11-22: KOSPI DOWN (as of 11-20), BTC DOWN (as of 11-21).
 
+## 2026-11-22: Regime is judged on each bought symbol on its own timeframe (owner, issue #145, version 0.2.10)
+- **Owner instruction:** "각 시간봉별로 상승하락횡보장이 다르게 평가되어야 할거 같은데" / "비트코인에 근거해서가 아니라 각 매수한 종목을 봐야지".
+- **기존 기준 (2026-11-22, 0.2.9, INFERRED):** one regime per market from the KOSPI (stock) / BTC (coin) DAILY bars, used by every timeframe. Superseded.
+- **Now active:** the regime used by the sheet-11.22 rules (MA/MarketTrend sizing and no-new-buy, reference-bar UP exception) is judged on the symbol being bought, on the timeframe of the strategy frame that buys it (5m/30m/60m/day), with the same rule (close vs MA20/MA60 + MA20 slope over 5 bars). Bars come only from data the app already holds (no extra API call). The market score stays the market-wide score.
+- **Interpretations (INFERRED):** fewer than 65 bars -> SIDEWAYS table; the owner did not choose the earlier-offered daily-trend restriction, so none is applied.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+

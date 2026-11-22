@@ -71,7 +71,8 @@ def topup_verified_coin_book(self,book,now):
                     from pathlib import Path
                     try:
                         cap=D(size.limit_krw(int(cap),size.factor(
-                            Path(self.path).resolve().parent.parent.parent,'coin')))
+                            Path(self.path).resolve().parent.parent.parent,'coin',
+                            symbol,p['tf'])))
                     except Exception:
                         pass
                 instrument_tick=(book.get('sr_tick_size') or

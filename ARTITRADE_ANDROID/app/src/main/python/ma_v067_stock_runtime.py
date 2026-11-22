@@ -478,21 +478,22 @@ def _install_score_size_clamp(book):
         try:
             import market_score_size_v0200 as size
             service=ctx[0]
-            # 0.2.9: regime sizing; a NEW entry is refused while the regime table says
-            # "no new buy" (DOWN score >= +5, SIDEWAYS score >= +10).
-            decision=size.decision(service.market_store.root,'stock')
-            factor=decision.get('factor',size.FULL);block=decision.get('block')
-            if factor>=1 and not block:return proof,why
+            # 0.2.9/0.2.10: regime sizing judged on THIS symbol on each pending MA frame; a NEW
+            # entry is refused while the table says "no new buy" (DOWN >= +5, SIDEWAYS >= +10).
             with sqlite3.connect('file:%s?mode=ro'%service.db,uri=True,timeout=2) as ro:
                 ro.row_factory=sqlite3.Row
-                rows=ro.execute("""SELECT a.seed,a.max_positions FROM candidates c
+                rows=ro.execute("""SELECT c.tf,a.seed,a.max_positions FROM candidates c
                     JOIN accounts a ON a.tf=c.tf WHERE c.code=? AND c.status='PENDING'
                     AND c.limit_price=?""",(str(code),int(limit))).fetchall()
-            if block and rows:return None,block
-            if factor>=1:return proof,why
-            limits=[size.limit_krw(int(r['seed'])//max(1,int(r['max_positions'])),factor)
-                    for r in rows if int(r['max_positions'])>0]
-            if not limits:return proof,why
+            rows=[r for r in rows if int(r['max_positions'])>0]
+            if not rows:return proof,why
+            decisions=[(r,size.decision(service.market_store.root,'stock',str(code),r['tf']))
+                       for r in rows]
+            allowed=[(r,d) for r,d in decisions if not d.get('block')]
+            if not allowed:return None,decisions[0][1].get('block')
+            limits=[size.limit_krw(int(r['seed'])//max(1,int(r['max_positions'])),
+                                   d.get('factor',size.FULL)) for r,d in allowed]
+            if all(d.get('factor',size.FULL)>=1 for r,d in allowed):return proof,why
             from stock_ma_engine import FEE
             ask=proof[0]
             cap_qty=int(min(limits)//(ask*(1+FEE)))
@@ -568,7 +569,7 @@ def _topup_partial_stock(self,tick,shared_book):
                 import market_score_size_v0200 as size
                 per_symbol=size.limit_krw(
                     int(wallet['seed'])//int(wallet['max_positions']),
-                    size.factor(self.market_store.root,'stock'))
+                    size.factor(self.market_store.root,'stock',code,p['tf']))
                 if not qualified_topup('stock',first,ask,spent,per_symbol,False,True):
                     continue
                 cash=int(wallet['cash'])

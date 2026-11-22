@@ -62,16 +62,26 @@ def score_evidence(root,market):
     except (ValueError,TypeError,OverflowError):
         return {"negative":False,"positive":False,"score":None,"basis":"SCORE_UNVERIFIED"}
 
-def buy_allowed(root,market):
-    """0.2.9 (sheet 11.22 C11): positive fresh score, OR an UP market whatever the score."""
+def buy_allowed(root,market,symbol=None,frame=None,conn=None):
+    """0.2.9 (sheet 11.22 C11): positive fresh score, OR an UP regime whatever the score.
+
+    0.2.10: the regime is judged on the bought symbol on its own frame."""
     if root is None:return False
     positive=score_evidence(root,market)["positive"]
     if positive:return True
     try:
         import market_regime_v0290 as regime
-        return regime.at_buy_allowed(root,market,False)
+        return regime.at_buy_allowed(root,market,False,symbol=symbol,frame=frame,conn=conn)
     except Exception:
         return False
+
+
+def _pending_code(self,c,tf):
+    try:
+        pending=self._pending(c,tf)
+        return str(dict(pending).get("code")) if pending is not None else None
+    except Exception:
+        return None
 
 def install():
     """Wrap only original native BUY functions, never BUY replays or SELL."""
@@ -87,7 +97,7 @@ def install():
 
     def legacy_stock(self,c,tf,minute,at):
         root=getattr(self.store,"root",None)
-        if not buy_allowed(root,"stock"):
+        if not buy_allowed(root,"stock",_pending_code(self,c,tf),tf,c):
             return None
         try:
             pending=self._pending(c,tf)
@@ -104,7 +114,11 @@ def install():
     def d19_stock(self,c,row,when,venue,observed_trade_price,
                   observed_trade_qty=0):
         root=getattr(self.store,"root",None)
-        if not buy_allowed(root,"stock"):
+        try:
+            symbol,frame=str(dict(row).get("code")),str(dict(row).get("tf"))
+        except Exception:
+            symbol,frame=None,None
+        if not buy_allowed(root,"stock",symbol,frame,c):
             return False,_NOT_POSITIVE
         try:
             data=dict(row)
@@ -130,7 +144,11 @@ def install():
                 path.parent.name=="base" and
                 path.parent.parent.name=="coin"):
                 root=path.parent.parent.parent
-                if not buy_allowed(root,"coin"):
+                try:
+                    symbol,frame=str(dict(order).get("market")),str(dict(order).get("tf"))
+                except Exception:
+                    symbol,frame=None,None
+                if not buy_allowed(root,"coin",symbol,frame):
                     return 0
                 try:
                     data=dict(order)

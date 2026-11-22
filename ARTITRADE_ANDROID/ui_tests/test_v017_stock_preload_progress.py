@@ -34,8 +34,9 @@ class StockPreloadAndPositiveScoreRegression(unittest.TestCase):
         self.assertIn('"positive":value>0',src)
         # 0.2.9 (owner sheet 11.22): positive score OR an UP market (buy_allowed); root None still refuses.
         self.assertIn('if root is None:return False\n    positive=score_evidence(root,market)["positive"]',src)
-        self.assertIn('if not buy_allowed(root,"stock"):',src)
-        self.assertIn('if not buy_allowed(root,"coin"):',src)
+        self.assertIn('if not buy_allowed(root,"stock",_pending_code(self,c,tf),tf,c):',src)
+        self.assertIn('if not buy_allowed(root,"stock",symbol,frame,c):',src)
+        self.assertIn('if not buy_allowed(root,"coin",symbol,frame):',src)
         self.assertIn("STALE_SCORE_NO_DECISION",src)
         self.assertIn("return native_d19_stock(",src)
         self.assertIn("return native_coin_base(",src)

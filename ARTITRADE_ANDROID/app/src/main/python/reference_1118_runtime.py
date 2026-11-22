@@ -24,10 +24,11 @@ import new_legacy_1118_resting as resting
 _BUY_CTX=threading.local()
 
 
-def _up_market(market):
+def _up_market(market,symbol=None,frame=None,conn=None):
+    """0.2.10: the bought symbol is UP on its own frame (owner: judge each bought symbol)."""
     try:
         import market_regime_v0290 as regime
-        return regime.state(market).get("regime")==regime.UP
+        return regime.symbol_regime(market,symbol,frame,conn)[0]==regime.UP
     except Exception:
         return False
 
@@ -233,11 +234,11 @@ def install():
         proof=score_evidence(self.store.root,"stock")
         positive=(proof.get("basis")=="SIGNED_MARKET_SCORE_V033" and
                   nl.validate_stock_score(proof.get("score")))
-        if not positive and not _up_market("stock"):
+        data=dict(row)
+        if not positive and not _up_market("stock",data.get("code"),data.get("tf"),c):
             if proof.get("basis")!="SIGNED_MARKET_SCORE_V033":
                 return False,"NL1118_MARKET_SCORE_UNAVAILABLE:"+str(proof.get("basis") or "UNKNOWN")
             return False,"NL1118_MARKET_SCORE_NOT_POSITIVE"
-        data=dict(row)
         ref_ts=data.get("ref_ts")
         if not ref_ts and data.get("signal_id") is not None:
             # v19_orders rows carry signal_id only; the reference bar lives on the signal.
@@ -273,16 +274,15 @@ def install():
     legacy_buy=d_engine.PaperEngine._buy_if_touch
     def buy_legacy(self,c,tf,minute,at):
         positive=nl.validate_stock_score(_market_score(self.store.root,"stock"))
-        if not positive and not _up_market("stock"):
-            return None
         try:
             pending=self._pending(c,tf)
-            if pending is not None:
-                raw=dict(pending)
-                if _surge_reason(c,tf,raw.get("code"),raw.get("ref_ts")):
-                    return None
+            raw=dict(pending) if pending is not None else {}
         except Exception:
-            pass
+            raw={}
+        if not positive and not _up_market("stock",raw.get("code"),tf,c):
+            return None
+        if raw and _surge_reason(c,tf,raw.get("code"),raw.get("ref_ts")):
+            return None
         _BUY_CTX.positive=bool(positive)
         try:
             p=legacy_buy(self,c,tf,minute,at)
@@ -303,7 +303,7 @@ def install():
         if _is_base_coin(self):
             root=Path(self.path).resolve().parent.parent.parent
             positive=nl.validate_stock_score(_market_score(root,"coin"))
-            if not positive and not _up_market("coin"):
+            if not positive and not _up_market("coin",order["market"],order["tf"]):
                 return 0
         _BUY_CTX.positive=bool(positive)
         try:

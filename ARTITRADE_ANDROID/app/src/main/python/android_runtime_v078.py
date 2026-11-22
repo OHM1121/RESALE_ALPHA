@@ -2617,10 +2617,12 @@ _install_stock_coverage_v0260(_core)
 from close_feed_coalesce_v0270 import install as _install_close_feed_v0270
 _install_close_feed_v0270(_core)
 
-# 0.2.9 (sheet 11.22): market regime (UP/DOWN/SIDEWAYS) for MA/MarketTrend sizing and
-# the reference-bar UP-market exception; reference-bar +20 % surge-window filter.
-from market_regime_v0290 import start_worker as _start_market_regime_v0290
-_start_market_regime_v0290(getattr(getattr(_core,'_RUNTIME',None),'root',None))
+# 0.2.9 (sheet 11.22): regime (UP/DOWN/SIDEWAYS) for MA/MarketTrend sizing and the
+# reference-bar UP exception; reference-bar +20 % surge-window filter.
+# 0.2.10: regime judged on each bought symbol on its own frame from bars already held
+# (coin: the original scanner's closed bars are remembered; no extra API call).
+from market_regime_v0290 import install as _install_market_regime_v0290
+_install_market_regime_v0290()
 from at_surge_filter_v0290 import install as _install_at_surge_v0290
 _install_at_surge_v0290()
 

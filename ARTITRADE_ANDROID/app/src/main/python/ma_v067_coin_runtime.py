@@ -646,25 +646,20 @@ def _install_shadow_guard(d_upbit):
     d_upbit.shadow_observe_book=guarded
 
 
-def _buy_size_evidence(self):
-    """(market score or None, size factor) for the coin MA ledger at this BUY."""
+def _buy_size_evidence(self,order=None):
+    """(market score or None, size factor, no-new-buy reason) for the coin MA ledger at this BUY.
+
+    0.2.10: the regime is judged on the ordered coin on the order's frame."""
     import market_score_size_v0200 as size
     try:
         from pathlib import Path
         root=Path(self.path).resolve().parent.parent.parent
-        return size.evidence(root,'coin')
+        symbol=str(order['market']) if order is not None else None
+        frame=str(order['tf']) if order is not None else None
+        d=size.decision(root,'coin',symbol,frame)
+        return d.get('score'),d.get('factor',size.FULL),d.get('block')
     except Exception:
-        return None,size.FULL
-
-
-def _new_buy_block(self):
-    """0.2.9: regime 'no new buy' reason for the coin MA ledger, or None. Never raises."""
-    try:
-        import market_score_size_v0200 as size
-        from pathlib import Path
-        return size.new_buy_block(Path(self.path).resolve().parent.parent.parent,'coin')
-    except Exception:
-        return None
+        return None,size.FULL,None
 
 
 _BLOCK_NOTED=set()
@@ -1019,8 +1014,7 @@ def install():
         _expire_or_rebound(self,c,book,now)
         refreshed=c.execute('SELECT status FROM orders WHERE id=?',(order['id'],)).fetchone()
         if refreshed is None or refreshed['status']!='PENDING':return 0
-        score_at_buy,size_factor=_buy_size_evidence(self)
-        block=_new_buy_block(self)
+        score_at_buy,size_factor,block=_buy_size_evidence(self,order)
         if block:
             # 0.2.9 regime table: no NEW MA entry now (order stays PENDING, re-checked next book).
             _note_block(self,c,order,block,now)

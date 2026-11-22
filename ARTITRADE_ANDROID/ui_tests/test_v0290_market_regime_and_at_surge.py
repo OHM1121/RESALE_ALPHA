@@ -21,12 +21,6 @@ def read(name):
     return (PY / name).read_text(encoding="utf-8")
 
 
-def verified(market, value, now=None):
-    now = now or dt.datetime.now(KST)
-    regime.set_state_for_test(market, {"status": "VERIFIED", "regime": value,
-                                       "fetched_at": now.isoformat()})
-
-
 class Classify(unittest.TestCase):
     def test_up_down_sideways(self):
         rising = [100 + i for i in range(80)]
@@ -44,59 +38,63 @@ class Classify(unittest.TestCase):
         self.assertIsNone(regime.classify([100] * (regime.MIN_BARS - 1))[0])
 
 
-class DailyParsing(unittest.TestCase):
-    def test_yahoo_drops_todays_bar_until_the_close(self):
-        day1 = dt.datetime(2026, 11, 20, 9, 0, tzinfo=KST)
-        day2 = dt.datetime(2026, 11, 23, 9, 0, tzinfo=KST)
-        raw = {"chart": {"result": [{"timestamp": [int(day1.timestamp()), int(day2.timestamp())],
-                                     "indicators": {"quote": [{"close": [2500.0, 2450.0]}]}}]}}
-        during = regime.parse_yahoo_daily(raw, dt.datetime(2026, 11, 23, 10, 0, tzinfo=KST))
-        after = regime.parse_yahoo_daily(raw, dt.datetime(2026, 11, 23, 16, 0, tzinfo=KST))
-        self.assertEqual(during, [("2026-11-20", 2500.0)])
-        self.assertEqual(after[-1], ("2026-11-23", 2450.0))
-
-    def test_upbit_drops_the_forming_day(self):
-        rows = [{"candle_date_time_kst": "2026-11-22T09:00:00", "trade_price": 9},
-                {"candle_date_time_kst": "2026-11-21T09:00:00", "trade_price": 8}]
-        self.assertEqual(regime.parse_upbit_daily(rows, dt.datetime(2026, 11, 22, 15, 0, tzinfo=KST)),
-                         [("2026-11-21", 8.0)])
-        # 03:00 KST still belongs to the 11-21 Upbit day
-        self.assertEqual(regime.parse_upbit_daily(rows[1:], dt.datetime(2026, 11, 22, 3, 0, tzinfo=KST)), [])
+RISING = [100.0 + i for i in range(80)]
+FALLING = [200.0 - i for i in range(80)]
+FLAT = [100.0 + (i % 2) for i in range(80)]
+SERIES = {"UP": RISING, "DOWN": FALLING, "SIDEWAYS": FLAT, None: [100.0] * 10}
 
 
-class StateLifecycle(unittest.TestCase):
+class SymbolBars(unittest.TestCase):
+    """0.2.10: the regime is judged on the bought symbol on its own frame (no network)."""
+
     def tearDown(self):
-        regime.set_state_for_test("coin", None)
+        regime._COIN_BARS.clear()
 
-    def test_refresh_verifies_and_expires(self):
-        now = dt.datetime(2026, 11, 22, 15, 0, tzinfo=KST)
-        bars = [("2026-%03d" % i, 100.0 + i) for i in range(80)]
-        row = regime.refresh("coin", now, fetcher=lambda m, n: bars)
-        self.assertEqual(row["regime"], regime.UP)
-        self.assertEqual(regime.state("coin", now)["regime"], regime.UP)
-        later = now + dt.timedelta(seconds=regime.VALID_SECONDS + 1)
-        self.assertEqual(regime.state("coin", later)["status"], "UNVERIFIED")
+    def test_coin_uses_the_scanner_bars_of_that_symbol_and_frame(self):
+        regime.remember_coin_bars("KRW-ETH", "30m", RISING)
+        regime.remember_coin_bars("KRW-ETH", "day", FALLING)
+        self.assertEqual(regime.symbol_regime("coin", "KRW-ETH", "30m")[0], regime.UP)
+        self.assertEqual(regime.symbol_regime("coin", "KRW-ETH", "day")[0], regime.DOWN)
+        self.assertIsNone(regime.symbol_regime("coin", "KRW-BTC", "30m")[0])   # never borrowed from another coin
 
-    def test_failed_refresh_keeps_the_last_verified_value(self):
-        now = dt.datetime(2026, 11, 22, 15, 0, tzinfo=KST)
-        regime.refresh("coin", now, fetcher=lambda m, n: [("d%d" % i, 200.0 - i) for i in range(80)])
+    def test_stock_reads_its_own_bars(self):
+        c = sqlite3.connect(":memory:")
+        c.execute("CREATE TABLE bars(code TEXT,frame TEXT,ts TEXT,close INTEGER)")
+        for i, v in enumerate(FALLING):
+            c.execute("INSERT INTO bars VALUES('005930','60m',?,?)", ("2026110%07d" % i, v))
+        for i, v in enumerate(RISING):
+            c.execute("INSERT INTO bars VALUES('000660','60m',?,?)", ("2026110%07d" % i, v))
+        now = dt.datetime(2026, 11, 23, 10, 0, tzinfo=KST)
+        self.assertEqual(regime.symbol_regime("stock", "005930", "60m", c, now=now)[0], regime.DOWN)
+        self.assertEqual(regime.symbol_regime("stock", "000660", "60m", c, now=now)[0], regime.UP)
+        self.assertIsNone(regime.symbol_regime("stock", "005930", "5m", c, now=now)[0])
 
-        def boom(m, n):
-            raise RuntimeError("offline")
-        regime.refresh("coin", now + dt.timedelta(minutes=30), fetcher=boom)
-        self.assertEqual(regime.state("coin", now + dt.timedelta(minutes=31))["regime"], regime.DOWN)
+    def test_scanner_capture_only_for_the_current_time(self):
+        import d_upbit
+        native = d_upbit.point_in_time_bars
+        regime._INSTALLED = False
+        now = dt.datetime.now(dt.timezone.utc)
+        try:
+            d_upbit.point_in_time_bars = lambda items, frame, at=None: [{"close": Decimal(v)} for v in RISING]
+            regime.install()
+            d_upbit.point_in_time_bars([{"market": "KRW-SOL"}], "60m", now)
+            d_upbit.point_in_time_bars([{"market": "KRW-XRP"}], "60m", now - dt.timedelta(days=3))  # replay
+        finally:
+            d_upbit.point_in_time_bars = native
+            regime._INSTALLED = False
+        self.assertEqual(regime.symbol_regime("coin", "KRW-SOL", "60m")[0], regime.UP)
+        self.assertIsNone(regime.symbol_regime("coin", "KRW-XRP", "60m")[0])
+
+    def test_no_network_module(self):
+        src = read("market_regime_v0290.py")
+        for word in ("requests", "yahoo", "api.upbit.com", "start_worker"):
+            self.assertNotIn(word, src)
 
 
 class MaTrendTable(unittest.TestCase):
-    def tearDown(self):
-        regime.set_state_for_test("stock", None)
-
     def decide(self, value, score):
-        if value is None:
-            regime.set_state_for_test("stock", None)
-        else:
-            verified("stock", value)
-        return regime.ma_trend_decision("/x", "stock", score=score, score_known=True)
+        return regime.ma_trend_decision("/x", "stock", score=score, score_known=True,
+                                        symbol="005930", frame="30m", closes=SERIES[value])
 
     def test_down_market(self):
         self.assertEqual(self.decide("DOWN", -10.0)["factor"], Decimal("0.5"))
@@ -106,6 +104,7 @@ class MaTrendTable(unittest.TestCase):
         self.assertEqual(self.decide("DOWN", -20.01)["factor"], Decimal(1))
         self.assertIsNone(self.decide("DOWN", 4.99)["block"])
         self.assertIn("DOWN", self.decide("DOWN", 5.0)["block"])
+        self.assertIn("005930:30m", self.decide("DOWN", 5.0)["block"])
 
     def test_sideways_market(self):
         self.assertEqual(self.decide("SIDEWAYS", -10.0)["factor"], Decimal("0.5"))
@@ -130,35 +129,34 @@ class MaTrendTable(unittest.TestCase):
 
 
 class AtUpMarketException(unittest.TestCase):
-    def tearDown(self):
-        regime.set_state_for_test("coin", None)
+    def test_positive_score_or_symbol_up(self):
+        self.assertTrue(regime.at_buy_allowed("/x", "coin", True, closes=FALLING))
+        self.assertFalse(regime.at_buy_allowed("/x", "coin", False, closes=FALLING))
+        self.assertTrue(regime.at_buy_allowed("/x", "coin", False, closes=RISING))
+        self.assertFalse(regime.at_buy_allowed("/x", "coin", False, closes=SERIES[None]))
 
-    def test_positive_score_or_up_market(self):
-        verified("coin", "DOWN")
-        self.assertTrue(regime.at_buy_allowed("/x", "coin", True))
-        self.assertFalse(regime.at_buy_allowed("/x", "coin", False))
-        verified("coin", "UP")
-        self.assertTrue(regime.at_buy_allowed("/x", "coin", False))
-        regime.set_state_for_test("coin", None)
-        self.assertFalse(regime.at_buy_allowed("/x", "coin", False))
-
-    def test_gate_wiring(self):
+    def test_gate_wiring_passes_symbol_and_frame(self):
         gate = read("at_market_score_gate_v107.py")
-        self.assertEqual(gate.count("not buy_allowed(root,"), 3)
+        self.assertIn('buy_allowed(root,"stock",_pending_code(self,c,tf),tf,c)', gate)
+        self.assertIn('buy_allowed(root,"stock",symbol,frame,c)', gate)
+        self.assertIn('buy_allowed(root,"coin",symbol,frame)', gate)
         ref = read("reference_1118_runtime.py")
-        self.assertEqual(ref.count('_up_market("stock")'), 2)
-        self.assertEqual(ref.count('_up_market("coin")'), 1)
+        self.assertIn('_up_market("stock",data.get("code"),data.get("tf"),c)', ref)
+        self.assertIn('_up_market("stock",raw.get("code"),tf,c)', ref)
+        self.assertIn('_up_market("coin",order["market"],order["tf"])', ref)
         self.assertIn('"score_positive_at_buy":bool(getattr(_BUY_CTX,"positive",True))', ref)
 
 
 class NewBuyBlockWiring(unittest.TestCase):
     def test_trend_wallet_refuses_new_entry(self):
-        self.assertIn("block=size.new_buy_block(self.root,market)\n                    if block:return None,block",
-                      read("market_trend_wallet_v054.py"))
+        src = read("market_trend_wallet_v054.py")
+        self.assertIn("decision=size.decision(self.root,market,symbol,frame)", src)
+        self.assertIn("block=decision.get('block')\n                    if block:return None,block", src)
 
     def test_coin_ma_refuses_new_entry(self):
         src = read("ma_v067_coin_runtime.py")
-        self.assertIn("block=_new_buy_block(self)", src)
+        self.assertIn("score_at_buy,size_factor,block=_buy_size_evidence(self,order)", src)
+        self.assertIn("size.decision(root,'coin',symbol,frame)", src)
         self.assertIn("MA_REGIME_NO_NEW_BUY_V0290", src)
 
     def test_stock_ma_clamp_refuses_only_pending_ma_entries(self):
@@ -180,6 +178,7 @@ class NewBuyBlockWiring(unittest.TestCase):
             book = Book()
             stock._install_score_size_clamp(book)
             blocked = {"score": 7.0, "factor": Decimal("0.5"), "block": "MARKET_REGIME_X"}
+            # the clamp asks per pending MA frame of THIS symbol
             with patch("market_score_size_v0200.decision", return_value=blocked):
                 stock._SIZE_CTX.ctx = (service, "005930")
                 try:
@@ -196,6 +195,10 @@ class NewBuyBlockWiring(unittest.TestCase):
     def test_top_ups_keep_using_the_factor_only(self):
         for name in ("trend_partial_entry_v094.py", "coin_partial_entry_v094.py"):
             self.assertNotIn("new_buy_block", read(name))
+        self.assertIn("size.factor(wallet.root,market,symbol,pos.frame)", read("trend_partial_entry_v094.py"))
+        self.assertIn("symbol,p['tf'])))", read("coin_partial_entry_v094.py"))
+        self.assertIn("size.factor(self.co.rt.root,self.market,symbol,frame)", read("market_trend_preplan_v099.py"))
+        self.assertIn("size.factor(self.market_store.root,'stock',code,p['tf'])", read("ma_v067_stock_runtime.py"))
 
 
 class SurgeFilter(unittest.TestCase):
@@ -266,7 +269,7 @@ class Installation(unittest.TestCase):
     def test_installed_after_close_feed(self):
         src = read("android_runtime_v078.py")
         self.assertLess(src.index("_install_close_feed_v0270(_core)"),
-                        src.index("_start_market_regime_v0290("))
+                        src.index("_install_market_regime_v0290()"))
         self.assertIn("_install_at_surge_v0290()", src)
 
 

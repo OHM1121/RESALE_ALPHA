@@ -1894,6 +1894,37 @@
       ],
       "notes": "Supersedes the 2026-11-21 score <= -10 half-limit rule (0.2.0). INFERRED: regime definition (KOSPI/BTC daily MA20/MA60 + 5-bar slope), unverified regime -> SIDEWAYS table, +20 % = close-to-close. Unknown score never reduces/blocks. CW and GMO do not use the score (unchanged). test_v002 caught v19_orders lacking ref_ts (resolved via signals) before commit."
     }
+,
+    {
+      "id": "RG-0210-01",
+      "issue": 145,
+      "found": "owner instruction 2026-11-22 (\"각 시간봉별로\" / \"각 매수한 종목을 봐야지\")",
+      "category": "USER_POLICY_DECISION",
+      "title": "Regime judged on each bought symbol on its own timeframe instead of KOSPI/BTC daily",
+      "evidence": "Owner instruction; live 2026-11-22 showed BTC 5m/30m/60m UP vs daily DOWN, so one daily benchmark mislabels short frames",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.10",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "MARKET_REGIME_V0290",
+        "MARKET_SCORE_SIZE_V0200",
+        "AT_SURGE_FILTER_V0290",
+        "STOCK_AT",
+        "COIN_GENERAL",
+        "STOCK_MA",
+        "COIN_MA",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v0290_market_regime_and_at_surge.py",
+        "test_v0200_market_score_half_limit.py",
+        "test_v017_stock_preload_progress.py"
+      ],
+      "notes": "No network: stock native bars table / Trend history, coin scanner closed bars (current time only) / Trend history. <65 bars -> SIDEWAYS table (INFERRED). Market score stays market-wide. Index fetch worker removed."
+    }
   ],
   "known_normal": [
     {
@@ -2354,5 +2385,13 @@
     "ci_run": 44992329644,
     "apk_sha256": "591c5c3ee11f6119c243a3a7c8682618dff42819466e6fbee46746ebae498a7c",
     "apk_bytes": 30094219
+  },
+  "candidate_0210": {
+    "version": "0.2.10",
+    "versionCode": 163,
+    "base": "0.2.9",
+    "status": "SOURCE_FIXED",
+    "device_verified": false,
+    "next_version": "0.2.11"
   }
 }

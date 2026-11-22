@@ -170,7 +170,7 @@ class PreparedCoinTrend:
             import market_score_size_v0200 as size
             budget=min(int(a["cash"]),size.limit_krw(
                 int(a["seed"])//max(1,int(a["max_positions"])),
-                size.factor(self.co.rt.root,self.market)))
+                size.factor(self.co.rt.root,self.market,symbol,frame)))
         except (KeyError,ValueError,TypeError,AttributeError,OverflowError):
             plan["status"]="ACCOUNT_UNAVAILABLE"
             return plan

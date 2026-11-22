@@ -25,23 +25,15 @@ def read(name):
 
 
 class Factor(unittest.TestCase):
-    def setUp(self):
-        import market_regime_v0290 as regime
-        self.regime = regime
-
-    def tearDown(self):
-        self.regime.set_state_for_test('coin', None)
+    SERIES = {'UP': [100.0 + i for i in range(80)], 'DOWN': [200.0 - i for i in range(80)],
+              'SIDEWAYS': [100.0 + (i % 2) for i in range(80)], None: []}
 
     def _factor(self, score, regime='SIDEWAYS'):
-        import datetime as dt
-        if regime is None:
-            self.regime.set_state_for_test('coin', None)
-        else:
-            self.regime.set_state_for_test('coin', {'status': 'VERIFIED', 'regime': regime,
-                'fetched_at': dt.datetime.now(self.regime.KST).isoformat()})
+        # 0.2.10: the regime is judged on the bought symbol's own bars.
         with patch('at_market_score_gate_v107.score_evidence',
-                   return_value={'score': score, 'basis': 'X'}):
-            return size.evidence('/x', 'coin')
+                   return_value={'score': score, 'basis': 'X'}), \
+             patch('market_regime_v0290.closes_for', return_value=self.SERIES[regime]):
+            return size.evidence('/x', 'coin', 'KRW-X', '30m')
 
     def test_threshold_is_minus_ten_inclusive(self):
         # 0.2.9 SIDEWAYS: score >= -10 -> 50 %, below -10 -> 100 %.
@@ -147,15 +139,15 @@ class StockClamp(unittest.TestCase):
 
 class WiringIsPinned(unittest.TestCase):
     def test_every_ma_and_trend_buy_and_top_up_uses_the_factor(self):
-        self.assertIn('size.evidence(self.root,market)', read('market_trend_wallet_v054.py'))
+        self.assertIn('size.decision(self.root,market,symbol,frame)', read('market_trend_wallet_v054.py'))
         self.assertIn('size.limit_krw(', read('market_trend_wallet_v054.py'))
-        self.assertIn('size.factor(wallet.root,market)', read('trend_partial_entry_v094.py'))
-        self.assertIn('size.factor(self.co.rt.root,self.market)', read('market_trend_preplan_v099.py'))
+        self.assertIn('size.factor(wallet.root,market,symbol,pos.frame)', read('trend_partial_entry_v094.py'))
+        self.assertIn('size.factor(self.co.rt.root,self.market,symbol,frame)', read('market_trend_preplan_v099.py'))
         coin = read('ma_v067_coin_runtime.py')
-        self.assertIn('_buy_size_evidence(self)', coin)
+        self.assertIn('_buy_size_evidence(self,order)', coin)
         self.assertIn('/(Decimal(1)+FEE_RATE)', coin.replace(' ', ''))
         self.assertIn("self.account_variant=='ma'", read('coin_partial_entry_v094.py'))
-        self.assertIn("size.factor(self.market_store.root,'stock')", read('ma_v067_stock_runtime.py'))
+        self.assertIn("size.factor(self.market_store.root,'stock',code,p['tf'])", read('ma_v067_stock_runtime.py'))
 
     def test_reference_bar_at_gmo_and_cw_are_not_touched(self):
         for name in ('at_market_score_gate_v107.py', 'gmo_partial_entry_v094.py'):

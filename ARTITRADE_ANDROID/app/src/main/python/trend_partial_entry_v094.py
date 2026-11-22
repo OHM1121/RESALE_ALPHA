@@ -72,7 +72,7 @@ def topup_trend(wallet,pos,quote,now):
             import market_score_size_v0200 as size
             per_symbol=size.limit_krw(
                 int(account['seed'])//max(1,int(account['max_positions'])),
-                size.factor(wallet.root,market))
+                size.factor(wallet.root,market,symbol,pos.frame))
             if not qualified_topup(market,first,ask,spent,per_symbol,False,True,
                                    symbol=symbol,instrument_tick=instrument_tick):
                 return 0

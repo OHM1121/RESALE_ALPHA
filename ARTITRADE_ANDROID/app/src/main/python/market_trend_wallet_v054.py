@@ -225,8 +225,9 @@ class TrendWalletV054:
                     if int(held)>=int(r['max_positions']):return None,'FRAME_MAX_POSITIONS'
                     if int(r['cash'])<=0:return None,'NO_WALLET_CASH'
                     import market_score_size_v0200 as size
-                    score_at_buy,size_factor=size.evidence(self.root,market)
-                    block=size.new_buy_block(self.root,market)
+                    decision=size.decision(self.root,market,symbol,frame)
+                    score_at_buy,size_factor=decision.get('score'),decision.get('factor',size.FULL)
+                    block=decision.get('block')
                     if block:return None,block
                     budget=min(int(r['cash']),size.limit_krw(
                         int(r['seed'])//int(r['max_positions']),size_factor))
