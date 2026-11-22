@@ -14,8 +14,30 @@ import sqlite3
 import time
 from pathlib import Path
 
+import threading
+
 import new_legacy_1118_policy as nl
 import new_legacy_1118_resting as resting
+
+# 0.2.9: whether the score was positive at THIS buy (an UP-market buy may have a
+# negative score; then the "bought while positive, score < -10 -> sell" exit does not apply).
+_BUY_CTX=threading.local()
+
+
+def _up_market(market):
+    try:
+        import market_regime_v0290 as regime
+        return regime.state(market).get("regime")==regime.UP
+    except Exception:
+        return False
+
+
+def _surge_reason(c,tf,code,ref_ts):
+    try:
+        import at_surge_filter_v0290 as surge
+        return surge.stock_check(c,tf,code,ref_ts)
+    except Exception:
+        return None
 
 _INSTALLED=False
 _TBL="""CREATE TABLE IF NOT EXISTS nl1118_reference_positions(
@@ -56,7 +78,8 @@ def _mark(c,position,market):
             "position_id":int(p["id"]),"qty0":float(p["entry_qty"] if market=="stock" else p["qty0"]),
             "qty":float(p["qty"]),"stage":0,"stage1_filled":0.0,
             "stage2_filled":0.0,"peak_after_second":float(entry),
-            "seen_above_entry":False,"score_positive_at_buy":True})
+            "seen_above_entry":False,
+            "score_positive_at_buy":bool(getattr(_BUY_CTX,"positive",True))})
         if market=="coin":
             # Original Upbit wallet's immutable actual hold_until remains
             # authoritative. Its default auto SELL is suppressed only for
@@ -208,12 +231,31 @@ def install():
         # legitimate entry is never fabricated or misdiagnosed.
         from at_market_score_gate_v107 import score_evidence
         proof=score_evidence(self.store.root,"stock")
-        if proof.get("basis")!="SIGNED_MARKET_SCORE_V033":
-            return False,"NL1118_MARKET_SCORE_UNAVAILABLE:"+str(proof.get("basis") or "UNKNOWN")
-        if not nl.validate_stock_score(proof.get("score")):
+        positive=(proof.get("basis")=="SIGNED_MARKET_SCORE_V033" and
+                  nl.validate_stock_score(proof.get("score")))
+        if not positive and not _up_market("stock"):
+            if proof.get("basis")!="SIGNED_MARKET_SCORE_V033":
+                return False,"NL1118_MARKET_SCORE_UNAVAILABLE:"+str(proof.get("basis") or "UNKNOWN")
             return False,"NL1118_MARKET_SCORE_NOT_POSITIVE"
-        result=native_d19(self,c,row,when,venue,observed_trade_price,
-                          observed_trade_qty)
+        data=dict(row)
+        ref_ts=data.get("ref_ts")
+        if not ref_ts and data.get("signal_id") is not None:
+            # v19_orders rows carry signal_id only; the reference bar lives on the signal.
+            try:
+                sig=c.execute("SELECT ref_ts FROM signals WHERE id=?",(data["signal_id"],)).fetchone()
+                ref_ts=sig[0] if sig else None
+            except Exception:
+                ref_ts=None
+        blocked=_surge_reason(c,data.get("tf"),data.get("code"),ref_ts)
+        if blocked:
+            return False,blocked
+        _BUY_CTX.positive=bool(positive)
+        try:
+            result=native_d19(self,c,row,when,venue,observed_trade_price,
+                              observed_trade_qty)
+        except Exception:
+            _BUY_CTX.positive=True
+            raise
         if isinstance(result,tuple) and result[0]:
             p=c.execute("""SELECT * FROM positions WHERE tf=? AND code=?
                 AND status='OPEN' ORDER BY id DESC LIMIT 1""",
@@ -224,36 +266,56 @@ def install():
                 raise RuntimeError("NL1118_D19_BUY_INTENT_MISSING_ROLLBACK")
             c.execute("UPDATE positions SET exit_policy=? WHERE id=?",
                       (nl.POLICY,p["id"]))
+        _BUY_CTX.positive=True
         return result
     d_v19_portfolio.D19PaperEngine._buy_limit_depth=buy_d19
 
     legacy_buy=d_engine.PaperEngine._buy_if_touch
     def buy_legacy(self,c,tf,minute,at):
-        if not nl.validate_stock_score(_market_score(self.store.root,"stock")):
+        positive=nl.validate_stock_score(_market_score(self.store.root,"stock"))
+        if not positive and not _up_market("stock"):
             return None
-        p=legacy_buy(self,c,tf,minute,at)
-        if p is not None:
-            if not _mark(c,p,"stock"):
-                raise RuntimeError("NL1118_STOCK_BUY_INTENT_MISSING_ROLLBACK")
-            c.execute("UPDATE positions SET exit_policy=? WHERE id=?",
-                      (nl.POLICY,p["id"]))
-            p=c.execute("SELECT * FROM positions WHERE id=?",(p["id"],)).fetchone()
+        try:
+            pending=self._pending(c,tf)
+            if pending is not None:
+                raw=dict(pending)
+                if _surge_reason(c,tf,raw.get("code"),raw.get("ref_ts")):
+                    return None
+        except Exception:
+            pass
+        _BUY_CTX.positive=bool(positive)
+        try:
+            p=legacy_buy(self,c,tf,minute,at)
+            if p is not None:
+                if not _mark(c,p,"stock"):
+                    raise RuntimeError("NL1118_STOCK_BUY_INTENT_MISSING_ROLLBACK")
+                c.execute("UPDATE positions SET exit_policy=? WHERE id=?",
+                          (nl.POLICY,p["id"]))
+                p=c.execute("SELECT * FROM positions WHERE id=?",(p["id"],)).fetchone()
+        finally:
+            _BUY_CTX.positive=True
         return p
     d_engine.PaperEngine._buy_if_touch=buy_legacy
 
     native_coin=d_upbit.CoinLedger._buy
     def buy_coin(self,c,order,book,seen,available):
+        positive=True
         if _is_base_coin(self):
             root=Path(self.path).resolve().parent.parent.parent
-            if not nl.validate_stock_score(_market_score(root,"coin")):
+            positive=nl.validate_stock_score(_market_score(root,"coin"))
+            if not positive and not _up_market("coin"):
                 return 0
-        bought=native_coin(self,c,order,book,seen,available)
-        if _is_base_coin(self) and bought:
-            p=c.execute("""SELECT * FROM positions WHERE tf=? AND market=?
-               AND ref_at=? AND status='OPEN' ORDER BY id DESC LIMIT 1""",
-               (order["tf"],order["market"],order["ref_at"])).fetchone()
-            if p is None or not _mark(c,p,"coin"):
-                raise RuntimeError("NL1118_COIN_BUY_INTENT_MISSING_ROLLBACK")
+        _BUY_CTX.positive=bool(positive)
+        try:
+            bought=native_coin(self,c,order,book,seen,available)
+            if _is_base_coin(self) and bought:
+                p=c.execute("""SELECT * FROM positions WHERE tf=? AND market=?
+                   AND ref_at=? AND status='OPEN' ORDER BY id DESC LIMIT 1""",
+                   (order["tf"],order["market"],order["ref_at"])).fetchone()
+                if p is None or not _mark(c,p,"coin"):
+                    raise RuntimeError("NL1118_COIN_BUY_INTENT_MISSING_ROLLBACK")
+        finally:
+            _BUY_CTX.positive=True
         return bought
     d_upbit.CoinLedger._buy=buy_coin
 

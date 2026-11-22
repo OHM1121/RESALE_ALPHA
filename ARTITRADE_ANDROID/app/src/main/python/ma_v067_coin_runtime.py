@@ -657,6 +657,31 @@ def _buy_size_evidence(self):
         return None,size.FULL
 
 
+def _new_buy_block(self):
+    """0.2.9: regime 'no new buy' reason for the coin MA ledger, or None. Never raises."""
+    try:
+        import market_score_size_v0200 as size
+        from pathlib import Path
+        return size.new_buy_block(Path(self.path).resolve().parent.parent.parent,'coin')
+    except Exception:
+        return None
+
+
+_BLOCK_NOTED=set()
+
+
+def _note_block(self,c,order,block,now):
+    key=(str(order['id']),str(block).split('_SCORE_')[0])
+    if key in _BLOCK_NOTED:return
+    _BLOCK_NOTED.add(key)
+    try:
+        c.execute("INSERT INTO issues(at,severity,code,message) VALUES(?,?,?,?)",
+                  (now.isoformat(),'INFO','MA_REGIME_NO_NEW_BUY_V0290',
+                   '%s/%s %s'%(order['market'],order['tf'],block)))
+    except Exception:
+        pass
+
+
 def _record_buy_size(c,position_id,score,factor):
     """Keep the score and size factor that applied at the BUY in the MA sidecar (evidence only)."""
     try:
@@ -995,6 +1020,11 @@ def install():
         refreshed=c.execute('SELECT status FROM orders WHERE id=?',(order['id'],)).fetchone()
         if refreshed is None or refreshed['status']!='PENDING':return 0
         score_at_buy,size_factor=_buy_size_evidence(self)
+        block=_new_buy_block(self)
+        if block:
+            # 0.2.9 regime table: no NEW MA entry now (order stays PENDING, re-checked next book).
+            _note_block(self,c,order,block,now)
+            return 0
         if size_factor<1:
             # Owner rule 2026-11-21: market score <= -10 -> half the per-symbol limit (see
             # market_score_size_v0200). The vendor sizes by min(cash, per-symbol limit, `available`),

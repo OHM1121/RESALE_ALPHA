@@ -62,6 +62,17 @@ def score_evidence(root,market):
     except (ValueError,TypeError,OverflowError):
         return {"negative":False,"positive":False,"score":None,"basis":"SCORE_UNVERIFIED"}
 
+def buy_allowed(root,market):
+    """0.2.9 (sheet 11.22 C11): positive fresh score, OR an UP market whatever the score."""
+    if root is None:return False
+    positive=score_evidence(root,market)["positive"]
+    if positive:return True
+    try:
+        import market_regime_v0290 as regime
+        return regime.at_buy_allowed(root,market,False)
+    except Exception:
+        return False
+
 def install():
     """Wrap only original native BUY functions, never BUY replays or SELL."""
     global _INSTALLED
@@ -76,7 +87,7 @@ def install():
 
     def legacy_stock(self,c,tf,minute,at):
         root=getattr(self.store,"root",None)
-        if root is None or not score_evidence(root,"stock")["positive"]:
+        if not buy_allowed(root,"stock"):
             return None
         try:
             pending=self._pending(c,tf)
@@ -93,7 +104,7 @@ def install():
     def d19_stock(self,c,row,when,venue,observed_trade_price,
                   observed_trade_qty=0):
         root=getattr(self.store,"root",None)
-        if root is None or not score_evidence(root,"stock")["positive"]:
+        if not buy_allowed(root,"stock"):
             return False,_NOT_POSITIVE
         try:
             data=dict(row)
@@ -119,7 +130,7 @@ def install():
                 path.parent.name=="base" and
                 path.parent.parent.name=="coin"):
                 root=path.parent.parent.parent
-                if not score_evidence(root,"coin")["positive"]:
+                if not buy_allowed(root,"coin"):
                     return 0
                 try:
                     data=dict(order)

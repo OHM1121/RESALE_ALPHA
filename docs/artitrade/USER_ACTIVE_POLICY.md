@@ -301,3 +301,20 @@ a new instruction appears different. Cross-check original
 - **기존 기준 (2026-11-22, 0.2.6 INFERRED):** the pre-emptive exit applied on ANY down night (the stop-distance test was the only condition). That interpretation is superseded.
 - **Now active:** the held AT/MA/MarketTrend stock pre-emptive exit is planned only when the verified EWY US-session change is <= -3.0 % (the same threshold as the 30-minute buy block) AND current price x (1 + change) <= the nearest stop. Decision 07:55, 08:00 NXT, then KRX open..+30 min — unchanged. GMO D+1 ceiling still uses any verified night value.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-22: NEW LEGACY sheet 11.22 — market regime and per-regime buy settings (owner, issue #144, version 0.2.9)
+- **Owner instruction (NEW_LEGACY11.18_rev1.xlsx, sheet 11.22, red = added, no blue = nothing deleted):**
+  - C11 (all strategies, stock and coin): detect UP / DOWN / SIDEWAYS markets. UP: buy whether the score is below 0 or not; delete the former "score <= -10 -> per-symbol limit" rule. DOWN / SIDEWAYS settings are per strategy.
+  - D6 MA and D7 MarketTrend: DOWN: score >= -10 -> 50 % of the per-symbol limit, -20 <= score < -10 -> 70 %, < -20 -> 100 %, >= +5 at the BUY -> no new buy. SIDEWAYS: >= -10 -> 50 %, < -10 -> 100 %, >= +10 -> no new buy.
+  - D5 reference bar: for each timeframe, if any of the 10 bars ending with the reference bar (reference included) rose +20 % or more, do not buy.
+- **기존 기준 설정일 / 기존 기준:** 2026-11-21 (0.2.0): MA and MarketTrend use HALF the per-symbol limit while the score is <= -10, otherwise full; no score-based block. 2026-11-18: reference-bar BUY needs a fresh strictly positive score.
+- **새 지시와 충돌하는 부분 / 예상 결함:** the 0.2.0 rule is explicitly replaced (owner red text). Sizing becomes inverted in DOWN/SIDEWAYS markets (weaker score -> larger buy). MA/Trend make no new buy in a DOWN market from score +5 and in a SIDEWAYS market from +10. In an UP market AT may buy with a negative or unknown score. Close-betting ("기존 방식 유지") and supply-demand do not use the score -> unchanged.
+- **Now active:** regime from completed daily bars, stock KOSPI (Yahoo ^KS11) and coin Upbit KRW-BTC. Top-ups of an already filled entry use the factor and are never blocked. A position bought with a negative score in an UP market is not subject to the "bought while positive, score < -10 -> sell" AT exit.
+- **Interpretations recorded as assumptions (INFERRED, owner may correct):**
+  - UP = close > MA20 > MA60 and MA20 higher than 5 bars ago; DOWN = close < MA20 < MA60 and MA20 lower; otherwise SIDEWAYS.
+  - KOSPI stands for the whole stock market (also KOSDAQ symbols).
+  - An unverified regime uses the SIDEWAYS table; an unknown score never reduces or blocks.
+  - "+20 % rise" = close >= 1.20 x previous close (HTS 등락률), not intrabar high.
+  - An unreadable stock bar window does not block.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified. Live check 2026-11-22: KOSPI DOWN (as of 11-20), BTC DOWN (as of 11-21).
+

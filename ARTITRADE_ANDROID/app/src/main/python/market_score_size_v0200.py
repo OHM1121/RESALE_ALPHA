@@ -8,6 +8,12 @@ The reduction is evaluated again at every BUY (and every top-up), so it recovers
 score is above -10. It never stops a buy (market score still gates only the reference-bar AT strategy),
 never sells, never touches holdings, cash or seeds. A missing / stale / unverified score is NOT a reason
 to reduce: unknown is not -10.
+
+0.2.9 (owner sheet 11.22, supersedes the rule above): the factor now follows the market regime
+(market_regime_v0290.ma_trend_decision). UP market: full limit, the <= -10 half rule is deleted.
+DOWN: score >= -10 -> 50 %, -20..-10 -> 70 %, < -20 -> 100 %, >= +5 -> no NEW buy.
+SIDEWAYS: score >= -10 -> 50 %, < -10 -> 100 %, >= +10 -> no NEW buy.
+`new_buy_block` is checked by the NEW-entry paths only; top-ups use the factor.
 """
 from __future__ import annotations
 from decimal import Decimal
@@ -17,16 +23,24 @@ REDUCED=Decimal("0.5")
 FULL=Decimal(1)
 
 
+def decision(root,market):
+    """Full regime sizing decision; never raises (falls back to the full limit)."""
+    try:
+        import market_regime_v0290 as regime
+        return regime.ma_trend_decision(root,market)
+    except Exception:
+        return {"factor":FULL,"block":None,"regime":None,"applied":None,"score":None}
+
+
 def evidence(root,market):
     """(score or None, factor). Never raises."""
-    try:
-        from at_market_score_gate_v107 import score_evidence
-        score=score_evidence(root,market).get("score")
-    except Exception:
-        score=None
-    if score is not None and score<=THRESHOLD:
-        return score,REDUCED
-    return score,FULL
+    d=decision(root,market)
+    return d.get("score"),d.get("factor",FULL)
+
+
+def new_buy_block(root,market):
+    """Reason string when a NEW MA/MarketTrend entry must not be opened now, else None."""
+    return decision(root,market).get("block")
 
 
 def factor(root,market):

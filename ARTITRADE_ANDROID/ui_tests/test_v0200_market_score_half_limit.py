@@ -1,4 +1,8 @@
-"""0.2.0: MA and MarketTrend buy at HALF the per-symbol limit while the market score is <= -10."""
+"""0.2.0: MA and MarketTrend buy at HALF the per-symbol limit while the market score is <= -10.
+
+0.2.9: the owner's sheet 11.22 deletes the "<= -10 -> half" rule and replaces it with the market-regime
+table (market_regime_v0290). The Factor expectations below follow that table; the stock clamp, wiring and
+evidence tests are unchanged in intent (the clamp now reads size.decision)."""
 import sqlite3
 import sys
 import tempfile
@@ -21,20 +25,40 @@ def read(name):
 
 
 class Factor(unittest.TestCase):
-    def _factor(self, score):
+    def setUp(self):
+        import market_regime_v0290 as regime
+        self.regime = regime
+
+    def tearDown(self):
+        self.regime.set_state_for_test('coin', None)
+
+    def _factor(self, score, regime='SIDEWAYS'):
+        import datetime as dt
+        if regime is None:
+            self.regime.set_state_for_test('coin', None)
+        else:
+            self.regime.set_state_for_test('coin', {'status': 'VERIFIED', 'regime': regime,
+                'fetched_at': dt.datetime.now(self.regime.KST).isoformat()})
         with patch('at_market_score_gate_v107.score_evidence',
                    return_value={'score': score, 'basis': 'X'}):
             return size.evidence('/x', 'coin')
 
     def test_threshold_is_minus_ten_inclusive(self):
+        # 0.2.9 SIDEWAYS: score >= -10 -> 50 %, below -10 -> 100 %.
         self.assertEqual(self._factor(-10.0)[1], Decimal('0.5'))
-        self.assertEqual(self._factor(-55.0)[1], Decimal('0.5'))
-        self.assertEqual(self._factor(-9.99)[1], Decimal(1))
-        self.assertEqual(self._factor(0.0)[1], Decimal(1))
-        self.assertEqual(self._factor(42.0)[1], Decimal(1))
+        self.assertEqual(self._factor(-10.01)[1], Decimal(1))
+        self.assertEqual(self._factor(-55.0)[1], Decimal(1))
+        self.assertEqual(self._factor(0.0)[1], Decimal('0.5'))
+        # 0.2.9 DOWN: -20..-10 -> 70 %, < -20 -> 100 %.
+        self.assertEqual(self._factor(-15.0, 'DOWN')[1], Decimal('0.7'))
+        self.assertEqual(self._factor(-20.5, 'DOWN')[1], Decimal(1))
+        # 0.2.9 UP: the former half rule is deleted.
+        self.assertEqual(self._factor(-55.0, 'UP')[1], Decimal(1))
+        self.assertEqual(self._factor(-10.0, 'UP')[1], Decimal(1))
 
     def test_unknown_or_stale_score_is_not_a_reduction(self):
         self.assertEqual(self._factor(None)[1], Decimal(1))
+        self.assertEqual(self._factor(None, 'DOWN')[1], Decimal(1))
         with patch('at_market_score_gate_v107.score_evidence', side_effect=RuntimeError('x')):
             self.assertEqual(size.evidence('/x', 'coin'), (None, Decimal(1)))
 
@@ -46,8 +70,8 @@ class Factor(unittest.TestCase):
         self.assertEqual(size.limit_krw(333_333, Decimal('0.5')), 166_666)   # floor
 
     def test_recovers_automatically(self):
-        self.assertEqual(self._factor(-12.0)[1], Decimal('0.5'))
-        self.assertEqual(self._factor(-4.0)[1], Decimal(1))     # same code path, next buy: full again
+        self.assertEqual(self._factor(-5.0, 'DOWN')[1], Decimal('0.5'))
+        self.assertEqual(self._factor(-25.0, 'DOWN')[1], Decimal(1))   # same code path, next buy
 
 
 class StockClamp(unittest.TestCase):
@@ -76,7 +100,7 @@ class StockClamp(unittest.TestCase):
         return self.book.available(code, 'KRX', None, 10100, 20)
 
     def test_half_limit_caps_the_quantity_only_inside_the_ma_tick(self):
-        with patch('market_score_size_v0200.evidence', return_value=(-12.0, Decimal('0.5'))):
+        with patch('market_score_size_v0200.decision', return_value={'score': -12.0, 'factor': Decimal('0.5'), 'block': None}):
             stock._SIZE_CTX.ctx = (self.service, '005930')
             try:
                 proof, _ = self.ask()
@@ -88,7 +112,7 @@ class StockClamp(unittest.TestCase):
             self.assertEqual(outside[1], 20)
 
     def test_full_limit_when_score_is_above_minus_ten(self):
-        with patch('market_score_size_v0200.evidence', return_value=(-3.0, Decimal(1))):
+        with patch('market_score_size_v0200.decision', return_value={'score': -3.0, 'factor': Decimal(1), 'block': None}):
             stock._SIZE_CTX.ctx = (self.service, '005930')
             try:
                 proof, _ = self.ask()
@@ -97,7 +121,7 @@ class StockClamp(unittest.TestCase):
         self.assertEqual(proof[1], 20)
 
     def test_other_symbols_and_threads_are_untouched(self):
-        with patch('market_score_size_v0200.evidence', return_value=(-30.0, Decimal('0.5'))):
+        with patch('market_score_size_v0200.decision', return_value={'score': -30.0, 'factor': Decimal('0.5'), 'block': None}):
             stock._SIZE_CTX.ctx = (self.service, '005930')
             try:
                 other, _ = self.ask('000660')
@@ -111,7 +135,7 @@ class StockClamp(unittest.TestCase):
 
     def test_below_one_share_means_no_buy_not_a_wrong_buy(self):
         c = sqlite3.connect(self.db); c.execute("UPDATE accounts SET seed=40000"); c.commit(); c.close()
-        with patch('market_score_size_v0200.evidence', return_value=(-30.0, Decimal('0.5'))):
+        with patch('market_score_size_v0200.decision', return_value={'score': -30.0, 'factor': Decimal('0.5'), 'block': None}):
             stock._SIZE_CTX.ctx = (self.service, '005930')
             try:
                 proof, why = self.ask()           # limit 2,000 KRW < one 10,000 KRW share

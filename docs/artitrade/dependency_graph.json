@@ -1396,11 +1396,13 @@
         "STOCK_MA"
       ],
       "issues": [
-        132
+        132,
+        144
       ],
-      "contract": "MA and MarketTrend (stock+coin) use HALF of the per-symbol limit (frame seed // max positions) while the signed market score of their market is <= -10 at the BUY/top-up; evaluated at every buy so it restores itself. Never stops a buy, never sells, never touches AT/GMO/CW, cash or seeds. Unknown/stale score = full limit. Score and factor stored on the position (market_score_at_buy, buy_size_factor). Coin MA: cap on the vendor `available` amount; stock MA: thread-scoped clamp of shared_book.available during the MA tick only.",
+      "contract": "MA and MarketTrend (stock+coin) use HALF of the per-symbol limit (frame seed // max positions) while the signed market score of their market is <= -10 at the BUY/top-up; evaluated at every buy so it restores itself. Never stops a buy, never sells, never touches AT/GMO/CW, cash or seeds. Unknown/stale score = full limit. Score and factor stored on the position (market_score_at_buy, buy_size_factor). Coin MA: cap on the vendor `available` amount; stock MA: thread-scoped clamp of shared_book.available during the MA tick only. 0.2.9 (#144, owner sheet 11.22): factor follows market_regime_v0290 table (UP 100 %, DOWN >=-10 50 % / -20..-10 70 % / <-20 100 % / >=+5 no new buy, SIDEWAYS >=-10 50 % / <-10 100 % / >=+10 no new buy); new_buy_block checked by stock MA clamp, coin MA _buy and TrendWalletV054.buy only; top-ups use the factor.",
       "tests": [
-        "test_v0200_market_score_half_limit.py"
+        "test_v0200_market_score_half_limit.py",
+        "test_v0290_market_regime_and_at_surge.py"
       ]
     },
     {
@@ -1567,6 +1569,55 @@
       "contract": "AtCloseRunner.shared_queue = CoalescingCloseQueue: REAL rows keyed (item,type) keep only the newest (arrival time kept), one queued token per key, control messages unchanged; consumer and vendor 3 s valid_broker_frame/book gates unchanged. No quote/order/fill created.",
       "tests": [
         "test_v0270_premarket_exit_and_close_feed.py"
+      ]
+    },
+    {
+      "id": "MARKET_REGIME_V0290",
+      "kind": "python-runtime",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/market_regime_v0290.py"
+      ],
+      "depends_on": [
+        "MARKET_SCORE",
+        "MARKET_SCORE_SIZE_V0200",
+        "STOCK_AT",
+        "COIN_GENERAL",
+        "STOCK_MA",
+        "COIN_MA",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "issues": [
+        144
+      ],
+      "contract": "Read-only: completed daily closes (stock Yahoo ^KS11, coin Upbit KRW-BTC; forming bar dropped) -> classify UP (close>MA20>MA60, MA20 up vs 5 bars ago) / DOWN (mirror) / SIDEWAYS; background refresh 30 min, persisted market_regime_v0290.json, valid 36 h, failed refresh keeps last verified value. ma_trend_decision(root,market): UP full no block; DOWN/SIDEWAYS tables; unverified regime -> SIDEWAYS table (INFERRED); unknown score never reduces/blocks. at_buy_allowed: positive score OR UP. No network call in any buy path; no order/fill/price created.",
+      "tests": [
+        "test_v0290_market_regime_and_at_surge.py",
+        "test_v0200_market_score_half_limit.py"
+      ]
+    },
+    {
+      "id": "AT_SURGE_FILTER_V0290",
+      "kind": "python-runtime",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/at_surge_filter_v0290.py",
+        "ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/at_market_score_gate_v107.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "COIN_GENERAL",
+        "MARKET_REGIME_V0290"
+      ],
+      "issues": [
+        144
+      ],
+      "contract": "Reference-bar BUY refused when any of the 10 same-timeframe bars ending with the reference bar closed >= +20 % vs the previous close (INFERRED close-to-close). Stock: reference_1118_runtime buy_d19 (ref_ts via signals.signal_id) and buy_legacy (pending.ref_ts) read the native bars table; unreadable window does not block (counted). Coin: d_upbit.ref_features wrapped (allow_strong_bear shadow untouched, coin_ma_engine keeps the native binding). AT score gate (at_market_score_gate_v107.buy_allowed + reference_1118_runtime): positive score OR UP regime; score_positive_at_buy records the actual sign at the buy.",
+      "tests": [
+        "test_v0290_market_regime_and_at_surge.py",
+        "test_v002_eight_virtual_paper_end_to_end.py",
+        "test_v017_stock_preload_progress.py",
+        "test_v107_at_negative_market_gate.py"
       ]
     }
   ],

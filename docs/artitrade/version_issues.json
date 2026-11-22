@@ -1845,9 +1845,9 @@
       "title": "Pre-emptive night-EWY stock exit only on SEVERE nights (EWY <= -3.0 %), no longer on every down night",
       "evidence": "Owner answer to the 0.2.7 decision line; replaces the 0.2.6 INFERRED 'any down night' reading",
       "root": "OWNER_DECISION",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.2.8",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44986172411",
       "device": "UNVERIFIED",
       "nodes": [
         "NIGHT_FUTURES_GATE_V0260",
@@ -1861,6 +1861,38 @@
         "test_v0270_premarket_exit_and_close_feed.py"
       ],
       "notes": "PREEMPT_MAX_PCT = SEVERE_PCT (-3.0); preemptive_plan and preemptive_step skip nights with change > -3.0 %. Stop-distance test, 07:55 decision, 08:00 NXT / KRX-open venue, buy block and GMO ceiling unchanged."
+    }
+,
+    {
+      "id": "LG-0290-01",
+      "issue": 144,
+      "found": "owner workbook NEW_LEGACY11.18_rev1.xlsx sheet 11.22 (red text), 2026-11-22",
+      "category": "USER_POLICY_DECISION",
+      "title": "Market regime UP/DOWN/SIDEWAYS: MA/Trend regime sizing + no-new-buy, AT up-market exception, AT +20 % surge-window filter",
+      "evidence": "Owner sheet 11.22 C11/D5/D6/D7; 2-year regime check KOSPI UP 52 %/SIDEWAYS 36 %/DOWN 12 % (next-5-day +1.84/+0.19/-0.48 %), BTC 28/44/27 %; live 2026-11-22: KOSPI DOWN, BTC DOWN",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.9",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "MARKET_REGIME_V0290",
+        "AT_SURGE_FILTER_V0290",
+        "MARKET_SCORE_SIZE_V0200",
+        "STOCK_AT",
+        "COIN_GENERAL",
+        "STOCK_MA",
+        "COIN_MA",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v0290_market_regime_and_at_surge.py",
+        "test_v0200_market_score_half_limit.py",
+        "test_v017_stock_preload_progress.py",
+        "test_v002_eight_virtual_paper_end_to_end.py"
+      ],
+      "notes": "Supersedes the 2026-11-21 score <= -10 half-limit rule (0.2.0). INFERRED: regime definition (KOSPI/BTC daily MA20/MA60 + 5-bar slope), unverified regime -> SIDEWAYS table, +20 % = close-to-close. Unknown score never reduces/blocks. CW and GMO do not use the score (unchanged). test_v002 caught v19_orders lacking ref_ts (resolved via signals) before commit."
     }
   ],
   "known_normal": [
@@ -2303,8 +2335,20 @@
     "version": "0.2.8",
     "versionCode": 161,
     "base": "0.2.7",
+    "status": "CI_VERIFIED",
+    "device_verified": false,
+    "next_version": "0.2.9",
+    "source_commit": "16a953fdd500f05718741feb37e214896c486e80",
+    "ci_run": 44986172411,
+    "apk_sha256": "f93ebb077776e7f62e3edfd790fca877eaef882ed3ee63e4321cafa5e5ea161c",
+    "apk_bytes": 30060651
+  },
+  "candidate_029": {
+    "version": "0.2.9",
+    "versionCode": 162,
+    "base": "0.2.8",
     "status": "SOURCE_FIXED",
     "device_verified": false,
-    "next_version": "0.2.9"
+    "next_version": "0.2.10"
   }
 }

@@ -226,6 +226,8 @@ class TrendWalletV054:
                     if int(r['cash'])<=0:return None,'NO_WALLET_CASH'
                     import market_score_size_v0200 as size
                     score_at_buy,size_factor=size.evidence(self.root,market)
+                    block=size.new_buy_block(self.root,market)
+                    if block:return None,block
                     budget=min(int(r['cash']),size.limit_krw(
                         int(r['seed'])//int(r['max_positions']),size_factor))
                     amount=self._price_qty(market,ask,ask_size,budget)

@@ -436,3 +436,17 @@ Based on 0.2.7 (versionCode 161 for 0.2.8).
 2. Unchanged consumers: AT/MA/Trend buy block (`blocked_now`, same -3 % threshold), GMO `gmo_ceiling` (any verified night), close-betting.
 
 Status: SOURCE_FIXED; local regression (6 new tests); CI and device not verified.
+
+0.2.8 delivered: CI_VERIFIED (run 44986172411, source 16a953f, APK sha256 f93ebb07…a161c); device not verified.
+
+## 0.2.9 — how the changed parts connect (issue #144, owner sheet 11.22)
+Based on 0.2.8 (versionCode 162 for 0.2.9).
+1. `market_regime_v0290` (MARKET_REGIME_V0290): background worker (started at the end of `android_runtime_v078`) -> Yahoo ^KS11 / Upbit KRW-BTC completed daily closes -> `classify` -> cached state + `market_regime_v0290.json`. Buy paths read the cache only.
+2. MA / MarketTrend sizing: `market_score_size_v0200.decision/evidence/new_buy_block` -> `ma_trend_decision(root,market)` (score from `at_market_score_gate_v107.score_evidence`).
+   - NEW entries: stock MA `_install_score_size_clamp.available` (pending MA candidate at that limit -> `(None, block)`), coin MA `MACoinLedger._buy` (`_new_buy_block` -> 0, issue row `MA_REGIME_NO_NEW_BUY_V0290` once per order), `TrendWalletV054.buy` (`return None, block`).
+   - Factor only: trend/coin/stock top-ups, Trend preplan budget.
+3. AT score gate: `at_market_score_gate_v107.buy_allowed` (3 native wrappers) and `reference_1118_runtime` (`buy_d19`, `buy_legacy`, `buy_coin`): positive score OR `regime.state(market)=='UP'`; `_BUY_CTX.positive` -> `_mark` `score_positive_at_buy` -> `nl.exit_signal` score exit only for positive-score buys.
+4. AT surge filter (AT_SURGE_FILTER_V0290): stock `reference_1118_runtime.buy_d19` (ref_ts via `signals.id = v19_orders.signal_id`) / `buy_legacy` (`pending.ref_ts`) -> `at_surge_filter_v0290.stock_check` (bars table, 10 bars + 1 prior); coin `d_upbit.ref_features` wrapper -> `coin_violates` (scanner candidate never formed; shadow `allow_strong_bear=True` and `coin_ma_engine` unchanged).
+5. Unchanged consumers: close-betting, GMO, night EWY gate, exits.
+
+Status: SOURCE_FIXED; local regression (26 new tests, CI test list: no new failure); CI and device not verified.
