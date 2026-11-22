@@ -427,3 +427,5 @@ Based on 0.2.6 (versionCode 160 for 0.2.7).
 3. Install order: night gate -> coverage -> close feed (end of `android_runtime_v078`).
 
 Status: SOURCE_FIXED; local regression (10 new tests; full-suite comparison: no new failure); CI and device not verified.
+
+0.2.7 delivered: CI_VERIFIED (run 44983487732, source 494980d, APK sha256 7f3a9ae7…89524); device not verified.

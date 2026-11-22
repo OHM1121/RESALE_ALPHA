@@ -1797,7 +1797,7 @@
       "root": "OWNER_DECISION",
       "status": "CI_VERIFIED",
       "fix_version": "0.2.6",
-      "ci": "PASSED_RUN_44982710034",
+      "ci": "PASSED_RUN_44982710034_AND_44983487732",
       "device": "UNVERIFIED",
       "nodes": [
         "NIGHT_FUTURES_GATE_V0260",
@@ -1821,9 +1821,9 @@
       "title": "Stock close-betting never bought: its single realtime queue drops frames older than 3 s under load (books go stale)",
       "evidence": "AT_CLOSE_PAPER 0 signals/positions; daily-shape replay: 11 and 12 qualifying symbols on 11-18/11-19 (market-cap test not applied), every week since 2026-06 had candidates; 0.0.18 history 70/90 NO_FRESH_ORDERBOOK with book age 3-300 s; 0.1.0 pin never ran in a session",
       "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.2.7",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44983487732",
       "device": "UNVERIFIED",
       "nodes": [
         "CLOSE_FEED_COALESCE_V0270",
@@ -2265,8 +2265,12 @@
     "version": "0.2.7",
     "versionCode": 160,
     "base": "0.2.6",
-    "status": "SOURCE_FIXED_CI_PENDING",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.8"
+    "next_version": "0.2.8",
+    "source_commit": "494980d9d817185772bd05a07c19640ed3cdb117",
+    "ci_run": 44983487732,
+    "apk_sha256": "7f3a9ae78d43459bb99dfe17be34d9edf8e8987b74e4b38a062e744e68b89524",
+    "apk_bytes": 30061135
   }
 }
