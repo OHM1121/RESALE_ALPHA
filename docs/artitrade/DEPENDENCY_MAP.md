@@ -450,3 +450,5 @@ Based on 0.2.8 (versionCode 162 for 0.2.9).
 5. Unchanged consumers: close-betting, GMO, night EWY gate, exits.
 
 Status: SOURCE_FIXED; local regression (26 new tests, CI test list: no new failure); CI and device not verified.
+
+0.2.9 delivered: CI_VERIFIED (run 44992329644, source 574f176, APK sha256 591c5c3e…98a7c); device not verified.

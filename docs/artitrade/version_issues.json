@@ -1871,9 +1871,9 @@
       "title": "Market regime UP/DOWN/SIDEWAYS: MA/Trend regime sizing + no-new-buy, AT up-market exception, AT +20 % surge-window filter",
       "evidence": "Owner sheet 11.22 C11/D5/D6/D7; 2-year regime check KOSPI UP 52 %/SIDEWAYS 36 %/DOWN 12 % (next-5-day +1.84/+0.19/-0.48 %), BTC 28/44/27 %; live 2026-11-22: KOSPI DOWN, BTC DOWN",
       "root": "OWNER_DECISION",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.2.9",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44992329644",
       "device": "UNVERIFIED",
       "nodes": [
         "MARKET_REGIME_V0290",
@@ -2347,8 +2347,12 @@
     "version": "0.2.9",
     "versionCode": 162,
     "base": "0.2.8",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.10"
+    "next_version": "0.2.10",
+    "source_commit": "574f176cfaadaf27e1c6b8564fc0046462dafed1",
+    "ci_run": 44992329644,
+    "apk_sha256": "591c5c3ee11f6119c243a3a7c8682618dff42819466e6fbee46746ebae498a7c",
+    "apk_bytes": 30094219
   }
 }
