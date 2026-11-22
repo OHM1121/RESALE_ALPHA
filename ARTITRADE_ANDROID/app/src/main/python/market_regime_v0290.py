@@ -34,6 +34,7 @@ import sqlite3
 import statistics
 import threading
 import time
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 
@@ -121,7 +122,8 @@ def _stock_bars(symbol, frame, conn=None, now=None):
             db = Path(root) / "stock" / "ARTITRADE_D.sqlite3"
             if not db.exists():
                 return None
-            with sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=2) as ro:
+            # `with sqlite3.connect()` only commits; closing() really releases the file handle.
+            with closing(sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=2)) as ro:
                 rows = ro.execute(sql, args).fetchall()
     except Exception:
         return None
@@ -134,9 +136,23 @@ def _trend_history(market, symbol, frame, now=None):
     if co is None:
         return None
     now = now or dt.datetime.now(KST)
+    # 0.3.1: this runs inside BUY paths that already hold ledger/wallet locks. Taking the
+    # Coordinator lock blocking from here could form a lock-order cycle with the Trend threads,
+    # so it is only TRIED; a busy lock simply means "regime unverified" for this one decision.
+    lock = getattr(co, "lock", None)
+    got = False
     try:
-        with co.lock:
-            rows = list(co._history.get((market, str(symbol), frame), ()))
+        if lock is not None:
+            got = lock.acquire(blocking=False)
+            if not got:
+                return None
+        rows = list(co._history.get((market, str(symbol), frame), ()))
+    except Exception:
+        return None
+    finally:
+        if got:
+            lock.release()
+    try:
         rows = sorted((r for r in rows if isinstance(r, dict) and isinstance(r.get("end"), dt.datetime)
                        and r["end"].tzinfo is not None and r["end"] <= now), key=lambda r: r["end"])
         return [float(r["close"]) for r in rows][-KEEP_BARS:] or None

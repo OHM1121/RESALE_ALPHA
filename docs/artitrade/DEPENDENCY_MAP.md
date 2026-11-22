@@ -462,3 +462,14 @@ Based on 0.2.9 (versionCode 163 for 0.3.0).
 Status: SOURCE_FIXED; local regression (26 tests in test_v0290; CI test list: no new failure); CI and device not verified.
 
 0.3.0 delivered: CI_VERIFIED (run 45017368198, source a3da48a, APK sha256 ff69e703…59307); device not verified. (Run 45017012634 named 0.2.10 stopped at the R1 version check; nothing built.)
+
+## 0.3.1 — how the changed parts connect (issue #146, follow-up of #136)
+Based on 0.3.0 (versionCode 164 for 0.3.1).
+1. Supervisor (`UnifiedTradingService.engineSupervisorLoop`, started with the service, daemon): reads `artitrade_background_health_v1.last_heartbeat_ms` (written by `monitorLoop` before `strategy.snapshot()`) -> `EngineHangPolicy.step(...)` (pure Java) -> `DUMP` (90 s) / `RESTART` (240 s). It never calls `strategy.snapshot/restart/stop` (those are `synchronized` on the bridge monitor held by a blocked `snapshot()`).
+2. Dump: `StrategyRuntimeBridge.dumpThreadsV0310()` (not synchronized, uses the volatile `module`) -> `android_runtime_v078.dump_threads_v0310` -> `engine_stall_dump_v0310.dump_threads()` (reads `sys._current_frames()` only) + Java thread states -> `RuntimeCrashStore.add("engine_hang_dump_v0310", HangReport)` (9,500-char limit for `engine_hang*` stages) -> exported in `error_history_summary.json`.
+3. Restart: fault `engine_hang_restart_v0310` -> `restartProcessAfterHang()`: persist timestamp (`artitrade_engine_hang_v0310`), flush the fault log with `commit()`, best-effort `AlarmManager` START, `Process.killProcess` -> START_STICKY brings `UnifiedTradingService` back -> `safeStartStrategy` re-reads the SQLite ledgers.
+4. `market_regime_v0290`: Trend history read only tries `Coordinator.lock`; sqlite reads use `closing()` (also the stock MA clamp in `ma_v067_stock_runtime`).
+5. Unchanged: UI watchdog (`UnifiedVisualActivity.backgroundWatchdogTick`) keeps its `restartFeeds()` request, which can help when only the feeds are down but cannot recover a frozen bridge.
+
+Status: SOURCE_FIXED; local regression (17 Python tests, JVM `EngineHangPolicyTest`); the Android-dependent Java compiles only in CI; CI and device not verified. The blocking lock of the 2026-11-22 19:39 freeze is NOT proven; the next export will carry the dump.
+

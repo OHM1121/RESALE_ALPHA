@@ -11,6 +11,7 @@ import math
 import queue
 import sqlite3
 import threading
+from contextlib import closing
 from decimal import Decimal,ROUND_CEILING
 import ma_v067_policy as policy
 import new_legacy_1118_resting as resting
@@ -480,7 +481,7 @@ def _install_score_size_clamp(book):
             service=ctx[0]
             # 0.2.9/0.3.0: regime sizing judged on THIS symbol on each pending MA frame; a NEW
             # entry is refused while the table says "no new buy" (DOWN >= +5, SIDEWAYS >= +10).
-            with sqlite3.connect('file:%s?mode=ro'%service.db,uri=True,timeout=2) as ro:
+            with closing(sqlite3.connect('file:%s?mode=ro'%service.db,uri=True,timeout=2)) as ro:
                 ro.row_factory=sqlite3.Row
                 rows=ro.execute("""SELECT c.tf,a.seed,a.max_positions FROM candidates c
                     JOIN accounts a ON a.tf=c.tf WHERE c.code=? AND c.status='PENDING'

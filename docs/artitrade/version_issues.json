@@ -1925,6 +1925,30 @@
       ],
       "notes": "No network: stock native bars table / Trend history, coin scanner closed bars (current time only) / Trend history. <65 bars -> SIDEWAYS table (INFERRED). Market score stays market-wide. Index fetch worker removed."
     }
+,
+    {
+      "id": "RT-0310-01",
+      "issue": 146,
+      "found": "coin error export 2026-11-22 20:35 (app 0.2.9)",
+      "category": "RUNTIME_RECOVERY",
+      "title": "Python engine froze for 55 min with the app alive; UI-watchdog feed restarts could not run behind the synchronized bridge monitor",
+      "evidence": "all recorders silent 19:40-20:30 (last BUY 19:39:22.9, last scan 19:39:05, best-book 19:39:31.9, MA 19:39:42); UI watchdog fired x6 and coin score worker lived to 20:29:37; resumed only after the 20:34:31 restart; same signature as #136 (0.2.1)",
+      "root": "CONFIRMED_IN_CODE: recovery went through StrategyRuntimeBridge.restart() synchronized on the monitor held by the blocked snapshot(); NOT_PROVEN: the lock/call that blocked the Python threads",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.1",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "ENGINE_HANG_SUPERVISOR_V0310",
+        "ENGINE_WATCHDOG_V0220",
+        "MARKET_REGIME_V0290"
+      ],
+      "tests": [
+        "test_v0310_engine_hang_diagnostics.py",
+        "EngineHangPolicyTest.java"
+      ],
+      "notes": "Supervisor thread: dump at 90 s, process restart at 240 s (guards: engine up >= 5 min, continuous ticks, <= 3/h, >= 10 min apart). The next export shows the blocked frames (fault stage engine_hang_dump_v0310). Also fixed my own 0.3.0 hazards: Coordinator.lock only tried in BUY paths, sqlite connections closed. Daily backup unknown_endpoint = outdated external MSERVER, throttled, not changed. Book-consumer lag (3-22 s) measured, not changed."
+    }
   ],
   "known_normal": [
     {
@@ -2397,5 +2421,13 @@
     "ci_run": 45017368198,
     "apk_sha256": "ff69e7035e69cfc3b5243671c2f939b5d9374b93ac8618605ac0cbbb8fb59307",
     "apk_bytes": 30093591
+  },
+  "candidate_031": {
+    "version": "0.3.1",
+    "versionCode": 164,
+    "base": "0.3.0",
+    "status": "SOURCE_FIXED",
+    "device_verified": false,
+    "next_version": "0.3.2"
   }
 }

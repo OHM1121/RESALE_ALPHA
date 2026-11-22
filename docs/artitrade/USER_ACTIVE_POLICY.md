@@ -325,3 +325,10 @@ a new instruction appears different. Cross-check original
 - **Interpretations (INFERRED):** fewer than 65 bars -> SIDEWAYS table; the owner did not choose the earlier-offered daily-trend restriction, so none is applied.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+## 2026-11-22: Frozen-engine self-recovery (owner request "오류확인되는거 수정할것", issue #146, version 0.3.1)
+- **Owner instruction:** fix the errors identified in the coin error export of 2026-11-22 20:35.
+- **기존 기준 (0.2.2, #136):** the UI watchdog retried START and asked for a feed restart at most every 10 min while the screen was visible.
+- **새 지시와 충돌하는 부분 / 예상 결함:** none with a trading rule. New behaviour: when the service heartbeat stays stale for 240 s (engine up >= 5 min, at most 3 times per hour), the app ends its own process and lets Android restart the service. Possible side effect: an in-flight PAPER transaction is rolled back (SQLite atomic); open positions are re-read from the ledgers on start. LIVE/broker orders do not exist in this APK.
+- **Now active:** supervisor thread (independent of the bridge monitor), dump at 90 s, restart at 240 s, rate limits above. No trading threshold, freshness gate, wallet or order rule changed.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified. The Android restart path (START_STICKY / alarm) has never been observed on the phone.
+

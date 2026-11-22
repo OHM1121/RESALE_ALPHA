@@ -200,6 +200,18 @@ final class StrategyRuntimeBridge {
         }
     }
 
+    /**
+     * 0.3.1 (issue #146): read-only stack dump of every Python thread, for a FROZEN engine.
+     * Deliberately NOT synchronized: while snapshot()/start() hold the bridge monitor this call must
+     * still work. It reads only sys._current_frames() in Python (no engine lock, no I/O).
+     */
+    String dumpThreadsV0310(){
+        PyObject current=module;
+        if(current==null)return "py-module-not-loaded";
+        try{return String.valueOf(current.callAttr("dump_threads_v0310"));}
+        catch(Throwable e){return "py-dump-failed "+e.getClass().getSimpleName();}
+    }
+
     /** UI-only market-score lane. Does not take the full SQLite snapshot lock
      * or provide event scores to trading decisions or fill-history evidence. */
     JSONObject scoreSnapshotV005(){

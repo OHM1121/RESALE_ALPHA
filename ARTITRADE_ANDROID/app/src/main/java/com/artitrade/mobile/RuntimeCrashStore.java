@@ -39,7 +39,7 @@ final class RuntimeCrashStore {
                 appVersion(),stage,
                 error==null?"":error.getClass().getName(),
                 safe(error==null?"":String.valueOf(error.getMessage()),600),
-                safe(stack(error),2800));
+                safe(stack(error),stage!=null&&stage.startsWith("engine_hang")?9500:2800));
             prefs.edit().putString(KEY,out.toString()).apply();
         }catch(Exception ignored){}
     }

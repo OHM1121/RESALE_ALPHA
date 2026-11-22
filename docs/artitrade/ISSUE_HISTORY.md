@@ -34,6 +34,7 @@ The **GitHub Issues tab** is the version-by-version expandable issue history. [O
 | [#143](https://github.com/OHM1121/RESALE_ALPHA/issues/143) | 0.2.8 | Pre-emptive night-EWY stock exit only on nights <= -3 % (owner decision; was every down night) | 0.2.8 CI verified (run 44986172411); device unverified |
 | [#144](https://github.com/OHM1121/RESALE_ALPHA/issues/144) | 0.2.9 | Sheet 11.22: market regime UP/DOWN/SIDEWAYS, MA/Trend regime sizing + no-new-buy, AT up-market exception, AT +20 % surge filter | 0.2.9 CI verified (run 44992329644); device unverified |
 | [#145](https://github.com/OHM1121/RESALE_ALPHA/issues/145) | 0.3.0 | Regime judged on each bought symbol on its own timeframe (not KOSPI/BTC daily) | 0.3.0 CI verified (run 45017368198); device unverified |
+| [#146](https://github.com/OHM1121/RESALE_ALPHA/issues/146) | 0.3.1 | Python engine froze 55 min with the app alive; UI-watchdog restarts could not run behind the synchronized bridge monitor; independent supervisor (dump 90 s, process restart 240 s) added | 0.3.1 source fixed; CI pending; device unverified; blocking lock not proven |
 
 ### State vocabulary
 `REPORTED` / `LOG_CONFIRMED` / `ROOT_CAUSE_CONFIRMED` / `SOURCE_FIXED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `OPEN_UNVERIFIED` / `LATENT_UNOBSERVED` / `NON_ERROR_POLICY_BLOCK`. A defect cannot move to `DEVICE_VERIFIED` merely because a paper simulation or Java compile succeeds.

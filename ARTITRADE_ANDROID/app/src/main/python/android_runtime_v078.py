@@ -2660,6 +2660,12 @@ def manual_paper_sell(request):
 # v089: UI-only fast price lane, in-memory genuine WS observations ONLY.
 # Does not issue an HTTP request, subscribe to a second socket, read SQLite,
 # modify a price/order decision or write any source/original journal.
+def dump_threads_v0310():
+    """0.3.1: read-only stack dump of every Python thread (no engine lock, no I/O); issue #146."""
+    from engine_stall_dump_v0310 import dump_threads
+    return dump_threads()
+
+
 def price_snapshot_v089():
     from stock_quote_truth_v066 import live_quote_snapshot
     import datetime as _dt

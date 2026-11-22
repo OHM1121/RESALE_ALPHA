@@ -58,6 +58,7 @@ public final class UnifiedTradingService extends Service {
     private Thread monitor;
     private Thread preloadObserver;
     private Thread priceOnlyPublisher;
+    private Thread engineSupervisor;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private long stockEpoch=0,coinEpoch=0;
@@ -231,6 +232,11 @@ public final class UnifiedTradingService extends Service {
                 priceOnlyPublisher.setDaemon(true);
                 priceOnlyPublisher.setPriority(Thread.MIN_PRIORITY+1);
                 priceOnlyPublisher.start();
+                // 0.3.1 (#146): independent of the bridge monitor, so it still runs while the
+                // Python engine is frozen and snapshot() holds that monitor.
+                engineSupervisor=new Thread(this::engineSupervisorLoop,"artitrade-v0310-engine-supervisor");
+                engineSupervisor.setDaemon(true);
+                engineSupervisor.start();
             }
             return START_STICKY;
         }catch(Throwable e){
@@ -238,6 +244,119 @@ public final class UnifiedTradingService extends Service {
             // Keep service process alive in diagnostic mode rather than crashing launcher.
             try{ensureChannel();startForeground(NOTIFY_ID,notification("엔진 시작 오류 · 앱 오류 탭 확인"));}catch(Throwable ignored){}
             return START_STICKY;
+        }
+    }
+
+    // ---- 0.3.1 (#146): frozen-engine supervisor -------------------------------------------------
+    private static final String HANG_PREFS="artitrade_engine_hang_v0310";
+
+    private long[] pastHangRestarts(){
+        String raw=getSharedPreferences(HANG_PREFS,MODE_PRIVATE).getString("restarts","");
+        java.util.ArrayList<Long> list=new java.util.ArrayList<>();
+        for(String part:raw.split(",")){
+            try{if(!part.trim().isEmpty())list.add(Long.parseLong(part.trim()));}catch(NumberFormatException ignored){}
+        }
+        long[] out=new long[list.size()];
+        for(int i=0;i<out.length;i++)out[i]=list.get(i);
+        return out;
+    }
+
+    private void rememberHangRestart(long wallMs){
+        long[] past=pastHangRestarts();
+        StringBuilder sb=new StringBuilder();
+        for(int i=Math.max(0,past.length-9);i<past.length;i++)sb.append(past[i]).append(',');
+        sb.append(wallMs);
+        getSharedPreferences(HANG_PREFS,MODE_PRIVATE).edit().putString("restarts",sb.toString()).commit();
+    }
+
+    /** Diagnostic fault whose stack text is the thread dump (RuntimeCrashStore prints it verbatim). */
+    private static final class HangReport extends IllegalStateException{
+        private final String body;
+        HangReport(String message,String body){super(message);this.body=body;}
+        @Override public void printStackTrace(java.io.PrintWriter writer){writer.print(body);}
+    }
+
+    private String collectHangDump(long staleMs){
+        StringBuilder sb=new StringBuilder(9000);
+        sb.append("heartbeat_stale_ms=").append(staleMs).append('\n');
+        try{
+            for(java.util.Map.Entry<Thread,StackTraceElement[]> e:Thread.getAllStackTraces().entrySet()){
+                Thread t=e.getKey();
+                String n=t.getName();
+                if(!(n.startsWith("artitrade")||"main".equals(n)))continue;
+                StackTraceElement[] st=e.getValue();
+                sb.append("JAVA ").append(n).append(' ').append(t.getState()).append(" | ");
+                for(int i=0;i<st.length&&i<6;i++){
+                    if(i>0)sb.append(" < ");
+                    String cls=st[i].getClassName();
+                    sb.append(cls.substring(cls.lastIndexOf('.')+1))
+                      .append('.').append(st[i].getMethodName()).append(':').append(st[i].getLineNumber());
+                }
+                sb.append('\n');
+            }
+        }catch(Throwable ignored){}
+        final String[] py={"py-dump-timeout"};
+        try{
+            Thread helper=new Thread(()->py[0]=strategy==null?"no-strategy":strategy.dumpThreadsV0310(),
+                "artitrade-v0310-pydump");
+            helper.setDaemon(true);
+            helper.start();
+            helper.join(8000L);
+        }catch(Throwable ignored){}
+        sb.append(py[0]);
+        return sb.toString();
+    }
+
+    private void recordEngineHang(String stage,long staleMs){
+        String body=collectHangDump(staleMs);
+        crashes.add(stage,new HangReport("ENGINE_HANG_STALE_SECONDS="+staleMs/1000L+
+            (stage.contains("restart")?" process_restart":" dump_only"),body));
+    }
+
+    private void restartProcessAfterHang(){
+        long wall=System.currentTimeMillis();
+        try{rememberHangRestart(wall);}catch(Throwable ignored){}
+        try{
+            // Flush the fault log to disk NOW; apply() alone can be lost when the process ends.
+            getSharedPreferences("artitrade_runtime_faults",MODE_PRIVATE).edit()
+                .putLong("hang_flush_at",wall).commit();
+        }catch(Throwable ignored){}
+        try{
+            android.app.AlarmManager am=(android.app.AlarmManager)getSystemService(Context.ALARM_SERVICE);
+            if(am!=null){
+                Intent i=new Intent(this,UnifiedTradingService.class);
+                i.setAction(UnifiedTradingService.START);
+                int flags=android.app.PendingIntent.FLAG_UPDATE_CURRENT|android.app.PendingIntent.FLAG_IMMUTABLE;
+                android.app.PendingIntent pi=Build.VERSION.SDK_INT>=26
+                    ?android.app.PendingIntent.getForegroundService(this,3101,i,flags)
+                    :android.app.PendingIntent.getService(this,3101,i,flags);
+                am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP,wall+8000L,pi);
+            }
+        }catch(Throwable ignored){}   // best effort; START_STICKY is the primary restart path
+        android.os.Process.killProcess(android.os.Process.myPid());
+    }
+
+    private void engineSupervisorLoop(){
+        EngineHangPolicy.State state=new EngineHangPolicy.State();
+        while(running.get()){
+            try{Thread.sleep(EngineHangPolicy.TICK_MS);}
+            catch(InterruptedException e){Thread.currentThread().interrupt();break;}
+            try{
+                android.content.SharedPreferences hp=getSharedPreferences(
+                    "artitrade_background_health_v1",MODE_PRIVATE);
+                long last=hp.getLong("last_heartbeat_ms",0L);
+                long wall=System.currentTimeMillis();
+                long age=last<=0L?-1L:Math.max(0L,wall-last);
+                long now=android.os.SystemClock.elapsedRealtime();
+                EngineHangPolicy.Action action=EngineHangPolicy.step(state,now,age,
+                    strategy!=null&&strategy.isStarted(),running.get(),pastHangRestarts(),wall);
+                if(action==EngineHangPolicy.Action.DUMP){
+                    recordEngineHang("engine_hang_dump_v0310",age);
+                }else if(action==EngineHangPolicy.Action.RESTART){
+                    recordEngineHang("engine_hang_restart_v0310",age);
+                    restartProcessAfterHang();
+                }
+            }catch(Throwable e){crashes.add("engine_supervisor_v0310",e);}
         }
     }
 

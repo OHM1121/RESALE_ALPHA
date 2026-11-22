@@ -1591,9 +1591,10 @@
       ],
       "issues": [
         144,
-        145
+        145,
+        146
       ],
-      "contract": "0.3.0 (#145, owner: judge each bought symbol on its own timeframe): regime = classify(completed closes of the BOUGHT symbol on the buying frame) - UP close>MA20>MA60 and MA20 up vs 5 bars ago / DOWN mirror / SIDEWAYS; sources already held (stock native bars table stock/ARTITRADE_D.sqlite3 else MarketTrend history; coin closed bars captured from d_upbit.point_in_time_bars for the current time only, else MarketTrend history); no network, no index benchmark. ma_trend_decision(root,market,symbol,frame): UP full no block; DOWN/SIDEWAYS tables; <65 bars -> SIDEWAYS table (INFERRED); unknown score never reduces/blocks. at_buy_allowed: positive score OR symbol UP on its frame. No order/fill/price created.",
+      "contract": "0.3.0 (#145, owner: judge each bought symbol on its own timeframe): regime = classify(completed closes of the BOUGHT symbol on the buying frame) - UP close>MA20>MA60 and MA20 up vs 5 bars ago / DOWN mirror / SIDEWAYS; sources already held (stock native bars table stock/ARTITRADE_D.sqlite3 else MarketTrend history; coin closed bars captured from d_upbit.point_in_time_bars for the current time only, else MarketTrend history); no network, no index benchmark. ma_trend_decision(root,market,symbol,frame): UP full no block; DOWN/SIDEWAYS tables; <65 bars -> SIDEWAYS table (INFERRED); unknown score never reduces/blocks. at_buy_allowed: positive score OR symbol UP on its frame. No order/fill/price created. 0.3.1 (#146): the Trend history read only TRIES Coordinator.lock (never blocks inside a BUY path); sqlite reads use closing().",
       "tests": [
         "test_v0290_market_regime_and_at_surge.py",
         "test_v0200_market_score_half_limit.py"
@@ -1622,6 +1623,29 @@
         "test_v002_eight_virtual_paper_end_to_end.py",
         "test_v017_stock_preload_progress.py",
         "test_v107_at_negative_market_gate.py"
+      ]
+    },
+    {
+      "id": "ENGINE_HANG_SUPERVISOR_V0310",
+      "kind": "java-service+python-diagnostic",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/EngineHangPolicy.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/RuntimeCrashStore.java",
+        "ARTITRADE_ANDROID/app/src/main/python/engine_stall_dump_v0310.py"
+      ],
+      "depends_on": [
+        "ENGINE_WATCHDOG_V0220"
+      ],
+      "issues": [
+        136,
+        146
+      ],
+      "contract": "Independent supervisor thread in UnifiedTradingService (never takes the StrategyRuntimeBridge monitor): every 10 s reads artitrade_background_health_v1.last_heartbeat_ms; EngineHangPolicy.step -> after 90 s continuous stale: DUMP (Java thread states + Python all-thread dump from StrategyRuntimeBridge.dumpThreadsV0310 (NOT synchronized) -> android_runtime_v078.dump_threads_v0310 -> engine_stall_dump_v0310; read-only, no engine lock) written to the fault log stage engine_hang_dump_v0310; after 240 s: engine_hang_restart_v0310 + fault-log flush + Process.killProcess (START_STICKY + best-effort alarm restart). Guards: engine up >= 5 min, continuous supervisor ticks (gap > 30 s resets), <= 3 restarts per hour and >= 10 min apart (persisted artitrade_engine_hang_v0310). Reason: restartFeeds() -> restart() is synchronized on the monitor held by the blocked snapshot(), so UI-watchdog restarts could not run. Paper ledgers are SQLite transactions; no order, fill, price or LIVE state is created.",
+      "tests": [
+        "test_v0310_engine_hang_diagnostics.py",
+        "EngineHangPolicyTest.java"
       ]
     }
   ],
