@@ -295,3 +295,9 @@ a new instruction appears different. Cross-check original
 - **Owner instruction:** the held-position exit when the night decline reaches the stop must happen "at 08:00, as early as possible".
 - **Now active:** decided at 07:55; from 08:00 the exit uses the NXT pre-market best bid (the engine's NXT window is 08:00-08:30; only NXT-eligible symbols), afterwards the KRX regular open until +30 minutes. NXT prices are used ONLY for this automatic exit; user sells keep the KRX path. The 2026-11-22 rule otherwise unchanged.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-22: Pre-emptive night-EWY exits only on nights <= -3 % (owner, issue #143 / #141, version 0.2.8)
+- **Owner decision:** "-3% 이하인 날에만" (answer to the 0.2.7 decision line).
+- **기존 기준 (2026-11-22, 0.2.6 INFERRED):** the pre-emptive exit applied on ANY down night (the stop-distance test was the only condition). That interpretation is superseded.
+- **Now active:** the held AT/MA/MarketTrend stock pre-emptive exit is planned only when the verified EWY US-session change is <= -3.0 % (the same threshold as the 30-minute buy block) AND current price x (1 + change) <= the nearest stop. Decision 07:55, 08:00 NXT, then KRX open..+30 min — unchanged. GMO D+1 ceiling still uses any verified night value.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.

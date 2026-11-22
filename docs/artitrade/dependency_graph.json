@@ -1541,12 +1541,14 @@
         "STOCK_GMO"
       ],
       "issues": [
-        141
+        141,
+        143
       ],
-      "contract": "Night value = Yahoo EWY latest complete US session (open->close) closing after the previous KRX close, fetched 06:05-15:30, verified value never downgraded. VERIFIED and <= -3.0 %: AT/MA/Trend (and CW, timing no-op) BUY refused from the regular open for 1800 s. Down night: held AT/MA/Trend positions whose mark x (1+change) <= nearest stop are planned 5 min before the open and sold from the open through the verified manual-exit wallet path (reason AUTO_NIGHT_EWY_PREEMPTIVE_STOP), retry 1 s up to +30 min. GMO D+1 ceiling = down_tick(D close x (1+change)); unverified -> former OR rule. Coins untouched. 0.2.7: decision 07:55; exit venue NXT pre-market 08:00-08:30 (automatic exit only, _bid_for/VerifiedDepth venue=NXT), then KRX open..+30 min; TrendWalletV054 accepts AUTO_NIGHT_EWY_PREEMPTIVE_STOP: through MANUAL_REASON_PREFIXES.",
+      "contract": "Night value = Yahoo EWY latest complete US session (open->close) closing after the previous KRX close, fetched 06:05-15:30, verified value never downgraded. VERIFIED and <= -3.0 %: AT/MA/Trend (and CW, timing no-op) BUY refused from the regular open for 1800 s. Down night: held AT/MA/Trend positions whose mark x (1+change) <= nearest stop are planned 5 min before the open and sold from the open through the verified manual-exit wallet path (reason AUTO_NIGHT_EWY_PREEMPTIVE_STOP), retry 1 s up to +30 min. GMO D+1 ceiling = down_tick(D close x (1+change)); unverified -> former OR rule. Coins untouched. 0.2.7: decision 07:55; exit venue NXT pre-market 08:00-08:30 (automatic exit only, _bid_for/VerifiedDepth venue=NXT), then KRX open..+30 min; TrendWalletV054 accepts AUTO_NIGHT_EWY_PREEMPTIVE_STOP: through MANUAL_REASON_PREFIXES. 0.2.8 (owner): the pre-emptive exit runs only on SEVERE nights (PREEMPT_MAX_PCT = SEVERE_PCT = -3.0 %), not on every down night.",
       "tests": [
         "test_v0260_night_gate_and_stock_coverage.py",
-        "test_v0270_premarket_exit_and_close_feed.py"
+        "test_v0270_premarket_exit_and_close_feed.py",
+        "test_v0280_preemptive_exit_severe_only.py"
       ]
     },
     {

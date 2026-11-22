@@ -28,9 +28,10 @@ The **GitHub Issues tab** is the version-by-version expandable issue history. [O
 | [#75](https://github.com/OHM1121/RESALE_ALPHA/issues/75) | 0.0.6 → 0.0.7 | Same-signer stock/coin cross-strategy test APK | Signed CI passed; device unverified |
 
 | [#140](https://github.com/OHM1121/RESALE_ALPHA/issues/140) | 0.2.5 → 0.2.6 | Stock MA / MarketTrend never reached a BUY decision (rotating 200-slot subscriptions, live-print-only RSI watch start) | 0.2.6 CI verified (run 44982710034); device unverified |
-| [#141](https://github.com/OHM1121/RESALE_ALPHA/issues/141) | 0.2.6 | Overnight EWY rules: AT/MA/Trend no buys 09:00-09:30 after <= -3 %, pre-emptive stop exits (0.2.7: from 08:00 NXT), GMO D+1 EWY-adjusted ceiling | 0.2.6 CI verified (run 44982710034); device unverified |
+| [#141](https://github.com/OHM1121/RESALE_ALPHA/issues/141) | 0.2.6 → 0.2.8 | Overnight EWY rules: AT/MA/Trend no buys 09:00-09:30 after <= -3 %, pre-emptive stop exits (0.2.7: from 08:00 NXT; 0.2.8 #143: only on <= -3 % nights), GMO D+1 EWY-adjusted ceiling | 0.2.6/0.2.7 CI verified; 0.2.8 source fixed; device unverified |
 
 | [#142](https://github.com/OHM1121/RESALE_ALPHA/issues/142) | 0.2.7 | Stock close-betting realtime queue dropped frames older than 3 s under load; coalesced to the newest row per symbol/type | 0.2.7 CI verified (run 44983487732); device unverified |
+| [#143](https://github.com/OHM1121/RESALE_ALPHA/issues/143) | 0.2.8 | Pre-emptive night-EWY stock exit only on nights <= -3 % (owner decision; was every down night) | 0.2.8 source fixed; CI pending; device unverified |
 
 ### State vocabulary
 `REPORTED` / `LOG_CONFIRMED` / `ROOT_CAUSE_CONFIRMED` / `SOURCE_FIXED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `OPEN_UNVERIFIED` / `LATENT_UNOBSERVED` / `NON_ERROR_POLICY_BLOCK`. A defect cannot move to `DEVICE_VERIFIED` merely because a paper simulation or Java compile succeeds.

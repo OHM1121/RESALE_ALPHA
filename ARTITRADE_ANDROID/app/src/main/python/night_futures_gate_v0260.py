@@ -14,7 +14,9 @@ final wording (supersedes the same-day "-2.6 % / 3 minutes" draft):
    stock MarketTrend make no BUY during the first 30 minutes of the KRX
    regular session. (Close-betting buys only 15:10-15:20 and is gated the
    same way, which never changes its behaviour.) Supply-demand is NOT blocked.
-2. Held AT / MA / MarketTrend stock positions: when the night closed DOWN and
+2. Held AT / MA / MarketTrend stock positions: when the night is SEVERE
+   (change <= -3.0 %; owner 0.2.8, 2026-11-22: "-3% 이하인 날에만", replacing
+   "any down night") and
    current price x (1 + night change) <= the position's nearest stop, the
    whole position is sold at the earliest verified moment: from 08:00 on the
    NXT pre-market book (owner, same day), else from the KRX regular open,
@@ -42,6 +44,8 @@ SEVERE_PCT = -3.0
 BLOCK_SECONDS = 1800
 BLOCKED_STRATEGIES = ("at", "ma", "trend", "close")
 PREEMPT_DECIDE_BEFORE_OPEN_SECONDS = 300
+# 0.2.8: the pre-emptive exit runs only on SEVERE nights (same -3.0 % threshold).
+PREEMPT_MAX_PCT = SEVERE_PCT
 PREMARKET_OPEN = dt.time(8, 0)
 PREEMPT_REASON = "NIGHT_EWY_PREEMPTIVE_STOP"
 BLOCK_REASON = "NIGHT_FUTURES_SEVERE_FIRST_30MIN_BUY_BLOCK"
@@ -351,10 +355,10 @@ def stock_holdings(rt):
 
 
 def preemptive_plan(holdings, change_pct):
-    """Positions whose stop would be touched by the night decline."""
+    """Positions whose stop would be touched by a SEVERE (<= -3 %) night decline."""
     import position_view_v0200 as view
     plan = []
-    if change_pct is None or change_pct >= 0:
+    if change_pct is None or float(change_pct) > PREEMPT_MAX_PCT:
         return plan
     for h in holdings:
         if not h.get("mark") or not h.get("entry") or not h.get("stops") or h["position_id"] < 0:
@@ -457,7 +461,8 @@ def preemptive_step(now=None):
     if now >= begin + dt.timedelta(seconds=BLOCK_SECONDS):
         return 60
     info = state(now)
-    if info.get("status") != "VERIFIED" or (info.get("change_pct") or 0) >= 0:
+    if (info.get("status") != "VERIFIED" or info.get("change_pct") is None or
+            float(info["change_pct"]) > PREEMPT_MAX_PCT):
         return 10
     rt = _runtime()
     if rt is None or not getattr(rt, "started", False):

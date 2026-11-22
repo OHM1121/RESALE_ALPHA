@@ -1836,6 +1836,32 @@
       ],
       "notes": "Coalescing queue (newest row per symbol/type); vendor 3 s gates and rules unchanged. Latest NEW LEGACY rules verified wired for stock (MA/Trend stops, first close above MIDDLE, score sizing, AT score gate)."
     }
+,
+    {
+      "id": "NF-0280-01",
+      "issue": 143,
+      "found": "owner decision 2026-11-22 (\"-3% 이하인 날에만\")",
+      "category": "USER_POLICY_DECISION",
+      "title": "Pre-emptive night-EWY stock exit only on SEVERE nights (EWY <= -3.0 %), no longer on every down night",
+      "evidence": "Owner answer to the 0.2.7 decision line; replaces the 0.2.6 INFERRED 'any down night' reading",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.8",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "NIGHT_FUTURES_GATE_V0260",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND"
+      ],
+      "tests": [
+        "test_v0280_preemptive_exit_severe_only.py",
+        "test_v0260_night_gate_and_stock_coverage.py",
+        "test_v0270_premarket_exit_and_close_feed.py"
+      ],
+      "notes": "PREEMPT_MAX_PCT = SEVERE_PCT (-3.0); preemptive_plan and preemptive_step skip nights with change > -3.0 %. Stop-distance test, 07:55 decision, 08:00 NXT / KRX-open venue, buy block and GMO ceiling unchanged."
+    }
   ],
   "known_normal": [
     {
@@ -2272,5 +2298,13 @@
     "ci_run": 44983487732,
     "apk_sha256": "7f3a9ae78d43459bb99dfe17be34d9edf8e8987b74e4b38a062e744e68b89524",
     "apk_bytes": 30061135
+  },
+  "candidate_028": {
+    "version": "0.2.8",
+    "versionCode": 161,
+    "base": "0.2.7",
+    "status": "SOURCE_FIXED",
+    "device_verified": false,
+    "next_version": "0.2.9"
   }
 }

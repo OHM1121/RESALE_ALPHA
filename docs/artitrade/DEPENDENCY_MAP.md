@@ -429,3 +429,10 @@ Based on 0.2.6 (versionCode 160 for 0.2.7).
 Status: SOURCE_FIXED; local regression (10 new tests; full-suite comparison: no new failure); CI and device not verified.
 
 0.2.7 delivered: CI_VERIFIED (run 44983487732, source 494980d, APK sha256 7f3a9ae7…89524); device not verified.
+
+## 0.2.8 — how the changed part connects (issue #143, follow-up of #141)
+Based on 0.2.7 (versionCode 161 for 0.2.8).
+1. Pre-emptive exits (`night_futures_gate_v0260`): `state(now)` VERIFIED and `change_pct <= PREEMPT_MAX_PCT` (= `SEVERE_PCT` = -3.0 %) -> `preemptive_plan` (stop-distance test unchanged) -> 07:55 decision -> `exit_venue` (NXT 08:00-08:30, else KRX open..+30 min) -> wallet sell path unchanged. A down night above -3 % plans nothing.
+2. Unchanged consumers: AT/MA/Trend buy block (`blocked_now`, same -3 % threshold), GMO `gmo_ceiling` (any verified night), close-betting.
+
+Status: SOURCE_FIXED; local regression (6 new tests); CI and device not verified.
