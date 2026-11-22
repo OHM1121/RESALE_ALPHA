@@ -65,7 +65,7 @@ def score_evidence(root,market):
 def buy_allowed(root,market,symbol=None,frame=None,conn=None):
     """0.2.9 (sheet 11.22 C11): positive fresh score, OR an UP regime whatever the score.
 
-    0.2.10: the regime is judged on the bought symbol on its own frame."""
+    0.3.0: the regime is judged on the bought symbol on its own frame."""
     if root is None:return False
     positive=score_evidence(root,market)["positive"]
     if positive:return True

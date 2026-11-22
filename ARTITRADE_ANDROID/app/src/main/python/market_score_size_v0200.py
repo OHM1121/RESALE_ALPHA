@@ -11,7 +11,7 @@ to reduce: unknown is not -10.
 
 0.2.9 (owner sheet 11.22, supersedes the rule above): the factor now follows the market regime
 (market_regime_v0290.ma_trend_decision). UP market: full limit, the <= -10 half rule is deleted.
-0.2.10: the regime is judged on the bought symbol on its strategy frame (symbol=, frame=).
+0.3.0: the regime is judged on the bought symbol on its strategy frame (symbol=, frame=).
 DOWN: score >= -10 -> 50 %, -20..-10 -> 70 %, < -20 -> 100 %, >= +5 -> no NEW buy.
 SIDEWAYS: score >= -10 -> 50 %, < -10 -> 100 %, >= +10 -> no NEW buy.
 `new_buy_block` is checked by the NEW-entry paths only; top-ups use the factor.

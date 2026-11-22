@@ -2619,7 +2619,7 @@ _install_close_feed_v0270(_core)
 
 # 0.2.9 (sheet 11.22): regime (UP/DOWN/SIDEWAYS) for MA/MarketTrend sizing and the
 # reference-bar UP exception; reference-bar +20 % surge-window filter.
-# 0.2.10: regime judged on each bought symbol on its own frame from bars already held
+# 0.3.0: regime judged on each bought symbol on its own frame from bars already held
 # (coin: the original scanner's closed bars are remembered; no extra API call).
 from market_regime_v0290 import install as _install_market_regime_v0290
 _install_market_regime_v0290()

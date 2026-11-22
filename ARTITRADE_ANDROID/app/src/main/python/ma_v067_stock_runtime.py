@@ -478,7 +478,7 @@ def _install_score_size_clamp(book):
         try:
             import market_score_size_v0200 as size
             service=ctx[0]
-            # 0.2.9/0.2.10: regime sizing judged on THIS symbol on each pending MA frame; a NEW
+            # 0.2.9/0.3.0: regime sizing judged on THIS symbol on each pending MA frame; a NEW
             # entry is refused while the table says "no new buy" (DOWN >= +5, SIDEWAYS >= +10).
             with sqlite3.connect('file:%s?mode=ro'%service.db,uri=True,timeout=2) as ro:
                 ro.row_factory=sqlite3.Row

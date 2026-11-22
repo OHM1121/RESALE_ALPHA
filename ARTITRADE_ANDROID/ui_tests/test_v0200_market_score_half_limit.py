@@ -29,7 +29,7 @@ class Factor(unittest.TestCase):
               'SIDEWAYS': [100.0 + (i % 2) for i in range(80)], None: []}
 
     def _factor(self, score, regime='SIDEWAYS'):
-        # 0.2.10: the regime is judged on the bought symbol's own bars.
+        # 0.3.0: the regime is judged on the bought symbol's own bars.
         with patch('at_market_score_gate_v107.score_evidence',
                    return_value={'score': score, 'basis': 'X'}), \
              patch('market_regime_v0290.closes_for', return_value=self.SERIES[regime]):

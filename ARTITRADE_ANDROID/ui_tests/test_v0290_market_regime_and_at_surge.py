@@ -45,7 +45,7 @@ SERIES = {"UP": RISING, "DOWN": FALLING, "SIDEWAYS": FLAT, None: [100.0] * 10}
 
 
 class SymbolBars(unittest.TestCase):
-    """0.2.10: the regime is judged on the bought symbol on its own frame (no network)."""
+    """0.3.0: the regime is judged on the bought symbol on its own frame (no network)."""
 
     def tearDown(self):
         regime._COIN_BARS.clear()

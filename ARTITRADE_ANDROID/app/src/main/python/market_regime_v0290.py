@@ -8,7 +8,7 @@
     SIDEWAYS: score >= -10 -> 50 %, < -10 -> 100 %, >= +10 -> no NEW buy.
 * D5 reference bar: a NEW buy needs a positive score; only an UP regime lifts this.
 
-0.2.10 (owner 2026-11-22, superseding the 0.2.9 KOSPI/BTC daily benchmark):
+0.3.0 (owner 2026-11-22, superseding the 0.2.9 KOSPI/BTC daily benchmark):
 "각 시간봉별로 ... 다르게 평가" + "비트코인에 근거해서가 아니라 각 매수한 종목을 봐야지".
 The regime is judged on the BOUGHT SYMBOL ITSELF, on the timeframe of the strategy frame
 that buys it (5m / 30m / 60m / day), from completed bars the app already holds:

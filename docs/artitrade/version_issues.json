@@ -1896,7 +1896,7 @@
     }
 ,
     {
-      "id": "RG-0210-01",
+      "id": "RG-0300-01",
       "issue": 145,
       "found": "owner instruction 2026-11-22 (\"각 시간봉별로\" / \"각 매수한 종목을 봐야지\")",
       "category": "USER_POLICY_DECISION",
@@ -1904,7 +1904,7 @@
       "evidence": "Owner instruction; live 2026-11-22 showed BTC 5m/30m/60m UP vs daily DOWN, so one daily benchmark mislabels short frames",
       "root": "OWNER_DECISION",
       "status": "SOURCE_FIXED",
-      "fix_version": "0.2.10",
+      "fix_version": "0.3.0",
       "ci": "PENDING",
       "device": "UNVERIFIED",
       "nodes": [
@@ -2380,18 +2380,18 @@
     "base": "0.2.8",
     "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.2.10",
+    "next_version": "0.3.0",
     "source_commit": "574f176cfaadaf27e1c6b8564fc0046462dafed1",
     "ci_run": 44992329644,
     "apk_sha256": "591c5c3ee11f6119c243a3a7c8682618dff42819466e6fbee46746ebae498a7c",
     "apk_bytes": 30094219
   },
-  "candidate_0210": {
-    "version": "0.2.10",
+  "candidate_030": {
+    "version": "0.3.0",
     "versionCode": 163,
     "base": "0.2.9",
     "status": "SOURCE_FIXED",
     "device_verified": false,
-    "next_version": "0.2.11"
+    "next_version": "0.3.1"
   }
 }

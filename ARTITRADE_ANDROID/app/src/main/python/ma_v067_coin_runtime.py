@@ -649,7 +649,7 @@ def _install_shadow_guard(d_upbit):
 def _buy_size_evidence(self,order=None):
     """(market score or None, size factor, no-new-buy reason) for the coin MA ledger at this BUY.
 
-    0.2.10: the regime is judged on the ordered coin on the order's frame."""
+    0.3.0: the regime is judged on the ordered coin on the order's frame."""
     import market_score_size_v0200 as size
     try:
         from pathlib import Path

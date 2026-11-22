@@ -453,8 +453,8 @@ Status: SOURCE_FIXED; local regression (26 new tests, CI test list: no new failu
 
 0.2.9 delivered: CI_VERIFIED (run 44992329644, source 574f176, APK sha256 591c5c3e…98a7c); device not verified.
 
-## 0.2.10 — how the changed parts connect (issue #145, owner: judge each bought symbol on its own timeframe)
-Based on 0.2.9 (versionCode 163 for 0.2.10).
+## 0.3.0 — how the changed parts connect (issue #145, owner: judge each bought symbol on its own timeframe)
+Based on 0.2.9 (versionCode 163 for 0.3.0).
 1. `market_regime_v0290.symbol_regime(market,symbol,frame,conn)` -> `closes_for`: stock `bars` (given SQLite connection or read-only `stock/ARTITRADE_D.sqlite3`) else `rt.market_trend._history[(market,symbol,frame)]`; coin `_COIN_BARS` (filled by the `d_upbit.point_in_time_bars` wrapper only for the current time) else Trend history -> `classify`. The 0.2.9 KOSPI/BTC index fetch worker is removed (no network).
 2. Callers pass the bought symbol and its frame: stock MA clamp (each pending MA `candidates.tf`) and top-up (`p['tf']`), coin MA `_buy` (`order.market/tf`), `TrendWalletV054.buy` (`symbol, frame`), Trend preplan and top-up, coin MA top-up, AT gates (`at_market_score_gate_v107.buy_allowed(root,market,symbol,frame,conn)`, `reference_1118_runtime._up_market`).
 3. Install: `market_regime_v0290.install()` at the end of `android_runtime_v078` (replaces `start_worker`).

@@ -25,7 +25,7 @@ _BUY_CTX=threading.local()
 
 
 def _up_market(market,symbol=None,frame=None,conn=None):
-    """0.2.10: the bought symbol is UP on its own frame (owner: judge each bought symbol)."""
+    """0.3.0: the bought symbol is UP on its own frame (owner: judge each bought symbol)."""
     try:
         import market_regime_v0290 as regime
         return regime.symbol_regime(market,symbol,frame,conn)[0]==regime.UP
