@@ -754,6 +754,11 @@ def _up_worker(runner):
                         {'ask':ask,'bid':bid,'ask_qty':aq,
                          'book_age_sec':round((decision_now-at).total_seconds(),4)})
                     continue
+                # 0.2.6 (owner 2026-11-22): severe night -> no stock BUY in the
+                # first 180 s of the regular session (recorded, not an order).
+                import night_futures_gate_v0260 as night
+                if night.blocked_now('ma',code,frame,decision_now):
+                    continue
                 with service.lock,native._connect(service.db) as c:
                     _table(c)
                     if c.execute("""SELECT 1 FROM positions WHERE code=? AND status='OPEN'""",

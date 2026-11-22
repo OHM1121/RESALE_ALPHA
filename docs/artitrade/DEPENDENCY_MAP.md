@@ -406,3 +406,14 @@ Based on 0.2.4 (versionCode 158 for 0.2.5). Display plus one derived statistic.
 4. `position_view_v0200._apply` adds `profit_stage` and `second_profit_target` (AT reference plan, MA state, MarketTrend payload); `buildHoldingCard` shows "2차 수익목표" + "1차 매도 완료" after the first sell.
 
 Status: CI_VERIFIED (source e291988, APK sha256 6095f3c0…e822ca); compiled locally against the Android 15 platform jar; device not verified (rendering on the phone unseen).
+
+## 0.2.6 — how the changed parts connect (issues #140, #141)
+Based on 0.2.5 (versionCode 159 for 0.2.6). Trading behaviour changes (owner instructions 2026-11-22) plus a coverage fix.
+1. `night_futures_gate_v0260` (NIGHT_FUTURES_GATE_V0260): worker fetches Yahoo EWY (1d, 5d) 06:05-15:30 KST, picks the latest complete US session closing after the previous KRX close, change = close/open-1, persisted to `stock/night_futures_gate_v0260.json`. Kiwoom REST has no night-futures path in this app (`/api/dostk/*` only).
+   - BUY gate (VERIFIED and <= -3.0 %, regular open .. +30 min): wraps `d_engine.PaperEngine._buy_if_touch`, `d_v19_portfolio.D19PaperEngine._buy_limit_depth` (stock AT), `TrendWalletV054.buy` (market=stock), `ma_v067_stock_runtime._up_worker` (before the candidate insert), `at_close_engine.PaperEngine.open` (CW; 15:10-15:20 so never affected). GMO is not time-gated. Rows: `NIGHT_FUTURES_SEVERE_FIRST_30MIN_BUY_BLOCK`.
+   - Pre-emptive exits (down night): `stock_holdings` -> `position_view_v0200` stops (AT reference plan / MA state / Trend payload) -> `preemptive_plan` (mark x (1+change) <= nearest stop) 5 min before the open -> from the open `android_manual_paper_sell_v085.perform` with `auto_reason=NIGHT_EWY_PREEMPTIVE_STOP` -> `stock_manual_v086` records reason `AUTO_NIGHT_EWY_PREEMPTIVE_STOP:<uuid>` (user sells keep `USER_SIM_MANUAL`). Rows `NIGHT_EWY_PREEMPTIVE_STOP_PLANNED/SOLD/RETRYING`.
+   - GMO D+1 (`gmo_d1_preplan_v097._step`): ceiling `down_tick(D close x (1+change))` for KRX and NXT, `plan.night_futures`; Intent anchor = ceiling - 2 ticks; unverified night -> former OR rule.
+2. `stock_ma_trend_coverage_v0260` (STOCK_NEAR_SIGNAL_COVERAGE_V0260): 15 s worker -> `near_codes()` -> `stock_priority_runtime_v093.prioritized` protects them after held/pending and the CW window (protected <= `NEAR_PROTECTED_LIMIT`=170) -> shared Kiwoom WS -> 0B/0D for the MA up-worker and Trend `_entry_window`. Wraps `Coordinator._preclose_candidates` (= 11.18 `_entry_window`): stock completed-bar RSI20<=30 watch start every 5 s and the just-closed-bar refresh for near symbols every 2 s.
+3. Install order (`android_runtime_v078`): after `stock_pending_recovery_v017`: night gate, then coverage.
+
+Status: SOURCE_FIXED; local regression (23 new tests, full-suite comparison: no new failure); CI and device not verified.

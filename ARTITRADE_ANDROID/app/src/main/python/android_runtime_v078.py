@@ -2601,6 +2601,17 @@ _install_position_uid_v015(_core)
 from stock_pending_recovery_v017 import install as _install_stock_pending_recovery_v017
 _install_stock_pending_recovery_v017()
 
+# 0.2.6 (owner 2026-11-22): overnight Korea signal (EWY US session) for stock
+# BUY timing, held-position pre-emptive stop exits and the supply-demand D+1
+# ceiling. Installed LAST so it wraps the final native BUY functions.
+from night_futures_gate_v0260 import install as _install_night_futures_v0260
+_install_night_futures_v0260(_core)
+
+# 0.2.6: stock MA / MarketTrend near-signal subscription coverage and
+# completed-bar RSI20<=30 watch start (after the 11.18 Trend installer).
+from stock_ma_trend_coverage_v0260 import install as _install_stock_coverage_v0260
+_install_stock_coverage_v0260(_core)
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

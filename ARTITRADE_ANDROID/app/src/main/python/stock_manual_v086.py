@@ -43,7 +43,18 @@ def _intended(holding,request):
 def _request_key(request):
     return 'MANUAL_PAPER_SELL:'+UUID(str(request['request_id'])).hex
 
+AUTO_REASONS={'NIGHT_EWY_PREEMPTIVE_STOP'}
+
+def _auto(request):
+    """0.2.6: an automatic exit reuses this verified PAPER path but must NOT be
+    recorded as the user's manual sell. Only whitelisted reasons are accepted."""
+    value=str(request.get('auto_reason') or '')
+    return value if value in AUTO_REASONS else ''
+
 def _reason(request):
+    auto=_auto(request)
+    if auto:
+        return 'AUTO_'+auto+':'+str(UUID(str(request['request_id'])))
     return 'USER_SIM_MANUAL:'+str(UUID(str(request['request_id'])))
 
 def _krx_session(now):
@@ -212,8 +223,9 @@ def manual_stock_at(rt,request):
         original=getattr(engine._execution_context,'fill_method','LOCAL_1M_PRICE_TOUCH_ESTIMATE')
         engine._execution_context.fill_method='MANUAL_VERIFIED_KRX_0D_OR_KA10004_PAPER_ESTIMATE'
         try:
-            after=engine._sell(c,p,at,qty,book['bid'],
-                '사용자 가상 강제매도 '+str(_pct(request))+'%',event_key=key)
+            label=('AUTO_'+_auto(request) if _auto(request) else
+                   '사용자 가상 강제매도 '+str(_pct(request))+'%')
+            after=engine._sell(c,p,at,qty,book['bid'],label,event_key=key)
         finally:engine._execution_context.fill_method=original
         proof=c.execute('SELECT * FROM executions WHERE event_key=?',(key,)).fetchone()
         if proof is None or int(proof['position_id'])!=int(p['id']):

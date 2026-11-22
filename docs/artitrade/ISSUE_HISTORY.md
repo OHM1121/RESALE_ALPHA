@@ -27,6 +27,9 @@ The **GitHub Issues tab** is the version-by-version expandable issue history. [O
 
 | [#75](https://github.com/OHM1121/RESALE_ALPHA/issues/75) | 0.0.6 → 0.0.7 | Same-signer stock/coin cross-strategy test APK | Signed CI passed; device unverified |
 
+| [#140](https://github.com/OHM1121/RESALE_ALPHA/issues/140) | 0.2.5 → 0.2.6 | Stock MA / MarketTrend never reached a BUY decision (rotating 200-slot subscriptions, live-print-only RSI watch start) | Source fixed; CI pending; device unverified |
+| [#141](https://github.com/OHM1121/RESALE_ALPHA/issues/141) | 0.2.6 | Overnight EWY rules: AT/MA/Trend no buys 09:00-09:30 after <= -3 %, pre-emptive stop exits, GMO D+1 EWY-adjusted ceiling | Source fixed; CI pending; device unverified |
+
 ### State vocabulary
 `REPORTED` / `LOG_CONFIRMED` / `ROOT_CAUSE_CONFIRMED` / `SOURCE_FIXED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `OPEN_UNVERIFIED` / `LATENT_UNOBSERVED` / `NON_ERROR_POLICY_BLOCK`. A defect cannot move to `DEVICE_VERIFIED` merely because a paper simulation or Java compile succeeds.
 

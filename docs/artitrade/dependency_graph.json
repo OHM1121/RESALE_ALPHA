@@ -1501,6 +1501,51 @@
         "test_v0250_dashboard_merge_and_fold.py",
         "test_v0250_next_profit_target.py"
       ]
+    },
+    {
+      "id": "STOCK_NEAR_SIGNAL_COVERAGE_V0260",
+      "kind": "python-runtime",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/stock_ma_trend_coverage_v0260.py",
+        "ARTITRADE_ANDROID/app/src/main/python/stock_priority_runtime_v093.py"
+      ],
+      "depends_on": [
+        "STOCK_SUBSCRIPTION_PLANNER_V0200",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "STOCK_FEED"
+      ],
+      "issues": [
+        140
+      ],
+      "contract": "Read-only. Every 15 s in the regular session: MA near = symbols whose completed-bar MA5/10/20/60/120 algebra admits a NEW REVERSAL_UP for a forming price inside or within 1.0/1.5/2.0 % (5m/30m/60m) of the band (max 40); Trend near = active 24 h watches + RSI20<=35 (max 40). The planner protects them after held/pending and the close-betting window, protected total <= 170. Stock Trend: a completed bar RSI20<=30 starts the 24 h watch once per bar (same _mark_rsi_watch/evidence). Never creates a quote, order or fill; BUY still needs fresh 0B/0D and the unchanged rule.",
+      "tests": [
+        "test_v0260_night_gate_and_stock_coverage.py"
+      ]
+    },
+    {
+      "id": "NIGHT_FUTURES_GATE_V0260",
+      "kind": "python-runtime",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/night_futures_gate_v0260.py",
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/stock_manual_v086.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "STOCK_CLOSE",
+        "STOCK_GMO"
+      ],
+      "issues": [
+        141
+      ],
+      "contract": "Night value = Yahoo EWY latest complete US session (open->close) closing after the previous KRX close, fetched 06:05-15:30, verified value never downgraded. VERIFIED and <= -3.0 %: AT/MA/Trend (and CW, timing no-op) BUY refused from the regular open for 1800 s. Down night: held AT/MA/Trend positions whose mark x (1+change) <= nearest stop are planned 5 min before the open and sold from the open through the verified manual-exit wallet path (reason AUTO_NIGHT_EWY_PREEMPTIVE_STOP), retry 1 s up to +30 min. GMO D+1 ceiling = down_tick(D close x (1+change)); unverified -> former OR rule. Coins untouched.",
+      "tests": [
+        "test_v0260_night_gate_and_stock_coverage.py"
+      ]
     }
   ],
   "audit_scope": {

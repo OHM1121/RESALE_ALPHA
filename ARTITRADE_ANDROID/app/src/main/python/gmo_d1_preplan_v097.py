@@ -350,9 +350,22 @@ class Preplanner:
         if venue=="KRX" and int(depth)<=0 and int(ask)<=0 and not paper_print:
             plan["status"]="WAIT_FRESH_KRX_0B_OR_0D"
             return
+        # 0.2.6 (owner 2026-11-22): supply-demand has NO opening time block;
+        # only its D+1 price ceiling follows the night change (below).
+        import night_futures_gate_v0260 as night
         opener=plan.get("opening_price")
         close_value=int(getattr(signal,"event_close",0) or 0)
-        if opener is not None and int(opener)>0:
+        # 0.2.6 (owner 2026-11-22): the D+1 price condition is ONE ceiling,
+        # D close x (1 + night change), replacing "below open OR below D
+        # close". Unverified night value -> the former rule, recorded.
+        night_ceiling,night_info=night.gmo_ceiling(close_value,at)
+        plan["night_futures"]={k:night_info.get(k) for k in
+            ("date","status","change_pct","source","reason","raw_ceiling","ceiling")}
+        if night_ceiling is not None and int(night_ceiling)>0:
+            reference=int(night_ceiling)
+            caps=(reference,reference,reference)
+            plan["entry_reference_source"]="EWY_ADJUSTED_D_CLOSE"
+        elif opener is not None and int(opener)>0:
             reference=int(opener)
             caps=(reference,plus_ticks(reference,1),plus_ticks(reference,2))
             plan["entry_reference_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
@@ -404,7 +417,10 @@ class Preplanner:
                     # Otherwise the previously verified cheaper opening
                     # incorrectly suppresses a separately eligible D close.
                     intent_anchor=int(reference)
-                    if venue=="KRX" and plan.get("entry_reference_source")=="VERIFIED_D_CLOSE_STRICT_BELOW":
+                    if plan.get("entry_reference_source")=="EWY_ADJUSTED_D_CLOSE":
+                        # Intent allows anchor + 2 ticks; keep that <= ceiling.
+                        intent_anchor=max(1,int(minus_ticks(reference,2)))
+                    elif venue=="KRX" and plan.get("entry_reference_source")=="VERIFIED_D_CLOSE_STRICT_BELOW":
                         intent_anchor=max(1,int(minus_ticks(close_value,3)))
                     intent=Intent("gmo","stock",code,
                         plan["entry_date"]+":"+venue,str(intent_anchor),str(per),

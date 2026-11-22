@@ -1763,6 +1763,54 @@
         "test_v0250_next_profit_target.py"
       ],
       "notes": "Win rate rule = wins/SELL fills with known net result (same as other strategies); closed-position win rate from the Python ledger still overrides where it exists. Rendering not seen on a phone."
+    },
+    {
+      "id": "ST-0260-01",
+      "issue": 140,
+      "found": "owner report 2026-11-22 + export 2026-11-22 (app 0.2.5) + code audit",
+      "category": "USER_REPORTED_STOCK_NO_BUY_NO_PENDING",
+      "title": "Stock MA and stock MarketTrend never reached a BUY decision (rotating subscriptions + live-print-only RSI watch start)",
+      "evidence": "stock MA ledger 0 rows, stock Trend wallet 0 rows, stock watch_observations 0 (coin 106,761); weekday decision rows erased by the 0.1.4/0.1.5 resets; bar history adequate (median 205/133/120 bars); #118 same mechanism for close-betting",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.6",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_NEAR_SIGNAL_COVERAGE_V0260",
+        "STOCK_SUBSCRIPTION_PLANNER_V0200",
+        "STOCK_MA",
+        "STOCK_TREND"
+      ],
+      "tests": [
+        "test_v0260_night_gate_and_stock_coverage.py"
+      ],
+      "notes": "Near-signal symbols (MA trigger band, Trend watch/RSI<=35) pinned (40+40, protected <=170); completed-bar RSI20<=30 also starts the stock Trend watch (INFERRED reading of the workbook). No threshold or freshness gate relaxed. Market-hours behaviour not yet seen."
+    },
+    {
+      "id": "NF-0260-01",
+      "issue": 141,
+      "found": "owner instruction 2026-11-22",
+      "category": "USER_POLICY_DECISION",
+      "title": "Overnight EWY rules: no AT/MA/Trend buys 09:00-09:30 after <= -3 %, pre-emptive stop exits, supply-demand D+1 EWY-adjusted ceiling",
+      "evidence": "Owner instruction; 2-year EWY vs KOSPI analysis (gap corr 0.59; <= -3 % nights: first hour -1.08 %, 71 % down)",
+      "root": "OWNER_DECISION",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.6",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "NIGHT_FUTURES_GATE_V0260",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "STOCK_CLOSE",
+        "STOCK_GMO"
+      ],
+      "tests": [
+        "test_v0260_night_gate_and_stock_coverage.py"
+      ],
+      "notes": "Kiwoom REST paths are /api/dostk only -> Yahoo EWY US session open->close. Unverified night value -> no block, GMO keeps the former OR rule. Pre-emptive exit reason AUTO_NIGHT_EWY_PREEMPTIVE_STOP. Real KRX night futures not compared."
     }
   ],
   "known_normal": [
@@ -2176,5 +2224,13 @@
     "next_version": "0.2.6",
     "source_commit": "e291988a4fa6a4e33771e9a313d374e1e03bbafb",
     "apk_sha256": "6095f3c030218fdc5de722261fa262a1ab6c0b47f7e53a08b0a78f555fe822ca"
+  },
+  "candidate_026": {
+    "version": "0.2.6",
+    "versionCode": 159,
+    "base": "0.2.5",
+    "status": "SOURCE_FIXED_CI_PENDING",
+    "device_verified": false,
+    "next_version": "0.2.7"
   }
 }

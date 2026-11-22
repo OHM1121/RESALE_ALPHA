@@ -16,6 +16,9 @@ STRATEGY_NAMES = ("SUPPLY", "CLOSE", "MA", "TREND", "GMO")
 STRATEGY_WEIGHTS = (5, 4, 3, 2, 1)
 KIWOOM_MAX_SUBSCRIPTIONS = 200
 OVERFLOW_ROTATION_SECONDS = 180
+#: 0.2.6: protected symbols (held + close window + near MA/Trend) never take
+#: more than this, so the rotating whole-market scan keeps >= 30 slots.
+NEAR_PROTECTED_LIMIT = 170
 
 
 #: Band 0 is the WHOLE-MARKET scan list (every valid KRX symbol). Bands 1..4
@@ -313,6 +316,25 @@ def install(core):
         # 0.1.0: close-betting needs every scanned symbol live at once.
         eligible_critical.extend(close_window_codes(hhmm, eligible[1],
                                                     eligible_critical))
+        # 0.2.6: MA / MarketTrend symbols that can trigger soon (computed
+        # from completed bars) stay connected instead of rotating out right
+        # before their 3 s-fresh decision. Bounded so rotation keeps room.
+        near_added = 0
+        try:
+            from stock_ma_trend_coverage_v0260 import near_codes
+            near_ma, near_trend = near_codes()
+            room_for_near = max(0, NEAR_PROTECTED_LIMIT - len(eligible_critical))
+            taken = set(eligible_critical)
+            for code in list(near_ma) + list(near_trend):
+                if near_added >= room_for_near:
+                    break
+                code = str(code)
+                if code and code not in taken and valid(code):
+                    eligible_critical.append(code)
+                    taken.add(code)
+                    near_added += 1
+        except Exception:
+            near_added = 0
         phase = int(time.monotonic() // OVERFLOW_ROTATION_SECONDS)
         selected = allocate_priority(eligible, protected=eligible_critical,
                                      capacity=KIWOOM_MAX_SUBSCRIPTIONS,
@@ -327,6 +349,7 @@ def install(core):
             "subscribed": len(selected),
             "unsubscribed_now": max(0, len(all_interest) - len(selected)),
             "pinned_total": len(eligible_critical),
+            "near_signal_pinned_v0260": near_added,
             "legacy_mixed_pinned_count": len(pinned),
             "phase": phase,
             "venue": venue,
