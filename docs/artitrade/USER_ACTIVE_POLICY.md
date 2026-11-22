@@ -290,3 +290,8 @@ a new instruction appears different. Cross-check original
 - **기존 기준:** 2026-11-18/11-20: RSI20<=30 starts a 24 h watch; the code observed it only on a fresh live print (forming RSI).
 - **Change / interpretation (INFERRED):** a COMPLETED stock bar with RSI20<=30 is also an RSI20<=30 observation and starts the same watch (once per bar). Entry (first completed bar closing above the Bollinger MIDDLE, slope window), freshness, wallet and every exit rule are unchanged. Coin path unchanged.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-22: Pre-emptive night-EWY exits start at 08:00 (owner, issue #141, version 0.2.7)
+- **Owner instruction:** the held-position exit when the night decline reaches the stop must happen "at 08:00, as early as possible".
+- **Now active:** decided at 07:55; from 08:00 the exit uses the NXT pre-market best bid (the engine's NXT window is 08:00-08:30; only NXT-eligible symbols), afterwards the KRX regular open until +30 minutes. NXT prices are used ONLY for this automatic exit; user sells keep the KRX path. The 2026-11-22 rule otherwise unchanged.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.

@@ -21,6 +21,11 @@ DEFAULT_SEED=2_000_000
 DEFAULT_MAX=4
 
 
+#: Verified PAPER manual-path reasons: the user's own sell and the 0.2.6
+#: automatic night-EWY pre-emptive exit (owner instruction 2026-11-22).
+MANUAL_REASON_PREFIXES=('USER_SIM_MANUAL:','AUTO_NIGHT_EWY_PREEMPTIVE_STOP:')
+
+
 class TrendWalletV054:
     """Four independently financed wallets per market, under one order lock."""
     def __init__(self,rt,legacy_owned=None,order_lock=None):
@@ -352,7 +357,9 @@ class TrendWalletV054:
                     # User-confirmed paper-only exit: skip automatic strategy
                     # triggers, but NOT the original broker guard, orderbook
                     # depth checks, fill verification or SQLite transaction.
-                    if not str(reason).startswith('USER_SIM_MANUAL:'):
+                    # 0.2.6: the automatic night-EWY pre-emptive exit reuses this
+                    # verified paper path with its own recorded reason.
+                    if not str(reason).startswith(MANUAL_REASON_PREFIXES):
                         return 0,'INVALID_MANUAL_REQUEST'
                     try:fraction=float(manual_fraction)
                     except (ValueError,TypeError):return 0,'INVALID_MANUAL_PERCENT'
@@ -375,7 +382,7 @@ class TrendWalletV054:
                         # Its price/timestamp and available depth were
                         # independently checked before calling this wallet;
                         # do not demand an unrelated 0B ticker event.
-                        if pos.execution_mode!='PAPER' or not str(reason).startswith('USER_SIM_MANUAL:'):
+                        if pos.execution_mode!='PAPER' or not str(reason).startswith(MANUAL_REASON_PREFIXES):
                             return 0,'MANUAL_BID_EVIDENCE_NOT_AUTHORIZED'
                         size=int(verified_manual_bid_qty)
                         if size<=0:return 0,'INSUFFICIENT_VERIFIED_MANUAL_DEPTH'

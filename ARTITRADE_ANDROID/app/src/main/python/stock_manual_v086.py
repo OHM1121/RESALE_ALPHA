@@ -72,24 +72,30 @@ class VerifiedDepth:
 
     When a WS book is live, use its SAME reservation ledger as other
     strategies. The REST snapshot instead has a local capacity counter.
+    0.2.6: `venue` is the exchange the bid was observed on (KRX, or NXT for
+    the automatic pre-market exit). Native sell owners call with the literal
+    'KRX'; that label is mapped to THIS depth's own venue, never to another.
     """
-    def __init__(self,code,bid,size,observed,shared=None):
+    def __init__(self,code,bid,size,observed,shared=None,venue='KRX'):
         self.code=str(code);self.bid=int(bid);self.size=int(size)
-        self.observed=observed;self.shared=shared
+        self.observed=observed;self.shared=shared;self.venue=str(venue)
         self.lock=threading.RLock();self.reserved=0
 
+    def _same_venue(self,venue):
+        return venue in ('KRX',self.venue)
+
     def available_sell(self,code,venue,now,bid,desired):
-        if (str(code)!=self.code or venue!='KRX' or int(bid)!=self.bid
+        if (str(code)!=self.code or not self._same_venue(venue) or int(bid)!=self.bid
             or not -.5<=(now-self.observed).total_seconds()<=3):
             return 0
         if self.shared is not None:
             with self.shared._lock:
-                rec=self.shared._bid_depth.get((self.code,'KRX'))
+                rec=self.shared._bid_depth.get((self.code,self.venue))
                 if rec is None:return 0
                 px,size,stamp=rec
                 if (int(px)!=self.bid or stamp.tzinfo is None or
                     not -.5<=(now-stamp).total_seconds()<=3):return 0
-                reserved=int(self.shared._bid_reserved.get((self.code,'KRX'),0))
+                reserved=int(self.shared._bid_reserved.get((self.code,self.venue),0))
                 return max(0,min(int(desired),int(size)-reserved))
         with self.lock:
             return max(0,min(int(desired),self.size-self.reserved))
@@ -100,7 +106,7 @@ class VerifiedDepth:
         if self.shared is not None:
             with self.shared._lock:
                 if self.available_sell(code,venue,now,bid,qty)<qty:return False
-                key=(self.code,'KRX')
+                key=(self.code,self.venue)
                 self.shared._bid_reserved[key]=int(self.shared._bid_reserved.get(key,0))+qty
                 return True
         with self.lock:
@@ -182,6 +188,39 @@ def verified_stock_bid(rt,code):
     if live:return live
     return _rest_bid(runner,code,now)
 
+def _nxt_ws_bid(runner,code,now):
+    """0.2.6: live NXT pre-market 0D bid (08:00-08:30 in this engine), WS only."""
+    from d_v19_portfolio import live_session
+    if not live_session(now,'NXT'):return None
+    book=getattr(getattr(runner,'engine',None),'book',None)
+    if book is None or not getattr(runner,'_confirmed_ws_session',False):return None
+    with book._lock:
+        quote=book._items.get((code,'NXT'))
+        depth=book._bid_depth.get((code,'NXT'))
+    if not quote or not depth:return None
+    ask,bid,ask_qty,quote_at=quote
+    bid_at,bid_qty,depth_at=depth
+    if (quote_at.tzinfo is None or depth_at.tzinfo is None
+        or not -.5<=(now-quote_at).total_seconds()<=3
+        or not -.5<=(now-depth_at).total_seconds()<=3
+        or not 0<int(bid)<=int(ask)
+        or int(bid_at)!=int(bid) or int(bid_qty)<=0):
+        return None
+    return {'bid':int(bid),'bid_qty':int(bid_qty),'at':now,'exchange_at':depth_at,
+        'source':'KIWOOM_REAL_0D_NXT_PREMARKET_PAPER',
+        'depth':VerifiedDepth(code,bid,int(bid_qty),depth_at,book,venue='NXT')}
+
+def _bid_for(rt,request):
+    """KRX for every user sell; NXT only for the automatic pre-market exit."""
+    if str(request.get('venue') or 'KRX')=='NXT':
+        if not _auto(request):raise ValueError('NXT_MANUAL_EXIT_NOT_AUTHORIZED')
+        runner=getattr(rt,'stock_runner',None)
+        if runner is None:raise ValueError('STOCK_FEED_NOT_READY')
+        live=_nxt_ws_bid(runner,request['code'],dt.datetime.now(KST))
+        if live is None:raise ValueError('FRESH_NXT_PREMARKET_BOOK_MISSING')
+        return live
+    return verified_stock_bid(rt,request['code'])
+
 def manual_stock_at(rt,request):
     runner=rt.stock_runner
     engine=getattr(runner,'engine',None)
@@ -202,7 +241,7 @@ def manual_stock_at(rt,request):
             raise ValueError('STOCK_AT_POSITION_NOT_OPEN_OR_MISMATCH')
         _intended(p['qty'],request)
     # Never hold the trading engine's SQLite lock while doing HTTP.
-    book=verified_stock_bid(rt,request['code'])
+    book=_bid_for(rt,request)
     with engine.store.lock,engine.store.connect() as c:
         prior=c.execute('SELECT * FROM executions WHERE event_key=?',(key,)).fetchone()
         if prior:
@@ -275,7 +314,7 @@ def manual_stock_ma(rt,request):
     if not matches:raise ValueError('STOCK_MA_POSITION_NOT_OPEN_IN_ANY_EPOCH')
     if len(matches)>1:raise ValueError('STOCK_MA_AMBIGUOUS_EPOCH_OWNER')
     path,lock,owner=matches[0]
-    book=verified_stock_bid(rt,request['code'])
+    book=_bid_for(rt,request)
     if owner is None:
         raise ValueError("STOCK_MA_FRESH_EPOCH_OWNER_MISSING")
     actual_owner=owner
@@ -376,7 +415,7 @@ def manual_stock_trend(rt,request):
         raise ValueError('STOCK_TREND_NON_SIMULATED_POSITION')
     if Decimal(str(pos.qty))!=Decimal(str(request['expected_qty'])):
         raise ValueError('STOCK_TREND_QTY_CHANGED_RECONFIRM')
-    book=verified_stock_bid(rt,request['code'])
+    book=_bid_for(rt,request)
     now=dt.datetime.now(KST)
     fraction=float(_pct(request)/Decimal(100))
     target=int(pos.qty) if fraction>=.999 else max(1,int(round(float(pos.qty)*fraction)))

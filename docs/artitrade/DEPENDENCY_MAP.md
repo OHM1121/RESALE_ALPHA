@@ -417,3 +417,13 @@ Based on 0.2.5 (versionCode 159 for 0.2.6). Trading behaviour changes (owner ins
 3. Install order (`android_runtime_v078`): after `stock_pending_recovery_v017`: night gate, then coverage.
 
 Status: SOURCE_FIXED; local regression (23 new tests, full-suite comparison: no new failure); CI and device not verified.
+
+0.2.6 delivered: CI_VERIFIED (run 44982710034, source a11c0f5, APK sha256 8e3bd38c…5f4a2); device not verified.
+
+## 0.2.7 — how the changed parts connect (issues #141, #142)
+Based on 0.2.6 (versionCode 160 for 0.2.7).
+1. Pre-emptive exits (`night_futures_gate_v0260.preemptive_step`): decide 07:55 -> `exit_venue(now)`: NXT 08:00-08:30 (`d_v19_portfolio.live_session`, not on NXT-closed days) else KRX open..+30 min -> `android_manual_paper_sell_v085.perform(venue=...)` -> `stock_manual_v086._bid_for`: NXT only with an AUTO reason (`_nxt_ws_bid`, book key (code,'NXT'), `VerifiedDepth(venue='NXT')` maps the owners' literal 'KRX' to its own key), KRX otherwise -> native owner sell (`PaperEngine._sell` / `StockMAService._sell` / `TrendWalletV054.sell`, which accepts `MANUAL_REASON_PREFIXES`).
+2. Close-betting feed (`close_feed_coalesce_v0270`): `at_close_bridge.publish` -> `CoalescingCloseQueue` (newest row per (item,type)) -> `AtCloseRunner._shared_thread_main` -> `valid_broker_frame` (3 s) -> `_on_real` -> BookTracker -> `_scan_once` 15:00-15:20 -> `PaperEngine.open` 15:10-15:20.
+3. Install order: night gate -> coverage -> close feed (end of `android_runtime_v078`).
+
+Status: SOURCE_FIXED; local regression (10 new tests; full-suite comparison: no new failure); CI and device not verified.

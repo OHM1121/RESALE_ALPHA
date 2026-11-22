@@ -134,6 +134,8 @@ def _ma_exit(reason,frame,pos,fill):
     if not why:
         if reason.startswith('USER_SIM_MANUAL:'):
             why='사용자가 직접 요청한 가상 강제매도 (자동 전략 목표가 도달 아님)'
+        elif reason.startswith('AUTO_NIGHT_EWY_PREEMPTIVE_STOP'):
+            why='야간 EWY 하락폭이 손절가에 닿을 것으로 판단되어 장 시작 직후 자동 전량매도'
         elif reason:
             why='원본 매도조건 식별자 '+reason[:110]+' (상세 분기 원본 확인 필요)'
         else:return None
@@ -191,6 +193,8 @@ def _trend_exit(reason,pos,fill,frame):
     if why is None:
         if str(reason or '').startswith('USER_SIM_MANUAL:'):
             why='사용자가 직접 지시한 가상 매도 (자동 목표조건 아님)'
+        elif str(reason or '').startswith('AUTO_NIGHT_EWY_PREEMPTIVE_STOP'):
+            why='야간 EWY 하락폭이 손절가에 닿을 것으로 판단되어 장 시작 직후 자동 전량매도'
         elif reason:why='원본 마켓트렌드 매도식별자 '+str(reason)[:110]+' (상세 분기 미기록)'
         else:return None
     try:p=json.loads(pos['payload'] or '{}')

@@ -16,9 +16,10 @@ final wording (supersedes the same-day "-2.6 % / 3 minutes" draft):
    same way, which never changes its behaviour.) Supply-demand is NOT blocked.
 2. Held AT / MA / MarketTrend stock positions: when the night closed DOWN and
    current price x (1 + night change) <= the position's nearest stop, the
-   whole position is sold at the earliest verified moment after the regular
-   open, through the strategy's own wallet (manual-exit path, reason
-   AUTO_NIGHT_EWY_PREEMPTIVE_STOP). Decided once before the open.
+   whole position is sold at the earliest verified moment: from 08:00 on the
+   NXT pre-market book (owner, same day), else from the KRX regular open,
+   through the strategy's own wallet (manual-exit path, reason
+   AUTO_NIGHT_EWY_PREEMPTIVE_STOP). Decided once at 07:55.
 3. Supply-demand (GMO) D+1 BUY price: current price <= D close x (1 + night
    change) (down night: lower; up night: higher), rounded DOWN to a valid KRX
    tick. Replaces "below D+1 open OR below D close". If the night value is
@@ -41,6 +42,7 @@ SEVERE_PCT = -3.0
 BLOCK_SECONDS = 1800
 BLOCKED_STRATEGIES = ("at", "ma", "trend", "close")
 PREEMPT_DECIDE_BEFORE_OPEN_SECONDS = 300
+PREMARKET_OPEN = dt.time(8, 0)
 PREEMPT_REASON = "NIGHT_EWY_PREEMPTIVE_STOP"
 BLOCK_REASON = "NIGHT_FUTURES_SEVERE_FIRST_30MIN_BUY_BLOCK"
 SYMBOL = "EWY"
@@ -385,7 +387,7 @@ def _current_qty(rt, item):
     return 0
 
 
-def _sell_once(rt, item):
+def _sell_once(rt, item, venue="KRX"):
     import uuid
     import android_manual_paper_sell_v085 as manual
     qty = _current_qty(rt, item)
@@ -395,9 +397,10 @@ def _sell_once(rt, item):
     request = {"market": "stock", "strategy": item["strategy"], "code": item["code"],
                "request_id": str(uuid.uuid4()), "percent": 100,
                "position_id": item["position_id"], "expected_qty": str(qty),
-               "auto_reason": PREEMPT_REASON}
+               "auto_reason": PREEMPT_REASON, "venue": venue}
     result = json.loads(manual.perform(request))
     item["attempts"] += 1
+    item["last_venue"] = venue
     if result.get("ok"):
         if _current_qty(rt, item) <= 0:
             item["done"] = True
@@ -423,14 +426,34 @@ def _record_preempt(item, reason, info):
         pass
 
 
+def exit_venue(now):
+    """Venue for the automatic exit at `now`: NXT pre-market first, then KRX.
+
+    The engine's NXT window is 08:00-08:30 (d_v19_portfolio.live_session);
+    days with a closed NXT pre-market (e.g. CSAT) go straight to KRX.
+    """
+    from d_v19_portfolio import live_session
+    try:
+        from gmo_d1_preplan_v097 import NXT_PREMARKET_CLOSED
+    except Exception:
+        NXT_PREMARKET_CLOSED = ()
+    if now.date().isoformat() not in NXT_PREMARKET_CLOSED and live_session(now, "NXT"):
+        return "NXT"
+    begin = regular_open_at(now.date())
+    if begin <= now < begin + dt.timedelta(seconds=BLOCK_SECONDS) and live_session(now, "KRX"):
+        return "KRX"
+    return None
+
+
 def preemptive_step(now=None):
-    """Decide before the open, sell from the open. Returns the next delay (s)."""
+    """Decide at 07:55, sell from 08:00 (NXT) and from the KRX open. Returns delay (s)."""
     now = now or _now()
     if not is_krx_day(now.date()):
         return 60
+    premarket = dt.datetime.combine(now.date(), PREMARKET_OPEN, tzinfo=KST)
     begin = regular_open_at(now.date())
-    if now < begin - dt.timedelta(seconds=PREEMPT_DECIDE_BEFORE_OPEN_SECONDS):
-        return 30 if now >= begin - dt.timedelta(minutes=15) else 60
+    if now < premarket - dt.timedelta(seconds=PREEMPT_DECIDE_BEFORE_OPEN_SECONDS):
+        return 30 if now >= premarket - dt.timedelta(minutes=15) else 60
     if now >= begin + dt.timedelta(seconds=BLOCK_SECONDS):
         return 60
     info = state(now)
@@ -449,19 +472,19 @@ def preemptive_step(now=None):
         _PREEMPT[key] = plan
         for item in plan:
             _record_preempt(item, "NIGHT_EWY_PREEMPTIVE_STOP_PLANNED", info)
-    if now < begin:
+    venue = exit_venue(now)
+    if venue is None:
         return 1
     for item in plan:
         if item["done"]:
             continue
         try:
-            result = _sell_once(rt, item)
+            _sell_once(rt, item, venue)
         except Exception as exc:
             item["last_error"] = type(exc).__name__
-            result = {"ok": False}
         if item["done"]:
             _record_preempt(item, "NIGHT_EWY_PREEMPTIVE_STOP_SOLD", info)
-        elif item["attempts"] in (1, 30, 300):
+        elif item["attempts"] in (1, 30, 300, 1200):
             _record_preempt(item, "NIGHT_EWY_PREEMPTIVE_STOP_RETRYING", info)
     return 1
 

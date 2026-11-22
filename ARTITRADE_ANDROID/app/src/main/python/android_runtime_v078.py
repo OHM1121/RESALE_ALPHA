@@ -2612,6 +2612,11 @@ _install_night_futures_v0260(_core)
 from stock_ma_trend_coverage_v0260 import install as _install_stock_coverage_v0260
 _install_stock_coverage_v0260(_core)
 
+# 0.2.7: close-betting realtime feed keeps only the newest row per
+# symbol/type, so its 3 s book gate sees current data (issue #142).
+from close_feed_coalesce_v0270 import install as _install_close_feed_v0270
+_install_close_feed_v0270(_core)
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

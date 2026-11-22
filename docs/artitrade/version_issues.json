@@ -1772,9 +1772,9 @@
       "title": "Stock MA and stock MarketTrend never reached a BUY decision (rotating subscriptions + live-print-only RSI watch start)",
       "evidence": "stock MA ledger 0 rows, stock Trend wallet 0 rows, stock watch_observations 0 (coin 106,761); weekday decision rows erased by the 0.1.4/0.1.5 resets; bar history adequate (median 205/133/120 bars); #118 same mechanism for close-betting",
       "root": "CONFIRMED_IN_CODE",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.2.6",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44982710034",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_NEAR_SIGNAL_COVERAGE_V0260",
@@ -1795,9 +1795,9 @@
       "title": "Overnight EWY rules: no AT/MA/Trend buys 09:00-09:30 after <= -3 %, pre-emptive stop exits, supply-demand D+1 EWY-adjusted ceiling",
       "evidence": "Owner instruction; 2-year EWY vs KOSPI analysis (gap corr 0.59; <= -3 % nights: first hour -1.08 %, 71 % down)",
       "root": "OWNER_DECISION",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.2.6",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_44982710034",
       "device": "UNVERIFIED",
       "nodes": [
         "NIGHT_FUTURES_GATE_V0260",
@@ -1808,9 +1808,33 @@
         "STOCK_GMO"
       ],
       "tests": [
-        "test_v0260_night_gate_and_stock_coverage.py"
+        "test_v0260_night_gate_and_stock_coverage.py",
+        "test_v0270_premarket_exit_and_close_feed.py"
       ],
-      "notes": "Kiwoom REST paths are /api/dostk only -> Yahoo EWY US session open->close. Unverified night value -> no block, GMO keeps the former OR rule. Pre-emptive exit reason AUTO_NIGHT_EWY_PREEMPTIVE_STOP. Real KRX night futures not compared."
+      "notes": "Kiwoom REST paths are /api/dostk only -> Yahoo EWY US session open->close. Unverified night value -> no block, GMO keeps the former OR rule. Pre-emptive exit reason AUTO_NIGHT_EWY_PREEMPTIVE_STOP. Real KRX night futures not compared. 0.2.7: pre-emptive exit from 08:00 on the NXT pre-market bid (automatic exit only), KRX from the open; TrendWalletV054 now accepts the AUTO reason (0.2.6 would have refused it)."
+    },
+    {
+      "id": "CW-0270-01",
+      "issue": 142,
+      "found": "owner report 2026-11-22 + export 2026-11-22 + rule replay + vendor code",
+      "category": "USER_REPORTED_STOCK_NO_BUY_NO_PENDING",
+      "title": "Stock close-betting never bought: its single realtime queue drops frames older than 3 s under load (books go stale)",
+      "evidence": "AT_CLOSE_PAPER 0 signals/positions; daily-shape replay: 11 and 12 qualifying symbols on 11-18/11-19 (market-cap test not applied), every week since 2026-06 had candidates; 0.0.18 history 70/90 NO_FRESH_ORDERBOOK with book age 3-300 s; 0.1.0 pin never ran in a session",
+      "root": "CONFIRMED_IN_CODE",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.2.7",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "CLOSE_FEED_COALESCE_V0270",
+        "STOCK_CLOSE",
+        "STOCK_SHARED_WS_OWNER"
+      ],
+      "tests": [
+        "test_v0270_premarket_exit_and_close_feed.py",
+        "test_r010_close_window_coverage.py"
+      ],
+      "notes": "Coalescing queue (newest row per symbol/type); vendor 3 s gates and rules unchanged. Latest NEW LEGACY rules verified wired for stock (MA/Trend stops, first close above MIDDLE, score sizing, AT score gate)."
     }
   ],
   "known_normal": [
@@ -2229,8 +2253,20 @@
     "version": "0.2.6",
     "versionCode": 159,
     "base": "0.2.5",
+    "status": "CI_VERIFIED",
+    "device_verified": false,
+    "next_version": "0.2.7",
+    "source_commit": "a11c0f5677cdfab6fa491f2986dd3a2d3cae44ee",
+    "ci_run": 44982710034,
+    "apk_sha256": "8e3bd38cf11f7e70e8ada6503ecc656c67ad740e85ddb79ed8c041462dc5f4a2",
+    "apk_bytes": 30061215
+  },
+  "candidate_027": {
+    "version": "0.2.7",
+    "versionCode": 160,
+    "base": "0.2.6",
     "status": "SOURCE_FIXED_CI_PENDING",
     "device_verified": false,
-    "next_version": "0.2.7"
+    "next_version": "0.2.8"
   }
 }
