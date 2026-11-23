@@ -1647,6 +1647,25 @@
         "test_v0310_engine_hang_diagnostics.py",
         "EngineHangPolicyTest.java"
       ]
+    },
+    {
+      "id": "GMO_D_UNIVERSE_V0320",
+      "kind": "python-runtime",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d_universe_v0320.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "STOCK_GMO",
+        "NIGHT_FUTURES_GATE_V0260"
+      ],
+      "issues": [
+        147
+      ],
+      "contract": "Wraps d_gmo_runtime.GMOService (installed last): _scan_one judges a symbol for D only while the live ranking is D's (before the next trading day 07:45) or when it is in D's close ranking (rank_snapshots ts >= D 15:20, stock/ARTITRADE_D.sqlite3) or was scanned for D before the cutoff; otherwise gmo_scan COMPLETE/OUTSIDE_D_CLOSE_UNIVERSE_V0320 and no judgement. start(): cleanup thread (20 s, then every 10 min) dismisses via GMOService.dismiss candidates registered after the cutoff from outside D's close ranking with no position and no open BUY (log GMO_D_UNIVERSE_EXCLUDED_V0320). snapshot(): pending rows get gmo_buy_ceiling/limit_price = night.gmo_ceiling(D close) only on D+1 with a verified night value, else gmo_buy_wait_label 'EWY 확인 대기'; gmo_buy_rule text, at = candidate saved_at, status (plan status kept), reason without '기준봉'. UI tile 매수대기 reads limit_price/gmo_buy_ceiling/gmo_buy_wait_label and prints gmo_buy_rule. No order, fill or price created; D+1 buy logic unchanged.",
+      "tests": [
+        "test_v0320_gmo_d_universe_and_pending_price.py"
+      ]
     }
   ],
   "audit_scope": {

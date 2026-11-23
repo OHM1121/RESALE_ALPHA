@@ -332,3 +332,10 @@ a new instruction appears different. Cross-check original
 - **Now active:** supervisor thread (independent of the bridge monitor), dump at 90 s, restart at 240 s, rate limits above. No trading threshold, freshness gate, wallet or order rule changed.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified. The Android restart path (START_STICKY / alarm) has never been observed on the phone.
 
+## 2026-11-23: Supply-demand candidates are decided at the D close; the pending card shows the D+1 buy price (owner, issue #147, version 0.3.2)
+- **Owner instruction:** "수급일이 11월 20일이면 11월 20일 장 마감후 떠야하는데 그다음거래일인 오늘 11월 23일에 [떴다]. 오류 수정. 수급매매의 기본 조건인 투자자별 수급 상황 및 기타 조건이 맞다면 우선 매수대기에 올리고 D+1일에는 ewy고려해서 매수가 조건만 맞추면 되잖아. 그리고 매수대기가 부분을 넣어서 얼마까지 내려오면 사는건지 표시해".
+- **기존 기준:** the vendor judged D over whatever trading-value ranking was current at scan time, including the D+1 intraday ranking. D+1 price: 2026-11-22 rule, D close x (1 + EWY change) (unchanged).
+- **Now active:** D candidates come only from D's own close ranking (KRX ranking snapshots from D 15:20 on), judged after the D close and listed immediately. From the next trading day 07:45 no new D candidate can enter from a later ranking. Candidates that entered that way and are not bought or ordered are removed (후보 제외). On D+1 the pending card shows "매수대기 = D close x (1 + EWY)" with the formula; before the EWY value is known it shows "EWY 확인 대기" and the D close.
+- **Interpretation (INFERRED):** "D close ranking" = KRX ranking snapshots recorded on D from 15:20 on; a symbol of that ranking judged late because the app was off on D evening is still a valid D candidate.
+- **Verification:** SOURCE_FIXED + local regression and replay; CI and device not verified.
+

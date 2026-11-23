@@ -475,3 +475,12 @@ Status: SOURCE_FIXED; local regression (17 Python tests, JVM `EngineHangPolicyTe
 
 0.3.1 delivered: CI_VERIFIED (run 45019130055, source 7fc6c64, APK sha256 163068dc…8ba1b); device not verified.
 
+## 0.3.2 — how the changed parts connect (issue #147)
+Based on 0.3.1 (versionCode 165 for 0.3.2).
+1. D selection: `GMOService._maintenance_loop` (vendor) -> wrapped `_scan_one` -> `gmo_d_universe_v0320.allowed(svc, code, D)`: before `selection_cutoff(D)` (next trading day 07:45, `d_gmo_runtime._next_day`) -> vendor scan; after it only codes in `close_universe(stock/ARTITRADE_D.sqlite3 rank_snapshots, ts >= D 15:20)` or `gmo_scan` rows for D checked before the cutoff; others -> `gmo_scan` COMPLETE `OUTSIDE_D_CLOSE_UNIVERSE_V0320`.
+2. Cleanup: wrapped `GMOService.start` -> daemon thread (20 s, then every 10 min) -> `cleanup()` -> `GMOService.dismiss(code)` + `_log(GMO_D_UNIVERSE_EXCLUDED_V0320)` for late outside candidates without position/open BUY.
+3. Pending view: wrapped `GMOService.snapshot` (outermost, after `gmo_d1_preplan_v097`) -> `enrich_pending` -> `buy_rule(signal)` -> `night_futures_gate_v0260.gmo_ceiling(event_close, now)` on the entry date only -> `limit_price` / `gmo_buy_ceiling` / `gmo_buy_wait_label` / `gmo_buy_rule` / `at` / `status` / `reason` -> `android_runtime_v078` ledger `pending` -> `UnifiedVisualActivity` pending card (매수대기 tile + rule line).
+4. Unchanged: D+1 buy (`gmo_d1_preplan_v097._step`, EWY ceiling), vendor selection rules, wallets.
+
+Status: SOURCE_FIXED; local regression (14 new tests, replay on the private backup); CI and device not verified.
+

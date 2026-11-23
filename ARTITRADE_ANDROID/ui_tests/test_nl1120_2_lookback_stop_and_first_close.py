@@ -511,7 +511,9 @@ class TrendObserverAndExit(unittest.TestCase):
         p.__dict__["nl1120"] = False
         self.assertFalse(getattr(p, "nl1120"))
         p.__dict__["nl1120_stop_confirmed"] = True      # even a stray flag cannot sell it
-        self.assertIsNone(nl._trend_exit_action(p, 106.0, dt.datetime.now(KST)))
+        # 0.3.2: a fixed time inside the hold window. `now()` turned this into a hold-deadline
+        # test once the real date passed the fixed T0 + hold period (failed from 2026-11-23).
+        self.assertIsNone(nl._trend_exit_action(p, 106.0, T0 + dt.timedelta(hours=1)))
 
 
 @unittest.skipUnless(RUNTIME, "needs the original engine on sys.path")

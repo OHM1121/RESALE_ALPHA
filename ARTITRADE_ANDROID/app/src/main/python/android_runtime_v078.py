@@ -2626,6 +2626,11 @@ _install_market_regime_v0290()
 from at_surge_filter_v0290 import install as _install_at_surge_v0290
 _install_at_surge_v0290()
 
+# 0.3.2 (#147): supply-demand D selection fixed to the D close ranking (no D+1 look-ahead);
+# pending rows show the D+1 buy price (D close x (1 + EWY)), registration time and reason.
+from gmo_d_universe_v0320 import install as _install_gmo_d_universe_v0320
+_install_gmo_d_universe_v0320(_core)
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

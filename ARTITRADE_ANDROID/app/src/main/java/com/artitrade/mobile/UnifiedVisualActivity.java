@@ -5177,7 +5177,11 @@ public final class UnifiedVisualActivity extends Activity {
                 tradeMetricTile(figures,"1차 수익목표",stockAtFirstTargetDisplay(r,source),false);
             }else if("pending".equals(kind)){
                 tradeMetricTile(figures,"점수",formatMaybeNumber(r,"score","signal_score"),true);
-                tradeMetricTile(figures,"매수대기",formatMaybePrice(r,"limit_price","entry_price","price"),true);
+                // 0.3.2 (#147): supply-demand shows its D+1 buy price (D close x (1 + EWY)) or why it is not known yet.
+                String waitPrice=formatMaybePrice(r,"limit_price","gmo_buy_ceiling","entry_price","price");
+                if("미기록".equals(waitPrice)&&!r.optString("gmo_buy_wait_label","").isEmpty())
+                    waitPrice=r.optString("gmo_buy_wait_label","");
+                tradeMetricTile(figures,"매수대기",waitPrice,true);
                 tradeMetricTile(figures,"목표가",formatMaybePrice(r,"first_target","target","target_price"),false);
                 tradeMetricTile(figures,"상태",r.optString("status",r.optString("state","확인 중")),false);
             }else if(isSell){
@@ -5262,6 +5266,8 @@ public final class UnifiedVisualActivity extends Activity {
             String action="executions".equals(kind)?tradeSideOf(r):
                 "positions".equals(kind)||"pending".equals(kind)?"매수":"판단";
             String actualReason=tradeReasonOf(r,action);
+            if("pending".equals(kind)&&!r.optString("gmo_buy_rule","").isEmpty())
+                actualReason=r.optString("gmo_buy_rule","")+"\n"+actualReason;
             if("executions".equals(kind)){
                 String verified=readTradeEvidence(item)
                     .optString("verified_trade_basis","");
