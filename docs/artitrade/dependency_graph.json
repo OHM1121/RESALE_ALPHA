@@ -1700,18 +1700,23 @@
         "ARTITRADE_ANDROID/app/src/main/python/coin_partial_entry_v094.py",
         "ARTITRADE_ANDROID/app/src/main/python/trend_partial_entry_v094.py",
         "ARTITRADE_ANDROID/app/src/main/python/position_view_v0200.py",
-        "ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py"
+        "ARTITRADE_ANDROID/app/src/main/python/trade_decision_basis_v095.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v067_stock_runtime.py"
       ],
       "depends_on": [
         "COIN_GENERAL",
         "COIN_MA",
         "COIN_TREND",
-        "MARKET_SCORE_SIZE_V0200"
+        "MARKET_SCORE_SIZE_V0200",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND"
       ],
       "issues": [
-        149
+        149,
+        150
       ],
-      "contract": "Coin reference (GEN) plans arm NL1118_PRE_FIRST_RETURN_TO_ENTRY only after bid >= entry x 1.015 (rte_armed_v0340); stock reference unchanged. rr_size_v0340.evaluate(entry, first target, stop): gain/loss > 0.5 -> factor 1 (fixed amount), else max(0.1, ratio/0.5). GEN stop = reference hard stop from candidates.features; MA (REVERSAL_UP only) stop = 50-bar lookback low from ma_v061_coin_runtime._HISTORY (0.2 s lock try) bounded by -15 %; Trend (coin only) stop = lookback min low of the coordinator in-memory bars (lock tried) bounded by -15 %. GEN/MA cap the vendor `available`, Trend caps `budget`; the factor is stored (GEN plan, MA sidecar, Trend payload: rr_size_factor/rr_size) and top-ups (coin_partial_entry_v094, trend_partial_entry_v094) never refill above it. Unverifiable -> factor 1 with a reason. No network, order or fill created; entries, targets, stops and other exits unchanged.",
+      "contract": "Coin reference (GEN) plans arm NL1118_PRE_FIRST_RETURN_TO_ENTRY only after bid >= entry x 1.015 (rte_armed_v0340); stock reference unchanged. rr_size_v0340.evaluate(entry, first target, stop): gain/loss > 0.5 -> factor 1 (fixed amount), else max(0.1, ratio/0.5). GEN stop = reference hard stop from candidates.features; MA (REVERSAL_UP only) stop = 50-bar lookback low from ma_v061_coin_runtime._HISTORY (0.2 s lock try) bounded by -15 %; Trend (coin only) stop = lookback min low of the coordinator in-memory bars (lock tried) bounded by -15 %. GEN/MA cap the vendor `available`, Trend caps `budget`; the factor is stored (GEN plan, MA sidecar, Trend payload: rr_size_factor/rr_size) and top-ups (coin_partial_entry_v094, trend_partial_entry_v094) never refill above it. Unverifiable -> factor 1 with a reason. No network, order or fill created; entries, targets, stops and other exits unchanged. 0.3.5 (#150): the same rule for stock. AT: reference_1118_runtime.buy_d19 -> rr_size_v0340.at_stock -> thread-local _RR_CTX.limit read by the replaced d_v19_portfolio.symbol_limit_won (reduced per-symbol KRW only inside that BUY / top-up and timeframe, never below one share), factor stored in the nl1118 plan, D19PaperEngine._topup_open_position wrapped. MA (REVERSAL_UP): ma_v067_stock_runtime book.available clamp -> rr_size_v0340.ma_stock (KRX bars, 50-bar lookback low <= -15 %), sidecar record, top-up cap. Trend: market_trend_wallet_v054.buy for coin and stock. Lookback unavailable (short/no bars, busy lock) -> factor 1 with RR_LOOKBACK_* for coin and stock. GMO unchanged.",
       "tests": [
         "test_v0340_rr_size_and_gen_rte.py",
         "test_new_legacy_1118_workbook.py",

@@ -356,3 +356,10 @@ a new instruction appears different. Cross-check original
 - **Replay on the 11-21..23 ledger (model):** MA -42.7k -> -36.9k; GEN return-to-entry change alone +0.8k, with the size rule -6.2k (wide-stop winners reduced, tight-stop losers unchanged) - reported to the owner.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+## 2026-11-23: Reward/risk buy size also for stock AT / MA / Trend (owner, issue #150, version 0.3.5)
+- **Owner question/instruction:** "손익비 1:0.5 이하 종목만 매수금액 축소 (코인 일반, MA, 추세) > 주식 일반 ma 추세는 왜 안해" - 0.3.4 had left stock out only because the ledger had no stock trades.
+- **기존 기준 (0.3.4):** coin GEN / MA (REVERSAL_UP) / Trend only; stock bought the fixed amount (x market-score factor).
+- **Now active:** the same rule for stock AT (reference-candle hard stop, entry = order limit), stock MA REVERSAL_UP (50-bar KRX lookback low, <= -15 %) and stock Trend: gain to the first target / loss to the stop <= 0.5 -> amount x ratio/0.5 (floor 0.1, never below one share); otherwise the fixed amount. Top-ups never refill above it. If the stop cannot be verified (too few bars, no bars, busy lock) the fixed amount is kept - this now also applies to coin. GMO (수급매매) is not changed.
+- **Replay on the 11 stock AT orders in the 11-23 ledger (model):** 6 would be reduced (factor 0.25-0.71), 5 unchanged. No stock fills exist after the reset, so no profit/loss effect can be measured.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+

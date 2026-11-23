@@ -177,6 +177,18 @@ def _join_new_positions(self,c,code):
             (position_id,kind,frame,code,state_json,created_at,updated_at)
             VALUES(?,?,?,?,?,?,?)""",
             (p['id'],kind,p['tf'],code,json.dumps(state,ensure_ascii=False),at,at))
+        if kind=='REVERSAL_UP':
+            # 0.3.4 (#149): keep the reward/risk evaluation (same bars before the entry => same stop) so
+            # top-ups never refill above the sized amount. Evidence + cap only; never creates an order.
+            try:
+                import rr_size_v0340 as rrs
+                rr=rrs.ma_stock(self.market_store,code,str(p['tf']),int(p['entry']),
+                                dt.datetime.fromisoformat(str(p['entry_at'])).astimezone(KST))
+                state=rrs.record(state,rr)
+                c.execute('UPDATE ma_v067_positions SET state_json=? WHERE position_id=?',
+                          (json.dumps(state,ensure_ascii=False),p['id']))
+            except Exception:
+                pass
         first_target=(float(state['ref_high']) if kind=='REVERSAL_BEAR'
                       else float(policy.up_targets(p['entry'],p['tf'])[0]))
         fraction=.30
@@ -483,7 +495,7 @@ def _install_score_size_clamp(book):
             # entry is refused while the table says "no new buy" (DOWN >= +5, SIDEWAYS >= +10).
             with closing(sqlite3.connect('file:%s?mode=ro'%service.db,uri=True,timeout=2)) as ro:
                 ro.row_factory=sqlite3.Row
-                rows=ro.execute("""SELECT c.tf,a.seed,a.max_positions FROM candidates c
+                rows=ro.execute("""SELECT c.tf,a.seed,a.max_positions,c.features FROM candidates c
                     JOIN accounts a ON a.tf=c.tf WHERE c.code=? AND c.status='PENDING'
                     AND c.limit_price=?""",(str(code),int(limit))).fetchall()
             rows=[r for r in rows if int(r['max_positions'])>0]
@@ -494,7 +506,23 @@ def _install_score_size_clamp(book):
             if not allowed:return None,decisions[0][1].get('block')
             limits=[size.limit_krw(int(r['seed'])//max(1,int(r['max_positions'])),
                                    d.get('factor',size.FULL)) for r,d in allowed]
-            if all(d.get('factor',size.FULL)>=1 for r,d in allowed):return proof,why
+            # 0.3.4 (#149): reward/risk <= 1:0.5 -> smaller buy, REVERSAL_UP entries only (the ones that
+            # carry the up targets + 11.20(2) lookback stop). Unverifiable -> factor 1.
+            rr_factors=[]
+            try:
+                import rr_size_v0340 as rrs
+                for r,d in allowed:
+                    try:kind=json.loads(r['features'] or '{}').get('ma_v067_kind')
+                    except (TypeError,ValueError):kind=None
+                    if kind!='REVERSAL_UP':rr_factors.append(1.0);continue
+                    now_rr=dt.datetime.now(KST)
+                    rr_factors.append(rrs.ma_stock(service.market_store,str(code),str(r['tf']),
+                                                   int(limit),now_rr)['factor'])
+                limits=[rrs.capped(lim,f) for lim,f in zip(limits,rr_factors)]
+            except Exception:
+                pass
+            if (all(d.get('factor',size.FULL)>=1 for r,d in allowed)
+                    and all(f>=1 for f in rr_factors)):return proof,why
             from stock_ma_engine import FEE
             ask=proof[0]
             cap_qty=int(min(limits)//(ask*(1+FEE)))
@@ -571,6 +599,12 @@ def _topup_partial_stock(self,tick,shared_book):
                 per_symbol=size.limit_krw(
                     int(wallet['seed'])//int(wallet['max_positions']),
                     size.factor(self.market_store.root,'stock',code,p['tf']))
+                try:
+                    import rr_size_v0340 as rrs
+                    rr_f=rrs.stored_coin_factor(c,p['id'],'ma')
+                    if rr_f<1:per_symbol=rrs.capped(per_symbol,rr_f)
+                except Exception:
+                    pass
                 if not qualified_topup('stock',first,ask,spent,per_symbol,False,True):
                     continue
                 cash=int(wallet['cash'])

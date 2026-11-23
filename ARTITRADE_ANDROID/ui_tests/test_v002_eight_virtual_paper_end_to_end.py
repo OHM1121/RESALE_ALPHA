@@ -91,7 +91,9 @@ class EightRealPaperWallets(unittest.TestCase):
         with store.connect() as c:
             rows=list(c.execute('SELECT side,qty FROM executions WHERE position_id=? ORDER BY id',(pid,)))
             self.assertEqual([x['side'] for x in rows],['BUY','SELL','SELL','SELL'])
-            self.assertEqual([x['qty'] for x in rows[1:]],[23,27,26])
+            # 0.3.4 (#149): the fixture's reference candle puts the hard stop 30.8 % under the 2,600 limit
+            # (gain/loss = 3 % / 30.8 % = 0.0975 <= 0.5) -> buy x 0.195: 76 shares -> 14 (5+5+4).
+            self.assertEqual([x['qty'] for x in rows[1:]],[5,5,4])
             self.assertEqual(sum(x['qty'] for x in rows[1:]),initial)
             self.assertEqual(c.execute('SELECT qty FROM positions WHERE id=?',(pid,)).fetchone()[0],0)
 

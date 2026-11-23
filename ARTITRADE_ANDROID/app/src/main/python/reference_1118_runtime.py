@@ -22,6 +22,7 @@ import new_legacy_1118_resting as resting
 # 0.2.9: whether the score was positive at THIS buy (an UP-market buy may have a
 # negative score; then the "bought while positive, score < -10 -> sell" exit does not apply).
 _BUY_CTX=threading.local()
+_RR_CTX=threading.local()
 
 
 def _up_market(market,symbol=None,frame=None,conn=None):
@@ -251,12 +252,29 @@ def install():
         if blocked:
             return False,blocked
         _BUY_CTX.positive=bool(positive)
+        rr=None
+        try:
+            # 0.3.4 (#149): reward/risk <= 1:0.5 -> smaller stock buy (rr_size_v0340). The vendor reads
+            # symbol_limit_won(tf) for the amount AND for its own allocation-cap assertion, so both see
+            # the reduced limit while this one call runs (thread-local; other threads/strategies untouched).
+            import rr_size_v0340 as rrs
+            rr=rrs.at_stock(self,c,data)
+            if rr["factor"]<1:
+                import d_engine
+                base=d_v19_portfolio.symbol_limit_won(data["tf"])
+                _RR_CTX.limit=(data["tf"],rrs.stock_limit_won(
+                    base,rr["factor"],int(data["limit_won"]),float(d_engine.BUY_FEE)))
+        except Exception:
+            rr=None
         try:
             result=native_d19(self,c,row,when,venue,observed_trade_price,
                               observed_trade_qty)
         except Exception:
             _BUY_CTX.positive=True
+            _RR_CTX.limit=None
             raise
+        finally:
+            _RR_CTX.limit=None
         if isinstance(result,tuple) and result[0]:
             p=c.execute("""SELECT * FROM positions WHERE tf=? AND code=?
                 AND status='OPEN' ORDER BY id DESC LIMIT 1""",
@@ -267,9 +285,43 @@ def install():
                 raise RuntimeError("NL1118_D19_BUY_INTENT_MISSING_ROLLBACK")
             c.execute("UPDATE positions SET exit_policy=? WHERE id=?",
                       (nl.POLICY,p["id"]))
+            if rr is not None:
+                plan=_read(c,p["id"])
+                if plan is not None:
+                    import rr_size_v0340 as rrs
+                    _save(c,rrs.record(plan,rr))
         _BUY_CTX.positive=True
         return result
     d_v19_portfolio.D19PaperEngine._buy_limit_depth=buy_d19
+
+    # 0.3.4 (#149): thread-local per-symbol limit used only inside an AT BUY / top-up of a sized position.
+    native_limit=d_v19_portfolio.symbol_limit_won
+    def symbol_limit_rr(tf):
+        ctx=getattr(_RR_CTX,"limit",None)
+        if ctx is not None and ctx[0]==tf:return int(ctx[1])
+        return native_limit(tf)
+    d_v19_portfolio.symbol_limit_won=symbol_limit_rr
+
+    native_topup=d_v19_portfolio.D19PaperEngine._topup_open_position
+    def topup_rr(self,c,p,when,venue,trade_price,trade_qty):
+        try:
+            import rr_size_v0340 as rrs
+            plan=_read(c,p["id"])
+            f=float((plan or {}).get("rr_size_factor") or 1)
+            if 0<f<1:
+                import d_engine
+                order=c.execute("""SELECT o.limit_won FROM v19_orders o JOIN v19_members m
+                    ON m.signal_id=o.signal_id WHERE m.position_id=? LIMIT 1""",(p["id"],)).fetchone()
+                limit=int(order[0]) if order else int(p["entry_price"])
+                _RR_CTX.limit=(p["tf"],rrs.stock_limit_won(
+                    native_limit(p["tf"]),f,limit,float(d_engine.BUY_FEE)))
+        except Exception:
+            _RR_CTX.limit=None
+        try:
+            return native_topup(self,c,p,when,venue,trade_price,trade_qty)
+        finally:
+            _RR_CTX.limit=None
+    d_v19_portfolio.D19PaperEngine._topup_open_position=topup_rr
 
     legacy_buy=d_engine.PaperEngine._buy_if_touch
     def buy_legacy(self,c,tf,minute,at):

@@ -232,15 +232,14 @@ class TrendWalletV054:
                     budget=min(int(r['cash']),size.limit_krw(
                         int(r['seed'])//int(r['max_positions']),size_factor))
                     rr=None
-                    if market=='coin':
-                        # 0.3.4 (#149): reward/risk <= 1:0.5 -> smaller buy (rr_size_v0340).
-                        try:
-                            import rr_size_v0340 as rrs
-                            rr=rrs.trend(self.rt,market,symbol,frame,float(ask),at)
-                            budget=min(budget,rrs.capped(size.limit_krw(
-                                int(r['seed'])//int(r['max_positions']),size_factor),rr['factor']))
-                        except Exception:
-                            rr=None
+                    # 0.3.4 (#149): reward/risk <= 1:0.5 -> smaller buy (rr_size_v0340), coin and stock.
+                    try:
+                        import rr_size_v0340 as rrs
+                        rr=rrs.trend(self.rt,market,symbol,frame,float(ask),at)
+                        budget=min(budget,rrs.capped(size.limit_krw(
+                            int(r['seed'])//int(r['max_positions']),size_factor),rr['factor']))
+                    except Exception:
+                        rr=None
                     amount=self._price_qty(market,ask,ask_size,budget)
                     if amount is None:return None,'INSUFFICIENT_DEPTH_OR_CASH'
                     price,qty,fee=amount

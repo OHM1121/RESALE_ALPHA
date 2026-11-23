@@ -1,4 +1,4 @@
-"""0.3.4 (owner 2026-11-23, issue #149): reward/risk-based buy size for coin GEN / MA / Trend.
+"""0.3.4 (owner 2026-11-23, issue #149): reward/risk-based buy size for GEN(AT) / MA / Trend, coin AND stock.
 
 Owner: "고정매수금액은 손익비가 1:0.5 이하인 종목에만 세팅해봐" (after the 2026-11-23 ledger
 report: equal buy amounts with stop distances from -0.7 % to -25 % let one wide-stop loss wipe out
@@ -16,6 +16,9 @@ Stops used (the ones the exits really apply):
   GEN (reference) : nl.at_hard_stop(reference low, reference high).
   MA / Trend      : the 11.20(2) lookback-low stop (MA 50 bars, Trend 200/90/90) when below the entry,
                     never farther than the -15 % hard stop.
+  Stock AT         : same reference hard stop from the reference candle (D19 parent), entry = the order limit.
+  Stock MA / Trend : same lookback stops from the KRX bars table / coordinator bars.
+  (0.3.4 first shipped for coin only because the ledger had no stock trades; the owner asked for stock too.)
 Anything unverifiable (no bars, busy lock, bad numbers) -> factor 1 (the previous behaviour) and a
 reason that is recorded. Pure arithmetic + in-memory reads only: no network, no order, no fill.
 """
@@ -91,6 +94,13 @@ def _lookback_low(kind, frame, raw_bars, now, source=None):
     return (price if status == "CANDIDATE" else None), status, used
 
 
+def _unverified(status):
+    """Lookback window not available (too few bars / unsupported frame): the stop is unknown here, so the
+    amount stays as before (factor 1). A stop that exists but lies above the entry is NOT unknown: the
+    -15 % hard stop applies (see effective_ma_trend_stop)."""
+    return dict(evaluate(None, None, None), reason="RR_LOOKBACK_" + str(status), stop_source=str(status))
+
+
 def ma_coin(frame, market, entry, now):
     """Evaluation for a coin MA BUY at `entry` now, from the MA scanner's verified candle cache."""
     try:
@@ -106,6 +116,8 @@ def ma_coin(frame, market, entry, now):
         if not source:
             return dict(evaluate(None, None, None), reason="RR_NO_MA_HISTORY")
         low, status, used = _lookback_low("ma", frame, source[1], now, "ORIGINAL_UPBIT_MA_VERIFIED")
+        if status != "CANDIDATE":
+            return _unverified(status)
         first = float(policy.up_targets(entry, frame)[0])
         out = evaluate(entry, first, effective_ma_trend_stop(entry, low))
         out.update({"stop_source": "MA_LOOKBACK_%s_%d" % (status, used), "lookback_low": low})
@@ -149,6 +161,8 @@ def trend(rt, market, symbol, frame, entry, now):
             # The in-memory window can be shorter than 200/90 bars: its minimum is then HIGHER than the
             # full window's, so the risk is never over-estimated here (factor is never too small).
             low, status, used = _lookback_low("trend", frame, rows, now)
+        if status != "CANDIDATE":
+            return _unverified(status)
         first = float(entry) * (1 + nl.FIRST_GAIN[frame])
         out = evaluate(entry, first, effective_ma_trend_stop(entry, low))
         out.update({"stop_source": "TREND_LOOKBACK_%s_%d" % (status, used), "lookback_low": low})
@@ -182,3 +196,65 @@ def record(target, info):
     target["rr_size"] = {k: info.get(k) for k in ("version", "ratio", "gain_pct", "loss_pct", "applied",
                                                   "reason", "stop_source")}
     return target
+
+
+# ------------------------------------------------------------------ stock
+
+def stock_bars_before(store, code, frame, now):
+    """Completed KRX bars (dicts for new_legacy_1120_policy) ending at/before `now`, read-only."""
+    import d_engine
+    stamp = now.strftime("%Y%m%d%H%M%S")
+    with store.connect() as db:
+        older = db.execute("SELECT ts,low,high,close,source FROM bars WHERE code=? AND frame=? AND ts<?"
+                           " ORDER BY ts DESC LIMIT 60", (code, frame, stamp)).fetchall()
+    out = []
+    for row in reversed(older):
+        s = str(row["ts"])[:14]
+        if len(s) != 14:
+            continue
+        begins = dt.datetime.strptime(s, "%Y%m%d%H%M%S").replace(tzinfo=now.tzinfo)
+        ends = dt.datetime.strptime(str(d_engine.bar_end(s, frame))[:14], "%Y%m%d%H%M%S").replace(tzinfo=now.tzinfo)
+        out.append({"start": begins, "end": ends, "low": row["low"], "high": row["high"],
+                    "close": row["close"], "source": str(row["source"] or "")})
+    return out
+
+
+def ma_stock(store, code, frame, entry, now):
+    """Evaluation for a stock MA REVERSAL_UP BUY at `entry` (KRW) at aware time `now`."""
+    try:
+        import ma_v067_policy as policy
+        low, status, used = _lookback_low("ma", frame, stock_bars_before(store, code, frame, now), now)
+        if status != "CANDIDATE":
+            return _unverified(status)
+        first = float(policy.up_targets(entry, frame)[0])
+        out = evaluate(entry, first, effective_ma_trend_stop(entry, low))
+        out.update({"stop_source": "MA_STOCK_LOOKBACK_%s_%d" % (status, used), "lookback_low": low})
+        return out
+    except Exception as exc:
+        return dict(evaluate(None, None, None), reason="RR_ERROR_" + type(exc).__name__)
+
+
+def at_stock(engine, c, row):
+    """Evaluation for a stock AT (D19) BUY: reference-candle hard stop; entry = the order's limit."""
+    try:
+        import new_legacy_1118_policy as nl
+        signal = c.execute("SELECT * FROM signals WHERE id=?", (row["signal_id"],)).fetchone()
+        if signal is None:
+            return dict(evaluate(None, None, None), reason="RR_NO_SIGNAL")
+        parent = engine._reference_parent(c, signal, json.loads(signal["features"]))
+        if parent is None:
+            return dict(evaluate(None, None, None), reason="RR_NO_REFERENCE_PARENT")
+        entry = float(row["limit_won"])
+        plan = nl.targets(entry, row["tf"], "reference", ref_low=int(parent["low"]), ref_high=int(parent["high"]))
+        out = evaluate(entry, plan["first"], plan["stop"])
+        out["stop_source"] = "AT_REFERENCE_HARD_STOP"
+        return out
+    except Exception as exc:
+        return dict(evaluate(None, None, None), reason="RR_ERROR_" + type(exc).__name__)
+
+
+def stock_limit_won(base_limit_won, factor, buy_limit_won, fee_rate):
+    """Per-symbol KRW cap after the factor, never below ONE share (else the order could never fill)."""
+    reduced = int(base_limit_won * factor)
+    one_share = int(buy_limit_won * (1 + fee_rate)) + 2
+    return max(reduced, min(int(base_limit_won), one_share))

@@ -90,6 +90,19 @@ class StopsBeforeBuy(unittest.TestCase):
         self.assertAlmostEqual(out["factor"], 0.4, places=3)
         self.assertTrue(out["stop_source"].startswith("MA_LOOKBACK_CANDIDATE"))
 
+    def test_short_history_keeps_the_fixed_amount(self):
+        import ma_v061_coin_runtime as native
+        short = bars(10, NOW - dt.timedelta(minutes=5 * 11), 300, 3, 90.0)
+        key = ("5m", "KRW-SHORT")
+        with native._HISTORY_LOCK:
+            native._HISTORY[key] = (NOW, tuple(short))
+        try:
+            out = rr.ma_coin("5m", "KRW-SHORT", 100, NOW)
+        finally:
+            with native._HISTORY_LOCK:
+                native._HISTORY.pop(key, None)
+        self.assertEqual((out["factor"], out["reason"]), (1.0, "RR_LOOKBACK_HISTORY_SHORT"))
+
     def test_ma_coin_without_history_keeps_the_amount(self):
         out = rr.ma_coin("5m", "KRW-NONE", 100, NOW)
         self.assertEqual((out["factor"], out["reason"]), (1.0, "RR_NO_MA_HISTORY"))
@@ -143,8 +156,9 @@ class StopsBeforeBuy(unittest.TestCase):
         finally:
             release.set()
             t.join(2)
-        # no bars visible -> only the -15 % hard stop: 3 / 15 = 0.2 -> 0.4 (never larger than verified)
-        self.assertEqual(busy["stop_source"], "TREND_LOOKBACK_NO_TREND_HISTORY_0")
+        # busy lock -> no bars visible -> stop unverified -> the fixed amount stays (never a guess)
+        self.assertEqual(busy["factor"], 1.0)
+        self.assertEqual(busy["reason"], "RR_LOOKBACK_NO_TREND_HISTORY")
 
     def test_stored_factor_for_top_ups(self):
         c = sqlite3.connect(":memory:")
@@ -155,6 +169,48 @@ class StopsBeforeBuy(unittest.TestCase):
         self.assertAlmostEqual(rr.stored_coin_factor(c, 1, "ma"), 0.4)
         self.assertAlmostEqual(rr.stored_coin_factor(c, 2, "base"), 0.6)
         self.assertEqual(rr.stored_coin_factor(c, 3, "ma"), 1.0)
+
+
+class StockSizing(unittest.TestCase):
+    def test_stock_limit_is_never_below_one_share(self):
+        # 500,000 KRW limit, factor 0.1 -> 50,000, but the order limit is 80,000 -> one share wins
+        self.assertEqual(rr.stock_limit_won(500000, 0.1, 80000, 0.00015), 80014)
+        self.assertEqual(rr.stock_limit_won(500000, 0.4, 10000, 0.00015), 200000)
+        # one share dearer than the original limit: stays at the original limit (no new buy possible)
+        self.assertEqual(rr.stock_limit_won(500000, 0.1, 600000, 0.00015), 500000)
+
+    def test_at_stock_from_the_reference_candle(self):
+        c = sqlite3.connect(":memory:")
+        c.row_factory = sqlite3.Row
+        c.execute("CREATE TABLE signals(id INTEGER PRIMARY KEY,features TEXT)")
+        c.execute("INSERT INTO signals VALUES(1,'{}')")
+        engine = SimpleNamespace(_reference_parent=lambda cc, sig, feat: {"low": 9500, "high": 10000})
+        row = {"signal_id": 1, "limit_won": 10000, "tf": "30m"}
+        out = rr.at_stock(engine, c, row)
+        # stop = 9500 - 500 = 9000 (-10 %), 30m first +3 % -> 0.3 -> factor 0.6
+        self.assertAlmostEqual(out["factor"], 0.6, places=3)
+        self.assertEqual(out["stop_source"], "AT_REFERENCE_HARD_STOP")
+        broken = SimpleNamespace(_reference_parent=lambda cc, sig, feat: None)
+        self.assertEqual(rr.at_stock(broken, c, row)["factor"], 1.0)
+
+    def test_ma_stock_from_the_krx_bars_table(self):
+        import d_engine
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        db.execute("CREATE TABLE bars(code TEXT,frame TEXT,ts TEXT,open INT,high INT,low INT,close INT,volume INT,source TEXT)")
+        t = dt.datetime(2026, 11, 20, 9, 0, tzinfo=KST)
+        for i in range(60):
+            ts = (t + dt.timedelta(minutes=30 * i)).strftime("%Y%m%d%H%M%S")
+            low = 9000 if i == 20 else 9900
+            db.execute("INSERT INTO bars VALUES('005930','30m',?,10000,10100,?,10000,1,'KIWOOM_VERIFIED')", (ts, low))
+        store = SimpleNamespace(connect=lambda: db)
+        now = dt.datetime(2026, 11, 30, 10, 0, tzinfo=KST)
+        out = rr.ma_stock(store, "005930", "30m", 10000, now)
+        self.assertAlmostEqual(out["loss_pct"], 10.0, places=2)     # 50-bar lowest low 9,000
+        self.assertAlmostEqual(out["gain_pct"], 3.0, places=2)      # MA 30m first target +3 %
+        self.assertAlmostEqual(out["factor"], 0.6, places=3)
+        self.assertEqual(rr.ma_stock(SimpleNamespace(connect=lambda: sqlite3.connect(":memory:")),
+                                     "X", "30m", 10000, now)["factor"], 1.0)
 
 
 def coin_plan(entry=100.0):
@@ -217,9 +273,9 @@ class Wiring(unittest.TestCase):
         self.assertIn("rr=rrs.ma_coin(order['tf'],order['market'],book['ask'],now)", src)
         self.assertIn("_record_buy_size(c,pos['id'],score_at_buy,size_factor,rr)", src)
 
-    def test_trend_buy_coin_only_and_records(self):
+    def test_trend_buy_coin_and_stock_and_records(self):
         src = read("market_trend_wallet_v054.py")
-        self.assertIn("if market=='coin':", src)
+        self.assertNotIn("if market=='coin':\n                        # 0.3.4", src)
         self.assertIn("rr=rrs.trend(self.rt,market,symbol,frame,float(ask),at)", src)
         self.assertIn("rrs.record(pos.__dict__,rr)", src)
 
@@ -228,9 +284,25 @@ class Wiring(unittest.TestCase):
                       read("coin_partial_entry_v094.py"))
         self.assertIn("rr_f=float(pos.__dict__.get('rr_size_factor') or 1)", read("trend_partial_entry_v094.py"))
 
+    def test_stock_at_buy_uses_a_thread_local_limit_and_records(self):
+        src = read("reference_1118_runtime.py")
+        self.assertIn("rr=rrs.at_stock(self,c,data)", src)
+        self.assertIn("_RR_CTX.limit=(data[\"tf\"],rrs.stock_limit_won(", src)
+        self.assertIn("d_v19_portfolio.symbol_limit_won=symbol_limit_rr", src)
+        self.assertIn("d_v19_portfolio.D19PaperEngine._topup_open_position=topup_rr", src)
+        # the thread-local limit is always cleared, success or failure
+        self.assertGreaterEqual(src.count("_RR_CTX.limit=None"), 4)
+
+    def test_stock_ma_buy_clamp_topup_and_join(self):
+        src = read("ma_v067_stock_runtime.py")
+        self.assertIn("rrs.ma_stock(service.market_store,str(code),str(r['tf']),", src)
+        self.assertIn("if kind!='REVERSAL_UP':rr_factors.append(1.0);continue", src)
+        self.assertIn("rr_f=rrs.stored_coin_factor(c,p['id'],'ma')", src)
+        self.assertIn("state=rrs.record(state,rr)", src)
+
     def test_module_has_no_network_or_order(self):
         src = read("rr_size_v0340.py")
-        for word in ("requests", "urllib", "socket", "_order_fill", "INSERT INTO executions", "place("):
+        for word in ("requests", "urllib", "socket", "_order_fill", "INSERT INTO executions", "resting.place("):
             self.assertNotIn(word, src)
 
 

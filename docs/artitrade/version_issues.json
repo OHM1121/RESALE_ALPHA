@@ -2019,6 +2019,30 @@
       ],
       "notes": "Interpretation INFERRED: 손익비 1:0.5 이하 = gain to first target / loss to stop <= 0.5. Replay (model): MA -42.7k -> -36.9k; GEN RTE change alone +0.8k, plus size rule -6.2k (reported). Stock strategies not changed."
     }
+,
+    {
+      "id": "ST-0350-01",
+      "issue": 150,
+      "found": "owner question 2026-11-23: why not stock AT / MA / Trend (0.3.4 report)",
+      "category": "USER_STRATEGY_CHANGE_STOCK_SIZE",
+      "title": "Reward/risk buy size extended to stock AT / MA / Trend; unverifiable lookback keeps the fixed amount",
+      "evidence": "0.3.4 left stock out because the 11-20 reset ledger has no stock fills; owner asked for it. Replay on the 11 stock AT orders: 6 reduced (0.25-0.71), 5 unchanged. End-to-end D19 test: reference candle with a 30.8 % stop buys 14 instead of 76 shares through the unchanged vendor transaction",
+      "root": "POLICY_CHANGE_BY_OWNER (not a defect)",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.5",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "RR_SIZE_AND_GEN_RTE_V0340",
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND"
+      ],
+      "tests": [
+        "test_v0340_rr_size_and_gen_rte.py"
+      ],
+      "notes": "No stock profit/loss effect is measurable (no fills after the reset). 0.3.4 shrank coin MA/Trend on the -15 % hard stop alone when the lookback was unavailable; that unverified reduction is removed."
+    }
   ],
   "known_normal": [
     {
@@ -2539,5 +2563,13 @@
     "ci_run": 45099481587,
     "apk_sha256": "a0a662f12277daf084e44e7c10e17956f8f797413b9801a3588a1787be5ec813",
     "apk_bytes": 30126731
+  },
+  "candidate_035": {
+    "version": "0.3.5",
+    "versionCode": 168,
+    "base": "0.3.4",
+    "status": "SOURCE_FIXED",
+    "device_verified": false,
+    "next_version": "0.3.6"
   }
 }

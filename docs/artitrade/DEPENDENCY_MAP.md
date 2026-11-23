@@ -511,3 +511,13 @@ Status: SOURCE_FIXED; local regression (23 new tests; 2 old tests updated to the
 
 0.3.4 delivered: CI_VERIFIED (run 45099481587, source 47b5af7, APK sha256 a0a662f1…ec813); device not verified.
 
+## 0.3.5 — how the changed parts connect (issue #150)
+Based on 0.3.4 (versionCode 168 for 0.3.5). Extends the 0.3.4 reward/risk buy size (`rr_size_v0340`) from coin to STOCK AT / MA / Trend (owner: "주식 일반 ma 추세는 왜 안해").
+1. Stock AT (D19): `reference_1118_runtime.buy_d19` -> `rr_size_v0340.at_stock(engine, c, order)` (reference candle from `D19PaperEngine._reference_parent`, hard stop `nl.at_hard_stop`, entry = order limit, first target `FIRST_GAIN[tf]`) -> thread-local `_RR_CTX.limit` -> module-level `d_v19_portfolio.symbol_limit_won` replaced by `symbol_limit_rr` (returns the reduced per-symbol KRW only inside that BUY / top-up call and only for that timeframe; the vendor reads it for the amount AND for its own allocation-cap assertion, so both agree). Floor: never below one share (`stock_limit_won`). After the BUY the factor is stored in the `nl1118_reference_positions` plan (`rr_size_factor`, `rr_size`). `D19PaperEngine._topup_open_position` is wrapped (`topup_rr`) so top-ups never refill above it.
+2. Stock MA (REVERSAL_UP only): the `book.available` clamp in `ma_v067_stock_runtime._install_score_size_clamp` also reads `candidates.features`, evaluates `rr_size_v0340.ma_stock` (KRX bars table, 50-bar lookback low, bounded by -15 %) per pending frame and caps the quantity (x market-score factor); `_join_new_positions` stores the same evaluation in the MA sidecar; `_topup_partial_stock` caps the per-symbol amount with `stored_coin_factor(c, id, 'ma')`.
+3. Stock Trend: `market_trend_wallet_v054.buy` now evaluates `rr_size_v0340.trend` for coin AND stock (same in-memory coordinator bars, lock tried); `trend_partial_entry_v094` top-up already caps with the stored `rr_size_factor`.
+4. Changed together: lookback not available (too few bars / no bars / busy lock) -> factor 1 and a recorded reason `RR_LOOKBACK_*` for coin and stock alike (0.3.4 shrank on the -15 % hard stop alone; that was unverified and is removed). A stop above the entry is still bounded by the -15 % hard stop.
+5. Unchanged: GMO (수급매매), entries, targets, stops, exits, vendor engine.
+
+Status: SOURCE_FIXED; local regression (28 tests in `test_v0340_rr_size_and_gen_rte.py`, 3 older fixtures updated: `candidates.features` column, AT end-to-end fixture 76 -> 14 shares by the rule; all 77 CI test files pass); CI and device not verified.
+

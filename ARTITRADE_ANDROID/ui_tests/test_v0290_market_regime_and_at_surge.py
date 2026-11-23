@@ -166,9 +166,9 @@ class NewBuyBlockWiring(unittest.TestCase):
             c = sqlite3.connect(db)
             c.executescript("""CREATE TABLE accounts(tf TEXT PRIMARY KEY,seed INTEGER,cash INTEGER,
                 realized INTEGER,max_positions INTEGER);
-                CREATE TABLE candidates(id INTEGER PRIMARY KEY,tf TEXT,code TEXT,limit_price INTEGER,status TEXT);
+                CREATE TABLE candidates(id INTEGER PRIMARY KEY,tf TEXT,code TEXT,limit_price INTEGER,status TEXT,features TEXT);
                 INSERT INTO accounts VALUES('5m',2000000,2000000,0,10);
-                INSERT INTO candidates VALUES(1,'5m','005930',10100,'PENDING');""")
+                INSERT INTO candidates VALUES(1,'5m','005930',10100,'PENDING',NULL);""")
             c.commit(); c.close()
             service = SimpleNamespace(db=db, market_store=SimpleNamespace(root=Path(d)))
 
