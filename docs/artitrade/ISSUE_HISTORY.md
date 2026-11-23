@@ -38,7 +38,7 @@ The **GitHub Issues tab** is the version-by-version expandable issue history. [O
 | [#147](https://github.com/OHM1121/RESALE_ALPHA/issues/147) | 0.3.2 | Supply-demand D candidates judged on D+1 over the D+1 intraday ranking (appeared a day late); pending card had no buy price and a wrong reason | 0.3.2 CI verified (run 45095721653); device unverified |
 | [#148](https://github.com/OHM1121/RESALE_ALPHA/issues/148) | 0.3.3 | Read-only ledger view build (100-500 s) held the bridge monitor: heartbeat blocked, 6 supervisor restarts, Upbit ping timeouts; view moved off the monitor, duration-aware pacing, network-environment record | 0.3.3 CI verified (run 45097454974); device unverified |
 | [#149](https://github.com/OHM1121/RESALE_ALPHA/issues/149) | 0.3.4 | Owner strategy change: coin GEN return-to-entry exit armed only after +1.5 %; coin GEN/MA/Trend buy reduced only when gain/loss <= 0.5 | 0.3.4 CI verified (run 45099481587); device unverified |
-| [#150](https://github.com/OHM1121/RESALE_ALPHA/issues/150) | 0.3.5 | Owner: reward/risk buy size also for stock AT / MA / Trend; unverifiable lookback keeps the fixed amount | 0.3.5 source fixed; CI pending; device unverified |
+| [#150](https://github.com/OHM1121/RESALE_ALPHA/issues/150) | 0.3.5 | Owner: reward/risk buy size also for stock AT / MA / Trend; unverifiable lookback keeps the fixed amount | 0.3.5 CI verified (run 45101579398); device unverified |
 
 ### State vocabulary
 `REPORTED` / `LOG_CONFIRMED` / `ROOT_CAUSE_CONFIRMED` / `SOURCE_FIXED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `OPEN_UNVERIFIED` / `LATENT_UNOBSERVED` / `NON_ERROR_POLICY_BLOCK`. A defect cannot move to `DEVICE_VERIFIED` merely because a paper simulation or Java compile succeeds.

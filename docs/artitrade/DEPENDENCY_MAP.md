@@ -521,3 +521,5 @@ Based on 0.3.4 (versionCode 168 for 0.3.5). Extends the 0.3.4 reward/risk buy si
 
 Status: SOURCE_FIXED; local regression (28 tests in `test_v0340_rr_size_and_gen_rte.py`, 3 older fixtures updated: `candidates.features` column, AT end-to-end fixture 76 -> 14 shares by the rule; all 77 CI test files pass); CI and device not verified.
 
+0.3.5 delivered: CI_VERIFIED (run 45101579398, source 63ffea9, APK sha256 8cadcc07…eccafe); device not verified.
+

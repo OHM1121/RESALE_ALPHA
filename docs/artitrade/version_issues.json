@@ -2028,9 +2028,9 @@
       "title": "Reward/risk buy size extended to stock AT / MA / Trend; unverifiable lookback keeps the fixed amount",
       "evidence": "0.3.4 left stock out because the 11-20 reset ledger has no stock fills; owner asked for it. Replay on the 11 stock AT orders: 6 reduced (0.25-0.71), 5 unchanged. End-to-end D19 test: reference candle with a 30.8 % stop buys 14 instead of 76 shares through the unchanged vendor transaction",
       "root": "POLICY_CHANGE_BY_OWNER (not a defect)",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.3.5",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_45101579398",
       "device": "UNVERIFIED",
       "nodes": [
         "RR_SIZE_AND_GEN_RTE_V0340",
@@ -2568,8 +2568,12 @@
     "version": "0.3.5",
     "versionCode": 168,
     "base": "0.3.4",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.3.6"
+    "next_version": "0.3.6",
+    "source_commit": "63ffea9c8b05e388dc175444845c93e5cf5718bd",
+    "ci_run": 45101579398,
+    "apk_sha256": "8cadcc079c0679f32a3b8372c62cabf10aba883625d291abdec3eb69baeccafe",
+    "apk_bytes": 30126511
   }
 }
