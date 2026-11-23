@@ -2004,9 +2004,9 @@
       "title": "Coin GEN return-to-entry armed after +1.5 %; coin GEN/MA/Trend buy reduced only when gain/loss <= 0.5",
       "evidence": "11-21..23 coin ledger (54 closed): GEN 11/15 exits at entry after any tick above entry; equal buy amounts with stop distances -0.7..-25 % (MA CYBER -11.3 %, IRYS -13.3 %); 1-minute path replay",
       "root": "POLICY_CHANGE_BY_OWNER (not a defect)",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.3.4",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_45099481587",
       "device": "UNVERIFIED",
       "nodes": [
         "RR_SIZE_AND_GEN_RTE_V0340",
@@ -2532,8 +2532,12 @@
     "version": "0.3.4",
     "versionCode": 167,
     "base": "0.3.3",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.3.5"
+    "next_version": "0.3.5",
+    "source_commit": "47b5af7f8a9351ea2fd0e76ba07fc35aded3ef55",
+    "ci_run": 45099481587,
+    "apk_sha256": "a0a662f12277daf084e44e7c10e17956f8f797413b9801a3588a1787be5ec813",
+    "apk_bytes": 30126731
   }
 }

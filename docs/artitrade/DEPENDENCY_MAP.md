@@ -509,3 +509,5 @@ Based on 0.3.3 (versionCode 167 for 0.3.4).
 
 Status: SOURCE_FIXED; local regression (23 new tests; 2 old tests updated to the new owner rule; all 76 CI test files pass); CI and device not verified.
 
+0.3.4 delivered: CI_VERIFIED (run 45099481587, source 47b5af7, APK sha256 a0a662f1…ec813); device not verified.
+
