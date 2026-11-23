@@ -6,6 +6,7 @@ Subcommands
   fetch   <video_id|url> ...        save caption text to <data>/transcripts/<id>.json
   inbox                              import every *.txt/*.vtt/*.srt dropped in <data>/inbox/ (manual or other tools)
   digest  [<video_id> ...]          keyword sentences (stop-loss, R:R, scale-in/out, close-bet, supply/demand ...)
+  consensus                          cross-video consensus: same topic/parameter said in >=2 videos of >=2 channels
   list                               show the index
 
 Backends for `fetch` are tried in order: youtube-transcript-api, yt-dlp subtitles, inbox files.
@@ -142,6 +143,68 @@ def cmd_digest(a):
         (DATA / "digests" / f"{v}.md").write_text("\n".join(out), encoding="utf-8"); print("\n".join(out))
 
 
+PARAMS = {
+    "손절폭(%)": r"(?:손절|스탑|칼손절)[^.?!]{0,25}?(\d+(?:\.\d+)?)\s*(?:%|퍼센트|퍼)|(\d+(?:\.\d+)?)\s*(?:%|퍼센트|퍼)[^.?!]{0,12}(?:손절|스탑)",
+    "손익비": r"손익비[^.?!]{0,20}?(\d+(?:\.\d+)?)\s*(?:대|:|비|\s)\s*(\d+(?:\.\d+)?)",
+    "분할횟수": r"(\d)\s*분할",
+    "이평선(일/봉)": r"(\d{1,3})\s*(?:일선|이평|이동평균|선)",
+    "RSI기준": r"RSI[^.?!]{0,12}?(\d{2})",
+    "거래대금(억)": r"거래대금[^.?!]{0,12}?(\d{2,5})\s*억",
+    "시각(시)": r"(\d{1,2})\s*시\s*(?:(\d{1,2})\s*분)?",
+}
+
+
+def _sentences(d):
+    out = []
+    for s in d["segments"]:
+        for t in re.split(r"(?<=[.?!다요죠])\s+", s["text"]):
+            if t.strip():
+                out.append((s["t"], t.strip()))
+    return out
+
+
+def cmd_consensus(a):
+    import collections
+    ensure()
+    vids = {}
+    for p in (DATA / "transcripts").glob("*.json"):
+        d = json.loads(p.read_text(encoding="utf-8")); vids[d["id"]] = d
+    if not vids:
+        print("no transcripts yet (run fetch or inbox first)"); return 1
+    chan = lambda d: d["meta"].get("channel") or "?"
+    print(f"videos={len(vids)} channels={len({chan(d) for d in vids.values()})}")
+    # topic coverage
+    cov = collections.defaultdict(lambda: collections.defaultdict(list))
+    for v, d in vids.items():
+        for t, sent in _sentences(d):
+            for k, pat in KEYS.items():
+                if re.search(pat, sent):
+                    cov[k][v].append((t, sent))
+    print("\n## 주제별 언급 (영상 수 / 채널 수)")
+    for k, m in cov.items():
+        print(f"- {k}: {len(m)}개 영상 / {len({chan(vids[v]) for v in m})}개 채널")
+    print("\n## 수치 파라미터 합의 (같은 값이 서로 다른 영상에서 나온 횟수)")
+    for name, pat in PARAMS.items():
+        hist = collections.defaultdict(lambda: {"v": set(), "c": set(), "ex": []})
+        for v, d in vids.items():
+            for t, sent in _sentences(d):
+                for m in re.finditer(pat, sent):
+                    val = "/".join(g for g in m.groups() if g)
+                    if not val:
+                        continue
+                    h = hist[val]; h["v"].add(v); h["c"].add(chan(d))
+                    if len(h["ex"]) < 2:
+                        h["ex"].append(f"{v}@{int(t)//60}:{int(t)%60:02d} {sent[:90]}")
+        rows = sorted(hist.items(), key=lambda kv: (-len(kv[1]["c"]), -len(kv[1]["v"])))[: a.top]
+        if rows:
+            print(f"\n### {name}")
+            for val, h in rows:
+                flag = "★합의" if len(h["v"]) >= 2 and len(h["c"]) >= 2 else ""
+                print(f"- {val}: 영상 {len(h['v'])} / 채널 {len(h['c'])} {flag}")
+                for e in h["ex"]:
+                    print("    ·", e)
+
+
 def cmd_list(a):
     for v, m in load_index().items():
         print(v, "|", m.get("channel"), "|", m.get("title"), "| transcript:", m.get("transcript", "-"))
@@ -154,5 +217,6 @@ if __name__ == "__main__":
     x = s.add_parser("fetch"); x.add_argument("ids", nargs="+"); x.set_defaults(f=cmd_fetch)
     x = s.add_parser("inbox"); x.set_defaults(f=cmd_inbox)
     x = s.add_parser("digest"); x.add_argument("ids", nargs="*"); x.add_argument("--max", type=int, default=12); x.set_defaults(f=cmd_digest)
+    x = s.add_parser("consensus"); x.add_argument("--top", type=int, default=6); x.set_defaults(f=cmd_consensus)
     x = s.add_parser("list"); x.set_defaults(f=cmd_list)
     a = p.parse_args(); sys.exit(a.f(a) or 0)
