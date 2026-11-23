@@ -41,3 +41,6 @@ build/
 # Python bytecode from local test runs
 __pycache__/
 *.pyc
+
+# third-party video captions fetched by tools/research/yt_ingest.py (never commit)
+research_data/
