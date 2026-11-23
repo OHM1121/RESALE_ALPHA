@@ -233,17 +233,32 @@ final class StrategyRuntimeBridge {
         catch(Throwable e){crashes.add("v092_network_status",e);}
     }
 
+    /**
+     * 0.3.3 (issue #148): the read-only ledger VIEW builders are NOT synchronized on the bridge
+     * monitor any more. On 2026-11-23 every one of the 14 engine-hang dumps showed the monitor loop
+     * (heartbeat) parked on this monitor behind a 100-500 s hub_records_ui build, so the 0.3.1
+     * supervisor restarted the process six times. They take their own lock instead: two view builds
+     * never overlap, but snapshot()/restart()/manual sell never wait for a view build.
+     */
+    private final Object hubRecordsLock=new Object();
+
     /** Compact read-only Android display, generated in Python before JSON crosses the bridge. */
-    synchronized JSONObject hubRecordsUi(){
-        if(module==null)return new JSONObject();
-        try{return parse(module.callAttr("hub_records_ui"));}
-        catch(Throwable e){crashes.add("python_hub_records_ui_v104",e);return new JSONObject();}
+    JSONObject hubRecordsUi(){
+        PyObject current=module;
+        if(current==null)return new JSONObject();
+        synchronized(hubRecordsLock){
+            try{return parse(current.callAttr("hub_records_ui"));}
+            catch(Throwable e){crashes.add("python_hub_records_ui_v104",e);return new JSONObject();}
+        }
     }
 
-    synchronized JSONObject hubRecords(){
-        if(module==null)return new JSONObject();
-        try{return parse(module.callAttr("hub_records"));}
-        catch(Throwable e){crashes.add("python_hub_records",e);return new JSONObject();}
+    JSONObject hubRecords(){
+        PyObject current=module;
+        if(current==null)return new JSONObject();
+        synchronized(hubRecordsLock){
+            try{return parse(current.callAttr("hub_records"));}
+            catch(Throwable e){crashes.add("python_hub_records",e);return new JSONObject();}
+        }
     }
     synchronized JSONObject ledgerAudit(JSONObject manifest){
         if(module==null)return error("PYTHON_LEDGER_AUDIT_NOT_READY",null);

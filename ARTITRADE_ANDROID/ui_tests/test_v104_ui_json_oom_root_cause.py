@@ -62,7 +62,8 @@ class DataPreservingOOMFix(unittest.TestCase):
         self.assertEqual(len(original["stock"]["at"]["ledger"]["positions"][0]["details"]),30000)
 
     def test_legacy_java_oom_paths_are_removed_but_full_pc_sync_is_kept(self):
-        self.assertIn('module.callAttr("hub_records_ui")',BRIDGE)
+        # 0.3.3 (#148): called on a local module copy, outside the bridge monitor.
+        self.assertIn('current.callAttr("hub_records_ui")',BRIDGE)
         self.assertIn('JSONObject localRecords=strategy.hubRecordsUi();',SERVICE)
         self.assertIn('JSONObject records=strategy.hubRecordsUi();',SERVICE)
         self.assertNotIn('.putString("records",records.toString())',SERVICE)

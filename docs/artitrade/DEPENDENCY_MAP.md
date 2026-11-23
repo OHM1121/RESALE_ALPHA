@@ -486,3 +486,12 @@ Status: SOURCE_FIXED; local regression (14 new tests, replay on the private back
 
 0.3.2 delivered: CI_VERIFIED (run 45095721653, source bbb09fa, APK sha256 17c35868…b3f68); device not verified.
 
+## 0.3.3 — how the changed parts connect (issue #148)
+Based on 0.3.2 (versionCode 166 for 0.3.3).
+1. Ledger view lock: `UnifiedTradingService.scheduleUiRecordsIfDue` worker `artitrade-v087-view-snapshot` (and the start-up read) -> `StrategyRuntimeBridge.hubRecordsUi()` / `hubRecords()` -> NOT on the bridge monitor any more; own `hubRecordsLock` (view builds never overlap), local `module` copy -> Python `android_runtime_v078.hub_records_ui` / `hub_records` (unchanged). `snapshot()`, `restart()`, `manualPaperSell`, `setLive`, `stop` stay `synchronized` on the bridge, so the monitor loop heartbeat no longer waits for a view build.
+2. Pacing: `UiRecordPacingV0330.due(now, visible, lastStarted, lastFinished, lastDuration)`: 6.5 s visible / 17 s hidden since the last START (unchanged) AND 4 x last duration (cap 300 s) since the last END. The worker's `finally` stores duration and finish time. A successful manual sell resets both (one immediate refresh).
+3. Network environment: monitor loop -> `recordNetworkEnvironmentIfChanged()` -> `NetworkEnvironmentV0330.describe()` (battery-optimisation exemption, background restriction, transport, validated, private DNS state, DNS server count; no address/host/SSID) -> prefs `artitrade_network_env_v0330` + error history stage `network_environment_v0330` only on change, >= 60 s apart.
+4. Unchanged: trading decisions, wallets, orders, vendor engine (hash 0daf09fe…), 0.3.1 supervisor thresholds.
+
+Status: SOURCE_FIXED; local regression (10 Python tests + JVM `UiRecordPacingTest`, all 75 CI test files pass); CI and device not verified.
+

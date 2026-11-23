@@ -128,7 +128,8 @@ class V087Regression(unittest.TestCase):
         self.assertIn('scheduleUiRecordsIfDue(hub);',service)
         self.assertIn('new Thread(()->safeStartStrategy()',service)
         self.assertIn('Thread.sleep(2500)',service)
-        self.assertIn('6_500L:17_000L',service)
+        # 0.3.3 (#148): the 6.5 s / 17 s cadence moved into the duration-aware pacing policy.
+        self.assertIn('UiRecordPacingV0330.due(',service)
         self.assertIn('AtomicBoolean uiRecordCollecting',service)
         self.assertIn('LargeRecordStoreV087.write(this,serialized);',service)
         self.assertIn('.edit().remove("records").putString("storage","file-v087")',service)

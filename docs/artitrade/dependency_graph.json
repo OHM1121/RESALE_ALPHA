@@ -1666,6 +1666,27 @@
       "tests": [
         "test_v0320_gmo_d_universe_and_pending_price.py"
       ]
+    },
+    {
+      "id": "LEDGER_VIEW_OFF_BRIDGE_V0330",
+      "kind": "android-service",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/StrategyRuntimeBridge.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedTradingService.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UiRecordPacingV0330.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/NetworkEnvironmentV0330.java"
+      ],
+      "depends_on": [
+        "ENGINE_HANG_SUPERVISOR_V0310"
+      ],
+      "issues": [
+        148
+      ],
+      "contract": "hubRecordsUi()/hubRecords() are not synchronized on the bridge monitor; they share hubRecordsLock and call a local module copy. snapshot/restart/manualPaperSell/setLive/stop stay on the bridge monitor. scheduleUiRecordsIfDue starts a view build only when UiRecordPacingV0330.due: 6.5 s visible / 17 s hidden since the last start AND 4 x last duration (cap 300 s) since the last end; a successful manual sell resets both. Monitor loop records NetworkEnvironmentV0330.describe (battery exemption, background restriction, transport, validated, private DNS state, DNS server count; no address/host/SSID) to error history stage network_environment_v0330 only on change, >= 60 s apart. No trading decision, wallet, order or vendor engine change.",
+      "tests": [
+        "test_v0330_ledger_view_off_bridge_lock.py",
+        "UiRecordPacingTest.java"
+      ]
     }
   ],
   "audit_scope": {

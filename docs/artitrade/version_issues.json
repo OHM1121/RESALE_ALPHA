@@ -1972,6 +1972,29 @@
       ],
       "notes": "Replay on the private backup: the 3 symbols blocked at 11-23 10:00, 0 of 253 Friday symbols blocked. Late candidates from D's own close ranking (app off on D) are kept. Also fixed the date-dependent test_nl1120_2 assertion (fixed time inside the hold window)."
     }
+,
+    {
+      "id": "UI-0330-01",
+      "issue": 148,
+      "found": "owner report + error export 2026-11-23 10:31 (app 0.3.2)",
+      "category": "ENGINE_STALL_UI_VIEW_ON_BRIDGE_MONITOR",
+      "title": "Read-only ledger view build held the bridge monitor for 100-500 s: heartbeat blocked, 6 supervisor restarts, Upbit ping timeouts",
+      "evidence": "14/14 engine_hang_dump_v0310 dumps: monitor loop parked on StrategyRuntimeBridge monitor, artitrade-v087-view-snapshot inside hub_records_ui; restarts 01:06 01:16 09:19 09:42 09:53 10:23; next build started right after the previous ended (gap counted from start); RSS 600-940 MB; most Upbit+Kiwoom drops = simultaneous DNS resolution failures",
+      "root": "CONFIRMED_IN_DUMPS_AND_CODE: display-only view builder synchronized on the same monitor as snapshot(); pacing ignored build duration",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.3",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "LEDGER_VIEW_OFF_BRIDGE_V0330",
+        "ENGINE_HANG_SUPERVISOR_V0310"
+      ],
+      "tests": [
+        "test_v0330_ledger_view_off_bridge_lock.py",
+        "UiRecordPacingTest.java"
+      ],
+      "notes": "Stock pending not bought: GMO 3 = price not reached (EWY -6.64%); AT 9 = 5 not reached, 4 touched but blocked by policy gates (negative market score, 09:00-09:30 severe-EWY block) and FIX14 gap guard caused by the freezes (fixed here). GMO 0D_KRX_ASK_DEPTH_ZERO (226x, suspected FID 41 vs 6044 mismatch) reported only, unverified, unchanged. Daily backup unknown_endpoint = outdated external MSERVER, unchanged. DNS failures need owner device checks (battery unrestricted, background data, private DNS); network environment now recorded."
+    }
   ],
   "known_normal": [
     {
@@ -2468,5 +2491,13 @@
     "ci_run": 45095721653,
     "apk_sha256": "17c358686332556d912a9c09b1e3072db1dda209bc5e6ef73bdf01b0cacb3f68",
     "apk_bytes": 30094223
+  },
+  "candidate_033": {
+    "version": "0.3.3",
+    "versionCode": 166,
+    "base": "0.3.2",
+    "status": "SOURCE_FIXED",
+    "device_verified": false,
+    "next_version": "0.3.4"
   }
 }

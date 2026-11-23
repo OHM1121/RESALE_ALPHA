@@ -55,6 +55,8 @@ public final class UnifiedTradingService extends Service {
     // Explicit PAPER exits take precedence over expensive read-only snapshots.
     private final AtomicInteger manualSellOutstanding=new AtomicInteger(0);
     private volatile long uiRecordLastStartedMs=0L;
+    private volatile long uiRecordLastDurationMs=0L;
+    private volatile long uiRecordLastFinishedMs=0L;
     private Thread monitor;
     private Thread preloadObserver;
     private Thread priceOnlyPublisher;
@@ -245,6 +247,26 @@ public final class UnifiedTradingService extends Service {
             try{ensureChannel();startForeground(NOTIFY_ID,notification("엔진 시작 오류 · 앱 오류 탭 확인"));}catch(Throwable ignored){}
             return START_STICKY;
         }
+    }
+
+    // ---- 0.3.3 (#148): network environment in the error history --------------------------------
+    private volatile String lastNetworkEnvironment="";
+    private volatile long lastNetworkEnvironmentAt=0L;
+
+    /** Writes one error-history entry when the Android network environment changes (min 60 s apart). */
+    private void recordNetworkEnvironmentIfChanged(){
+        try{
+            long now=System.currentTimeMillis();
+            if(now-lastNetworkEnvironmentAt<60_000L)return;
+            String env=NetworkEnvironmentV0330.describe(this);
+            if(env.equals(lastNetworkEnvironment))return;
+            lastNetworkEnvironment=env;
+            lastNetworkEnvironmentAt=now;
+            getSharedPreferences("artitrade_network_env_v0330",MODE_PRIVATE).edit()
+                .putString("environment",env).putLong("observed_at",now).apply();
+            crashes.add("network_environment_v0330",
+                new NetworkEnvironmentV0330.Report("NETWORK_ENVIRONMENT "+env,env));
+        }catch(Throwable ignored){}
     }
 
     // ---- 0.3.1 (#146): frozen-engine supervisor -------------------------------------------------
@@ -622,6 +644,7 @@ public final class UnifiedTradingService extends Service {
                 if(result.optBoolean("ok",false)&&running.get()
                         &&strategy!=null&&strategy.isStarted()){
                     uiRecordLastStartedMs=0L;
+                    uiRecordLastFinishedMs=0L;   // a user sell refreshes the view once, at once
                     try{
                         scheduleUiRecordsIfDue(new LocalHubClient(this));
                     }catch(Throwable refreshError){
@@ -705,8 +728,8 @@ public final class UnifiedTradingService extends Service {
             "artitrade_ui_visibility_v087",MODE_PRIVATE);
         boolean visible=visibility.getBoolean("foreground",false)
             &&now-visibility.getLong("at_ms",0L)<13_000L;
-        long interval=visible?6_500L:17_000L;
-        if(!publishOneShot&&now-uiRecordLastStartedMs<interval)return;
+        if(!publishOneShot&&!UiRecordPacingV0330.due(now,visible,uiRecordLastStartedMs,
+            uiRecordLastFinishedMs,uiRecordLastDurationMs))return;
         if(!uiRecordCollecting.compareAndSet(false,true))return;
         uiRecordLastStartedMs=now;
         Thread worker=new Thread(()->{
@@ -743,6 +766,10 @@ public final class UnifiedTradingService extends Service {
                 try{crashes.add("ui_record_source_throttled_v087",error);}
                 catch(Throwable ignored){}
             }finally{
+                // 0.3.3 (issue #148): remember how long this read-only build took; the next one
+                // starts only after a quiet gap proportional to it (see UiRecordPacingV0330).
+                uiRecordLastDurationMs=android.os.SystemClock.elapsedRealtime()-began;
+                uiRecordLastFinishedMs=System.currentTimeMillis();
                 uiRecordCollecting.set(false);
             }
         },"artitrade-v087-view-snapshot");
@@ -872,6 +899,7 @@ public final class UnifiedTradingService extends Service {
                 // network with only one broker WebSocket/subscription down.
                 // Pure local observation; never requests an API or arms orders.
                 Boolean validated=validatedInternetV092();
+                recordNetworkEnvironmentIfChanged();
                 if(validated!=null){
                     getSharedPreferences("artitrade_recovery_network_v092",MODE_PRIVATE)
                         .edit().putBoolean("validated_internet",validated)

@@ -339,3 +339,10 @@ a new instruction appears different. Cross-check original
 - **Interpretation (INFERRED):** "D close ranking" = KRX ranking snapshots recorded on D from 15:20 on; a symbol of that ranking judged late because the app was off on D evening is still a valid D candidate.
 - **Verification:** SOURCE_FIXED + local regression and replay; CI and device not verified.
 
+## 2026-11-23: Ledger view no longer blocks the engine; pending-buy cause report (owner, issue #148, version 0.3.3)
+- **Owner instruction:** "코인 업비트 시세연결 반복적 끊김 ... 오류들 일괄 수정하고 특히 주식 부분 여전히 매수대기에만 걸려있고 매수로 안이어지는데 매수목표에 도달을 안해서 안산건지 아니면 오류때문에 못산건지 확인 필요 및 수정 ... 개선안을 나한테 보고할것(아직 apk 반영은 하지말것)".
+- **기존 기준:** UI ledger view built on the bridge monitor every 6.5 s / 17 s counted from the start.
+- **Now active:** the view build has its own lock (never blocks the trading snapshot/heartbeat); next build waits 4 x the last build time (max 300 s) after it ends; network-environment changes are written to the error history. No trading threshold, gate, wallet or order rule changed.
+- **Strategy improvement proposal:** reported to the owner only; NOT applied to the APK (owner: "아직 apk 반영은 하지말것").
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
