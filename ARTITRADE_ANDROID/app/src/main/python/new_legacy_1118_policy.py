@@ -29,6 +29,8 @@ BOLL_ANGLE_MIN=-15.0
 BOLL_ANGLE_MAX=20.0
 TREND_ENTRY_RULE_1120="NL1120_BAR_CLOSE_ABOVE_BOLL_MID"
 TREND_FRAMES=("30m","60m","day")
+# 0.3.4 (#149): coin reference (GEN) return-to-entry exit arms only after entry +1.5 %.
+RTE_ARM_GAIN_COIN=0.015
 
 def valid_num(x):
     try:
@@ -274,6 +276,15 @@ def exit_signal(state,observed_bid,now,market_score=None):
             if (t.get("rev1_below_reference_low_confirmed") is True
                     and not t.get("nl1120")):
                 return "NL1118_REV1_PRE_FIRST_REFERENCE_LOW_CLOSED",1.0
+        elif t.get("market")=="coin":
+            # 0.3.4 (owner 2026-11-23, #149): coin GEN arms the return-to-entry exit only after the
+            # bid reached entry +1.5 % (RTE_ARM_GAIN_COIN). Before, ANY tick above the entry armed it and
+            # 11 of 15 GEN trades left at entry (fees only) although most rose further afterwards.
+            # A separate key, so positions armed by the old rule also follow the new one.
+            if p>entry:t["seen_above_entry"]=True
+            if p>=entry*(1+RTE_ARM_GAIN_COIN):t["rte_armed_v0340"]=True
+            if t.get("rte_armed_v0340") and p<=entry:
+                return "NL1118_PRE_FIRST_RETURN_TO_ENTRY",1.0
         else:
             if p>entry:t["seen_above_entry"]=True
             if t.get("seen_above_entry") and p<=entry:

@@ -497,3 +497,15 @@ Status: SOURCE_FIXED; local regression (10 Python tests + JVM `UiRecordPacingTes
 
 0.3.3 delivered: CI_VERIFIED (run 45097454974, source 7751f19, APK sha256 6113b988…ba758); device not verified.
 
+## 0.3.4 — how the changed parts connect (issue #149)
+Based on 0.3.3 (versionCode 167 for 0.3.4).
+1. Coin GEN return-to-entry: `reference_1118_runtime` (coin book / minute exits) -> `new_legacy_1118_policy.exit_signal(plan)`: for `kind=reference` and `market=coin`, `rte_armed_v0340` is set only when bid >= entry x 1.015 (`RTE_ARM_GAIN_COIN`); `NL1118_PRE_FIRST_RETURN_TO_ENTRY` needs that flag. Stock AT reference keeps `seen_above_entry` (any rise). `_save(plan)` persists the flag; `position_view_v0200.stops_reference` shows "상승 후 매수가 복귀" only when armed; `trade_decision_basis_v095` label updated.
+2. Reward/risk size: `rr_size_v0340.evaluate(entry, first, stop)` -> factor = 1 if gain/loss > 0.5 else max(0.1, ratio/0.5).
+   - GEN: `reference_1118_runtime.buy_coin` -> `rr_size_v0340.gen_coin(candidates.features low/high)` -> caps `available` (vendor `CoinLedger._buy` buys qty <= available/price) -> after `_mark`, plan `rr_size_factor`/`rr_size`.
+   - MA: `ma_v067_coin_runtime.buy` (REVERSAL_UP only) -> `rr_size_v0340.ma_coin(ma_v061_coin_runtime._HISTORY, 0.2 s lock try, new_legacy_1120_policy.lookback_stop 50 bars, max with -15 %)` -> caps `available` (x market-score factor) -> `_record_buy_size(..., rr)` into the MA sidecar.
+   - Trend: `market_trend_wallet_v054.buy` (coin only) -> `rr_size_v0340.trend(rt.market_trend._history, lock tried, lookback min low, max with -15 %)` -> caps `budget` -> `pos.__dict__` (payload) `rr_size_factor`.
+   - Top-ups: `coin_partial_entry_v094` cap x `stored_coin_factor` (MA sidecar / GEN plan); `trend_partial_entry_v094` per-symbol x payload `rr_size_factor`.
+3. Unchanged: entries, targets, stops, other exits, stock wallets, vendor engine.
+
+Status: SOURCE_FIXED; local regression (23 new tests; 2 old tests updated to the new owner rule; all 76 CI test files pass); CI and device not verified.
+

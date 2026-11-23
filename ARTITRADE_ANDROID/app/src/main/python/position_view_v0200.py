@@ -92,7 +92,10 @@ def stops_reference(plan,entry):
     stage=int(num(plan.get("stage")) or 0)
     out=[_candidate(plan.get("stop"),"기준봉 손절",entry)]
     if stage>=1:out.append(_candidate(entry*1.01,"1차 매도 후 본전+1%",entry))
-    if stage<=0 and plan.get("seen_above_entry") is True:
+    # 0.3.4 (#149): a coin GEN plan arms this exit only after entry +1.5 % (rte_armed_v0340).
+    armed=(plan.get("rte_armed_v0340") is True if plan.get("market")=="coin"
+           else plan.get("seen_above_entry") is True)
+    if stage<=0 and armed:
         out.append(_candidate(entry,"상승 후 매수가 복귀",entry))
     if stage>=2:
         out.append(_candidate(plan.get("first"),"2차 매도 후 1차 목표가 이탈",entry))

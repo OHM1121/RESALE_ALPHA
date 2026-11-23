@@ -677,8 +677,8 @@ def _note_block(self,c,order,block,now):
         pass
 
 
-def _record_buy_size(c,position_id,score,factor):
-    """Keep the score and size factor that applied at the BUY in the MA sidecar (evidence only)."""
+def _record_buy_size(c,position_id,score,factor,rr=None):
+    """Keep the score and size factors that applied at the BUY in the MA sidecar (evidence + top-up cap)."""
     try:
         row=c.execute('SELECT state_json FROM ma_v067_positions WHERE position_id=?',
                       (position_id,)).fetchone()
@@ -686,6 +686,9 @@ def _record_buy_size(c,position_id,score,factor):
         state=json.loads(row['state_json'] or '{}')
         state['market_score_at_buy']=score
         state['buy_size_factor']=str(factor)
+        if rr is not None:
+            import rr_size_v0340 as rrs
+            rrs.record(state,rr)
         c.execute('UPDATE ma_v067_positions SET state_json=? WHERE position_id=?',
                   (json.dumps(state,ensure_ascii=False),position_id))
     except (sqlite3.Error,TypeError,ValueError,KeyError):
@@ -1032,6 +1035,22 @@ def install():
                               Decimal(size.limit_krw(per,size_factor))/(Decimal(1)+FEE_RATE))
             except (KeyError,TypeError,ValueError,ArithmeticError,ImportError):
                 pass
+        rr=None
+        try:
+            # 0.3.4 (#149): reward/risk <= 1:0.5 -> smaller buy (rr_size_v0340), on top of the score factor.
+            import rr_size_v0340 as rrs
+            # Only REVERSAL_UP carries the up targets + 11.20(2) lookback stop the evaluation uses.
+            if _kind_for(c,order)[0]=='REVERSAL_UP':
+                rr=rrs.ma_coin(order['tf'],order['market'],book['ask'],now)
+            if rr is not None and rr['factor']<1:
+                import market_score_size_v0200 as size
+                from d_upbit import FEE_RATE
+                opt=self.settings.snapshot()['frames'][order['tf']]
+                per=size.limit_krw(int(opt['allocated_krw'])//max(1,int(opt['max_positions'])),size_factor)
+                available=min(Decimal(str(available)),
+                              Decimal(rrs.capped(per,rr['factor']))/(Decimal(1)+FEE_RATE))
+        except Exception:
+            rr=None
         res=old_buy(self,c,order,book,seen,available)
         if res:
             pos=c.execute("""SELECT * FROM positions
@@ -1039,7 +1058,7 @@ def install():
                 (order['tf'],order['market'],order['ref_at'])).fetchone()
             if pos:
                 _on_real_buy(self,c,pos)
-                _record_buy_size(c,pos['id'],score_at_buy,size_factor)
+                _record_buy_size(c,pos['id'],score_at_buy,size_factor,rr)
         return res
     ma.MACoinLedger._buy=buy
 

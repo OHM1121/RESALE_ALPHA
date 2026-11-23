@@ -75,6 +75,13 @@ def topup_verified_coin_book(self,book,now):
                             symbol,p['tf'])))
                     except Exception:
                         pass
+                # 0.3.4 (#149): never refill above the reward/risk-sized amount fixed at the BUY.
+                try:
+                    import rr_size_v0340 as rrs
+                    rr_f=rrs.stored_coin_factor(c,p['id'],self.account_variant)
+                    if rr_f<1:cap=D(int(cap*D(str(rr_f))))
+                except Exception:
+                    pass
                 instrument_tick=(book.get('sr_tick_size') or
                                  self.sr_instrument_ticks.get(symbol))
                 if not qualified_topup('coin',first,ask,spent,cap,

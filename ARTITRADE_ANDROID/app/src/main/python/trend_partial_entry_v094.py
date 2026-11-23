@@ -73,6 +73,12 @@ def topup_trend(wallet,pos,quote,now):
             per_symbol=size.limit_krw(
                 int(account['seed'])//max(1,int(account['max_positions'])),
                 size.factor(wallet.root,market,symbol,pos.frame))
+            # 0.3.4 (#149): never refill above the reward/risk-sized amount fixed at the BUY.
+            try:
+                rr_f=float(pos.__dict__.get('rr_size_factor') or 1)
+                if 0<rr_f<1:per_symbol=int(per_symbol*rr_f)
+            except (TypeError,ValueError):
+                pass
             if not qualified_topup(market,first,ask,spent,per_symbol,False,True,
                                    symbol=symbol,instrument_tick=instrument_tick):
                 return 0

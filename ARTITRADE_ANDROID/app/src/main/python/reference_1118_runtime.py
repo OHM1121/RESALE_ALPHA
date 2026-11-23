@@ -305,6 +305,19 @@ def install():
             positive=nl.validate_stock_score(_market_score(root,"coin"))
             if not positive and not _up_market("coin",order["market"],order["tf"]):
                 return 0
+        rr=None
+        if _is_base_coin(self):
+            # 0.3.4 (#149): reward/risk <= 1:0.5 -> smaller buy (see rr_size_v0340). The vendor buys
+            # qty <= available/price, so capping `available` at per-symbol limit x factor enforces it.
+            try:
+                import rr_size_v0340 as rrs
+                rr=rrs.gen_coin(c,order,book["ask"])
+                if rr["factor"]<1:
+                    opt=self.settings.snapshot()["frames"][order["tf"]]
+                    per=int(opt["allocated_krw"])//max(1,int(opt["max_positions"]))
+                    available=min(Decimal(str(available)),Decimal(rrs.capped(per,rr["factor"])))
+            except Exception:
+                rr=None
         _BUY_CTX.positive=bool(positive)
         try:
             bought=native_coin(self,c,order,book,seen,available)
@@ -314,6 +327,11 @@ def install():
                    (order["tf"],order["market"],order["ref_at"])).fetchone()
                 if p is None or not _mark(c,p,"coin"):
                     raise RuntimeError("NL1118_COIN_BUY_INTENT_MISSING_ROLLBACK")
+                if rr is not None:
+                    plan=_read(c,p["id"])
+                    if plan is not None:
+                        import rr_size_v0340 as rrs
+                        _save(c,rrs.record(plan,rr))
         finally:
             _BUY_CTX.positive=True
         return bought

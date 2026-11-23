@@ -1995,6 +1995,30 @@
       ],
       "notes": "Stock pending not bought: GMO 3 = price not reached (EWY -6.64%); AT 9 = 5 not reached, 4 touched but blocked by policy gates (negative market score, 09:00-09:30 severe-EWY block) and FIX14 gap guard caused by the freezes (fixed here). GMO 0D_KRX_ASK_DEPTH_ZERO (226x, suspected FID 41 vs 6044 mismatch) reported only, unverified, unchanged. Daily backup unknown_endpoint = outdated external MSERVER, unchanged. DNS failures need owner device checks (battery unrestricted, background data, private DNS); network environment now recorded."
     }
+,
+    {
+      "id": "ST-0340-01",
+      "issue": 149,
+      "found": "owner instruction 2026-11-23 after the 0.3.3 ledger report",
+      "category": "USER_STRATEGY_CHANGE_COIN_EXIT_AND_SIZE",
+      "title": "Coin GEN return-to-entry armed after +1.5 %; coin GEN/MA/Trend buy reduced only when gain/loss <= 0.5",
+      "evidence": "11-21..23 coin ledger (54 closed): GEN 11/15 exits at entry after any tick above entry; equal buy amounts with stop distances -0.7..-25 % (MA CYBER -11.3 %, IRYS -13.3 %); 1-minute path replay",
+      "root": "POLICY_CHANGE_BY_OWNER (not a defect)",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.4",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "RR_SIZE_AND_GEN_RTE_V0340",
+        "COIN_GENERAL",
+        "COIN_MA",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v0340_rr_size_and_gen_rte.py"
+      ],
+      "notes": "Interpretation INFERRED: 손익비 1:0.5 이하 = gain to first target / loss to stop <= 0.5. Replay (model): MA -42.7k -> -36.9k; GEN RTE change alone +0.8k, plus size rule -6.2k (reported). Stock strategies not changed."
+    }
   ],
   "known_normal": [
     {
@@ -2503,5 +2527,13 @@
     "ci_run": 45097454974,
     "apk_sha256": "6113b988ca7ed3aefc6e4cc0bb06c4ef8027693c19fec8497893dcec28fba758",
     "apk_bytes": 30110659
+  },
+  "candidate_034": {
+    "version": "0.3.4",
+    "versionCode": 167,
+    "base": "0.3.3",
+    "status": "SOURCE_FIXED",
+    "device_verified": false,
+    "next_version": "0.3.5"
   }
 }

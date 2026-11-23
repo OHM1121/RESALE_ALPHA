@@ -346,3 +346,13 @@ a new instruction appears different. Cross-check original
 - **Strategy improvement proposal:** reported to the owner only; NOT applied to the APK (owner: "아직 apk 반영은 하지말것").
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+## 2026-11-23: Coin GEN return-to-entry after +1.5 %; reward/risk buy size only at 1:0.5 or worse (owner, issue #149, version 0.3.4)
+- **Owner instruction:** "진입가 복귀 청산 부분만 너말대로해보고 그리고 고정매수금액은 손익비가 1:0.5 이하인 종목에만 세팅해봐".
+- **기존 기준:** coin GEN return-to-entry exit armed by ANY bid above the entry; every coin strategy bought the same fixed amount per symbol (x market-score factor).
+- **Now active:**
+  1. Coin GEN (reference): the return-to-entry full exit arms only after the bid reached entry +1.5 %. Stock AT reference: unchanged.
+  2. Coin GEN / MA (REVERSAL_UP) / Trend: 손익비 = loss to the stop : gain to the first target at the BUY. When gain / loss <= 0.5 the buy amount is x (ratio / 0.5) (floor 0.1), so the loss at the stop equals that of a full 1:0.5 position; otherwise the fixed amount is unchanged. Top-ups never refill above it. Stock: not applied.
+- **Interpretation (INFERRED):** "1:0.5 이하" = gain/loss <= 0.5 (손:익 = 1:0.5); gain measured to the FIRST target; stop = the stop the exits really use (GEN reference hard stop; MA/Trend 11.20(2) lookback low, never beyond -15 %).
+- **Replay on the 11-21..23 ledger (model):** MA -42.7k -> -36.9k; GEN return-to-entry change alone +0.8k, with the size rule -6.2k (wide-stop winners reduced, tight-stop losers unchanged) - reported to the owner.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+

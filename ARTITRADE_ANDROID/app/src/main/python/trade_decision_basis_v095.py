@@ -180,7 +180,7 @@ def _trend_exit(reason,pos,fill,frame):
        'NL1118_AFTER_FIRST_PLUS_1_STOP':'NEW LEGACY 11.18 첫 익절 뒤 매수가+1% 방어선까지 회귀, 잔량 전량',
        'NL1118_AFTER_SECOND_FIRST_FLOOR':'NEW LEGACY 11.18 두번째 익절 뒤 첫 목표가까지 회귀, 잔량 전량',
        'NL1118_AFTER_SECOND_TRAIL':'NEW LEGACY 11.18 두번째 익절 뒤 최고가 대비 -4/-5/-6% 추적청산',
-       'NL1118_PRE_FIRST_RETURN_TO_ENTRY':'NEW LEGACY 11.18 첫 목표가 미달 상태 매수가 상향 후 회귀 전량',
+       'NL1118_PRE_FIRST_RETURN_TO_ENTRY':'NEW LEGACY 11.18 첫 목표가 미달 상태 매수가 상향(코인 일반: +1.5% 이상, 0.3.4) 후 회귀 전량',
        'MT_TP1':'1차 매도: 1차 목표가 도달, 최초 매수량 30%',
        'MT_TP2':'2차 매도: 2차 목표가 도달, 최초 매수량 35%',
        'MT_TP3_TRAIL':'3차 잔량 전량매도: 2차 목표가 이하 회귀 또는 2차 이후 최고가 대비 4% 하락',

@@ -103,7 +103,9 @@ class TrendRevisionPolicy(unittest.TestCase):
         now=clock(20,15,1)
         s={**targets(583,"5m","reference",ref_low=580,ref_high=590),
            "market":"coin","qty":100.,"qty0":100.,"stage":0,
-           "seen_above_entry":True}
+           "seen_above_entry":True,
+           # 0.3.4 (#149): a coin GEN plan is armed only after entry +1.5 % (rte_armed_v0340).
+           "rte_armed_v0340":True}
         self.assertEqual(exit_signal(s,583,now),
                          ("NL1118_PRE_FIRST_RETURN_TO_ENTRY",1.0))
 

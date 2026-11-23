@@ -47,6 +47,9 @@ class WorkbookNovember18(unittest.TestCase):
         t=self._position()
         self.assertIsNone(p.exit_signal(t,100,NOW))
         self.assertIsNone(p.exit_signal(t,101,NOW))
+        # 0.3.4 (#149, owner 2026-11-23): coin GEN arms this exit only after entry +1.5 %.
+        self.assertIsNone(p.exit_signal(t,100,NOW))
+        self.assertIsNone(p.exit_signal(t,101.5,NOW))
         self.assertEqual(p.exit_signal(t,100,NOW)[0],"NL1118_PRE_FIRST_RETURN_TO_ENTRY")
     def test_reference_all_three_independent_forced_exits(self):
         t=self._position()

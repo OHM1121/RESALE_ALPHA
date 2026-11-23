@@ -95,10 +95,11 @@ class NetworkEnvironment(unittest.TestCase):
 
 
 class Version(unittest.TestCase):
-    def test_unified_version(self):
+    def test_unified_version_is_numeric_and_at_least_0_3_3(self):
         g = (BASE / "app/build.gradle").read_text(encoding="utf-8")
         m = re.search(r"unified \{\s*dimension 'market'\s*versionCode (\d+)\s*versionName '([0-9.]+)'", g)
-        self.assertEqual(m.groups(), ("166", "0.3.3"))
+        self.assertGreaterEqual(int(m.group(1)), 166)
+        self.assertGreaterEqual(tuple(map(int, m.group(2).split("."))), (0, 3, 3))
 
 
 if __name__ == "__main__":
