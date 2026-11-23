@@ -1958,9 +1958,9 @@
       "title": "Supply-demand D=11-20 candidates appeared on D+1 from the D+1 intraday ranking; pending card had no buy price and a wrong reason",
       "evidence": "11-20 scan 15:30-23:47 over 253 symbols accepted none; 한국가구/하림지주/JW중외제약 never scanned on 11-20 and absent from every 11-20 ranking snapshot >= 15:20; vendor loop judges the previous trading day over the CURRENT ranking during D+1; pending row keys limit_won/gmo_status vs UI limit_price/status; reason text contains '기준봉'",
       "root": "CONFIRMED_IN_CODE_AND_DATA: D-day selection universe not fixed at the D close (D+1 look-ahead)",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.3.2",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_45095721653",
       "device": "UNVERIFIED",
       "nodes": [
         "GMO_D_UNIVERSE_V0320",
@@ -2461,8 +2461,12 @@
     "version": "0.3.2",
     "versionCode": 165,
     "base": "0.3.1",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.3.3"
+    "next_version": "0.3.3",
+    "source_commit": "bbb09fa24c538ffc9d6b03bb8a24a97b14ac4480",
+    "ci_run": 45095721653,
+    "apk_sha256": "17c358686332556d912a9c09b1e3072db1dda209bc5e6ef73bdf01b0cacb3f68",
+    "apk_bytes": 30094223
   }
 }
