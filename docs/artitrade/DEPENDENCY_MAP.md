@@ -535,3 +535,5 @@ Based on 0.3.5 (versionCode 169 for 0.3.6).
 
 Status: SOURCE_FIXED; local regression (17 new tests; engine-dump order test updated; all 77 CI test files pass); CI and device not verified.
 
+0.3.6 delivered: CI_VERIFIED (run 45124443820, source 45f4bb7, APK sha256 7fa94236…8820d); device not verified.
+

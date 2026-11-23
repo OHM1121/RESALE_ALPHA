@@ -2052,9 +2052,9 @@
       "title": "KRX 0D quantity \"0\" dropped the book (AT 1 share, GMO 3 of 39); EWY night value lost on restart; heartbeat on the coin ledger lock; card facts lost; MarketTrend daily watch 4 days",
       "evidence": "GMO_BOOK_INVALID 476x '0D_KRX_ASK_DEPTH_ZERO ... specific_depth_present=True combined_depth_present=True'; vendor reads 6044/6054 and falls back to 61/71 only when absent; GMO order 003380 requested 39 filled 3 NEW limit 10,240 (EWY ceiling 9,560) created 10:44:08, 10 s after the 10:43:58 supervisor restart; night_futures _load() never called (install at import without root); 0.3.5 hang dumps: snapshot parked in CoinLedger.watched_codes with 25-43 lock waiters, holders cut off by the 9,500-char limit; AT plan (stop 6,130, first 6,936, rr 0.406) and buy evidence stored while the card showed vendor 7,470 / stop unverified",
       "root": "CONFIRMED_IN_CODE_AND_DATA for depth fallback, night-state load and heartbeat lock wait; card-facts cause NOT confirmed (defensive last-good cache + logging added)",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.3.6",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_45124443820",
       "device": "UNVERIFIED",
       "nodes": [
         "DEPTH_NIGHT_HEARTBEAT_TREND4D_V0360",
@@ -2605,8 +2605,12 @@
     "version": "0.3.6",
     "versionCode": 169,
     "base": "0.3.5",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.3.7"
+    "next_version": "0.3.7",
+    "source_commit": "45f4bb71650a11405a53427ee7c024beb761290e",
+    "ci_run": 45124443820,
+    "apk_sha256": "7fa942366e3e7959e08ad5a06e112be9631c74e69d126de6604aaed68e18820d",
+    "apk_bytes": 30143579
   }
 }
