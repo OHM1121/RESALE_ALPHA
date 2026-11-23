@@ -495,3 +495,5 @@ Based on 0.3.2 (versionCode 166 for 0.3.3).
 
 Status: SOURCE_FIXED; local regression (10 Python tests + JVM `UiRecordPacingTest`, all 75 CI test files pass); CI and device not verified.
 
+0.3.3 delivered: CI_VERIFIED (run 45097454974, source 7751f19, APK sha256 6113b988…ba758); device not verified.
+

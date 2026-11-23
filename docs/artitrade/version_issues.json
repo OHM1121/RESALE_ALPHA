@@ -1981,9 +1981,9 @@
       "title": "Read-only ledger view build held the bridge monitor for 100-500 s: heartbeat blocked, 6 supervisor restarts, Upbit ping timeouts",
       "evidence": "14/14 engine_hang_dump_v0310 dumps: monitor loop parked on StrategyRuntimeBridge monitor, artitrade-v087-view-snapshot inside hub_records_ui; restarts 01:06 01:16 09:19 09:42 09:53 10:23; next build started right after the previous ended (gap counted from start); RSS 600-940 MB; most Upbit+Kiwoom drops = simultaneous DNS resolution failures",
       "root": "CONFIRMED_IN_DUMPS_AND_CODE: display-only view builder synchronized on the same monitor as snapshot(); pacing ignored build duration",
-      "status": "SOURCE_FIXED",
+      "status": "CI_VERIFIED",
       "fix_version": "0.3.3",
-      "ci": "PENDING",
+      "ci": "PASSED_RUN_45097454974",
       "device": "UNVERIFIED",
       "nodes": [
         "LEDGER_VIEW_OFF_BRIDGE_V0330",
@@ -2496,8 +2496,12 @@
     "version": "0.3.3",
     "versionCode": 166,
     "base": "0.3.2",
-    "status": "SOURCE_FIXED",
+    "status": "CI_VERIFIED",
     "device_verified": false,
-    "next_version": "0.3.4"
+    "next_version": "0.3.4",
+    "source_commit": "7751f197c7b872adedc2afdeaf7d4e54be410c50",
+    "ci_run": 45097454974,
+    "apk_sha256": "6113b988ca7ed3aefc6e4cc0bb06c4ef8027693c19fec8497893dcec28fba758",
+    "apk_bytes": 30110659
   }
 }
