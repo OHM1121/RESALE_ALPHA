@@ -21,6 +21,12 @@ FIRST_SHARE=.30
 SECOND_SHARE=.35
 RSI_THRESHOLD=30.0
 RSI_TRACK_HOURS=24
+# 0.3.6 (owner 2026-11-23): MarketTrend (stock AND coin) tracks a daily-frame RSI<=30 watch for 4 days
+# (the 11.22 sheet says "하루동안 추적"; the owner extended the DAILY frame only).
+RSI_TRACK_HOURS_DAY=96
+
+def rsi_track_hours(frame):
+    return RSI_TRACK_HOURS_DAY if frame=="day" else RSI_TRACK_HOURS
 BOLL_PERIOD=20
 BOLL_MULT=1.5
 # NEW LEGACY 11.20 (explicit user supersession of 11.19): MarketTrend Bollinger

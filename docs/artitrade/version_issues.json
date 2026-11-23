@@ -2043,6 +2043,31 @@
       ],
       "notes": "No stock profit/loss effect is measurable (no fills after the reset). 0.3.4 shrank coin MA/Trend on the -15 % hard stop alone when the lookback was unavailable; that unverified reduction is removed."
     }
+,
+    {
+      "id": "ST-0360-01",
+      "issue": 151,
+      "found": "owner report + stock error export 2026-11-23 15:13 (app 0.3.5)",
+      "category": "STOCK_BOOK_DEPTH_NIGHT_STATE_HEARTBEAT_CARD_FACTS",
+      "title": "KRX 0D quantity \"0\" dropped the book (AT 1 share, GMO 3 of 39); EWY night value lost on restart; heartbeat on the coin ledger lock; card facts lost; MarketTrend daily watch 4 days",
+      "evidence": "GMO_BOOK_INVALID 476x '0D_KRX_ASK_DEPTH_ZERO ... specific_depth_present=True combined_depth_present=True'; vendor reads 6044/6054 and falls back to 61/71 only when absent; GMO order 003380 requested 39 filled 3 NEW limit 10,240 (EWY ceiling 9,560) created 10:44:08, 10 s after the 10:43:58 supervisor restart; night_futures _load() never called (install at import without root); 0.3.5 hang dumps: snapshot parked in CoinLedger.watched_codes with 25-43 lock waiters, holders cut off by the 9,500-char limit; AT plan (stop 6,130, first 6,936, rr 0.406) and buy evidence stored while the card showed vendor 7,470 / stop unverified",
+      "root": "CONFIRMED_IN_CODE_AND_DATA for depth fallback, night-state load and heartbeat lock wait; card-facts cause NOT confirmed (defensive last-good cache + logging added)",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.6",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "DEPTH_NIGHT_HEARTBEAT_TREND4D_V0360",
+        "STOCK_AT",
+        "STOCK_GMO",
+        "STOCK_TREND",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v0360_trend_day_depth_night_heartbeat.py"
+      ],
+      "notes": "The reading of FID 61/71 as the KRX best quantity is INFERRED from the item semantics and from at_close_runner already using 61 first; depth_fid_samples_v0360.jsonl will prove or refute it. Lock holder of the coin ledger lock not identified. Owner's 'fill to the maximum holding whenever below the buy reference' not implemented as a new rule (decision pending the next export)."
+    }
   ],
   "known_normal": [
     {
@@ -2575,5 +2600,13 @@
     "ci_run": 45101579398,
     "apk_sha256": "8cadcc079c0679f32a3b8372c62cabf10aba883625d291abdec3eb69baeccafe",
     "apk_bytes": 30126511
+  },
+  "candidate_036": {
+    "version": "0.3.6",
+    "versionCode": 169,
+    "base": "0.3.5",
+    "status": "SOURCE_FIXED",
+    "device_verified": false,
+    "next_version": "0.3.7"
   }
 }

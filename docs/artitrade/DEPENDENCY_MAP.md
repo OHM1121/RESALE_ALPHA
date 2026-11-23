@@ -523,3 +523,15 @@ Status: SOURCE_FIXED; local regression (28 tests in `test_v0340_rr_size_and_gen_
 
 0.3.5 delivered: CI_VERIFIED (run 45101579398, source 63ffea9, APK sha256 8cadcc07…eccafe); device not verified.
 
+## 0.3.6 — how the changed parts connect (issue #151)
+Based on 0.3.5 (versionCode 169 for 0.3.6).
+1. KRX depth: Kiwoom 0D message -> `krx_depth_fallback_v0360.normalize_message` (wraps `d_v19_portfolio.Book.on_message` for the AT/MA book and `d_gmo_runtime.GMOService.on_book_message` for supply-demand): a KRX 0D row (plain 6-digit item) whose FID 6044 (6054) is zero/blank while FID 61 (71) is positive gets 6044 (6054) := 61 (71); NXT and every other guard (age, 50 % participation, reservation, GMO preplan) stay vendor code. Numeric FID samples -> `stock/depth_fid_samples_v0360.jsonl`.
+2. EWY night value: `night_futures_gate_v0260.state()` -> `_ensure_loaded()` -> `_load(root)` once the runtime root is known (the import-time `start_worker(None)` never loaded it) -> `gmo_ceiling` (`gmo_d1_preplan_v097._step` ceiling D close x (1+EWY)) now also holds right after a process restart.
+3. Heartbeat: `Runtime.snapshot` -> `unified_recovery_v092.RecoveryObserver.snapshot` -> `_held_symbols` -> `_bounded_watched(ledger)` (coin ledger lock tried 0.5 s, cached symbols otherwise) and `trend.lock.acquire(timeout=0.5)`.
+4. Hang dump: `engine_stall_dump_v0310.format_dump` lists running threads (lock holders) first, lock waiters compact (3 frames), idle last.
+5. Card facts: `android_runtime_v078._stock_at_v19_full` -> evidence read wrapped (error -> `stock_at_buy_evidence_v0360`), `_position_facts` logs failures (`position_facts_<kind>_v0360`), `position_view_v0200.remember_facts/restore_facts` reuse the last good target/stop/basis per open AT position; GMO positions get `first_profit_target` as a price (entry x (1 + fraction)) in the cost-basis loop.
+6. MarketTrend daily watch: `new_legacy_1118_policy.rsi_track_hours(frame)` = 96 h for `day`, 24 h otherwise; `market_trend_1118_runtime._mark_rsi_watch` (stock and coin key `(market, code, frame)`) uses it for new watches and extends a daily WATCHING row armed under the 24 h rule once; `position_view_v0200.basis_trend` says "4일 이내" for daily.
+7. Unchanged: entries, targets, stops, exits, sizing rules, vendor engine files.
+
+Status: SOURCE_FIXED; local regression (17 new tests; engine-dump order test updated; all 77 CI test files pass); CI and device not verified.
+

@@ -83,13 +83,17 @@ def snapshot_threads(limit=MAX_FRAMES_PER_THREAD):
 
 
 def format_dump(rows, max_chars=MAX_CHARS, header=""):
-    # Busy / lock-waiting threads first: the blocked chain is what matters.
-    ordered = sorted(rows, key=lambda r: (r["idle"] and not r["lock_wait"], not r["lock_wait"], r["name"]))
+    # 0.3.6: BUSY threads first (they are the lock HOLDERS - in the 0.3.5 dumps 25-43 lock waiters filled the
+    # 9,500-char budget and the running threads were cut off), then the lock waiters in a compact form, then idle.
+    def rank(r):
+        return 1 if r["lock_wait"] else (2 if r["idle"] else 0)
+    ordered = sorted(rows, key=lambda r: (rank(r), r["name"]))
     lines = [header] if header else []
     waiting = [r["name"] for r in ordered if r["lock_wait"]]
     lines.append("threads=%d lock_waiting=%d [%s]" % (len(rows), len(waiting), ",".join(waiting)[:600]))
     for r in ordered:
-        chain = " < ".join("%s:%d %s" % f for f in r["frames"])
+        frames = r["frames"][:3] if r["lock_wait"] else r["frames"]
+        chain = " < ".join("%s:%d %s" % f for f in frames)
         src = r.get("src") or ""
         lines.append("%s%s%s | %s%s" % (r["name"], " d" if r["daemon"] else "",
                                         " LOCK" if r["lock_wait"] else "", chain,

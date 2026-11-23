@@ -363,3 +363,11 @@ a new instruction appears different. Cross-check original
 - **Replay on the 11 stock AT orders in the 11-23 ledger (model):** 6 would be reduced (factor 0.25-0.71), 5 unchanged. No stock fills exist after the reset, so no profit/loss effect can be measured.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+## 2026-11-23: MarketTrend daily RSI watch 4 days; KRX book quantity; fill what the moving book shows (owner, issue #151, version 0.3.6)
+- **Owner instruction:** "마켓트렌드는 주식과 코인 모두 일봉에 한해서 추적기간을 4일로 늘리라고" and "호가가 얇으면 안사는게 맞지 근데 가격이 계속 변동있었고 변동이 있다는건 호가와 수량의 변동이 있다는건데 왜 너만 그 변동 속에서 물량을 못가져오냐".
+- **기존 기준:** daily RSI<=30 watch expired after 24 h like every frame (11.22 sheet: "하루동안 추적"); a KRX 0D row with a KRX-specific quantity FID of "0" was dropped even when the combined quantity FID was positive.
+- **Now active:** (1) MarketTrend stock AND coin: the DAILY RSI<=30 watch lasts 4 days (96 h); other frames stay 24 h; a daily watch armed under the old rule is extended once. (2) KRX 0D rows with 6044/6054 = 0 or blank and 61/71 > 0 are read from 61/71 for the AT/MA book and the supply-demand book; all other fill guards unchanged (the owner's "thin book -> do not buy" stays). (3) The EWY night value is read back after a restart so the supply-demand D+1 ceiling applies right after a restart.
+- **Interpretation (INFERRED):** "일봉 4일 추적" = the RSI<=30 watch window of the daily frame (not the holding period, which stays 15 days). The KRX best quantity is FID 61/71 for a plain-code (KRX-only) 0D item.
+- **Not decided:** the owner's "fill up to the maximum holding amount whenever the price is below the buy reference" is NOT implemented as a new rule; with the book read correctly the existing top-up logic (AT: every later print, GMO: the open order's remaining quantity) can fill, and the next export will show whether that is enough.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+

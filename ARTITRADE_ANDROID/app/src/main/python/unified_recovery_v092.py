@@ -242,6 +242,25 @@ class RecoveryObserver:
         with self._lock:
             self._coins[str(code)]={"at":stamp,"source":"UPBIT_AUTH_WS_TICKER"}
 
+    def _bounded_watched(self,ledger,key):
+        """ledger.watched_codes() without ever waiting more than 0.5 s for the ledger lock (see _held_symbols)."""
+        cache=self.__dict__.setdefault("_watched_cache_v0360",{})
+        lock=getattr(ledger,"lock",None)
+        got=False
+        try:
+            if lock is not None:
+                got=lock.acquire(timeout=0.5)
+                if not got:return set(cache.get(key,()))
+            value=set(ledger.watched_codes())
+            cache[key]=value
+            return value
+        except Exception:
+            return set(cache.get(key,()))
+        finally:
+            if got:
+                try:lock.release()
+                except Exception:pass
+
     def _held_symbols(self,rt):
         now=time.monotonic()
         with self._lock:
@@ -261,19 +280,33 @@ class RecoveryObserver:
                 symbols["stock/close"].update(close_pinned())
             except Exception:pass
         if coin:
-            try:symbols["coin/general"].update(coin.ledger.watched_codes())
-            except Exception:pass
-            try:symbols["coin/ma"].update(coin.ma_ledger.watched_codes())
-            except Exception:pass
+            # 0.3.6 (#151): this runs inside the engine HEARTBEAT (Runtime.snapshot). The coin ledger lock is
+            # held for tens of seconds by scans / book writes; waiting for it here froze the heartbeat (all
+            # 0.3.5 hang dumps show snapshot() parked in CoinLedger.watched_codes) and made the supervisor
+            # restart the process. Wait at most 0.5 s and otherwise reuse the last known symbols.
+            for key,ledger in (("coin/general",getattr(coin,"ledger",None)),
+                               ("coin/ma",getattr(coin,"ma_ledger",None))):
+                if ledger is not None:
+                    symbols[key].update(self._bounded_watched(ledger,key))
         trend=getattr(rt,"market_trend",None)
         if trend is not None:
+            got=False
             try:
-                with trend.lock:
+                got=trend.lock.acquire(timeout=0.5)
+                if got:
                     for p in tuple(trend._positions.values()):
                         key=str(p.market)+"/trend"
                         if key in symbols and p.qty>0:
                             symbols[key].add(str(p.symbol))
+                else:
+                    with self._lock:
+                        for key in ("coin/trend","stock/trend"):
+                            if key in symbols:symbols[key].update(self._held.get(key,()))
             except Exception:pass
+            finally:
+                if got:
+                    try:trend.lock.release()
+                    except Exception:pass
         with self._lock:
             self._held={k:frozenset(str(x) for x in v if str(x)) for k,v in symbols.items()}
             self._held_updated=now

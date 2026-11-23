@@ -64,7 +64,7 @@ class ThreadDump(unittest.TestCase):
         self.assertFalse(rows["artitrade-fake-queue-reader"]["lock_wait"])
         self.assertTrue(rows["artitrade-fake-queue-reader"]["idle"])
 
-    def test_lock_waiting_threads_are_listed_before_idle_ones(self):
+    def test_busy_threads_first_then_lock_waiters_then_idle(self):
         rows = [
             {"name": "idle-a", "daemon": True, "ident": 1, "frames": [("q.py", 1, "get")],
              "lock_wait": False, "idle": True},
@@ -75,8 +75,8 @@ class ThreadDump(unittest.TestCase):
         ]
         text = dump.format_dump(rows, header="h")
         order = [l.split(" ")[0] for l in text.splitlines()[2:]]
-        self.assertEqual(order[0], "blocked-b")
-        self.assertEqual(order[-1], "idle-a")
+        # 0.3.6: running threads (the lock holders) first, then lock waiters, idle last
+        self.assertEqual(order, ["busy-c", "blocked-b", "idle-a"])
 
     def test_output_is_bounded_and_never_raises(self):
         rows = [{"name": "t%03d" % i, "daemon": True, "ident": i,

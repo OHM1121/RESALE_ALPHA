@@ -21,7 +21,7 @@ import time
 
 import market_trend_v043 as mt
 from new_legacy_1118_policy import (
-    POLICY,TREND_FRAMES,RSI_TRACK_HOURS,bollinger,
+    POLICY,TREND_FRAMES,RSI_TRACK_HOURS,rsi_track_hours,bollinger,
     closed_bar_entry_condition,TREND_ENTRY_RULE_1120,targets,holding_deadline)
 
 _INSTALLED=False
@@ -141,6 +141,18 @@ def _confirmed_recent(history,now,market,frame):
     return rows[-90:]
 
 def _mark_rsi_watch(self,market,key,observed,rsi,now,evidence=None):
+    hours=rsi_track_hours(key[2])
+    if (observed is not None and observed.get("status")=="WATCHING" and hours>RSI_TRACK_HOURS):
+        # 0.3.6: a daily watch armed under the 24h rule is extended to the 4-day window once.
+        try:
+            longer=(dt.datetime.fromisoformat(observed["observed_at"])+
+                    dt.timedelta(hours=hours))
+            if dt.datetime.fromisoformat(observed["expires_at"])<longer:
+                observed={**observed,"expires_at":longer.isoformat()}
+                self._nl1118_watches[key]=observed
+                self._nl1118_watch_db.save(key,observed)
+        except (KeyError,TypeError,ValueError):
+            pass
     # A pre-migration watch without evidence is not a new BUY permission.
     if (observed is not None and observed.get("status")=="WATCHING"
             and not observed.get("evidence") and rsi<=30 and evidence):
@@ -148,7 +160,7 @@ def _mark_rsi_watch(self,market,key,observed,rsi,now,evidence=None):
     if observed is None:
         start=now
         row={"observed_at":start.isoformat(),
-             "expires_at":(start+dt.timedelta(hours=RSI_TRACK_HOURS)).isoformat(),
+             "expires_at":(start+dt.timedelta(hours=hours)).isoformat(),
              "rsi20":float(rsi),"status":"WATCHING","purchased_at":"",
              "evidence":evidence}
         self._nl1118_watches[key]=row
@@ -174,7 +186,7 @@ def _mark_rsi_watch(self,market,key,observed,rsi,now,evidence=None):
         return row
     if observed["status"]=="READY" and rsi<=30:
         row={"observed_at":now.isoformat(),
-             "expires_at":(now+dt.timedelta(hours=RSI_TRACK_HOURS)).isoformat(),
+             "expires_at":(now+dt.timedelta(hours=hours)).isoformat(),
              "rsi20":float(rsi),"status":"WATCHING","purchased_at":"",
              "evidence":evidence}
         self._nl1118_watches[key]=row

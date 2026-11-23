@@ -301,9 +301,9 @@ def basis_trend(position,payload):
     if rsi is None or not entry or not buy_text:return None
     rule=str(payload.get("entry_rule") or "")
     if rule=="NL1120_BAR_CLOSE_ABOVE_BOLL_MID":
-        body=("%s: RSI(20)이 30 이하로 내려간 뒤(24시간 이내) 첫 확정봉이 볼린저밴드(20,1.5) "
+        body=("%s: RSI(20)이 30 이하로 내려간 뒤(%s 이내) 첫 확정봉이 볼린저밴드(20,1.5) "
               "중앙선 위에서 마감, 중앙선 기울기 -15°~+20° 조건 충족. 매수 시점 RSI(20) %.1f"%(
-              FRAMES.get(frame,frame),rsi))
+              FRAMES.get(frame,frame),"4일" if frame=="day" else "24시간",rsi))
     else:
         body="%s: RSI(20)이 30 이하로 내려간 뒤 볼린저밴드(20,1.5) 중앙선 도달. 매수 시점 RSI(20) %.1f"%(
               FRAMES.get(frame,frame),rsi)
@@ -328,3 +328,41 @@ def attach_basis(market,strategy,position,fill,candidate):
         if text:position["buy_basis"]=text
     except Exception:
         return
+
+
+# ------------------------------------------------------------------ last-good facts (0.3.6, #151)
+# The target / stop / buy-basis fields are VIEW data derived from the SQLite plan and the stored BUY evidence.
+# A failed or timed-out read used to be swallowed and the card silently fell back to the vendor fields
+# (reference-candle body top as "1차 목표", stop "미확인", no basis). Keep the last good values per position and
+# restore only what is missing; nothing here is a trading input.
+FACT_KEYS=("first_profit_target","second_profit_target","profit_stage","stop_loss_price","stop_loss_pct",
+           "stop_loss_kind","stop_loss_all","buy_basis")
+_FACT_CACHE={}
+
+
+def remember_facts(scope,positions):
+    for position in positions or ():
+        try:
+            if not isinstance(position,dict) or position.get("id") is None:continue
+            facts={k:position[k] for k in FACT_KEYS if position.get(k) not in (None,"")}
+            if facts.get("stop_loss_price") is not None or facts.get("buy_basis"):
+                _FACT_CACHE[(scope,str(position.get("id")))]=facts
+        except Exception:
+            continue
+
+
+def restore_facts(scope,positions):
+    """Fill ONLY missing keys from the last good enrichment of the same position. Returns how many were filled."""
+    filled=0
+    for position in positions or ():
+        try:
+            if not isinstance(position,dict) or position.get("id") is None:continue
+            cached=_FACT_CACHE.get((scope,str(position.get("id"))))
+            if not cached:continue
+            for key,value in cached.items():
+                if position.get(key) in (None,""):
+                    position[key]=value
+                    filled+=1
+        except Exception:
+            continue
+    return filled

@@ -773,8 +773,13 @@ def _position_facts(kind,positions,db_path):
         if kind=='ma':view.enrich_ma(positions,db_path)
         elif kind=='close':view.enrich_close(positions)
         else:view.enrich_reference(positions,db_path)
-    except Exception:
-        pass
+    except Exception as exc:
+        # 0.3.6 (#151): never silent - the error history shows WHY a card lost its target / stop.
+        try:
+            rt=getattr(_core,'_RUNTIME',None)
+            if rt is not None:rt._err('position_facts_%s_v0360'%kind,exc)
+        except Exception:
+            pass
 
 
 def _close_full(self):
@@ -1972,6 +1977,16 @@ def _hub_records_v078(self,for_ui=False):
                     pos['gmo_cost_basis']=float(original.cost_basis)
                     pos['gmo_sell_fee_rate']=float(cfg.sell_fee)
                     pos['gmo_sell_tax_rate']=float(cfg.sell_tax)
+                    # 0.3.6 (#151): the card showed "1차 수익목표 미기록". The strategy's first profit target is
+                    # a FRACTION (cfg / position 0.04-0.05); show the price it means (display only).
+                    try:
+                        fraction=float(getattr(original,'first_profit_target',None) or cfg.first_profit)
+                        entry_price=float(getattr(original,'entry_price',0) or 0)
+                        if entry_price>0 and 0<fraction<1:
+                            pos['first_profit_target']=int(math.ceil(entry_price*(1+fraction)))
+                            pos['first_profit_target_pct']=round(fraction*100,2)
+                    except Exception:
+                        pass
             except Exception as cost_exc:
                 self._err('gmo_original_cost_basis_v086',cost_exc)
             _v086_enrich_gmo_executions(snap.get('executions') or [])
@@ -2150,10 +2165,23 @@ def _stock_at_ledger_v19(self):
         membership=_core._db_rows(stock_db,"SELECT position_id,signal_id FROM v19_members")
         link_map={str(m['position_id']):str(m['signal_id']) for m in membership}
         # OPEN holdings' original buys must not fall out of a capped UI feed.
-        buy_records=attach_buy_evidence(positions,read_at_open_buy_fills(stock_db),
-                        source_signals,market='stock',strategy='at',linked_ids=link_map)
-        queue_phone_buy_evidence(self.root,buy_records)
+        # 0.3.6 (#151): a failing evidence read must not abort the whole AT ledger view (the card then fell
+        # back to the vendor's target / "미확인" stop / no basis); log it and keep going.
+        try:
+            buy_records=attach_buy_evidence(positions,read_at_open_buy_fills(stock_db),
+                            source_signals,market='stock',strategy='at',linked_ids=link_map)
+            queue_phone_buy_evidence(self.root,buy_records)
+        except Exception as evidence_exc:
+            self._err('stock_at_buy_evidence_v0360',evidence_exc)
         _position_facts('reference',positions,stock_db)
+        try:
+            import position_view_v0200 as _view
+            if _view.restore_facts('stock_at',positions):
+                self._err('stock_at_view_facts_restored_v0360',
+                          RuntimeError('last good target/stop/basis reused for an open AT holding'))
+            _view.remember_facts('stock_at',positions)
+        except Exception as facts_exc:
+            self._err('stock_at_view_facts_v0360',facts_exc)
         # Android Chaquopy may not package IANA tzdata. KRX uses KST +09:00.
         now=datetime.now(timezone(timedelta(hours=9)))
         for position in positions:
@@ -2630,6 +2658,11 @@ _install_at_surge_v0290()
 # pending rows show the D+1 buy price (D close x (1 + EWY)), registration time and reason.
 from gmo_d_universe_v0320 import install as _install_gmo_d_universe_v0320
 _install_gmo_d_universe_v0320(_core)
+
+# 0.3.6 (#151): a KRX 0D row with a zero KRX-specific quantity FID but a positive combined quantity is
+# read from the combined FID (61/71) for the AT book and the supply-demand (GMO) book.
+from krx_depth_fallback_v0360 import install as _install_krx_depth_fallback_v0360
+_install_krx_depth_fallback_v0360()
 
 # Re-export the stable Android bridge API.
 start = _core.start

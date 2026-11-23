@@ -169,8 +169,30 @@ def set_state_for_test(state):
         _STATE[str(state["date"])] = dict(state)
 
 
+_LOADED = [False]
+
+
+def _ensure_loaded():
+    """0.3.6 (#151): the persisted night value was never read back after a process restart.
+
+    `install()` runs at import time, before the runtime (and its root) exists, so `start_worker(root)` got
+    root=None and `_load()` never ran. After every restart `state()` said NOT_CHECKED_YET until a new fetch
+    succeeded; GMO then fell back to the former open-based rule (11-23 10:44:08, 10 s after a supervisor
+    restart: limit 10,240 instead of the EWY ceiling 9,560, bought at 9,930). Load once, as soon as a root is
+    known; a stale file from another date is ignored because `_STATE` is keyed by date.
+    """
+    if _LOADED[0]:
+        return
+    root = _root_dir()
+    if not root:
+        return
+    _LOADED[0] = True
+    _load(root)
+
+
 def state(now=None):
     now = now or _now()
+    _ensure_loaded()
     with _LOCK:
         found = _STATE.get(now.date().isoformat())
         return dict(found) if found else {"date": now.date().isoformat(),

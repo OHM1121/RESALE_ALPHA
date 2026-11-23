@@ -1722,6 +1722,36 @@
         "test_new_legacy_1118_workbook.py",
         "test_v018_rev1_low_close_and_fast_ma.py"
       ]
+    },
+    {
+      "id": "DEPTH_NIGHT_HEARTBEAT_TREND4D_V0360",
+      "kind": "python-runtime",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/krx_depth_fallback_v0360.py",
+        "ARTITRADE_ANDROID/app/src/main/python/night_futures_gate_v0260.py",
+        "ARTITRADE_ANDROID/app/src/main/python/unified_recovery_v092.py",
+        "ARTITRADE_ANDROID/app/src/main/python/engine_stall_dump_v0310.py",
+        "ARTITRADE_ANDROID/app/src/main/python/position_view_v0200.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_GMO",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "NIGHT_FUTURES_GATE_V0260",
+        "ENGINE_HANG_SUPERVISOR_V0310"
+      ],
+      "issues": [
+        151
+      ],
+      "contract": "krx_depth_fallback_v0360 wraps d_v19_portfolio.Book.on_message and GMOService.on_book_message: a KRX 0D row (plain 6-digit item) with FID 6044/6054 zero or blank and FID 61/71 positive gets 6044/6054 := 61/71; NXT and all other guards untouched; numeric FID samples in stock/depth_fid_samples_v0360.jsonl (<= 300 lines). night_futures_gate_v0260.state() loads the persisted value once the runtime root is known (_ensure_loaded). unified_recovery_v092 _held_symbols never waits more than 0.5 s for the coin ledger lock or trend.lock. engine_stall_dump_v0310 lists running threads first. position_view_v0200 remember_facts/restore_facts + android_runtime_v078 logging keep target/stop/basis of an open AT holding; GMO positions carry first_profit_target as a price. new_legacy_1118_policy.rsi_track_hours('day') = 96 h used by market_trend_1118_runtime._mark_rsi_watch for stock and coin; a daily WATCHING row armed with 24 h is extended once. No entry, target, stop, exit or sizing rule changed.",
+      "tests": [
+        "test_v0360_trend_day_depth_night_heartbeat.py",
+        "test_v0310_engine_hang_diagnostics.py"
+      ]
     }
   ],
   "audit_scope": {
