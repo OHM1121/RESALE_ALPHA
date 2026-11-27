@@ -159,3 +159,13 @@ Owner instruction, applies to EVERY job in EVERY session (not only APK fixes):
   plain Korean, briefly).
 - The owner's explicit decision always wins over this comparison; when it conflicts, state the conflict first (policy
   conflict statement) and then follow the owner.
+
+
+## R15 — Paper trading follows the real-trading process (2026-11-27)
+Owner instruction, applies to EVERY job in EVERY session: the paper program will become the real trading program, so it must have the real-trading process.
+- Code that exists only to make the simulation conservative, without a real-trading reason, is changed so that it behaves like a real order would.
+- Never write code that could not be used in a real trading environment.
+- A real outcome that is a non-fill stays a non-fill. Owner's example: an order for 10 shares that finds no quantity left at its price because the price jumped fills nothing - that is correct.
+- Data-validity gates that also protect a real order (fresh quote, order limit, wallet and budget limits, fees, tax) stay.
+- Every paper-only assumption that remains (resting-order queue proxy, print proxy, missing order latency) is listed in `docs/artitrade/REAL_PARITY_AUDIT.md` with its reason; new ones are added there. Each change is decided with the R14 comparison and recorded in its Issue.
+

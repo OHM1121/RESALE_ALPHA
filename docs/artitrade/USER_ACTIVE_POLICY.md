@@ -409,3 +409,11 @@ a new instruction appears different. Cross-check original
 - **Now active (0.4.9):** `Preplanner.confirm_book` (gmo_d1_preplan_v097): D+1 KRX PAPER BUY only, regular session, never in real mode; the order is placed from fresh snapshot B1 (0.4.6); a later fresh valid snapshot B2 (1-60 s after B1) with the ask still within the order limit fills min(B1 size left, B2 size, remaining, affordable) at the higher ask plus paper slippage (capped at the limit); the shares are consumed from B2 (0.4.8). Logged `PAPER_BOOK_CONFIRMED_FILL_V0490` (NOT BROKER FILL) with the asks, sizes and gap. The print path is unchanged. Sells and every other strategy are unchanged.
 - **Verification:** SOURCE_FIXED + local simulation; CI and device not verified.
 
+## 2026-11-27: Paper fills follow the real-trading process (owner, issue #165, version 0.5.0, standing rule R15)
+- **Owner decision:** the paper program will become the real program; remove paper-only conservatism that a real order would not meet; never write code a real order could not use; a non-fill after a price jump stays a non-fill.
+- **기존 기준설정일 / 기존 기준:** stock AT / MA / MarketTrend paper wallets could take only 50 % of the displayed best ask / bid size (`BOOK_PARTICIPATION`, since FIX1..FIX8); the GMO paper engine filled one tick plus 0.05 % worse than the displayed price (`paper_buy_slip`, `paper_sell_slip`, PROJECTGMO V1.0).
+- **새 지시와 충돌하는 부분:** both haircuts.
+- **예상 결함:** a displayed quantity can be phantom or 1-3 s old, so paper results can look better than before; the 0.5.0 paper results are not comparable with earlier versions; there is still no order latency.
+- **Now active (0.5.0):** `real_parity_v0500`: whole displayed size takeable (one snapshot shared by all wallets, nothing beyond the displayed size), GMO paper fills at the displayed price; fees, tax, order limit, wallet / budget limits and the 3 s freshness stay. Remaining paper-only assumptions are listed in `docs/artitrade/REAL_PARITY_AUDIT.md`.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+

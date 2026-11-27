@@ -787,6 +787,11 @@ def install(core):
                                 and _valid_phase("KRX",stamp))
                 return old_window(order,at)
             consume_book_once(self,eng)
+            try:
+                import real_parity_v0500
+                real_parity_v0500.real_price_cfg(eng)
+            except Exception:
+                pass
             eng.open_entry=deny_native_open
             eng.resume_legacy_partial_buy=deny_legacy_rearm
             eng._d1_buy_window_ok=nxt_session_window

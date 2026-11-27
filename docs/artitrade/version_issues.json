@@ -2358,6 +2358,31 @@
                 "test_v0470_gmo_d1_end_to_end.py"
           ],
           "notes": "Policy conflict recorded in USER_ACTIVE_POLICY. Gaps 1-60 s are assumptions (logged per fill for tuning). Phantom quantity can still be overstated; the 11-26 case is not solved."
+    },
+    {
+          "id": "PARITY-0500-01",
+          "issue": 165,
+          "found": "owner rule R15 2026-11-27: paper trading must follow the real-trading process",
+          "category": "PAPER_ONLY_CONSERVATIVE_FILL_HAIRCUTS",
+          "title": "Paper fills took only half of the displayed size (stock wallets) and paid one tick + 0.05 percent above the displayed ask (GMO)",
+          "evidence": "d_v19_portfolio.Book BOOK_PARTICIPATION=0.50 in available / available_sell / reserve; projectgmo Settings paper_buy_slip / paper_sell_slip = 0.0005; ui_tests/test_v0500_real_parity.py",
+          "root": "DESIGN (simulation-only conservatism); a real marketable limit order takes the whole displayed size at the displayed price",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.0",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO",
+                "STOCK_AT",
+                "STOCK_MA",
+                "STOCK_TREND"
+          ],
+          "tests": [
+                "test_v0500_real_parity.py",
+                "test_v0490_book_confirmed_fill.py",
+                "test_v0480_book_liquidity_once.py"
+          ],
+          "notes": "Remaining paper-only assumptions and open items (order latency, sell-floor cancel, ARTITRADE_REAL_MODE blocking the D+1 plan, Upbit / MA / MarketTrend wallet fills not audited) are in docs/artitrade/REAL_PARITY_AUDIT.md. Paper results are not comparable with earlier versions."
     }
   ],
   "known_normal": [

@@ -2742,6 +2742,16 @@ except Exception as _fast_exc:
     except Exception:
         pass
 
+# 0.5.0 (#165): paper trading follows the real-trading process: the whole displayed best ask / bid size is takeable (was 50 %).
+try:
+    import real_parity_v0500 as _real_parity_v0500
+    _real_parity_v0500.install_book_depth()
+except Exception as _parity_exc:
+    try:
+        _core.__dict__.setdefault('_v0500_parity_error',repr(_parity_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
