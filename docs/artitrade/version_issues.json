@@ -2620,7 +2620,7 @@
           "root": "CONFIRMED in code",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.9",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45995791434, source 4ba62c7, apk sha256 3d6dc23c0772888e5de88c485d2737800b1d0419c21f213aad4c0dba88ee0090)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_FEED",

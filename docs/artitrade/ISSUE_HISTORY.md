@@ -173,3 +173,5 @@ Delivery: signed APK 0.5.8 (CI run 45994156662, source be8e7cf, SHA-256 bf8470b4
 
 ## #177 — 0.5.9 weekend deep audit of the managed stock candles (2026-11-27)
 Owner: use Friday close until Monday open to fill missing data and candles, re-check the managed data and clear the delayed backlog. Done: weekend as a continuous quiet window, a 5-trading-day deep candle audit with retries and start/end coverage, a read-only backlog count and a card status line. Not done: clearing the vendor retry queues themselves, combined (NXT) candles. Not verified on a device.
+
+Delivery: signed APK 0.5.9 (CI run 45995791434, source 4ba62c7, SHA-256 3d6dc23c0772888e5de88c485d2737800b1d0419c21f213aad4c0dba88ee0090), signer unchanged. Issue #177. CI_VERIFIED only; DEVICE_VERIFIED=false.
