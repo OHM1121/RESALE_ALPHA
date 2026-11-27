@@ -163,3 +163,5 @@ The dashboard showed 13 buys for 2 positions (split fills counted as rows). Buys
 
 ## #175 — 0.5.7 after-close collection status on the market feed card (2026-11-27)
 Owner wanted to see, in one short teal line on the market status card, whether the after-close collect-and-store work is running. Added `status()` and the card line; display only; Java compiled by CI only; not verified on a device.
+
+Delivery: signed APK 0.5.7 (CI run 45992878871, source 5001d37, SHA-256 5d83a9193bb47971d6f1bc3429e01460e0363c725ee309b7539f22e0c5ce2c73), signer unchanged. Issues #173, #174, #175. CI_VERIFIED only; DEVICE_VERIFIED=false.
