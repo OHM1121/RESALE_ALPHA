@@ -2196,6 +2196,28 @@
                 "test_v0420_market_ctx_memo.py"
           ],
           "notes": "Overlay only; vendor engine SHA unchanged. Measured gate hold of the repair loop on the real DB 254 ms -> 12 ms. Whether stock MA / MarketTrend / close betting now buy is NOT verified (last export was app 0.3.6)."
+    },
+    {
+          "id": "BR-0430-01",
+          "issue": 158,
+          "found": "owner workbook 2026-11-27 (pink text and per-trade notes)",
+          "category": "OWNER_SHEET_COIN_BLOCKS_AND_BUY_RECORD",
+          "title": "Coin score +40 / negative-UP / listing blocks; trend and market score recorded at every BUY; trend unverified fixed",
+          "evidence": "ledger workbook: coin reference score>=+40 13 trades 2 wins avg -2.35 %, negative score + UP 8 trades 2 wins avg -1.83 %; trend unverified (bars missing) on coin MA / MarketTrend rows; stock reference bar score unverified at a 16:00 buy",
+          "root": "CONFIRMED in code: regime / MA slopes read only bars the app happened to hold, regime silently fell back to SIDEWAYS",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.4.3",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_MA",
+                "STOCK_TREND"
+          ],
+          "tests": [
+                "test_v0430_owner_sheet_1127.py"
+          ],
+          "notes": "Policy conflict statement in USER_ACTIVE_POLICY.md (2026-11-27). Stock MarketTrend unchanged (no pink text). MA break-even exit awaits an owner decision."
     }
   ],
   "known_normal": [

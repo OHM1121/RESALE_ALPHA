@@ -35,6 +35,8 @@ def genuine_book(bid, ask, when, bid_size="1000000"):
 
 class MAOriginalNativePaperSimulation(unittest.TestCase):
     def setUp(self):
+        import buy_record_v0430 as _record     # 0.4.3: the coin MA listing-age check reads the public candle endpoint
+        _record._LISTING[SYMBOL]=("20261118",365)
         tmp=tempfile.TemporaryDirectory(prefix="artitrade-014-cfg-")
         self.addCleanup(tmp.cleanup)
         self.wallet=MACoinLedger(Path(tmp.name)/"coin_ma")

@@ -309,34 +309,48 @@ def _ctx_stock_bars(store, code, frame, now):
     return [r["close"] for r in rows if r.get("source")], None
 
 
-def _finish(out, entry, getter):
+def _coin_rest_fallback(closes, why, symbol, frame):
+    """0.4.3 (#158): bars the app did not hold -> the completed candles before the BUY (public candle endpoint)."""
+    if closes and len(closes) >= 65:
+        return closes, why
+    try:
+        import buy_record_v0430 as record
+        rest, rest_why = record.rest_closes(symbol, frame)
+    except Exception:
+        return closes, why
+    return (rest, None) if rest and len(rest) > len(closes or []) else (closes, why or rest_why)
+
+
+def _finish(out, entry, getter, market=None, symbol=None, frame=None):
     import entry_context_v0370 as ctx
     try:
         closes, why = getter()
     except Exception as exc:
         closes, why = None, "ENTRY_CTX_ERROR_" + type(exc).__name__
-    return ctx.attach(out, entry, closes or [], why)
+    if market == "coin":
+        closes, why = _coin_rest_fallback(closes, why, symbol, frame)
+    return ctx.attach(out, entry, closes or [], why, market)
 
 
 def ma_coin(frame, market, entry, now):
     return _finish(_ma_coin_impl(frame, market, entry, now), entry,
-                   lambda: _ctx_coin_native(frame, market, now))
+                   lambda: _ctx_coin_native(frame, market, now), "coin", market, frame)
 
 
 def gen_coin(c, order, entry):
     now = dt.datetime.now(dt.timezone.utc)
     return _finish(_gen_coin_impl(c, order, entry), entry,
-                   lambda: _ctx_coin_native(order["tf"], order["market"], now))
+                   lambda: _ctx_coin_native(order["tf"], order["market"], now), "coin", order["market"], order["tf"])
 
 
 def trend(rt, market, symbol, frame, entry, now):
     return _finish(_trend_impl(rt, market, symbol, frame, entry, now), entry,
-                   lambda: _ctx_trend_rows(rt, market, symbol, frame, now))
+                   lambda: _ctx_trend_rows(rt, market, symbol, frame, now), market, symbol, frame)
 
 
 def ma_stock(store, code, frame, entry, now):
     return _finish(_ma_stock_impl(store, code, frame, entry, now), entry,
-                   lambda: _ctx_stock_bars(store, code, frame, now))
+                   lambda: _ctx_stock_bars(store, code, frame, now), "stock", code, frame)
 
 
 def at_stock(engine, c, row):
@@ -347,4 +361,5 @@ def at_stock(engine, c, row):
         entry = float(row["limit_won"])
     except Exception:
         entry = None
-    return _finish(out, entry, lambda: _ctx_stock_bars(store, str(row["code"]) if "code" in row.keys() else "", row["tf"], now))
+    return _finish(out, entry, lambda: _ctx_stock_bars(store, str(row["code"]) if "code" in row.keys() else "", row["tf"], now),
+                   "stock", str(row["code"]) if "code" in row.keys() else "", row["tf"])

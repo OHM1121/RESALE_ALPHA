@@ -165,7 +165,16 @@ def closes_for(market, symbol, frame, conn=None, now=None):
     if not symbol or frame not in FRAME_SECS:
         return None
     if market == "coin":
-        return _coin_cached(symbol, frame) or _trend_history(market, symbol, frame, now)
+        found = _coin_cached(symbol, frame) or _trend_history(market, symbol, frame, now)
+        if found and len(found) >= MIN_BARS:
+            return found
+        # 0.4.3 (#158): "trend unverified" fix - read the completed candles once per symbol/frame/bar.
+        try:
+            import buy_record_v0430 as record
+            rest, _why = record.rest_closes(symbol, frame, now)
+        except Exception:
+            rest = None
+        return rest or found
     if market == "stock":
         found = _stock_bars(symbol, frame, conn, now)
         if found and len(found) >= MIN_BARS:
@@ -204,6 +213,13 @@ def ma_trend_decision(root, market, score=None, now=None, score_known=False,
     applied = regime or FALLBACK_REGIME
     out = {"regime": regime, "applied": applied, "score": score, "symbol": symbol,
            "frame": frame, "bars": metrics.get("bars"), "factor": FULL, "block": None}
+    if market == "coin":
+        # 0.4.3 (#158, owner pink text): coin MA / MarketTrend never open a NEW entry at score +40 or more (any regime).
+        try:
+            import buy_record_v0430 as record
+            out["block"] = record.coin_score_block(symbol, frame, score)
+        except Exception:
+            pass
     if applied == UP:
         return out
     try:
@@ -219,7 +235,7 @@ def ma_trend_decision(root, market, score=None, now=None, score_known=False,
             factor = f
             break
     out["factor"] = factor
-    if value >= no_buy_at:
+    if value >= no_buy_at and not out["block"]:
         out["block"] = "%s:%s:%s:%s_SCORE_%+.1f_AT_OR_ABOVE_%+.0f" % (
             BLOCK_REASON, symbol, frame, applied, value, no_buy_at)
     return out

@@ -657,7 +657,12 @@ def _buy_size_evidence(self,order=None):
         symbol=str(order['market']) if order is not None else None
         frame=str(order['tf']) if order is not None else None
         d=size.decision(root,'coin',symbol,frame)
-        return d.get('score'),d.get('factor',size.FULL),d.get('block')
+        block=d.get('block')
+        if not block and order is not None:
+            # 0.4.3 (#158, owner pink text): a symbol listed less than 3 months ago is not bought by MA.
+            import buy_record_v0430 as record
+            block=record.coin_listing_block(symbol)
+        return d.get('score'),d.get('factor',size.FULL),block
     except Exception:
         return None,size.FULL,None
 

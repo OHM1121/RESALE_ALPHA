@@ -154,6 +154,8 @@ class EightRealPaperWallets(unittest.TestCase):
 
     def test_04_coin_ma(self):
         w=MACoinLedger(self.fresh()/'ma');code='KRW-SIMMA'
+        import buy_record_v0430 as _record     # 0.4.3: listing-age check reads the public candle endpoint
+        _record._LISTING[code]=("20261118",365)
         bars=[150.]*61+[100+i*.2 for i in range(59)]+[99.]
         v=pm.upward_transition_on_forming(bars,114,5)
         self.assertEqual(v['kind'],'REVERSAL_UP')

@@ -67,7 +67,16 @@ def buy_allowed(root,market,symbol=None,frame=None,conn=None):
 
     0.3.0: the regime is judged on the bought symbol on its own frame."""
     if root is None:return False
-    positive=score_evidence(root,market)["positive"]
+    evidence=score_evidence(root,market)
+    if market=="coin":
+        # 0.4.3 (#158, owner pink text): coin reference bar - no buy at score +40 or more, and none at a negative
+        # score even when the symbol is UP (the former UP exception is removed for coins).
+        try:
+            import buy_record_v0430 as record
+            if not record.coin_reference_allowed(evidence):return False
+        except Exception:
+            pass
+    positive=evidence["positive"]
     if positive:return True
     try:
         import market_regime_v0290 as regime

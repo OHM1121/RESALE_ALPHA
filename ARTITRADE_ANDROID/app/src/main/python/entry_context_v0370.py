@@ -62,11 +62,33 @@ def ma_context(closes, entry):
     return {"ma": result, "bars": len(values)}
 
 
-def build(entry, closes, rr=None, reason=None):
+def trade_context(closes, market=None):
+    """Trend (UP / DOWN / SIDEWAYS or UNVERIFIED) from the completed bars, and the market score at the BUY."""
+    out = {}
+    try:
+        import market_regime_v0290 as regime
+        label, metrics = regime.classify(closes or [])
+        out["trend"] = label or "UNVERIFIED"
+        out["trend_bars"] = metrics.get("bars")
+        out["trend_rule"] = "close>MA20>MA60 and MA20 above 5 bars ago = UP; mirror = DOWN; else SIDEWAYS; needs 65 bars"
+    except Exception as exc:
+        out["trend"] = "UNVERIFIED"
+        out["trend_error"] = type(exc).__name__
+    if market in ("stock", "coin"):
+        try:
+            import buy_record_v0430 as record
+            out["market_score"] = record.score_snapshot(market)
+        except Exception as exc:
+            out["market_score"] = {"score": None, "basis": "SCORE_RECORD_ERROR_" + type(exc).__name__}
+    return out
+
+
+def build(entry, closes, rr=None, reason=None, market=None):
     """The `entry_ctx` object for one position. Never raises."""
     try:
         ctx = {"version": VERSION, "basis": "COMPLETED_BARS_BEFORE_BUY"}
         ctx.update(ma_context(closes, entry))
+        ctx.update(trade_context(closes, market))
         if ctx["bars"] == 0:
             ctx["reason"] = reason or "ENTRY_CTX_NO_COMPLETED_BARS"
         r = rr if isinstance(rr, dict) else {}
@@ -78,10 +100,10 @@ def build(entry, closes, rr=None, reason=None):
         return {"version": VERSION, "reason": "ENTRY_CTX_ERROR_" + type(exc).__name__}
 
 
-def attach(info, entry, closes, reason=None):
+def attach(info, entry, closes, reason=None, market=None):
     """Store `entry_ctx` in an rr_size evaluation dict (rr_size_v0340.record writes it to the sidecar)."""
     try:
-        info["entry_ctx"] = build(entry, closes, info, reason)
+        info["entry_ctx"] = build(entry, closes, info, reason, market)
     except Exception:
         pass
     return info
