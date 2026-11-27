@@ -2702,6 +2702,17 @@ except Exception as _all_exc:
     except Exception:
         pass
 
+# 0.4.5 (#160): the stock tick feed is dead for most of every session. Fast reconnect after a healthy socket drops, background
+# analytics yield to the real-time path while it lags, one feed-health line per minute. Failure-tolerant; strategies untouched.
+try:
+    from stock_feed_resilience_v0450 import install as _install_feed_resilience_v0450
+    _install_feed_resilience_v0450()
+except Exception as _res_exc:
+    try:
+        _core.__dict__.setdefault('_v0450_resilience_error',repr(_res_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

@@ -2241,6 +2241,31 @@
                 "test_v0440_all_venue_bars.py"
           ],
           "notes": "Measurement only; the strategy switch (stage 2) waits for the first export. Coin MA return-to-entry exit: owner declined (2026-11-27)."
+    },
+    {
+          "id": "FR-0450-01",
+          "issue": 160,
+          "found": "owner request 2026-11-27 (skipped stock MA / MarketTrend / close betting evaluations) + stock error export 10:27 + owner question on the supply-demand BUY that filled 3 of 39 shares",
+          "category": "STOCK_TICK_FEED_AND_FILL_SHORTFALL",
+          "title": "Stock tick feed dead for most of every session; reconnect pause, background load and missing feed telemetry; supply-demand BUY filled 3 of 39",
+          "evidence": "210 WebSocket disconnect episodes in 8 days (40-65 per day), 51-144 min per regular session disconnected, 45-82 percent of regular-session minutes with fewer than 30 ticks market-wide; reconnect pause doubles to 60 s and resets only after a 120 s connection while ping-timeout sockets live 70-150 s; 99 percent of stock MA 5m evaluations skipped for no fresh tick; supply-demand D+1 BUY on 11-23: every 0D book rejected for the whole day (0D_KRX_ASK_DEPTH_ZERO, 244 times), the order only existed from 10:44 and filled 1 share per print through the 10 percent print proxy, 3 of 39 filled, remainder cancelled at the D+1 window end (fixed in 0.3.6; 0D valid from 08:50 on 11-26)",
+          "root": "CONFIRMED: reconnect pause logic, counter gap, 11-23 zero-depth rejections; INFERRED: GIL starvation of the reader behind the ping timeouts",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.4.5",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_FEED",
+                "STOCK_MA",
+                "STOCK_TREND",
+                "STOCK_CLOSE",
+                "STOCK_GMO",
+                "STOCK_AT"
+          ],
+          "tests": [
+                "test_v0450_stock_feed_resilience.py"
+          ],
+          "notes": "Overlay only; vendor engine SHA unchanged; the 3 s freshness rules are unchanged on purpose. Whether the ping timeouts stop and whether ticks per minute recover is verified only by the first export with 0.4.5."
     }
   ],
   "known_normal": [
