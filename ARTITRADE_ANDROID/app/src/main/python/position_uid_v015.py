@@ -294,6 +294,11 @@ def install(core):
         try:
             source=_json.loads(original) if isinstance(original,str) else original
             mapped=annotate_packet(self.root,source)
+            try:        # 0.5.4 (#169): BUY-time reward / risk on the history rows (read-only join by the native position id)
+                import entry_rr_v0540
+                entry_rr_v0540.annotate_packet(self.root,mapped)
+            except Exception:
+                pass
             return _json.dumps(mapped,ensure_ascii=False,default=str,
                                separators=(",",":"))
         except Exception as exc:

@@ -2452,6 +2452,28 @@
                 "test_v0510_gmo_ladder.py"
           ],
           "notes": "New writer of the bars table (INSERT OR IGNORE, labelled source, vendor checks). Open items in docs/artitrade/OFFHOURS_PREWORK_PLAN.md. Broker request limits at night and a phone that is off overnight are unverified."
+    },
+    {
+          "id": "UI-0540-01",
+          "issue": 169,
+          "found": "owner request 2026-11-27: show the BUY-time reward / risk in the execution history",
+          "category": "RECORDED_VALUE_NOT_SHOWN",
+          "title": "The BUY-time reward / risk was recorded in the position sidecars but the hub rows and the history card did not carry it",
+          "evidence": "owner exports: rr_size in nl1118_reference_positions (coin 46, stock 34), ma_v067_positions (coin 45), trend positions payload (coin 7); no entry_rr in any hub row; ui_tests/test_v0540_entry_rr_history.py",
+          "root": "CONFIRMED in code: the hub packet is built from the wallet tables and never read the sidecars",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.4",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_MA",
+                "STOCK_TREND"
+          ],
+          "tests": [
+                "test_v0540_entry_rr_history.py"
+          ],
+          "notes": "Read-only join by the native position id; supply-demand has no stop and is excluded; trades recorded before 0.3.4 and unverified values show no record; the stock MA / trend sidecars could not be checked on real data (no positions in the exports); the Java card is compiled by CI only."
     }
   ],
   "known_normal": [

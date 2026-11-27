@@ -4979,6 +4979,27 @@ public final class UnifiedVisualActivity extends Activity {
         holdingStat(row1,state==0?"실현손익":"실현손익",state==0||!pnlKnown?"—":WonFormat.signed(pnl),tone,1.3f);
         body.addView(row1);
 
+        // 0.5.4 (#169): the reward / risk recorded at the BUY (first target gain : stop loss), taken from the first fill that carries it.
+        JSONObject entryRr=null;
+        for(HistoryRow hr:g.rows){
+            JSONObject found=hr.row.optJSONObject("entry_rr");
+            if(found!=null&&finite(found.optDouble("ratio",Double.NaN))){entryRr=found;break;}
+        }
+        LinearLayout rowRr=new LinearLayout(this);
+        String rrValue="기록 없음",rrLevels="—";
+        int rrColor=PremiumUi.MUTED;
+        if(entryRr!=null){
+            double ratio=entryRr.optDouble("ratio",Double.NaN);
+            rrValue="1 : "+String.format(Locale.US,"%.2f",ratio);
+            double gainPct=entryRr.optDouble("gain_pct",Double.NaN),lossPct=entryRr.optDouble("loss_pct",Double.NaN);
+            if(finite(gainPct)&&finite(lossPct))
+                rrLevels=String.format(Locale.US,"+%.1f%% / -%.1f%%",gainPct,lossPct);
+            rrColor=ratio<=0.5d?Color.rgb(255,174,188):PremiumUi.TEXT;
+        }
+        holdingStat(rowRr,"매수시 손익비",rrValue,rrColor,1f);
+        holdingStat(rowRr,"1차 익절 / 손절",rrLevels,PremiumUi.TEXT,1.3f);
+        body.addView(rowRr);
+
         final String groupKey=g.key;
         boolean open=expandedTradeGroups.contains(groupKey);
         Button toggle=button((open?"체결 "+g.rows.size()+"건 접기  ▴":"체결 "+g.rows.size()+"건 보기  ▾"),false,()->{
