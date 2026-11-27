@@ -100,3 +100,5 @@ Why earlier fixes did not hold: each shortened one consumer or queue; none separ
 
 ## #161 — 0.4.6 UI snapshots off the trading gate; D+1 order from a fresh 0D book (2026-11-27)
 First export with the holder stacks: 22 of 60 gate holds >= 5 s were the screen refresh (display-only SELECTs under the trading gate), 36 the higher-frame repair. UI snapshots now read without the gate. The Doosan Bobcat D+1 candidate (11-26) was never ordered because the preplan reacted only to 0B prints (about 10 per hour were delivered) although the ask was below the ceiling from 09:00; the order is now placed from a fresh valid 0D book, fills unchanged.
+
+Delivery: signed APK 0.4.5 (CI run 45950245922, source 139ce45, SHA-256 666b8e8d4bd37b40e15af212c747bc609b4b0d99bbb5f2ef9054dab4095b6f00) and signed APK 0.4.6 (CI run 45951350165, source 0088a38, SHA-256 18ca600ca334e367ea72410b8c1fbcdcd1bb03d88228d9d3c756326c826373df), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.

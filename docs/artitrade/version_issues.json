@@ -2252,7 +2252,7 @@
           "root": "CONFIRMED: reconnect pause logic, counter gap, 11-23 zero-depth rejections; INFERRED: GIL starvation of the reader behind the ping timeouts",
           "status": "SOURCE_FIXED",
           "fix_version": "0.4.5",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45950245922, source 139ce45, apk sha256 666b8e8d4bd37b40e15af212c747bc609b4b0d99bbb5f2ef9054dab4095b6f00)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_FEED",
@@ -2277,7 +2277,7 @@
           "root": "CONFIRMED by stacks (UI gate holds) and in code (preplan driven only by Preplanner.on_tick)",
           "status": "SOURCE_FIXED",
           "fix_version": "0.4.6",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45951350165, source 0088a38, apk sha256 18ca600ca334e367ea72410b8c1fbcdcd1bb03d88228d9d3c756326c826373df)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_FEED",
