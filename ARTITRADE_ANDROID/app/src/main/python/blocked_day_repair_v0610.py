@@ -9,8 +9,9 @@ could not buy: `FIX14_HIGHER_FRAME_REST_UNVERIFIED`).
 What this module does (nothing of the vendor is modified): after 20:05 (the candle is final) it calls `d_multiframe_recovery_fix14.recover_frame(store, engine, api, code, 'day', at=<stamp>)`
 twice per stock, with two DIFFERENT "as-of" stamps (the target trading day 20:05:00 and 20:05:10) and a real pause of about 6 s between the two requests, so the vendor's own
 two-snapshot rule is met by two truly independent official requests. The as-of stamp is a PAST moment of the target trading day, never the real clock: on a weekend the real "now"
-would ask for a Saturday candle that does not exist. Everything the function decides (expected last parent, signal freshness, order `since_ts`, expiry) is then evaluated as it would be at
-20:05 of the trading day, i.e. an order that appears is the same order the vendor would create, and it can only fill in a live KRX session (the buy path requires `live_session`).
+would ask for a Saturday candle that does not exist. Everything the function decides (expected last parent, signal freshness, expiry) is then evaluated as it would be at
+20:05 of the trading day.
+0.6.3: the function that CREATES pending orders is switched off for these calls (`NoOrderEngine`): after the close nothing is queued; the vendor creates the orders in the next trading hours as usual.
 Only the DAY frame: 5m / 30m / 60m references are session bound (they expire at the session end, `EXPIRED_FIX13_SESSION` / `EXPIRED_FIX14_HISTORICAL`) and are not touched.
 Cases that are tied to a signal or a position (`REVIEW`, 32 of them) are never changed by design; the function itself refuses to change them and only adds an observation.
 A before/after count (blocked audits, pending cases, pending day orders, new pending orders created) is written to `stock/blocked_day_repair_v0610.json(l)` so the result can be read on Monday.
@@ -126,9 +127,34 @@ def candidates(store):
     return {code: sorted(why) for code, why in sorted(found.items())}
 
 
+class NoOrderEngine:
+    """What the vendor repair function receives as `engine` in the quiet hours (0.6.3, owner: after the close nothing may be queued; the next trading day works normally).
+
+    Every attribute is forwarded to the REAL engine (reads, writes, methods), except the one function that creates pending orders, `_enqueue_signals`: it does nothing and is counted.
+    Nothing is patched globally, so the live engine threads never see the difference. Signals the repair re-classifies stay `NEW`; the vendor's own enqueue in the next trading hours turns them into orders then.
+    """
+
+    def __init__(self, engine):
+        object.__setattr__(self, "_real", engine)
+        object.__setattr__(self, "blocked_enqueues", 0)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_real"), name)
+
+    def __setattr__(self, name, value):
+        if name == "blocked_enqueues":
+            object.__setattr__(self, name, value)
+        else:
+            setattr(object.__getattribute__(self, "_real"), name, value)
+
+    def _enqueue_signals(self, *args, **kwargs):
+        object.__setattr__(self, "blocked_enqueues", self.blocked_enqueues + 1)
+        return None
+
+
 def _recover(store, engine, api, code, at):
     from d_multiframe_recovery_fix14 import recover_frame      # the vendor function; the app may have wrapped it (market context memo), the call is the same
-    return recover_frame(store, engine, api, code, "day", at=at)
+    return recover_frame(store, NoOrderEngine(engine), api, code, "day", at=at)
 
 
 def repair_code(store, engine, api, code, day, sleep=time.sleep, recover=_recover):

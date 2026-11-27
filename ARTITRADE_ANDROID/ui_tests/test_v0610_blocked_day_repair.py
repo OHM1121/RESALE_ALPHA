@@ -138,6 +138,53 @@ class TwoSnapshots(Base):
         self.assertEqual((final, len(calls)), ("OFFICIAL_REVISION_REQUIRES_REVIEW", 1))
 
 
+class NoOrders(Base):
+    class Engine:
+        def __init__(self):
+            self.store, self.flag, self.enqueued = "S", 1, 0
+
+        def _enqueue_signals(self, db, now):
+            self.enqueued += 1
+
+        def classify(self):
+            return "real"
+
+    def test_reads_and_other_methods_go_to_the_real_engine_but_order_creation_does_nothing(self):
+        real = self.Engine()
+        proxy = rep.NoOrderEngine(real)
+        self.assertEqual((proxy.store, proxy.classify()), ("S", "real"))
+        proxy._enqueue_signals(None, "20261127200500")
+        proxy._enqueue_signals(None, "20261127200510")
+        self.assertEqual((real.enqueued, proxy.blocked_enqueues), (0, 2))
+        real._enqueue_signals(None, "x")
+        self.assertEqual(real.enqueued, 1)                       # nothing is patched on the real engine: the live threads still create orders
+
+    def test_attribute_writes_reach_the_real_engine(self):
+        real = self.Engine()
+        proxy = rep.NoOrderEngine(real)
+        proxy.flag = 7
+        proxy.new_attr = "x"
+        self.assertEqual((real.flag, real.new_attr), (7, "x"))
+
+    def test_the_vendor_function_receives_the_wrapper_and_the_day_frame_and_the_stamp(self):
+        import sys
+        got = {}
+        fake = types.ModuleType("d_multiframe_recovery_fix14")
+        fake.recover_frame = lambda store, engine, api, code, tf, at=None, fetch=True: got.update(engine=engine, tf=tf, at=at) or {"state": "VERIFIED_RESTORED"}
+        old = sys.modules.get("d_multiframe_recovery_fix14")
+        sys.modules["d_multiframe_recovery_fix14"] = fake
+        try:
+            real = self.Engine()
+            rep._recover(self.store, real, object(), "000005", "20261127200500")
+        finally:
+            if old is None:
+                sys.modules.pop("d_multiframe_recovery_fix14", None)
+            else:
+                sys.modules["d_multiframe_recovery_fix14"] = old
+        self.assertIsInstance(got["engine"], rep.NoOrderEngine)
+        self.assertEqual((got["tf"], got["at"]), ("day", "20261127200500"))
+
+
 class Rounds(Base):
     def ok(self, code_status=None):
         def recover(store, engine, api, code, at_):

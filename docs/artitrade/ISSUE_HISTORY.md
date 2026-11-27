@@ -196,3 +196,6 @@ The morning ledger workbook had many blanks because trend and score were rebuilt
 
 ### 0.6.2 delivered (2026-11-27)
 CI run 46008453728 on the trusted branch, source 1764278, signer unchanged; `0.6.2.apk` SHA-256 e2f4192db3ca32e193a16ea7c57d2c13e67d8dabff8735fd886eec315ea08ef4. #181: CI_VERIFIED, device UNVERIFIED. The ledger workbook was handed over again with the BUY-time columns filled from the device export (private file, not in the repo).
+
+## #182 — 0.6.3 no orders after the close, NXT evidence, requests ledger (2026-11-27)
+Owner: after the close nothing can be bought, so no pending order may be created; check whether the official daily candle includes NXT; is the integration done. The 0.6.1 call could queue day orders at night (real vendor function on the device copy: 18 -> 25 pending day orders); with the wrapper 18 -> 12 and none new. The official daily candle includes NXT volume. The integration is not complete (stage 1 only). Not verified on a device.

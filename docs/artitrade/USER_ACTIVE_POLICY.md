@@ -497,3 +497,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** BUY-time context (MA above/below and slope, trend, market score, RR) of every stock and coin position is completed in the quiet window from stored bars / official Upbit candles; the real-time recorder at the BUY stays; every position that cannot be completed is listed with its reason.
 - **기존 기준 / 충돌:** none; sidecar only, no order or price.
 - **예상 결함:** after-hours stock score is the last session score with its age; coin MA / MarketTrend RR not recoverable; thin Upbit markets can have fewer bars; not device verified.
+
+## 2026-11-27: Nothing is queued after the close; NXT hours are part of the market (owner, issue #182, version 0.6.3)
+- **Owner:** after the close a stock cannot be bought, so do not create pending orders then and work normally at the next open (the safer way); a stock supported until 20:00 must get orders until 20:00 (also 5m references); check whether the official daily candle includes NXT; report whether the KRX+NXT integration is complete.
+- **Decision:** quiet-hours repair runs with order creation switched off for its own calls only; the NXT finding is recorded; the integration is reported as NOT complete; the order rules after 15:30 are stage 2.
+- **기존 기준 / 충돌:** the vendor FIX13 rule (KRX 5m orders expire at 15:30) conflicts with "orders until 20:00 for NXT-supported stocks"; not changed yet (stage 2).
+- **예상 결함:** day bars are a mix of bases until stage 2; not device verified.

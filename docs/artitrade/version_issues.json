@@ -2705,6 +2705,27 @@
                 "test_v0600_entry_ctx_backfill.py"
           ],
           "notes": "Quiet-window backfill of entry_ctx for the three coin sidecars from official Upbit candles (one request per position, 0.5 s pace, 400 per round); market score = stored at BUY, else last recorded before the BUY with its age (coin 1 h, stock 20 h); reference-bar coin RR recomputed from the stored plan, MA / MarketTrend coin RR stays empty with a reason; unresolved list in coin/entry_ctx_backfill_v0620.json. Not device verified."
+    },
+    {
+          "id": "DAYREPAIR-0630-01",
+          "issue": 182,
+          "found": "owner request 2026-11-27: nothing may be queued after the close; check whether the official daily candle includes NXT; say whether the integration is complete",
+          "category": "AFTER_CLOSE_ORDER_CREATION",
+          "title": "The 0.6.1 daily repair could queue pending day orders at night; the official daily candle includes NXT volume and is mixed with KRX-only intraday bars",
+          "evidence": "real vendor function on a copy of the device export: with the 0.6.1 call pending day orders 18 -> 25 (7 new), with the wrapper 18 -> 12 (0 new); 167 of 206 same-day daily cases still grew after 18:05 (only NXT trades then); ui_tests/test_v0610_blocked_day_repair.py",
+          "root": "CONFIRMED in the vendor code (recover_frame calls engine._enqueue_signals) and the device database",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.3",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0610_blocked_day_repair.py"
+          ],
+          "notes": "NoOrderEngine wrapper: all attributes forwarded to the real engine, only _enqueue_signals does nothing; nothing patched globally. NXT finding recorded; day-bar basis (combined) vs intraday bars (KRX regular only) is a stage-2 decision. Stage 2 of the integration (strategies on combined bars, orders after 15:30) is NOT done."
     }
   ],
   "known_normal": [
