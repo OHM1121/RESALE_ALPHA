@@ -12,10 +12,14 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]/"app/src/main/python"
 sys.path.insert(0,str(ROOT))
 from gmo_d1_preplan_v097 import Preplanner,KST
+import gmo_d1_preplan_v097 as _pre_module
 from projectgmo.engine import Engine,Quote
 
 class Fixture(unittest.TestCase):
     def setUp(self):
+        # 0.5.1: these tests cover the single-order entry mechanics (OR rule, 0B recovery); the split-buy entry has test_v0510_gmo_ladder.py
+        patcher=patch.object(_pre_module,'LADDER_ENABLED',False)
+        patcher.start();self.addCleanup(patcher.stop)
         self.tmp=tempfile.TemporaryDirectory()
         self.at=dt.datetime(2026,11,17,9,2,0,tzinfo=KST)
         engine=Engine()

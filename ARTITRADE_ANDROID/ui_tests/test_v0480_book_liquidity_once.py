@@ -1,6 +1,7 @@
 """0.4.8 (#163): the displayed size of ONE 0D book snapshot is taken once (BUY ask and SELL bid), a new snapshot brings new size."""
 import datetime as dt
 import tempfile
+import threading
 import types
 import unittest
 
@@ -76,15 +77,15 @@ class Sides(unittest.TestCase):
 
     def rig(self, ask_size, bid_size):
         epoch = [dt.datetime(2026, 11, 26, 9, 0, 18)]
-        orders = {"b": types.SimpleNamespace(code="X", side="BUY", filled=0),
-                  "s": types.SimpleNamespace(code="X", side="SELL", filled=0)}
+        orders = {"b": types.SimpleNamespace(code="X", side="BUY", filled=0, state="OPEN", purpose="D+1_V097_KRX_S1", limit=1, reference=1),
+                  "s": types.SimpleNamespace(code="X", side="SELL", filled=0, state="OPEN", purpose="SELL", limit=1, reference=1)}
         seen = []
 
         def paper_match(q):
             seen.append((q.ask_size, q.bid_size))
             orders["b"].filled += q.ask_size
             orders["s"].filled += q.bid_size
-        eng = types.SimpleNamespace(orders=orders, paper_match=paper_match)
+        eng = types.SimpleNamespace(orders=orders, paper_match=paper_match, _lock=threading.RLock())
         svc = types.SimpleNamespace(last_book={"X": (4950, 4900, ask_size, bid_size, epoch[0])})
         pre.consume_book_once(svc, eng)
         return eng, svc, epoch, seen

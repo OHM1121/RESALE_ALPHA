@@ -8,12 +8,17 @@ from unittest import mock
 
 from test_v097_gmo_preplan import ServiceFixture
 from gmo_d1_preplan_v097 import Preplanner, KST
+import gmo_d1_preplan_v097 as pre_module
 
 PY = Path(__file__).resolve().parents[1] / "app/src/main/python"
 
 
 class BookTrigger(unittest.TestCase):
     def setUp(self):
+        # 0.5.1: single-order entry mechanics; the split-buy entry is covered by test_v0510_gmo_ladder.py
+        patcher = mock.patch.object(pre_module, "LADDER_ENABLED", False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.svc = ServiceFixture(self.tmp.name)
         self.ready = dt.datetime(2026, 11, 17, 8, 58, 0, tzinfo=KST)

@@ -11,7 +11,7 @@ import math
 import os
 import threading
 import time
-from projectgmo.prices import plus_ticks, up_tick, minus_ticks
+from projectgmo.prices import plus_ticks, up_tick, minus_ticks, down_tick
 from buy_execution_recovery_v082 import Intent
 
 KST=dt.timezone(dt.timedelta(hours=9))
@@ -26,6 +26,28 @@ ACTIVE=("NEW","OPEN")
 # The gaps are assumptions (order latency lower bound / how long the first snapshot stays relevant) and are logged per fill.
 BOOK_CONFIRM_MIN_GAP=1.0
 BOOK_CONFIRM_MAX_GAP=60.0
+
+# 0.5.1 (#166, owner decision 2026-11-27): the D+1 entry is a three-rung split BUY decided BEFORE the venue opens (after the EWY change is
+# known, before the NXT open) and recorded; the former "first ask + 2 ticks" single aggressive order and its three ceiling scenarios are gone.
+#   rung 1 = the buy-condition price, 30 % of the per-stock limit; rung 2 = 1 % below rung 1, 35 %; rung 3 = 2 % below rung 2, 40 %.
+# The owner's three shares add up to 105 %: the per-stock limit is never exceeded, so the last rung takes what is left (35 %).
+LADDER_ENABLED=True
+LADDER_FRACTIONS=(0.30,0.35,0.40)
+LADDER_DROPS=(0.0,0.01,0.02)
+LADDER_SUFFIX=("L1","L2","L3","GAP")
+
+
+def compute_ladder(condition,budget,fee):
+    """Rungs [{rung, price, budget_fraction, quantity}] from the buy-condition price and the per-stock limit. Prices are floored to a tick."""
+    prices=[int(down_tick(int(condition)))]
+    for drop in LADDER_DROPS[1:]:
+        prices.append(int(down_tick(prices[-1]*(1.0-drop))))
+    left=1.0;rungs=[]
+    for index,(price,fraction) in enumerate(zip(prices,LADDER_FRACTIONS),1):
+        use=round(min(fraction,left),6);left=round(left-use,6)
+        qty=int(math.floor(float(budget)*use/(price*(1.0+float(fee))))) if price>0 and use>0 else 0
+        rungs.append({"rung":index,"price":price,"budget_fraction":use,"quantity":qty})
+    return rungs
 
 def _now():
     return dt.datetime.now(KST)
@@ -95,6 +117,7 @@ class Preplanner:
         self.lock=threading.RLock()
         self.plans={}
         self._v082_intents={}
+        self._ladders={}
         self.runner=None
 
     def _key(self,code,venue,at):
@@ -181,6 +204,9 @@ class Preplanner:
                       "opening_source":None,"order_id":None,
                       "late_recovery":bool(late),"venue_schedule":_venue_phase(venue,at)}
                 self.plans[key]=plan
+                if LADDER_ENABLED:
+                    try:self._ensure_ladder(plan,signal,at)
+                    except Exception as exc:plan["ladder_error"]=type(exc).__name__+":"+str(exc)[:100]
                 if nxt_verified:made.append(code)
                 service.engine._log(code,"GMO_D1_PREPLAN_READY",
                     f"venue={venue} D={signal.event_date} D1={signal.entry_date} "
@@ -252,6 +278,7 @@ class Preplanner:
                     self.prepare("NXT",at)
                 if _valid_phase("KRX",at,True):
                     self.prepare("KRX",at)
+                self.retry_ladders(at)
             except Exception as e:
                 svc.last_error="GMO_PREPLAN_"+type(e).__name__+": "+str(e)[:120]
             hhmm=at.strftime("%H%M")
@@ -317,7 +344,7 @@ class Preplanner:
                 return
             ask,bid,ask_qty,bid_qty=map(int,book[:4])
             if ask<=0 or bid<=0 or ask<bid or ask_qty<=0:return
-            last=int(tick[4]);qty_depth=max(1,ask_qty//2)
+            last=int(tick[4]);qty_depth=max(1,ask_qty)      # 0.5.1 (R15): the whole displayed size (was ask_qty//2)
             self._step(plan,at,last,ask,qty_depth,venue,tick=tick,bid=bid)
         else:
             from d_gmo_runtime import _number
@@ -357,6 +384,8 @@ class Preplanner:
         if venue=="KRX" and int(depth)<=0 and int(ask)<=0 and not paper_print:
             plan["status"]="WAIT_FRESH_KRX_0B_OR_0D"
             return
+        if LADDER_ENABLED:
+            return self._ladder_step(plan,at,last,ask,depth,venue,q,tick,bid,place_only,paper_print)
         # 0.2.6 (owner 2026-11-22): supply-demand has NO opening time block;
         # only its D+1 price ceiling follows the night change (below).
         import night_futures_gate_v0260 as night
@@ -569,6 +598,213 @@ class Preplanner:
             if changed:
                 svc._persist(True)
 
+    # ------------------------------------------------------------------ 0.5.1 (#166) three-rung split BUY
+    def _ensure_ladder(self,plan,signal,at):
+        """The split-buy plan of a D+1 entry: computed once after the EWY change is known and before the NXT open, then recorded.
+
+        Condition price = D close x (1 + EWY change) floored to a tick (`night_futures_gate_v0260.gmo_ceiling`). When the EWY value is still
+        unverified at the NXT open (08:00) or later, the D-close-only rule (D close minus one tick) is used and the reason is recorded; the
+        official-open branch of the former rule cannot be known before the open.
+        """
+        ladder=plan.get("ladder")
+        if ladder:return ladder
+        key=(plan["entry_date"],plan["code"])
+        shared=self._ladders.get(key)
+        if shared:
+            plan["ladder"]=shared
+            return shared
+        close_value=int(getattr(signal,"event_close",0) or 0) if signal is not None else 0
+        if close_value<=0:return None
+        import night_futures_gate_v0260 as night
+        ceiling,info=night.gmo_ceiling(close_value,at)
+        if ceiling is not None and int(ceiling)>0:
+            condition=int(ceiling);basis="EWY_ADJUSTED_D_CLOSE"
+        else:
+            if at.strftime("%H%M%S")<"080000":return None            # wait for the EWY value until the NXT open
+            condition=int(minus_ticks(close_value,1));basis="D_CLOSE_STRICT_BELOW_EWY_UNVERIFIED"
+        engine=self.service.engine
+        per=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))
+        rungs=compute_ladder(condition,per,engine.cfg.buy_fee)
+        ladder={"version":"LADDER_V0510","computed_at":at.isoformat(timespec="seconds"),"basis":basis,
+                "condition_price":int(condition),"d_close":close_value,"ewy_status":info.get("status"),
+                "ewy_change_pct":info.get("change_pct"),"per_stock_limit_won":per,
+                "fractions":list(LADDER_FRACTIONS),"drops_from_previous_rung":list(LADDER_DROPS),"rungs":rungs}
+        self._ladders[key]=ladder
+        plan["ladder"]=ladder
+        plan["entry_reference_source"]=basis
+        text=" ".join("L%d=%d/%d(%d%%)"%(r["rung"],r["price"],r["quantity"],round(100*r["budget_fraction"])) for r in rungs)
+        engine._log(plan["code"],"GMO_D1_LADDER_V0510",
+            f"basis={basis} condition={condition} d_close={close_value} ewy={info.get('change_pct')} "
+            f"limit={per:.0f} {text} computed_at={ladder['computed_at']}",at.isoformat())
+        return ladder
+
+    def retry_ladders(self,at=None):
+        """Until the NXT open, plans whose EWY value was not known yet get their ladder as soon as it is."""
+        at=at or self.clock()
+        with self.lock:
+            waiting=[p for (day,code,venue),p in self.plans.items()
+                     if day==at.date().isoformat() and not p.get("ladder")
+                     and p["status"] not in ("COMPLETED","EXPIRED","BLOCKED","SOLD")]
+        for plan in waiting:
+            signal=self.service.engine.signals.get(plan["code"])
+            if signal is not None:self._ensure_ladder(plan,signal,at)
+
+    def _ladder_orders(self,engine,code,entry_date):
+        out=[o for o in engine.orders.values()
+             if o.side=="BUY" and o.code==code and str(o.purpose).startswith("D+1_V097_")
+             and str(o.time)[:10]==entry_date and str(o.purpose).rsplit("_",1)[-1] in LADDER_SUFFIX]
+        return sorted(out,key=lambda o:o.id)
+
+    @staticmethod
+    def is_resting_rung(order):
+        """A split-buy rung placed BELOW the price of that moment: it is bought only when the traded price comes down to it."""
+        return (str(order.purpose).rsplit("_",1)[-1] in ("L1","L2","L3") and int(order.limit)<int(order.reference))
+
+    def _ladder_complete(self,engine,plan):
+        ladder=plan.get("ladder")
+        if not ladder:return False
+        orders=self._ladder_orders(engine,plan["code"],plan["entry_date"])
+        gap=[o for o in orders if str(o.purpose).endswith("_GAP")]
+        if gap:return all(o.state=="FILLED" for o in gap)
+        return all(sum(int(o.filled) for o in orders if str(o.purpose).endswith("_L%d"%r["rung"]))>=int(r["quantity"])
+                   for r in ladder["rungs"] if r["quantity"]>0)
+
+    def _plan_orders(self,engine,plan):
+        ids=plan.get("order_ids")
+        if ids:return [engine.orders[i] for i in ids if i in engine.orders]
+        order=engine.orders.get(plan.get("order_id"))
+        return [order] if order is not None else []
+
+    def _fill_rung(self,order,qty,price,at,basis):
+        """One PAPER fill of a ladder order at `price` (never above its limit); labelled, not a broker fill."""
+        engine=self.service.engine
+        qty=int(min(int(qty),int(order.requested)-int(order.filled),
+                    math.floor(engine.cash/(float(price)*(1+engine.cfg.buy_fee)))))
+        if qty<1 or order.state not in ACTIVE or not engine._d1_buy_window_ok(order,at.isoformat()):return 0
+        before=int(order.filled)
+        engine.fill(order.id,qty,float(price),at.isoformat())
+        gained=int(order.filled)-before
+        if gained>0:
+            engine._log(order.code,"PAPER_LADDER_FILL_V0510",
+                f"{order.purpose} {gained}@{int(price)} basis={basis}; NOT BROKER FILL",at.isoformat())
+        return gained
+
+    def _ladder_place(self,plan,engine,ladder,earlier,venue,at,ask,last,pos):
+        """Create the orders of this venue. Returns the new orders, or None (status explains why not)."""
+        code=plan["code"];entry=plan["entry_date"]
+        # Real process: a new order only after the earlier one is confirmed cancelled (or filled); never two live orders for one share.
+        if any(o.state=="CANCEL_REQUESTED" for o in earlier):
+            plan["status"]="WAIT_CANCEL_CONFIRMATION";return None
+        if not earlier and code+"|"+entry in engine.used and pos is None:
+            plan["status"]="BLOCKED";return None
+        other_pending=len({o.code for o in engine._active_buys() if o.code not in engine.positions and o.code!=code})
+        if pos is None and not earlier and len(engine.positions)+other_pending>=engine.cfg.max_positions:
+            plan["status"]="WAITING_SLOT";return None
+        fee=float(engine.cfg.buy_fee)
+        per=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))
+        available=max(0.0,engine.cash-engine._reserved_cash())
+        now_price=int(ask) if int(ask)>0 else int(last)
+        condition=int(ladder["condition_price"])
+        made=[]
+        gap_before=any(str(o.purpose).endswith("_GAP") for o in earlier)
+        rungs=[r for r in ladder["rungs"] if r["quantity"]>0]
+        lowest=min((r["price"] for r in rungs),default=0)
+        if gap_before or (not earlier and now_price>0 and lowest>0 and now_price<lowest):
+            # Gap down below EVERY rung: the split plan is discarded and the whole per-stock amount is bought at the current price.
+            spent=float(pos.cost_basis) if pos is not None else 0.0
+            filled=sum(int(o.filled) for o in earlier)
+            budget=min(max(0.0,per-spent),available)
+            qty=int(math.floor(budget/(now_price*(1+fee)))) if now_price>0 else 0
+            if gap_before:
+                requested=sum(int(o.requested) for o in earlier)
+                qty=max(0,min(qty,requested-filled))
+            if now_price<=0 or now_price>condition or qty<1:
+                plan["status"]="WAIT_PRICE_WITHIN_CONDITION" if qty>=1 else "INSUFFICIENT_BUDGET";return None
+            order=engine._order(code,"BUY",f"D+1_V097_{venue}_GAP",now_price,now_price,qty,at.isoformat())
+            made.append(order)
+            plan["ladder_discarded"]="GAP_BELOW_ALL_RUNGS"
+            plan["ladder_discarded_at"]=at.isoformat()
+            engine._log(code,"GMO_D1_LADDER_DISCARDED_V0510",
+                f"current={now_price} below the lowest rung {lowest}; buy {qty} at the current price (limit {now_price})",at.isoformat())
+        else:
+            for rung in rungs:
+                tag="L%d"%rung["rung"]
+                have=sum(int(o.filled) for o in earlier if str(o.purpose).endswith("_"+tag))
+                want=int(rung["quantity"])-have
+                price=int(rung["price"])
+                qty=min(want,int(math.floor(available/(price*(1+fee)))))
+                if qty<1:continue
+                available-=qty*price*(1+fee)
+                # `reference` = the price seen when the order was placed (kept in the order): a limit below it is a RESTING rung.
+                made.append(engine._order(code,"BUY",f"D+1_V097_{venue}_{tag}",max(now_price,1),price,qty,at.isoformat()))
+        if not made:
+            plan["status"]="COMPLETED" if earlier else "INSUFFICIENT_BUDGET";return None
+        engine._v097_managed_codes.add(code)
+        engine.used.add(code+"|"+entry)
+        plan.update(status="ORDER_PENDING",order_ids=[o.id for o in made],order_id=made[0].id,
+                    limit_price=max(int(o.limit) for o in made),requested_qty=sum(int(o.requested) for o in made))
+        return made
+
+    def _ladder_step(self,plan,at,last,ask,depth,venue,q,tick,bid,place_only,paper_print):
+        """0.5.1: place the recorded split-buy orders from the first fresh quote of the venue and fill them like a real order would."""
+        svc=self.service;engine=svc.engine
+        code=plan["code"];signal=engine.signals.get(code)
+        ladder=self._ensure_ladder(plan,signal,at)
+        if ladder is None:
+            plan["status"]="WAIT_EWY_UNTIL_NXT_OPEN";return
+        entry=plan["entry_date"];prefix="D+1_V097_"+venue+"_"
+        changed=False
+        with self.lock,svc._lock,engine._lock:
+            if any(f.get("code")==code and str(f.get("time",""))[:10]<=entry for f in engine.fills):
+                plan["status"]="SOLD";return
+            pos=engine.positions.get(code)
+            if pos and (pos.entry_date!=entry or pos.stage!="NORMAL" or pos.exit_stage or pos.pending_sell_id or
+                        pos.first_profit_triggered or pos.first_filled_qty or pos.second_filled_qty):
+                plan["status"]="BLOCKED";return
+            everything=self._ladder_orders(engine,code,entry)
+            mine=[o for o in everything if o.purpose.startswith(prefix)]
+            if mine and not plan.get("order_ids"):
+                plan["order_ids"]=[o.id for o in mine];plan["order_id"]=mine[0].id
+            if not mine:
+                created=self._ladder_place(plan,engine,ladder,everything,venue,at,ask,last,pos)
+                if created is None:return
+                mine=created;changed=True
+            filled_before=sum(int(o.filled) for o in mine)
+            if not place_only:
+                live=lambda: [o for o in mine if o.state in ACTIVE and int(o.filled)<int(o.requested)]
+                if venue=="KRX":
+                    if q is not None and not self._tick_already_matched(code,tick):
+                        engine.paper_match(q)               # a rung at or above the displayed ask: fresh 0D + fresh 0B (unchanged matcher)
+                        if int(getattr(q,"ask_size",0))<=0 and paper_print:
+                            engine.paper_match_krx_print_proxy(q,int(tick[5]),buy_missing_book=True,sell_missing_book=False)
+                elif depth>0 and int(ask)>0:
+                    left=int(depth)                          # NXT: same-venue fresh 0D size, whole displayed size
+                    for o in live():
+                        if left<1:break
+                        if not self.is_resting_rung(o) and int(ask)<=int(o.limit) and int(last)<=int(o.limit):
+                            left-=self._fill_rung(o,min(left,int(o.requested)-int(o.filled)),int(ask),at,"NXT_DISPLAYED_ASK")
+                if tick is not None and int(last)>0:
+                    # A resting rung is bought when the traded price comes down to it (owner rule), at the rung's own price. A rung that
+                    # was marketable when it was placed (limit at or above the price of that moment) is matched against the displayed book above.
+                    for o in live():
+                        if self.is_resting_rung(o) and int(last)<=int(o.limit):
+                            self._fill_rung(o,int(o.requested)-int(o.filled),int(o.limit),at,"PRICE_REACHED_RUNG")
+            if sum(int(o.filled) for o in mine)>filled_before:changed=True
+            everything=self._ladder_orders(engine,code,entry)
+            ladder_rungs={("L%d"%r["rung"]):int(r["quantity"]) for r in ladder["rungs"] if r["quantity"]>0}
+            total=sum(int(o.filled) for o in everything)
+            if total>int(plan.get("filled_qty") or 0):
+                plan["filled_qty"]=total
+                plan["status"]="PARTIALLY_FILLED"
+            gap=[o for o in mine if str(o.purpose).endswith("_GAP")]
+            if gap:
+                done=all(o.state=="FILLED" for o in gap)
+            else:
+                done=all(sum(int(o.filled) for o in everything if str(o.purpose).endswith("_"+tag))>=need
+                         for tag,need in ladder_rungs.items())
+            if done and total>0:plan["status"]="COMPLETED"
+            if changed:svc._persist(True)
+
     def _tick_already_matched(self,code,tick):
         """0.4.7: the original `on_live_tick` has already run the PAPER matcher for this very tick.
 
@@ -635,45 +871,52 @@ class Preplanner:
         with self.lock:
             plan=self.plans.get(key)
             if plan is None or not plan.get("order_id"):return False
-            order=engine.orders.get(plan["order_id"])
-            if order is None or order.side!="BUY" or order.state not in ACTIVE or int(order.filled)>=int(order.requested):return False
-            if not str(order.purpose).startswith("D+1_V097_KRX_"):return False
+            orders=[o for o in self._plan_orders(engine,plan)
+                    if o.side=="BUY" and o.state in ACTIVE and int(o.filled)<int(o.requested)
+                    and str(o.purpose).startswith("D+1_V097_KRX_") and not self.is_resting_rung(o)]
+            if not orders:return False
             first=plan.get("_book_ref")
-            limit=int(order.limit)
+            top=max(int(o.limit) for o in orders)
             if first is not None and seen<=first[2]:
                 # A book message arrived but no newer valid snapshot exists: the shown quantity vanished (zero / crossed / invalid).
                 plan["_book_ref"]=None
                 return False
-            plan["_book_ref"]=(ask,ask_qty,seen) if ask<=limit else None
-            if placed or first is None or ask>limit:return False         # this snapshot only becomes the reference
+            plan["_book_ref"]=(ask,ask_qty,seen) if ask<=top else None
+            if placed or first is None or ask>top:return False           # this snapshot only becomes the reference
             ask1,qty1,seen1=first
             gap=(seen-seen1).total_seconds()
             if not BOOK_CONFIRM_MIN_GAP<=gap<=BOOK_CONFIRM_MAX_GAP:return False
-            if ask1>limit:return False
             taken=getattr(engine,"_v0480_taken",None) or {}
             rec=taken.get(code)
-            left1=int(qty1)-(int(rec[1]) if rec and rec[0]==seen1 else 0)
-            qty=min(left1,ask_qty)
-            if qty<=0:return False
-            if not engine._d1_buy_window_ok(order,seen.isoformat()):return False
-            price=min(limit,up_tick(max(ask1,ask)*(1+engine.cfg.paper_buy_slip)))
-            qty=min(qty,int(order.requested)-int(order.filled),math.floor(engine.cash/(price*(1+engine.cfg.buy_fee))))
-            if qty<=0:return False
+            left=min(int(qty1)-(int(rec[1]) if rec and rec[0]==seen1 else 0),ask_qty)
+            gained_total=0
             with engine._lock:
-                before=int(order.filled)
-                engine.fill(order.id,int(qty),float(price),seen.isoformat())
-                gained=int(order.filled)-before
-                if gained<=0:return False
-                engine._log(code,"PAPER_BOOK_CONFIRMED_FILL_V0490",
-                    f"BUY {gained}@{price}; ask {ask1}->{ask} size {qty1}->{ask_qty} gap {gap:.1f}s; NOT BROKER FILL",seen.isoformat())
+                for order in sorted(orders,key=lambda o:o.id):
+                    limit=int(order.limit)
+                    if left<1:break
+                    if ask1>limit or ask>limit or not engine._d1_buy_window_ok(order,seen.isoformat()):continue
+                    price=min(limit,up_tick(max(ask1,ask)*(1+engine.cfg.paper_buy_slip)))
+                    qty=min(left,int(order.requested)-int(order.filled),math.floor(engine.cash/(price*(1+engine.cfg.buy_fee))))
+                    if qty<=0:continue
+                    before=int(order.filled)
+                    engine.fill(order.id,int(qty),float(price),seen.isoformat())
+                    gained=int(order.filled)-before
+                    if gained<=0:continue
+                    left-=gained;gained_total+=gained
+                    engine._log(code,"PAPER_BOOK_CONFIRMED_FILL_V0490",
+                        f"{order.purpose} BUY {gained}@{price}; ask {ask1}->{ask} size {qty1}->{ask_qty} gap {gap:.1f}s; NOT BROKER FILL",seen.isoformat())
+                if gained_total<=0:return False
                 mark=getattr(engine,"_v0480_take",None)
-                if mark is not None:mark(code,seen,gained)
-                plan["_book_ref"]=(ask,max(0,ask_qty-gained),seen)
-                plan["filled_qty"]=int(order.filled)
+                if mark is not None:mark(code,seen,gained_total)
+                plan["_book_ref"]=(ask,max(0,ask_qty-gained_total),seen)
+                plan["filled_qty"]=sum(int(o.filled) for o in self._ladder_orders(engine,code,plan["entry_date"]) or orders)
                 plan["fill_basis_v0490"]="BOOK_CONFIRMED_TWO_SNAPSHOTS"
-                plan["status"]="PARTIALLY_FILLED" if order.state!="FILLED" else "FILLED"
+                plan["status"]="PARTIALLY_FILLED" if any(o.state!="FILLED" for o in orders) else "FILLED"
                 pos=engine.positions.get(code)
-                if order.state=="FILLED" and pos is not None and pos.cost_basis>=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))-limit:
+                if plan.get("ladder") and all(o.state=="FILLED" for o in orders) and self._ladder_complete(engine,plan):
+                    plan["status"]="COMPLETED"
+                elif (not plan.get("ladder")) and all(o.state=="FILLED" for o in orders) and pos is not None and \
+                        pos.cost_basis>=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))-max(int(o.limit) for o in orders):
                     plan["status"]="COMPLETED"
         service._persist(True)
         return True
@@ -702,6 +945,21 @@ def consume_book_once(svc,eng):
             if o.side=="BUY":buy+=int(o.filled)
             else:sell+=int(o.filled)
         return buy,sell
+    def hide_resting(q,call):
+        """0.5.1: a resting split-buy rung is bought by the price-reached rule only; neither the displayed-book matcher nor the print proxy may fill it."""
+        with eng._lock:
+            hidden=[o for o in eng.orders.values()
+                    if o.side=="BUY" and o.code==q.code and o.state in ("NEW","OPEN")
+                    and str(o.purpose).rsplit("_",1)[-1] in ("L1","L2","L3") and int(o.limit)<int(o.reference)]
+            prior=[(o,o.state) for o in hidden]
+            for o in hidden:o.state="CANCEL_REQUESTED"
+            try:
+                return call()
+            finally:
+                for o,state in prior:
+                    if o.state=="CANCEL_REQUESTED":o.state=state
+    def original_without_resting(q):
+        return hide_resting(q,lambda:original(q))
     def paper_match_once(q):
         try:
             book=svc.last_book.get(q.code)
@@ -709,7 +967,7 @@ def consume_book_once(svc,eng):
         except Exception:
             epoch=None
         if epoch is None or (int(q.ask_size)<=0 and int(q.bid_size)<=0):
-            return original(q)
+            return original_without_resting(q)
         rec=taken.get(q.code)
         if rec is None or rec[0]!=epoch:
             rec=[epoch,0,0]
@@ -718,7 +976,7 @@ def consume_book_once(svc,eng):
         bid_left=max(0,int(q.bid_size)-rec[2]) if int(q.bid_size)>0 else int(q.bid_size)
         shown=q if (ask_left,bid_left)==(int(q.ask_size),int(q.bid_size)) else dataclasses.replace(q,ask_size=ask_left,bid_size=bid_left)
         before=totals(q.code)
-        out=original(shown)
+        out=original_without_resting(shown)
         after=totals(q.code)
         rec[1]+=max(0,after[0]-before[0])
         rec[2]+=max(0,after[1]-before[1])
@@ -731,6 +989,11 @@ def consume_book_once(svc,eng):
         rec[1]+=max(0,int(shares))
     eng._v0480_taken=taken
     eng._v0480_take=take
+    original_proxy=getattr(eng,"paper_match_krx_print_proxy",None)
+    if original_proxy is not None:
+        def proxy_without_resting(q,trade_volume,**kw):
+            return hide_resting(q,lambda:original_proxy(q,trade_volume,**kw))
+        eng.paper_match_krx_print_proxy=proxy_without_resting
     eng.paper_match=paper_match_once
     eng._v0480_original=original
     eng._v0480_book_once=True

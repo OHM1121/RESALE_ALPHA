@@ -15,3 +15,6 @@ order could not use; a real non-fill stays a non-fill. Status per version; "audi
 | 8 | Sell "slippage beyond sell floor" cancel | `Engine.paper_match` SELL branch | cancels the order | a resting limit sell waits | To review (not changed) |
 | 9 | Real mode and the supply-demand D+1 plan | `gmo_d1_preplan_v097._step` returns when `ARTITRADE_REAL_MODE=1`; `deny_native_open` blocks the native entry for a planned code | no D+1 order is planned in that mode | an order is needed | To verify in code before the real switch (not changed) |
 | 10 | Upbit coin paper, MA / MarketTrend wallet fills, manual paper sells | `d_upbit.py`, `market_trend_wallet_v043/v054`, `stock_manual_v086` | not audited yet | | Next audit |
+| 11 | NXT displayed ask size | `gmo_d1_preplan_v097.on_tick` NXT branch `ask_qty//2` | half of the displayed size | the whole displayed size | **Changed in 0.5.1** (whole size) |
+| 12 | Resting split-buy rung (supply-demand, 0.5.1) | `Preplanner._ladder_step` | filled at the rung price when a verified trade comes down to it, no queue / volume proof (owner rule) | depends on the queue position | Owner rule, explicit proxy; a marketable rung is matched against the displayed book instead |
+

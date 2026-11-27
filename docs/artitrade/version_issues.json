@@ -2383,6 +2383,29 @@
                 "test_v0480_book_liquidity_once.py"
           ],
           "notes": "Remaining paper-only assumptions and open items (order latency, sell-floor cancel, ARTITRADE_REAL_MODE blocking the D+1 plan, Upbit / MA / MarketTrend wallet fills not audited) are in docs/artitrade/REAL_PARITY_AUDIT.md. Paper results are not comparable with earlier versions."
+    },
+    {
+          "id": "GMO-0510-01",
+          "issue": 166,
+          "found": "owner decision 2026-11-27: supply-demand D+1 entry as a three-rung split buy fixed before the open",
+          "category": "GMO_D1_ENTRY_SINGLE_AGGRESSIVE_ORDER",
+          "title": "The D+1 entry was one aggressive order up to the first ask + 2 ticks with three ceiling scenarios",
+          "evidence": "gmo_d1_preplan_v097._step (S1..S3, caps[2], engine._order at the worst +2-tick price); ui_tests/test_v0510_gmo_ladder.py",
+          "root": "DESIGN: replaced by an owner-specified split plan (policy conflict recorded in USER_ACTIVE_POLICY)",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.1",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO"
+          ],
+          "tests": [
+                "test_v0510_gmo_ladder.py",
+                "test_v0490_book_confirmed_fill.py",
+                "test_v0480_book_liquidity_once.py",
+                "test_v0470_gmo_d1_end_to_end.py"
+          ],
+          "notes": "Rising stocks fill only rung 1; resting rungs are bought on price reached without queue proof; ARTITRADE_REAL_MODE=1 still stops the plan; the ladder is recorded in the audit log, order purposes and plan snapshot (no spreadsheet column added)."
     }
   ],
   "known_normal": [

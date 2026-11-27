@@ -6,6 +6,7 @@ from types import SimpleNamespace
 ROOT=Path(__file__).resolve().parents[1]/"app/src/main"
 sys.path.insert(0,str(ROOT/"python"))
 from gmo_d1_preplan_v097 import Preplanner,PHASE,_valid_phase,_venue_phase,KST
+import gmo_d1_preplan_v097 as _pre_module
 from projectgmo.prices import plus_ticks
 
 class ServiceFixture:
@@ -27,12 +28,17 @@ class ServiceFixture:
 
 class PreplanTests(unittest.TestCase):
     def setUp(self):
+        # 0.5.1: these tests cover the single-order entry mechanics (the split-buy entry has its own tests, test_v0510_gmo_ladder.py)
+        self._ladder_before=_pre_module.LADDER_ENABLED
+        _pre_module.LADDER_ENABLED=False
         self.tmp=tempfile.TemporaryDirectory()
         self.svc=ServiceFixture(self.tmp.name)
         self.ready=dt.datetime(2026,11,17,8,58,0,tzinfo=KST)
         self.now=dt.datetime(2026,11,17,9,0,0,tzinfo=KST)
         self.p=Preplanner(self.svc,clock=lambda:self.now)
-    def tearDown(self):self.tmp.cleanup()
+    def tearDown(self):
+        _pre_module.LADDER_ENABLED=self._ladder_before
+        self.tmp.cleanup()
 
     def test_csat_2026_nxt_closed_and_delayed_krx_d1(self):
         k=lambda hour,minute:dt.datetime(2026,11,19,hour,minute,tzinfo=KST)

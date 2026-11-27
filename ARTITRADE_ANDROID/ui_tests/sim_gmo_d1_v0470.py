@@ -48,7 +48,7 @@ def fids(ask, bid, ask_qty, bid_qty=5, krx_specific_zero=False):
 
 
 class Sim:
-    def __init__(self, tmp, *, book_trigger=True, close=48450, open_=48500):
+    def __init__(self, tmp, *, book_trigger=True, close=48450, open_=48500, ladder=False):
         self.clock = Clock(at(8, 50))
         self.stack = contextlib.ExitStack()
         fake = self.clock
@@ -64,6 +64,8 @@ class Sim:
         self.stack.enter_context(mock.patch.object(pre.Preplanner, "background", lambda self: None))
         self.stack.enter_context(mock.patch.object(d_gmo_runtime.GMOService, "_loop", lambda self: None))
         self.stack.enter_context(mock.patch.object(d_gmo_runtime.GMOService, "_maintenance_loop", lambda self: None))
+        # 0.5.1: the mechanics tests of 0.4.7-0.5.0 run the single-order entry; the split-buy entry (default in the app) is ladder=True
+        self.stack.enter_context(mock.patch.object(pre, "LADDER_ENABLED", bool(ladder)))
         if not book_trigger:
             self.stack.enter_context(mock.patch.object(pre.Preplanner, "on_book", lambda self, code, at=None: False))
         pre.install(None)                       # the order the app uses: preplan first, depth fallback last
