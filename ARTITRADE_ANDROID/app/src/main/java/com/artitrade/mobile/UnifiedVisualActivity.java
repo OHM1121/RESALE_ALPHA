@@ -2551,6 +2551,12 @@ public final class UnifiedVisualActivity extends Activity {
             if(side.contains("BUY")||side.contains("매수"))buy++;
             if(side.contains("SELL")||side.contains("매도")){sell++;double p=num(r,"net_profit","net_realized","net_pnl","pnl","profit");if(finite(p)){known++;if(p>0)wins++;}}
         }
+        // 0.5.7 (#174): a supply-demand position is bought in up to three split rungs and each partial fill is a row; counting the rows showed
+        // 13 "buys" for 2 positions. A BUY is counted once per position and a SELL once per sell order (DashboardCountPolicyV0570).
+        if("stock".equals(m)&&"gmo".equals(s)){
+            int[] counts=DashboardCountPolicyV0570.gmoBuySell(st.executions);
+            buy=counts[0];sell=counts[1];
+        }
         st.closed=sell;if(known>0)st.win=wins*100.0/known;
         double remoteWin=num(l,"win_rate","win_rate_pct");if(finite(remoteWin))st.win=remoteWin;
 
@@ -3984,7 +3990,8 @@ public final class UnifiedVisualActivity extends Activity {
         headline.addView(title,new LinearLayout.LayoutParams(0,dp(29),1));
         content.addView(headline,new LinearLayout.LayoutParams(-1,dp(32)));
         String feedName="stock".equals(market)?"키움 · KOSPI/KOSDAQ":"trend".equals(strategy)?"업비트 · KRW TOP50":"업비트 · KRW TOP35";
-        content.addView(feedCard(market,feedName),new LinearLayout.LayoutParams(-1,dp(46)));
+        View feedCardView=feedCard(market,feedName);
+        content.addView(feedCardView,new LinearLayout.LayoutParams(-1,feedCardView.getTag()!=null?-2:dp(46)));
 
         // A single performance strip on landscape; no stacked 167dp+142dp panels.
         final boolean wide=getResources().getConfiguration().screenWidthDp>=680;
@@ -4249,8 +4256,17 @@ public final class UnifiedVisualActivity extends Activity {
             Color.rgb(255,194,91);
         dot.setTextColor(feedColor);
         x.setMaxLines(2);x.setTextColor(feedColor);copy.addView(x);
-        c.addView(copy,new LinearLayout.LayoutParams(0,dp(42),1));
+        // 0.5.7: after-close data collection / storage, one short teal line (amber when paused); nothing in the daytime.
+        JSONObject offhours=("stock".equals(m)&&feed!=null)?feed.optJSONObject("offhours"):null;
+        boolean offLine=offhours!=null&&!offhours.optString("label","").isEmpty();
+        if(offLine){
+            TextView o=text(offhours.optString("label",""),12);
+            o.setTextColor("paused".equals(offhours.optString("phase",""))?Color.rgb(255,194,91):Color.rgb(62,224,181));
+            o.setMaxLines(1);copy.addView(o);
+        }
+        c.addView(copy,new LinearLayout.LayoutParams(0,offLine?-2:dp(42),1));
         TextView badge=text(on?"LIVE":"WAIT",11);badge.setGravity(Gravity.CENTER);badge.setTypeface(null,Typeface.BOLD);badge.setTextColor(feedColor);badge.setBackground(bg(Color.rgb(22,26,36),Color.rgb(48,54,70),10));c.addView(badge,new LinearLayout.LayoutParams(dp(54),dp(28)));
+        if(offLine){c.setTag(Boolean.TRUE);c.setPadding(dp(13),dp(6),dp(13),dp(6));}
         if("stock".equals(m))c.setOnClickListener(v->showKiwoomFeedDiagnosis());
         return c;
     }

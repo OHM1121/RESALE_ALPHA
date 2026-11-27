@@ -2538,6 +2538,54 @@
                 "test_v0550_gmo_held_exit.py"
           ],
           "notes": "Fill price = the resting limit (target rounded up to a tick), full first-sale quantity by the price-reached rule, only prints after the latest BUY fill count; later exits unchanged. Quantity queue position and a phone that is off are not modelled. Not verified on a device."
+    },
+    {
+          "id": "GMO-0570-04",
+          "issue": 173,
+          "found": "owner screenshot 2026-11-27 20:36: 하림지주 10,920 above the 10,427 target, not sold",
+          "category": "TOUCH_WHILE_APP_BLIND_NOT_RECOVERED",
+          "title": "A resting take-profit that the exchange would have filled while the app was off, disconnected or restarting was never recovered",
+          "evidence": "stored official 5m candle 2026-11-25 15:15 high 10,440 and 2026-11-26 highs up to 10,610 after the order of 2026-11-23 10:44; real-data run of catch_up; ui_tests/test_v0560_gmo_resting_tp.py CatchUpFromCandles",
+          "root": "CONFIRMED: the vendor recovery covers only D+16 overdue holdings; the 0.5.6 resting order used only prints the app had seen",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.7",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": ["STOCK_GMO", "STOCK_FEED"],
+          "tests": ["test_v0560_gmo_resting_tp.py"],
+          "notes": "Fill at the resting limit at the end of the first candle (1m/5m, after the order) whose high reached it; later app-evaluated exits are not replayed; quantity by the price-reached rule. Not verified on a device."
+    },
+    {
+          "id": "UI-0570-05",
+          "issue": 174,
+          "found": "owner screenshot 2026-11-27: supply-demand dashboard shows 13 trades",
+          "category": "COUNT_BY_FILL_ROWS",
+          "title": "Supply-demand dashboard counted every split fill row as a buy (13 for 2 positions)",
+          "evidence": "state file buy_fills 13 = 000680 x10 + 003380 x3; UnifiedVisualActivity.calculateStats generic BUY row count",
+          "root": "CONFIRMED in code: buy = number of BUY execution rows",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.7",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": ["UI_RECORDS", "STOCK_GMO"],
+          "tests": ["DashboardCountPolicyTest.java"],
+          "notes": "Supply-demand only: BUY counted once per position (uid, else code+entry date), SELL once per order id. Java compiled by CI only; no unit test; not verified on a device."
+    },
+    {
+          "id": "UI-0570-06",
+          "issue": 175,
+          "found": "owner request 2026-11-27: show the after-close data collection / storage progress on the market feed card",
+          "category": "STATUS_NOT_SHOWN",
+          "title": "The quiet-hours data collection ran invisibly; the owner could not tell whether the collect-and-store structure works",
+          "evidence": "ui_tests/test_v0570_offhours_status.py; offhours_prework_v0530.status; UnifiedVisualActivity.feedCard",
+          "root": "CONFIRMED in code: the worker only wrote stock/offhours_v0530.json(l); nothing reached the snapshot",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.7",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": ["UI_RECORDS", "STOCK_FEED"],
+          "tests": ["test_v0570_offhours_status.py"],
+          "notes": "One short line (teal; amber when paused), only in the quiet window 20:05-07:45; display only. The Java card is compiled by CI only. Combined (NXT) candles are not part of the task yet."
     }
   ],
   "known_normal": [

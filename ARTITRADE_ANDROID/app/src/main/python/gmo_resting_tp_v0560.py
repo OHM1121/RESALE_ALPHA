@@ -76,6 +76,92 @@ def trigger_resting(engine, position, quote):
             engine._log(position.code, "RESTING_TP_FILL_REFUSED_V0560", "%s %s" % (order.id, str(exc)[:160]), quote.at)
 
 
+BAR_SECONDS = {"1m": 60, "5m": 300}
+
+
+def find_touch_in_bars(conn, code, placed, price):
+    """Earliest finished official / live candle (1m, 5m) that started AFTER the order was placed and whose high reached `price`.
+
+    Returns (end_datetime, high, frame, source, bar_stamp) or None. A candle that contains the placement moment is skipped (a part of it may
+    precede the order). The high of a candle proves the exchange price traded through the resting limit, which is what fills a real resting sell.
+    """
+    stamp = placed.astimezone(KST).strftime("%Y%m%d%H%M%S") if placed is not None else ""
+    best = None
+    rows = conn.execute("SELECT ts,frame,high,source FROM bars WHERE code=? AND frame IN ('1m','5m') AND ts>? AND high>=? ORDER BY ts", (code, stamp, float(price))).fetchall()
+    for row in rows:
+        ts, frame, high, source = str(row[0]), str(row[1]), float(row[2]), str(row[3])
+        try:
+            start = dt.datetime.strptime(ts[:14], "%Y%m%d%H%M%S").replace(tzinfo=KST)
+        except ValueError:
+            continue
+        end = start + dt.timedelta(seconds=BAR_SECONDS[frame])
+        if placed is not None and start <= placed:
+            continue
+        if best is None or end < best[0]:
+            best = (end, high, frame, source, ts)
+    return best
+
+
+def peak_after(conn, code, start_stamp):
+    row = conn.execute("SELECT MAX(high) FROM bars WHERE code=? AND frame IN ('1m','5m') AND ts>=?", (code, start_stamp)).fetchone()
+    try:
+        return float(row[0]) if row and row[0] is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def catch_up(runner, now=None):
+    """After a restart, a feed gap or a phone that was off: a resting sell that the exchange would have filled while the app was blind is filled now.
+
+    For every held position still in stage NORMAL: the earliest candle after the order whose high reached the resting price is the evidence
+    (official Kiwoom candles are in `bars`, labelled by source). The sale is booked at the resting price at that candle's end; the later app-evaluated exit
+    rules (+2 % floor, peak -3 %, ...) are NOT replayed: an app-managed exit that the app was not running for would not have executed in real trading either.
+    Returns the number of fills.
+    """
+    from projectgmo.engine import Quote
+    gmo = runner.gmo
+    eng = gmo.engine
+    done = 0
+    try:
+        codes = [c for c, p in list(eng.positions.items()) if p.qty > 0 and p.stage == "NORMAL" and not p.first_profit_triggered and not p.blocked]
+    except Exception:
+        return 0
+    for code in codes:
+        try:
+            with gmo._lock:
+                p = eng.positions.get(code)
+                if p is None or p.stage != "NORMAL" or p.first_profit_triggered or p.blocked or p.qty <= 0:
+                    continue
+                placed = placed_at(eng, code)
+                if placed is None:
+                    continue
+                price = resting_price(p)
+            with runner.store.connect() as conn:
+                found = find_touch_in_bars(conn, code, placed, price)
+                if found is None:
+                    continue
+                end, high, frame, source, stamp = found
+                peak = peak_after(conn, code, stamp)
+            with gmo._lock:
+                p = eng.positions.get(code)
+                if p is None or p.stage != "NORMAL" or p.first_profit_triggered or p.blocked or p.qty <= 0:
+                    continue
+                if resting_price(p) != price or placed_at(eng, code) != placed:
+                    continue                                   # the position changed meanwhile: decide again next round
+                quote = Quote(code, end.isoformat(), max(1, int(p.last_day)), float(high), 0.0, 0.0, 0.0, 0.0, "KRX", 0.0)
+                eng._trigger_first_tp(p, quote)
+                p.protected_peak = max(p.protected_peak, peak)
+                eng._log(code, "RESTING_TP_CATCHUP_V0560", "resting sell %d reached by the %s candle %s (high %s, source %s); filled at the limit at the candle end" % (price, frame, stamp, high, source), end.isoformat())
+                gmo._persist(True)
+            done += 1
+        except Exception as exc:
+            try:
+                runner.store.write_runtime_error(exc, "gmo_resting_tp_catchup:" + str(code))
+            except Exception:
+                pass
+    return done
+
+
 def install():
     if _STATE["installed"]:
         return

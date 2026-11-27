@@ -170,6 +170,74 @@ class RestingTakeProfit(unittest.TestCase):
 
 
 @unittest.skipUnless(RUNTIME, "needs the original engine on sys.path")
+class CatchUpFromCandles(RestingTakeProfit):
+    """A touch the app could not see (restart, feed gap, phone off) is read from the finished candles (하림지주 11-25 15:15 5m high 10,440)."""
+
+    def setUp(self):
+        super().setUp()
+        import sqlite3
+        self.conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self.conn.execute("CREATE TABLE bars(code TEXT,market TEXT,frame TEXT,ts TEXT,open REAL,high REAL,low REAL,close REAL,volume REAL,source TEXT)")
+        self.runner.store.connect = lambda: _Conn(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        super().tearDown()
+
+    def bar(self, ts, high, frame="5m", source="FIX15_VERIFIED_KIWOOM_REST"):
+        self.conn.execute("INSERT INTO bars VALUES(?,?,?,?,?,?,?,?,?,?)", (CODE, "KOSDAQ", frame, ts, high - 10, high, high - 20, high - 10, 100, source))
+
+    def test_official_candle_after_the_order_fills_the_resting_sell_at_its_limit_and_candle_end(self):
+        self.bar("20261123104500", 9990)
+        self.bar("20261125151500", 10440)               # the first candle that reached 10,430
+        self.bar("20261126091500", 10600)
+        self.assertEqual(rest.catch_up(self.runner), 1)
+        fills = [f for f in self.eng.fills if f["code"] == CODE]
+        self.assertEqual([(f["qty"], f["price"], f["purpose"]) for f in fills], [(1, 10430, "TP5_FIRST_20PCT")])
+        self.assertTrue(fills[0]["time"].startswith("2026-11-25T15:20:00"))
+        self.assertEqual(self.pos.stage, "PROTECTED")
+        self.assertEqual(self.pos.protected_peak, 10600)
+        self.assertEqual(self.pos.qty, 2)
+        self.assertTrue(any(e["kind"] == "RESTING_TP_CATCHUP_V0560" for e in self.eng.audit))
+
+    def test_a_candle_that_contains_the_order_moment_is_not_evidence(self):
+        self.bar("20261123104000", 10500)               # 10:40-10:45 contains the 10:44:08 buy fill
+        self.assertEqual(rest.catch_up(self.runner), 0)
+        self.assertEqual(self.sells(), [])
+
+    def test_a_candle_below_the_resting_price_is_not_evidence(self):
+        self.bar("20261125151500", 10420)
+        self.assertEqual(rest.catch_up(self.runner), 0)
+
+    def test_once_only(self):
+        self.bar("20261125151500", 10440)
+        self.assertEqual(rest.catch_up(self.runner), 1)
+        self.assertEqual(rest.catch_up(self.runner), 0)
+        self.assertEqual(len([o for o in self.sells()]), 1)
+
+    def test_no_known_order_time_means_no_catch_up(self):
+        self.eng.buy_fills.clear()
+        self.bar("20261125151500", 10440)
+        self.assertEqual(rest.catch_up(self.runner), 0)
+
+    def test_one_minute_live_candle_also_counts(self):
+        self.bar("20261126091500", 10520, frame="1m", source="LIVE_WS_0B")
+        self.assertEqual(rest.catch_up(self.runner), 1)
+        self.assertTrue([f for f in self.eng.fills if f["code"] == CODE][0]["time"].startswith("2026-11-26T09:16:00"))
+
+
+class _Conn:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, *a):
+        return False
+
+
+@unittest.skipUnless(RUNTIME, "needs the original engine on sys.path")
 class InstallWiring(unittest.TestCase):
     def test_install_replaces_the_vendor_method_once(self):
         keep = Engine._trigger_first_tp

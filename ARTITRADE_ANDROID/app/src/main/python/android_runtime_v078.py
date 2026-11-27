@@ -160,6 +160,11 @@ def _phone_runtime_snapshot(self):
                 '_watch_feed_last_epoch',0) or 0)),1) if runner and getattr(runner,
                 '_watch_feed_last_epoch',0) else None,
         }
+        try:                       # 0.5.7: short status of the after-close data collection for the market feed card
+            import offhours_prework_v0530 as _off_status
+            snapshot['stock_feed']['offhours'] = _off_status.status(getattr(self, 'root', None) or '.')
+        except Exception:
+            snapshot['stock_feed']['offhours'] = {}
         # v081 startup readiness is read-only telemetry from BOTH existing
         # exchange sessions. No second login/socket and no synthetic ticks.
         now_mono=time.monotonic()

@@ -36,7 +36,7 @@ STATE_FILE = "offhours_v0530.json"
 LOG_FILE = "offhours_v0530.jsonl"
 KST = dt.timezone(dt.timedelta(hours=9))
 
-_STATE = {"installed": False, "thread": None, "failures": 0, "paused_until": 0.0}
+_STATE = {"installed": False, "thread": None, "failures": 0, "paused_until": 0.0, "running": False, "progress": [0, 0]}
 
 
 def target_day(now):
@@ -192,6 +192,8 @@ def run(runtime, now=None, sleep=time.sleep):
             return summary
         codes = [c for c in codes_with_bars(store, day) if c not in set(task["codes_done"])]
         summary.update(ran=True, day=key, todo=len(codes))
+        _STATE["running"] = True                                          # 0.5.7: shown on the market feed card (status())
+        _STATE["progress"] = [len(task["codes_done"]), len(task["codes_done"]) + len(codes)]
         if not task["codes_done"]:
             log(root, {"at": now.isoformat(), "task": "bars_completion", "event": "START", "day": key, "codes": len(codes)})
         for code in codes:
@@ -215,6 +217,7 @@ def run(runtime, now=None, sleep=time.sleep):
                 continue
             _STATE["failures"] = 0
             task["codes_done"].append(code)
+            _STATE["progress"][0] = len(task["codes_done"])
             task["requests"] += used
             task["missing_found"] += sum(v[0] for v in report.values())
             task["inserted"] += sum(v[1] for v in report.values())
@@ -233,7 +236,33 @@ def run(runtime, now=None, sleep=time.sleep):
         summary.update(done=bool(task["done"]), inserted=task["inserted"], missing_found=task["missing_found"])
     except Exception as exc:
         summary["error"] = (type(exc).__name__ + ":" + str(exc))[:200]
+    finally:
+        _STATE["running"] = False
     return summary
+
+
+def status(root, now=None):
+    """0.5.7 (owner 2026-11-27): one short line for the market feed card about the after-close data collection and storage.
+
+    {} outside the quiet window; else {"phase": running | done | paused | waiting, "label": <very short Korean text>}.
+    The text only says whether the collect-and-store work is running well, not what it does in detail.
+    """
+    try:
+        now = now or dt.datetime.now(KST)
+        day = target_day(now)
+        if day is None:
+            return {}
+        if _STATE["running"]:
+            done, total = _STATE["progress"]
+            return {"phase": "running", "label": "장마감 후 데이터 수집·저장 중" + (" %d/%d" % (done, total) if total else "")}
+        if time.monotonic() < _STATE["paused_until"]:
+            return {"phase": "paused", "label": "장마감 후 데이터 수집 잠시 중지 · 재시도 대기"}
+        task = (load_state(root).get(day.isoformat()) or {}).get("bars_completion") or {}
+        if task.get("done"):
+            return {"phase": "done", "label": "장마감 후 데이터 수집·저장 완료 · %d종목" % len(task.get("codes_done") or [])}
+        return {"phase": "waiting", "label": "장마감 후 데이터 수집 대기"}
+    except Exception:
+        return {}
 
 
 def _loop():

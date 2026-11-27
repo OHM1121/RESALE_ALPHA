@@ -455,3 +455,9 @@ a new instruction appears different. Cross-check original
 - **기존 기준:** after a fresh print reached the target the app created a marketable sell (best bid minus 3 ticks) filled on a fresh book. **충돌:** that behaviour is replaced.
 - **예상 결함:** fill price is the limit even on a gap; whole quantity by the price-reached rule (queue position not modelled); a phone that is off observes nothing.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-27: Resting take-profit recovery and supply-demand dashboard counts (owner, issues #173 and #174, version 0.5.7)
+- **Owner:** 하림지주 above the first target and still held (screenshot 20:36); asked why the recovery after the connection returns did not sell; asked that the 13 "trades" (split fills) be corrected.
+- **Decision:** a resting take-profit the exchange would have filled while the app was blind is recovered from the finished candles (official Kiwoom candles first); the dashboard counts a split-bought position once.
+- **기존 기준 / 충돌:** the existing recovery covers only D+16 overdue holdings; the earlier rule "no fill from historical candles" is kept for every marketable order and is relaxed only for the resting take-profit (a real resting order fills when the price trades through it).
+- **예상 결함:** the touch time is the candle end; the later app-evaluated exits are not replayed; quantity by the price-reached rule; not verified on a device.

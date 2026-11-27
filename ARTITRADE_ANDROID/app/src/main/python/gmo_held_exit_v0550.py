@@ -28,6 +28,7 @@ from pathlib import Path
 VERSION = "GMO_HELD_EXIT_V0550"
 WATCHDOG_PERIOD = 0.4
 TOUCH_GRACE = 5.0
+CATCH_UP_PERIOD = 30.0
 STATE_FILE = "gmo_held_lane_v0550.json"
 KST = dt.timezone(dt.timedelta(hours=9))
 
@@ -193,8 +194,13 @@ def write_state(runner):
 
 def _loop(runner):
     last_write = 0.0
+    last_catch_up = -1e9
     while not runner.stop_event.is_set():
         try:
+            if time.monotonic() - last_catch_up > CATCH_UP_PERIOD:
+                last_catch_up = time.monotonic()
+                import gmo_resting_tp_v0560 as resting
+                resting.catch_up(runner)                      # 0.5.7: a touch the app could not see (restart, feed gap, phone off) is read from the candles
             apply_touches(runner)
             offer_latest(runner)
             check_touches(runner)

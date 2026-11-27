@@ -154,3 +154,12 @@ Delivery: signed APK 0.5.5 (CI run 45989141533, source 3ed5a4e, SHA-256 615e1556
 Owner decision on #171 option C ("그렇게 해"): the first take-profit follows the real process (a limit sell resting at the target), not "see a print, then sell at bid - 3 ticks". Done: `gmo_resting_tp_v0560`, ingress touch record + watchdog application in `gmo_held_exit_v0550`, ui_tests/test_v0560_gmo_resting_tp.py. Not verified on a device.
 
 Delivery: signed APK 0.5.6 (CI run 45990938720, source 19aa2b3, SHA-256 c40b9d639d46d7ba1f55a95f7fae739ee82460d63bc114a099c92979c20a58bc), signer unchanged. Issue #172. CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+## #173 — 0.5.7 resting take-profit recovery from candles (2026-11-27)
+Owner screenshot (0.5.6, 20:36): 하림지주 at 10,920 above the 10,427 target but unsold; owner recalled a recovery that sells after the connection returns. That recovery exists only for D+16 overdue holdings; 0.5.6 was installed after the close (20:32) and its resting order uses prints the app saw. Done: `catch_up` from the stored candles (real-data run: 003380 1 sh @ 10,430 at 2026-11-25 15:20, stage PROTECTED). Not verified on a device.
+
+## #174 — 0.5.7 supply-demand dashboard counts (2026-11-27)
+The dashboard showed 13 buys for 2 positions (split fills counted as rows). Buys are counted per position and sells per order for the supply-demand strategy only. Java compiled by CI only; not verified on a device.
+
+## #175 — 0.5.7 after-close collection status on the market feed card (2026-11-27)
+Owner wanted to see, in one short teal line on the market status card, whether the after-close collect-and-store work is running. Added `status()` and the card line; display only; Java compiled by CI only; not verified on a device.
