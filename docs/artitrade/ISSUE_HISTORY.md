@@ -92,3 +92,5 @@ Findings for the owner's two screenshots (2026-11-27, app 0.3.6 export): stock M
 
 ## #159 — 0.4.4 stock bars on the combined KRX+NXT flow, stage 1 (2026-11-27)
 Owner decided to move stock MA / MarketTrend / reference-bar bars to the combined flow and not to add a return-to-entry exit to coin MA. The app cannot assemble the combined flow from stored data and has never requested the broker's combined chart, so stage 1 only measures it (own database file, no behaviour change). 99 % of the stock MA 5m evaluations on 11-25..27 were skipped for lack of a fresh tick: a separate feed cause.
+
+Delivery: signed APK 0.4.4 built by CI run 45934585009 from source 0919158 (SHA-256 4dde6258f87c4445ee58e109ba6a3d603ae68643ff4809a254ba5663bfa277a1, signer unchanged). CI_VERIFIED only; DEVICE_VERIFIED=false.

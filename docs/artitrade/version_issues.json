@@ -2229,7 +2229,7 @@
           "root": "INFERRED: the strategies read regular-session bars only; the combined chart request has never been issued by this app (UNVERIFIED)",
           "status": "SOURCE_FIXED",
           "fix_version": "0.4.4",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45934585009, source 0919158, apk sha256 4dde6258f87c4445ee58e109ba6a3d603ae68643ff4809a254ba5663bfa277a1)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_MA",
