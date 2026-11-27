@@ -193,3 +193,6 @@ CI run 46006068868 on the trusted branch, source d72ad93, signer unchanged; `0.6
 
 ## #181 — 0.6.2 BUY-time records of coin positions and the stock market score (2026-11-27)
 The morning ledger workbook had many blanks because trend and score were rebuilt afterwards from sparse observation tables, not read from records saved at the BUY. Device data: no coin sidecar carries `entry_ctx`; the stock market score is not recorded after 16:59 while 33 of 34 stock AT buys happened 16:00-19:59. The quiet-hours backfill now completes the coin sidecars from official Upbit candles and adds the market score (stored at the BUY, else the last recorded one with its age). On the real device export with real Upbit candles: 163 of 163 coin positions filled, every trend determined (before 67 unknown), 34 of 34 stock AT with a score (before 1). RR of coin MA / MarketTrend positions without a stored `rr_size` stays empty. Not verified on a device.
+
+### 0.6.2 delivered (2026-11-27)
+CI run 46008453728 on the trusted branch, source 1764278, signer unchanged; `0.6.2.apk` SHA-256 e2f4192db3ca32e193a16ea7c57d2c13e67d8dabff8735fd886eec315ea08ef4. #181: CI_VERIFIED, device UNVERIFIED. The ledger workbook was handed over again with the BUY-time columns filled from the device export (private file, not in the repo).

@@ -2697,7 +2697,7 @@
           "root": "CONFIRMED in the device database and the recorder code",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.2",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46008453728, source 1764278, apk sha256 e2f4192db3ca32e193a16ea7c57d2c13e67d8dabff8735fd886eec315ea08ef4)",
           "device": "UNVERIFIED",
           "nodes": ["STOCK_AT", "STOCK_MA", "STOCK_TREND", "STOCK_FEED", "COIN_GENERAL", "COIN_MA", "COIN_TREND"],
           "tests": [
