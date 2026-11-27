@@ -2716,7 +2716,7 @@
           "root": "CONFIRMED in the vendor code (recover_frame calls engine._enqueue_signals) and the device database",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.3",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46009467695, source 21f2259, apk sha256 2d3b2aaae4845d72a76795d7ba4cc3b0753fc4dd8d7ff9db5d48e6680cbf8dad)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_AT",

@@ -199,3 +199,6 @@ CI run 46008453728 on the trusted branch, source 1764278, signer unchanged; `0.6
 
 ## #182 — 0.6.3 no orders after the close, NXT evidence, requests ledger (2026-11-27)
 Owner: after the close nothing can be bought, so no pending order may be created; check whether the official daily candle includes NXT; is the integration done. The 0.6.1 call could queue day orders at night (real vendor function on the device copy: 18 -> 25 pending day orders); with the wrapper 18 -> 12 and none new. The official daily candle includes NXT volume. The integration is not complete (stage 1 only). Not verified on a device.
+
+### 0.6.3 delivered (2026-11-27)
+CI run 46009467695 on the trusted branch, source 21f2259, signer unchanged; `0.6.3.apk` SHA-256 2d3b2aaae4845d72a76795d7ba4cc3b0753fc4dd8d7ff9db5d48e6680cbf8dad. #182: CI_VERIFIED, device UNVERIFIED.
