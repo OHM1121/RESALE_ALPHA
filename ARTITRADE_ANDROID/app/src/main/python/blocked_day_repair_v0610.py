@@ -31,10 +31,11 @@ FIRST_STAMP = "200500"             # as-of time of the first snapshot on the tar
 SECOND_GAP = 10                    # seconds between the two as-of stamps: the vendor needs two requests >= 5 s apart
 BETWEEN_SNAPSHOTS = 6.0            # real seconds between the two requests of one stock
 PAUSE = 2.0                        # between stocks (the shared REST gate adds >= 0.4 s per request)
-BATCH = 10
-ROUND_REST = 600.0
+BATCH = 25
+ROUND_REST = 300.0
 ATTEMPTS = 3
-MAX_CODES = 120
+MAX_CODES = 600
+ALIGN_DAYS = 3                     # 0.6.5: every managed stock whose day bars of the last 3 trading days exist is aligned to the final official candle
 STATE_FILE = "blocked_day_repair_v0610.json"
 LOG_FILE = "blocked_day_repair_v0610.jsonl"
 KST = dt.timezone(dt.timedelta(hours=9))
@@ -114,8 +115,10 @@ def counts(store):
     return out
 
 
-def candidates(store):
-    """Stocks whose DAY verification is open: a BLOCKED daily reference audit of a pending order, or a PENDING daily revision case."""
+def candidates(store, day=None, align=True):
+    """Stocks whose DAY verification is open (a BLOCKED daily reference audit or a PENDING daily revision case), and, from 0.6.5, every managed stock with day bars of the last
+    ALIGN_DAYS trading days: the official daily candle is final after 20:00 and contains the NXT after-market, so each stored day bar is aligned to it once per day (the vendor function
+    changes only what its own two-snapshot rule confirms and never a bar tied to a signal or a position)."""
     found = {}
     with store.connect() as db:
         if base._has_table(db, "v19_higher_frame_audit14"):
@@ -124,7 +127,17 @@ def candidates(store):
         if base._has_table(db, "daily_ohlcv_revision_cases"):
             for row in db.execute("SELECT DISTINCT code FROM daily_ohlcv_revision_cases WHERE status='PENDING' AND frame='day'").fetchall():
                 found.setdefault(str(row[0]), set()).add("PENDING_CASE")
-    return {code: sorted(why) for code, why in sorted(found.items())}
+        if align and day is not None and base._has_table(db, "bars"):
+            days, probe = [], day
+            while len(days) < ALIGN_DAYS:
+                if base._is_trading_day(probe):
+                    days.append(probe)
+                probe -= dt.timedelta(days=1)
+            first = days[-1].strftime("%Y%m%d") + "000000"
+            for row in db.execute("SELECT DISTINCT code FROM bars WHERE frame='day' AND ts>=?", (first,)).fetchall():
+                found.setdefault(str(row[0]), set()).add("ALIGN_FINAL_CANDLE")
+    ordered = sorted(found.items(), key=lambda item: (item[1] == {"ALIGN_FINAL_CANDLE"}, item[0]))      # open cases first
+    return {code: sorted(why) for code, why in ordered}
 
 
 class NoOrderEngine:
@@ -195,7 +208,7 @@ def run(runtime, now=None, sleep=time.sleep, recover=_recover):
         if "before" not in task:
             task["before"] = counts(store)
             log(root, {"at": now.isoformat(timespec="seconds"), "event": "START", "day": key, "counts": task["before"]})
-        wanted = candidates(store)
+        wanted = candidates(store, day)
         todo = [c for c in wanted if c not in task["done"] and int(task["attempts"].get(c, 0)) < ATTEMPTS][:BATCH]
         summary.update(ran=True, day=key, todo=len(todo), open=len(wanted))
         _STATE["running"] = True
@@ -214,10 +227,12 @@ def run(runtime, now=None, sleep=time.sleep, recover=_recover):
                 _STATE["failures"] = 0
             except Exception as exc:
                 _STATE["failures"] += 1
-                task["attempts"][code] = int(task["attempts"].get(code, 0)) + 1
-                log(root, {"at": moment.isoformat(timespec="seconds"), "event": "ERROR", "code": code, "attempt": task["attempts"][code], "error": (type(exc).__name__ + ":" + str(exc))[:160]})
+                kind = base.note_error(exc)
+                if kind not in base.ENV_KINDS:                                      # 0.6.5: environment errors do not burn an attempt
+                    task["attempts"][code] = int(task["attempts"].get(code, 0)) + 1
+                log(root, {"at": moment.isoformat(timespec="seconds"), "event": "ERROR", "code": code, "kind": kind, "attempt": task["attempts"].get(code, 0), "error": (type(exc).__name__ + ":" + str(exc))[:160]})
                 if _STATE["failures"] >= 3:
-                    _STATE["paused_until"] = time.monotonic() + 1800.0
+                    _STATE["paused_until"] = time.monotonic() + base.PAUSE_SECONDS
                     _STATE["failures"] = 0
                     break
                 continue
@@ -236,7 +251,7 @@ def run(runtime, now=None, sleep=time.sleep, recover=_recover):
                 runner._ledger_changed()
             except Exception:
                 pass
-        wanted_now = candidates(store)
+        wanted_now = candidates(store, day)
         remaining = [c for c in wanted_now if c not in task["done"] and int(task["attempts"].get(c, 0)) < ATTEMPTS]
         if not remaining:
             task["finished"] = True

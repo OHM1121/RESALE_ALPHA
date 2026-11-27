@@ -509,3 +509,15 @@ a new instruction appears different. Cross-check original
 - **Decision:** done every 3 minutes from the KRX close to 20:00 on trading days, history only; the buy gate is not changed.
 - **기존 기준 / 충돌:** `display_snapshot` still shows no score after the close (stale KRX values must not look live); unchanged.
 - **예상 결함:** after the close the KOSPI / KOSDAQ part is frozen at the close, only the global indicators move; not device verified.
+
+## 2026-11-27: Stage 2 of the KRX + NXT integration, decided without asking (owner, issue #184, version 0.6.5)
+- **Owner:** after-hours 5m signals and orders until 20:00, one daily-bar basis, then strategies on combined bars; do it the best way and bring only the result; the after-hours market is 16:00-20:00.
+- **Decision:** (1) POST / PRE 5m and 60m signals made possible (the vendor's own documented look-back); (2) day bars aligned to the final official candle nightly; (3) the switch of the strategies to combined bars is NOT done: it needs the readiness report first (>= 90 % of managed stocks with 5 days of combined bars) because the labels differ for 2 of 11 stocks.
+- **기존 기준 / 충돌:** the vendor rule that regular-session 5m orders expire at 15:30 (FIX13) stays: the POST session has its own references; the vendor look-back of 100 / 48 bars for POST / PRE conflicted with its own comment and is replaced.
+- **예상 결함:** more POST / PRE paper buys; weaker 5m volume test inside a session; engine hash changed; not device verified.
+
+## 2026-11-27: After-hours score same as regular, closing auction, after-close work (owner, issue #184, version 0.6.5)
+- **Owner:** the after-hours score must be used for the reference-bar buy permission exactly like the regular session ("똑같이 써"); asked whether all stock strategies take part in the after-hours session; why the after-close work does not run (screenshots: waiting, then paused on another Wi-Fi); KRX continuous trading is 09:00-15:20, 15:20-15:30 is a single-price auction (frozen quote, no matching, price fixed at 15:30).
+- **Decision:** the after-hours score is published as the current score (fresh within 10 minutes); the engine does not match 15:20-15:30; not-allowed IP / network / request limit pause the after-close work 5 minutes with the reason and burn no attempt; the card explains the wait until 20:05.
+- **After-hours participation by strategy (vendor design, checked in code):** reference-bar (AT): entries and exits in NXT PRE and POST 16:00-20:00 (5m / 60m signals now possible); close-betting: buys only 15:10-15:20, exits also in POST for eligible stocks; MA stock: exits in POST for eligible stocks, new entries only in continuous regular time (explicit vendor rule); supply-demand: records the after-hours eligibility, matches only in continuous regular time; MarketTrend stock: regular session only. Not changed: whether MA, supply-demand and MarketTrend should also ENTER in the after-hours session is the owner's decision.
+- **예상 결함:** the fill at the closing single price is not modelled; more POST / PRE paper buys; not device verified.

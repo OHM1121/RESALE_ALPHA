@@ -28,6 +28,7 @@ CLOSED={2026:CLOSED_2026,2027:CLOSED_2027}
 SPECIAL_SESSIONS={"2026-11-19":(10*60,16*60+30)}
 START=9*60
 END=15*60+30
+CLOSING_AUCTION_MINUTES=10     # KRX closing single-price auction 15:20-15:30 (owner 2026-11-27): orders are accepted, the quote is frozen, nothing is matched until the single price at 15:30
 
 
 def status(at=None):
@@ -56,6 +57,8 @@ def status(at=None):
         return False,"개장 전"
     if minute>=end:
         return False,"정규장 종료"
+    if minute>=end-CLOSING_AUCTION_MINUTES:
+        return True,"종가 단일가"          # still the regular session (scores keep running), but no price movement and no matching: a silent feed is normal here
     return True,"장중"
 
 
@@ -63,14 +66,17 @@ def is_regular_open(at=None):
     return status(at)[0]
 
 
+AFTER_HOURS_START=16*60        # the engine's own POST session (d_v19_portfolio.live_session / extended_window): 16:00:00-20:00:00
 AFTER_HOURS_END=20*60          # the NXT after-market closes at 20:00
+PRE_START=8*60                 # the engine's NXT PRE session: 08:00:00-08:30:00
+PRE_END=8*60+30
 
 
 def after_hours_status(at=None):
-    """(open: bool, reason): a trading day, after the KRX regular session and before the NXT after-market close (20:00).
+    """(open: bool, reason): a trading day inside one of the engine's two extended sessions: NXT PRE 08:00-08:30 or KRX POST 16:00-20:00.
 
-    Used ONLY to keep recording the stock market score after the close (owner 2026-11-27: stock buys happen 16:00-20:00 and had no score).
-    It does not open any order path. The NXT closed day of 2026-11-19 (college admission exam) has no after-hours window.
+    Used ONLY to keep recording the stock market score outside the regular session (owner 2026-11-27: stock buys happen 16:00-20:00 and had no score; the owner also
+    corrected the window: the after-hours market is 16:00-20:00, nothing trades 15:30-16:00). It does not open any order path. The NXT closed day 2026-11-19 has no window.
     """
     if at is None:
         stamp=dt.datetime.now(KST)
@@ -87,12 +93,11 @@ def after_hours_status(at=None):
     if day=="2026-11-19":
         return False,"NXT 휴장"
     minute=stamp.hour*60+stamp.minute
-    end=SPECIAL_SESSIONS.get(day,(START,END))[1]
-    if minute<end:
-        return False,"정규장 또는 개장 전"
-    if minute>=AFTER_HOURS_END:
-        return False,"NXT 애프터마켓 종료"
-    return True,"시간외"
+    if PRE_START<=minute<PRE_END:
+        return True,"NXT 프리마켓"
+    if AFTER_HOURS_START<=minute<AFTER_HOURS_END:
+        return True,"시간외"
+    return False,"시간외 아님"
 
 
 def venue_bounds(at=None,venue="KRX"):
@@ -113,10 +118,25 @@ def venue_bounds(at=None,venue="KRX"):
     return None
 
 
+def in_closing_auction(at=None):
+    """True inside the KRX closing single-price auction (the last 10 minutes of the regular session of that date)."""
+    if at is None:now=dt.datetime.now(KST)
+    elif isinstance(at,dt.datetime):now=at.astimezone(KST) if at.tzinfo else at.replace(tzinfo=KST)
+    else:now=dt.datetime.fromtimestamp(float(at),KST)
+    if not is_regular_open(now):return False
+    end=venue_bounds(now,"KRX")[1]
+    m=now.hour*60+now.minute
+    return end-CLOSING_AUCTION_MINUTES<=m<end
+
+
 def in_regular_clock(at,venue="KRX"):
-    """Clock gate only. Never asserts market open or orders executable."""
+    """Clock gate only. Never asserts market open or orders executable.
+
+    0.6.5: for KRX this is the CONTINUOUS trading time (09:00-15:20): the closing auction (15:20-15:30) matches nothing until 15:30, so the paper matcher of the
+    supply-demand strategy and the gap detection do not work on its frozen quotes. NXT is unchanged."""
     v=venue_bounds(at,venue)
     if v is None:return False
     t=at.astimezone(KST) if at.tzinfo else at.replace(tzinfo=KST)
     m=t.hour*60+t.minute
-    return v[0]<=m<v[1]
+    end=v[1]-(CLOSING_AUCTION_MINUTES if venue=="KRX" else 0)
+    return v[0]<=m<end

@@ -2747,6 +2747,33 @@
                 "test_v0640_after_hours_score.py"
           ],
           "notes": "Between the KRX close and 20:00 on trading days the same score is computed every 3 minutes and written to score_events (meta.session AFTER_HOURS) by ScoreLedger.record_score_event_only (no band / cohort accounting); display_snapshot and the AT gate are unchanged; the BUY record treats a score younger than 10 minutes as the score of that moment. Whether the gate should use it is an owner decision."
+    },
+    {
+          "id": "STAGE2-0650-01",
+          "issue": 184,
+          "found": "owner request 2026-11-27: start stage 2 of the KRX+NXT integration without asking; after-hours session 16:00-20:00; after-hours score the same as regular; closing auction 15:20-15:30; why the after-close work does not run",
+          "category": "AFTER_HOURS_SIGNALS_IMPOSSIBLE",
+          "title": "KRX+NXT stage 2: after-hours 5m/60m signals were impossible; after-hours score used by the reference-bar buy permission; closing auction 15:20-15:30 no matching; after-close work no longer stalls on a wrong network",
+          "evidence": "device export: 22374 POST 5m frames of 273 stocks, 445 POST 60m, 1179 PRE 5m, only 3 POST signals in a week (all 30m); real-data replay of five POST sessions: 5m signals 0 -> 1/2/0/0/4, 60m 0 -> 0/0/1/2/0; owner screenshots: weekend work paused after a not-allowed IP; ui_tests/test_v0650_*.py, test_v0640_after_hours_score.py",
+          "root": "CONFIRMED in the vendor engine (d_v19_portfolio.on_extended_minute: the code contradicts its own comment) and in offhours_*: 30 minute pause on three environment errors that burnt the stock's attempts",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.5",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0650_post_session_lookback.py",
+                "test_v0650_combined_impact.py",
+                "test_v0650_closing_auction.py",
+                "test_v0650_offhours_resilience.py",
+                "test_v0610_blocked_day_repair.py",
+                "test_v0640_after_hours_score.py",
+                "test_v0580_rest_book_confirm.py"
+          ],
+          "notes": "Engine patch patch_v065_post_session_lookback.py after the chain v092..v010 (shipped engine sha 6368a9d75b1bc7e4ed9ebbd9df37cb289a361a6a9293f8bbfcb0b52e1b363a86): look-back 3 previous 5m / 2 previous 30m-60m bars of the same POST / PRE session; live_session(KRX) ends at 15:20 (closing auction, no matching). Overlays: krx_session_v041 (closing auction, after_hours_status = NXT PRE + POST 16:00-20:00); market_research_v033._after_hours_display publishes the recorded after-hours score so the reference-bar buy permission is judged as in the regular session; offhours_*: environment errors pause 5 minutes (was 30), reason shown, no attempt burnt, first start after 60 s, the card explains the wait; blocked_day_repair aligns every managed stock's day bars; combined_impact_v0650 report. Strategies are NOT switched to combined bars (2 of 11 trend labels differ)."
     }
   ],
   "known_normal": [

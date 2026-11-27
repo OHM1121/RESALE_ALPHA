@@ -65,6 +65,7 @@ class Base(unittest.TestCase):
 class Selection(Base):
     def test_only_open_day_verification_is_selected(self):
         self.assertEqual(rep.candidates(self.store), {"000001": ["BLOCKED_AUDIT", "PENDING_CASE"], "000004": ["BLOCKED_AUDIT"], "000005": ["PENDING_CASE"]})
+        self.assertEqual(rep.candidates(self.store, FRI, align=False), rep.candidates(self.store))
         # a verified day audit, an applied case, a review case (tied to a signal / position) and a blocked 30m audit are not touched
 
     def test_counts_before_and_after_are_read_only_numbers(self):
@@ -75,6 +76,35 @@ class Selection(Base):
         sqlite3.connect(empty.path).close()
         self.assertEqual(rep.candidates(empty), {})
         self.assertEqual(sum(rep.counts(empty).values()), 0)
+
+
+class Alignment(Base):
+    def add_day_bars(self, rows):
+        with self.store.connect() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS bars(code TEXT,market TEXT,frame TEXT,ts TEXT,open REAL,high REAL,low REAL,close REAL,volume REAL,source TEXT)")
+            db.executemany("INSERT INTO bars VALUES(?,?,?,?,1,1,1,1,1,'X')", rows)
+            db.commit()
+
+    def test_every_managed_stock_with_recent_day_bars_is_aligned_after_the_open_cases(self):
+        self.add_day_bars([("000009", "KOSPI", "day", "20261127000000"), ("000008", "KOSPI", "day", "20261126000000"), ("000001", "KOSPI", "day", "20261125000000"),
+                           ("000007", "KOSPI", "day", "20261120000000"), ("000006", "KOSPI", "5m", "20261127100000")])
+        got = rep.candidates(self.store, FRI)
+        self.assertEqual(list(got), ["000001", "000004", "000005", "000008", "000009"])        # open cases first, then the aligned stocks; the 3-trading-day window (11-25..11-27) only
+        self.assertEqual(got["000001"], ["ALIGN_FINAL_CANDLE", "BLOCKED_AUDIT", "PENDING_CASE"])
+        self.assertEqual(got["000009"], ["ALIGN_FINAL_CANDLE"])
+
+    def test_a_round_aligns_them_through_the_same_wrapper_path(self):
+        self.add_day_bars([("000009", "KOSPI", "day", "20261127000000")])
+        seen = []
+
+        def recover(store, engine, api, code, at_):
+            seen.append(code)
+            if code in ("000001", "000004", "000005"):
+                self.mark(code, "APPLIED")
+            return {"state": "VERIFIED_RESTORED", "new_pending": 0}
+        summary = rep.run(self.runtime(), now=at(SAT, 12), sleep=lambda s: None, recover=recover)
+        self.assertIn("000009", seen)
+        self.assertTrue(summary["finished"], summary)
 
 
 class Stamps(Base):

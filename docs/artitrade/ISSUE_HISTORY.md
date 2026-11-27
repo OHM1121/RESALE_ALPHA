@@ -208,3 +208,6 @@ Owner: compute and record the stock market score 16:00-20:00. Cause: the fetch l
 
 ### 0.6.4 delivered (2026-11-27)
 CI run 46010570990 on the trusted branch, source e7eb6bf, signer unchanged; `0.6.4.apk` SHA-256 4c1e29d61a9a3810643563ed1a55f40b504cd92dbf130b9ea5866d54c2279af7. #183: CI_VERIFIED, device UNVERIFIED.
+
+## #184 — 0.6.5 KRX + NXT integration stage 2 (2026-11-27)
+Owner: start stage 2 in the best way without asking; the after-hours market is 16:00-20:00 (correct: the engine's own session table says so; 0.6.4 had started at 15:30). Findings: after-hours 5m / 60m signals were structurally impossible (100 / 48 previous bars required in a session of 48 / 4); fixed with an engine patch (replay on the device data: 0 -> 1-4 five-minute signals a day). Day bars are aligned to the final combined official candle nightly (no orders). The strategies are not yet switched to combined bars: the new report shows the trend label differs for 2 of 11 stocks and 38-42 % of the combined candles lie outside regular hours. Not verified on a device.

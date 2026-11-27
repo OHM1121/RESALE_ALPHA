@@ -31,12 +31,39 @@ STOP_HHMM = "0745"           # before the NXT preparation (07:50)
 MAX_REQUESTS = 1500
 PAUSE = 0.4
 PAUSE_AFTER_FAILURES = 3
-PAUSE_SECONDS = 1800.0
+PAUSE_SECONDS = 300.0             # 0.6.5: 5 minutes (was 30): a wrong network / not-allowed IP must not stop the work for half an hour after it is fixed
 STATE_FILE = "offhours_v0530.json"
 LOG_FILE = "offhours_v0530.jsonl"
 KST = dt.timezone(dt.timedelta(hours=9))
 
-_STATE = {"installed": False, "thread": None, "failures": 0, "paused_until": 0.0, "running": False, "progress": [0, 0]}
+_STATE = {"installed": False, "thread": None, "failures": 0, "paused_until": 0.0, "running": False, "progress": [0, 0], "last_error": ""}
+ENV_KINDS = ("AUTH", "RATE", "NETWORK")
+HINTS = {"AUTH": "키움 허용 IP·인증 확인", "RATE": "요청 제한", "NETWORK": "네트워크 연결", "OTHER": "처리 오류"}
+
+
+def classify_error(exc):
+    """AUTH (not-allowed IP, token), RATE (request limit), NETWORK (no route, timeout) or OTHER. The first three are caused by the environment, not by the stock asked for."""
+    text = type(exc).__name__ + ":" + str(exc)
+    if any(w in text for w in ("허용", "8050", "8005", "8030", "401", "403", "인증", "토큰")):
+        return "AUTH"
+    if "429" in text or "제한" in text or "RateLimit" in text:
+        return "RATE"
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError)) or any(w in text for w in ("Connection", "Timeout", "timed out", "Name or service", "SSL", "Max retries")):
+        return "NETWORK"
+    return "OTHER"
+
+
+def note_error(exc):
+    """Remember what went wrong (for the card text) and return the kind. A failure of kind AUTH / RATE / NETWORK is not counted against the stock."""
+    kind = classify_error(exc)
+    _STATE["last_error"] = kind
+    return kind
+
+
+def paused_text(prefix, until):
+    minutes = max(1, int((until - time.monotonic() + 59) // 60))
+    hint = HINTS.get(_STATE.get("last_error"), "")
+    return "%s 잠시 중지 · %s%d분 뒤 재시도" % (prefix, (hint + " · ") if hint else "", minutes)
 
 
 def _is_trading_day(day):
@@ -242,7 +269,8 @@ def run(runtime, now=None, sleep=time.sleep):
                 report, used = complete_code(store, api, code, day, moment, sleep=sleep, budget=MAX_REQUESTS - task["requests"])
             except Exception as exc:
                 _STATE["failures"] += 1
-                log(root, {"at": moment.isoformat(), "task": "bars_completion", "event": "ERROR", "code": code, "error": (type(exc).__name__ + ":" + str(exc))[:200]})
+                kind = note_error(exc)
+                log(root, {"at": moment.isoformat(), "task": "bars_completion", "event": "ERROR", "code": code, "kind": kind, "error": (type(exc).__name__ + ":" + str(exc))[:200]})
                 if _STATE["failures"] >= PAUSE_AFTER_FAILURES:
                     _STATE["paused_until"] = time.monotonic() + PAUSE_SECONDS
                     _STATE["failures"] = 0
@@ -284,6 +312,9 @@ def status(root, now=None):
         now = now or dt.datetime.now(KST)
         day = target_day(now)
         if day is None:
+            hhmm = now.strftime("%H%M")
+            if _is_trading_day(now.date()) and "1530" <= hhmm < START_HHMM:
+                return {"phase": "waiting", "label": "장마감 후 작업 대기 · 시간외 거래가 끝나는 20:05에 시작"}
             return {}
         try:
             import offhours_weekend_v0590 as weekend
@@ -303,7 +334,7 @@ def status(root, now=None):
             done, total = _STATE["progress"]
             return {"phase": "running", "label": "장마감 후 데이터 수집·저장 중" + (" %d/%d" % (done, total) if total else "")}
         if time.monotonic() < _STATE["paused_until"]:
-            return {"phase": "paused", "label": "장마감 후 데이터 수집 잠시 중지 · 재시도 대기"}
+            return {"phase": "paused", "label": paused_text("장마감 후 데이터 수집", _STATE["paused_until"])}
         task = (load_state(root).get(day.isoformat()) or {}).get("bars_completion") or {}
         if audit and task.get("done"):
             return audit
@@ -315,7 +346,7 @@ def status(root, now=None):
 
 
 def _loop():
-    time.sleep(300.0)
+    time.sleep(60.0)               # 0.6.5: was 300 s; the app is restarted often and the work must not wait five minutes after every restart
     while True:
         try:
             if in_window(dt.datetime.now(KST)):
@@ -327,6 +358,8 @@ def _loop():
                 combined.run(_runtime())                  # 0.6.0: the combined (KRX + NXT) candles of the managed stocks, separate store
                 import entry_ctx_backfill_v0600 as backfill
                 backfill.run(_runtime())                  # 0.6.0: BUY-time MA / trend context of the stock positions, from the stored bars
+                import combined_impact_v0650 as impact
+                impact.run(_runtime())                    # 0.6.5: what would change if the strategies decided on the combined (KRX + NXT) candles; local reads only
                 import entry_ctx_backfill_v0620 as coin_backfill
                 coin_backfill.run(_runtime())             # 0.6.2: BUY-time MA / trend / market score of the COIN positions, from the official Upbit candles
                 import blocked_day_repair_v0610 as day_repair

@@ -257,12 +257,14 @@ def run_audit(runtime, now=None, sleep=time.sleep):
                 _STATE["failures"] = 0
             except Exception as exc:
                 _STATE["failures"] += 1
-                task["attempts"][code] = int(task["attempts"].get(code, 0)) + 1       # asked again in a later round, at most PASSES times in all
-                if task["attempts"][code] >= PASSES and code not in task["unresolved"]:
-                    task["unresolved"].append(code)
-                log(root, {"at": moment.isoformat(), "event": "ERROR", "code": code, "attempt": task["attempts"][code], "error": (type(exc).__name__ + ":" + str(exc))[:160]})
+                kind = base.note_error(exc)
+                if kind not in base.ENV_KINDS:                                      # 0.6.5: a not-allowed IP / no network / request limit is not the stock's fault: no attempt is burnt
+                    task["attempts"][code] = int(task["attempts"].get(code, 0)) + 1       # asked again in a later round, at most PASSES times in all
+                    if task["attempts"][code] >= PASSES and code not in task["unresolved"]:
+                        task["unresolved"].append(code)
+                log(root, {"at": moment.isoformat(), "event": "ERROR", "code": code, "kind": kind, "attempt": task["attempts"].get(code, 0), "error": (type(exc).__name__ + ":" + str(exc))[:160]})
                 if _STATE["failures"] >= 3:
-                    _STATE["paused_until"] = time.monotonic() + 1800.0
+                    _STATE["paused_until"] = time.monotonic() + base.PAUSE_SECONDS
                     _STATE["failures"] = 0
                     break
                 continue
@@ -303,7 +305,7 @@ def status_line(root, day, now=None):
             done, total = _STATE["progress"]
             return {"phase": "running", "label": "주말 데이터 점검·보충 중" + (" %d/%d" % (done, total) if total else "")}
         if time.monotonic() < _STATE["paused_until"]:
-            return {"phase": "paused", "label": "주말 데이터 점검 잠시 중지 · 재시도 대기"}
+            return {"phase": "paused", "label": base.paused_text("주말 데이터 점검", _STATE["paused_until"])}
         task = (load_state(root).get(day.isoformat()) or {})
         if task.get("finished"):
             return {"phase": "done", "label": "주말 데이터 점검·보충 완료 · %d개 보충" % int(task.get("filled", 0))}

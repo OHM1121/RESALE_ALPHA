@@ -180,12 +180,14 @@ def run(runtime, now=None, sleep=time.sleep):
                 _STATE["failures"] = 0
             except Exception as exc:
                 _STATE["failures"] += 1
-                task["attempts"][code] = int(task["attempts"].get(code, 0)) + 1
-                if task["attempts"][code] >= ATTEMPTS and code not in task["unresolved"]:
-                    task["unresolved"].append(code)
-                log(root, {"at": moment.isoformat(timespec="seconds"), "event": "ERROR", "code": code, "attempt": task["attempts"][code], "error": (type(exc).__name__ + ":" + str(exc))[:160]})
+                kind = base.note_error(exc)
+                if kind not in base.ENV_KINDS:                                      # 0.6.5: environment errors do not burn an attempt
+                    task["attempts"][code] = int(task["attempts"].get(code, 0)) + 1
+                    if task["attempts"][code] >= ATTEMPTS and code not in task["unresolved"]:
+                        task["unresolved"].append(code)
+                log(root, {"at": moment.isoformat(timespec="seconds"), "event": "ERROR", "code": code, "kind": kind, "attempt": task["attempts"].get(code, 0), "error": (type(exc).__name__ + ":" + str(exc))[:160]})
                 if _STATE["failures"] >= 3:
-                    _STATE["paused_until"] = time.monotonic() + 1800.0
+                    _STATE["paused_until"] = time.monotonic() + base.PAUSE_SECONDS
                     _STATE["failures"] = 0
                     break
                 continue

@@ -200,8 +200,8 @@ class TrendQuietStock(unittest.TestCase):
 
     def test_a_fresh_quote_and_book_need_no_inquiry(self):
         co, runner = self.coordinator(quote_age=0.5)
-        rbc.inject_book(runner, CODE, rbc.parse_book(reply(), CODE, dt.datetime.now(KST)))
-        self.assertEqual(rbc.trend_pre_step(co, "stock", dt.datetime.now(KST)), 0)
+        rbc.inject_book(runner, CODE, rbc.parse_book(reply(), CODE, NOW))                  # 0.6.5: the fixture's own moment, not the real clock (the test failed between 00:00 and 10:30 KST)
+        self.assertEqual(rbc.trend_pre_step(co, "stock", NOW), 0)
         self.assertEqual(runner.api.calls, [])
 
 

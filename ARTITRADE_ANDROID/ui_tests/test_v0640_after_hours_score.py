@@ -20,17 +20,34 @@ def at(y, mo, d, h, mi=0):
 
 
 class Window(unittest.TestCase):
-    def test_trading_day_between_the_close_and_2000(self):
+    def test_the_after_hours_session_is_16_to_20_and_the_pre_session_08_to_0830(self):
         self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 15, 29))[0])      # still the regular session
-        self.assertTrue(krx.after_hours_status(at(2026, 11, 27, 15, 30))[0])
+        self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 15, 30))[0])      # nothing trades 15:30-16:00 (the engine's own session table)
+        self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 15, 59))[0])
+        self.assertTrue(krx.after_hours_status(at(2026, 11, 27, 16, 0))[0])
         self.assertTrue(krx.after_hours_status(at(2026, 11, 27, 19, 59))[0])
         self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 20, 0))[0])       # the NXT after-market is closed
-        self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 8, 0))[0])
+        self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 7, 59))[0])
+        self.assertTrue(krx.after_hours_status(at(2026, 11, 27, 8, 0))[0])         # NXT PRE
+        self.assertTrue(krx.after_hours_status(at(2026, 11, 27, 8, 29))[0])
+        self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 8, 30))[0])
+        self.assertFalse(krx.after_hours_status(at(2026, 11, 27, 9, 0))[0])
+
+    def test_the_window_matches_the_engines_own_session_table(self):
+        try:
+            import d_v19_portfolio as pf
+        except Exception:
+            self.skipTest("vendor engine not on the path")
+        for hour, minute in ((7, 59), (8, 0), (8, 29), (8, 30), (15, 59), (16, 0), (19, 59), (20, 0)):
+            moment = at(2026, 11, 27, hour, minute)
+            engine = pf.live_session(moment, "NXT") or (pf.live_session(moment, "KRX") and not krx.is_regular_open(moment))
+            self.assertEqual(bool(engine), krx.after_hours_status(moment)[0], (hour, minute))
 
     def test_weekend_holiday_and_the_nxt_closed_day_have_no_window(self):
         self.assertFalse(krx.after_hours_status(at(2026, 11, 28, 17))[0])           # Saturday
         self.assertFalse(krx.after_hours_status(at(2026, 12, 25, 17))[0])           # exchange holiday
         self.assertFalse(krx.after_hours_status(at(2026, 11, 19, 17))[0])           # college-exam day: KRX until 16:30, NXT closed
+        self.assertFalse(krx.after_hours_status(at(2026, 11, 19, 8, 10))[0])
         self.assertFalse(krx.after_hours_status(at(2028, 3, 6, 17))[0])             # calendar of that year unknown: not assumed open
 
     def test_the_regular_session_status_is_unchanged(self):
@@ -103,7 +120,7 @@ class Recorder(unittest.TestCase):
 
     def test_outside_the_window_nothing_is_fetched(self):
         calls = []
-        for moment in (at(2026, 11, 27, 12), at(2026, 11, 27, 20, 1), at(2026, 11, 28, 17)):
+        for moment in (at(2026, 11, 27, 12), at(2026, 11, 27, 15, 45), at(2026, 11, 27, 20, 1), at(2026, 11, 28, 17)):
             self.assertFalse(self.run_once(lambda: calls.append(1) or {"score": 1.0}, moment))
         self.assertEqual((calls, self.events()), ([], []))
 
@@ -126,11 +143,64 @@ class Recorder(unittest.TestCase):
 
 
 class Gate(unittest.TestCase):
-    def test_the_displayed_snapshot_and_so_the_buy_gate_stay_closed_after_the_close(self):
-        stamp = at(2026, 11, 27, 16, 5).timestamp()
-        out = m.display_snapshot("stock", {"score": -40.0, "asof": stamp - 60}, now=stamp)
+    """0.6.5 (owner: "똑같이 써"): the after-hours score is the published score, so the buy permission works as in the regular session."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.ledger = m.ScoreLedger(Path(self.tmp.name) / "market.sqlite3")
+        self.addCleanup(self.ledger.close)
+        self.worker = types.SimpleNamespace(AFTER_HOURS_MAX_AGE=600)
+
+    def shown(self, moment, record_at=None, score=None):
+        if score is not None:
+            self.ledger.record_score_event_only("stock", score, int((record_at or moment).timestamp()), {"session": "AFTER_HOURS"})
+        stamp = moment.timestamp()
+        closed = m.display_snapshot("stock", self.ledger.snapshot("stock"), now=stamp)
+        return m._MarketWorker._after_hours_display(self.worker, self.ledger, closed, moment)
+
+    def test_a_fresh_after_hours_score_is_published_as_the_current_score(self):
+        moment = at(2026, 11, 27, 16, 5)
+        out = self.shown(moment, moment - dt.timedelta(minutes=2), 23.5)
+        self.assertEqual((out["score"], out["stale"], out["session"]), (23.5, False, "AFTER_HOURS"))
+
+    def test_the_buy_permission_reads_it_like_a_regular_score(self):
+        import at_market_score_gate_v107 as gate
+        moment = at(2026, 11, 27, 16, 5)
+        out = self.shown(moment, moment - dt.timedelta(minutes=2), 23.5)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            key = str(gate._score_worker_root(root, "stock"))
+            m._WORKERS[key] = types.SimpleNamespace(snapshot=lambda: {"stock": out})
+            try:
+                ev = gate.score_evidence(root, "stock")
+                self.assertEqual((ev["positive"], ev["negative"], ev["score"], ev["basis"]), (True, False, 23.5, "SIGNED_MARKET_SCORE_V033"))
+                m._WORKERS[key] = types.SimpleNamespace(snapshot=lambda: {"stock": dict(out, score=-12.0)})
+                ev = gate.score_evidence(root, "stock")
+                self.assertEqual((ev["positive"], ev["negative"]), (False, True))
+            finally:
+                m._WORKERS.pop(key, None)
+
+    def test_no_fresh_score_keeps_the_closed_display(self):
+        moment = at(2026, 11, 27, 16, 30)
+        out = self.shown(moment, moment - dt.timedelta(minutes=30), 23.5)       # recorded 30 minutes ago: not current
         self.assertIsNone(out["score"])
         self.assertFalse(out["market_open"])
+
+    def test_outside_the_after_hours_sessions_nothing_changes(self):
+        for moment in (at(2026, 11, 27, 15, 45), at(2026, 11, 27, 20, 5), at(2026, 11, 28, 17)):
+            out = self.shown(moment, moment - dt.timedelta(minutes=1), 23.5)
+            self.assertIsNone(out["score"], moment)
+
+    def test_the_regular_session_is_unchanged(self):
+        stamp = at(2026, 11, 27, 10, 0).timestamp()
+        out = m.display_snapshot("stock", {"score": 5.0, "asof": stamp - 30}, now=stamp)
+        self.assertEqual(out["score"], 5.0)
+
+    def test_both_loops_publish_through_the_same_helper(self):
+        import inspect
+        self.assertIn("_after_hours_display", inspect.getsource(m._MarketWorker._fetch_loop))
+        self.assertIn("_after_hours_display", inspect.getsource(m._MarketWorker._loop))
 
 
 class BuyRecord(unittest.TestCase):

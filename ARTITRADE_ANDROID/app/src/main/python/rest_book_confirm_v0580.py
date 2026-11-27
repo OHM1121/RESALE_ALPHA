@@ -72,6 +72,7 @@ def parse_book(data, code, now):
 
 def confirm(runner, code, last_price, token, now=None, sleep=time.sleep):
     """One inquiry per (code, token). Returns the snapshot dict (valid and consistent with last_price) or None."""
+    given = now is not None                                    # 0.6.5: an injected decision moment is also the moment the book time is compared with (the clock must not leak into a test or a replay)
     now = now or dt.datetime.now(KST)
     stats = _STATE["stats"]
     with _STATE["lock"]:
@@ -95,7 +96,7 @@ def confirm(runner, code, last_price, token, now=None, sleep=time.sleep):
         try:
             api = getattr(runner, "api", None)
             data = api.post(REST_API, REST_PATH, {"stk_cd": code}) if api is not None else None
-            snap = parse_book(data, code, dt.datetime.now(KST))
+            snap = parse_book(data, code, now if given else dt.datetime.now(KST))
         except Exception:
             stats["errors"] += 1
             snap = None
@@ -220,7 +221,7 @@ def trend_pre_step(co, market, now):
         with runner.engine.book._lock:
             book = runner.engine.book._items.get((code, "KRX"))
         quote_fresh = time.monotonic() - raw[1] <= 3.0
-        book_fresh = bool(book) and (dt.datetime.now(KST) - book[3]).total_seconds() <= 3.0
+        book_fresh = bool(book) and (now - book[3]).total_seconds() <= 3.0
         if quote_fresh and book_fresh:
             continue
         finish = _end_clock(now, "stock", frames[0])

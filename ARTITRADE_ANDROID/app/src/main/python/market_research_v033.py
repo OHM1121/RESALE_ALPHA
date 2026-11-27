@@ -839,11 +839,34 @@ class _MarketWorker:
         thread.start()
 
     AFTER_HOURS_INTERVAL=180
+    AFTER_HOURS_MAX_AGE=600
+
+    def _after_hours_display(self,ledger,snapshot,now=None):
+        """0.6.5 (owner 2026-11-27 "똑같이 써"): inside the after-hours sessions (NXT PRE 08:00-08:30, POST 16:00-20:00) the stock score recorded within the last 10 minutes IS the current score
+        (published like a regular-session score: not stale), so the reference-bar buy permission (fresh strictly positive score, or an UP regime) works exactly as in the regular session.
+        Without a fresh recorded score (fetch failing) the closed display stays: no old value is presented as current."""
+        try:
+            from krx_session_v041 import after_hours_status
+            opened,_reason=after_hours_status(now)
+            if not opened:
+                return snapshot
+            stamp=int(time.time() if now is None else (now.timestamp() if hasattr(now,"timestamp") else float(now)))
+            fresh=ledger.score_at("stock",stamp,max_age_seconds=self.AFTER_HOURS_MAX_AGE)
+            score=finite(fresh)
+            if score is None:
+                return snapshot
+            out=dict(snapshot or {})
+            out.update(score=score,active_band=market_band(score),stale=False,session="AFTER_HOURS",
+                       status="시간외 점수 (3분마다 갱신)")
+            out.pop("poll_error",None)
+            return out
+        except Exception:
+            return snapshot
 
     def _record_after_hours(self,ledger,fetch,now=None):
-        """0.6.4 (owner 2026-11-27): 16:00-20:00 stock buys (NXT after-market) had no market score. Between the KRX close and the NXT close the SAME score is computed
-        every 3 minutes and recorded in `score_events` (meta.session = AFTER_HOURS). It is history only: the displayed snapshot, the freshness gate and the band / cohort
-        accounting are not touched, so no buy permission changes."""
+        """0.6.4 (owner 2026-11-27): 16:00-20:00 stock buys (NXT after-market) had no market score. In the after-hours sessions (NXT PRE 08:00-08:30, POST 16:00-20:00) the SAME score is
+        computed every 3 minutes and recorded in `score_events` (meta.session = AFTER_HOURS); the band / cohort accounting is not touched. 0.6.5: the published score uses it
+        (`_after_hours_display`), so the buy permission of the reference-bar strategy is judged exactly as in the regular session."""
         try:
             from krx_session_v041 import after_hours_status
             opened,_reason=after_hours_status(now)
@@ -876,10 +899,10 @@ class _MarketWorker:
                 opened,reason=krx_status()
                 if not opened:
                     ledger.close_market("stock")
-                    with self._cache_lock:
-                        self._cache["stock"]=display_snapshot(
-                            "stock",ledger.snapshot("stock"))
                     self._record_after_hours(ledger,fetch)
+                    with self._cache_lock:
+                        self._cache["stock"]=self._after_hours_display(ledger,
+                            display_snapshot("stock",ledger.snapshot("stock")))
                     self._stop.wait(30)
                     continue
             try:
@@ -939,8 +962,8 @@ class _MarketWorker:
                             if not is_regular_open():
                                 ledger.close_market(market)
                                 with self._cache_lock:
-                                    self._cache[market]=display_snapshot(
-                                        market,ledger.snapshot(market))
+                                    self._cache[market]=self._after_hours_display(ledger,
+                                        display_snapshot(market,ledger.snapshot(market)))
                                 continue
                         now=int(time.time())
                         fresh=(None if self._last_failure.get(market) else
