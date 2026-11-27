@@ -2664,6 +2664,17 @@ _install_gmo_d_universe_v0320(_core)
 from krx_depth_fallback_v0360 import install as _install_krx_depth_fallback_v0360
 _install_krx_depth_fallback_v0360()
 
+# 0.4.0 (#155): measurement only - what the stock ledger gate holder does during a >= 5 s hold, scheduling lag and
+# queue state at every Kiwoom disconnect. No behaviour change; a failure here never stops the app.
+try:
+    from stock_feed_diag_v0400 import install as _install_stock_feed_diag_v0400
+    _install_stock_feed_diag_v0400()
+except Exception as _diag_exc:
+    try:
+        _core.__dict__.setdefault('_v0400_diag_error',repr(_diag_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

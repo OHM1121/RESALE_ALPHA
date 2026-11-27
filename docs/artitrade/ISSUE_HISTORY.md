@@ -69,3 +69,6 @@ Root cause: all GMO positions have id -1, the integrated list key used the id. F
 
 ## #154 — 0.3.9 coin feed outage and saturated book worker (2026-11-27)
 Outage 182 min: external network, automatic recovery, no app defect found. Book worker saturated (BOOK_STALE 98k, wait 3.7-22.6 s): cause unknown, measurement added in 0.3.9. SOURCE_FIXED (measurement); CI pending; device UNVERIFIED.
+
+## #155 — 0.4.0 stock WebSocket drops and ledger gate long holds (2026-11-27)
+211 disconnects in 8 days; ledger gate held up to 210 s; external DNS failures shared with the coin feed. Cause of the long holds unknown: measurement added (holder stack, scheduling lag, disconnect diagnostics). SOURCE_FIXED (measurement); CI pending; device UNVERIFIED.

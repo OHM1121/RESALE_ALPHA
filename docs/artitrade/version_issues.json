@@ -2126,6 +2126,30 @@
         "test_v0230_ws_book_coalesce.py"
       ],
       "notes": "Measurement only (per-frame ms in BACKLOG rows + UPBIT_WS_BOOK_PROFILE_V0370 cProfile window). No behaviour change. A priority path for held markets is a candidate fix after the profile is read."
+    },
+    {
+      "id": "SF-0400-01",
+      "issue": 155,
+      "found": "owner report + stock error export 2026-11-27 10:27 (app 0.3.6)",
+      "category": "STOCK_WS_DROPS_AND_LEDGER_GATE_LONG_HOLDS",
+      "title": "Kiwoom stock WebSocket drops every few minutes; ledger gate held up to 210 s (measurement)",
+      "evidence": "211 disconnect episodes in 8 days (median uptime 260 s): no-close 105, keepalive 1011 89, DNS/ConnectionError 56, queue backpressure 16; TICK_PIPELINE_METRICS gate hold >=5 s in 400 of 2,317 rows (max 210 s), holders fix14-higher-frame-rest 117 / HISTORY_INDICATORS 78; TICK_PROCESS_DELAY median 3.7 s; UNHANDLED_EXCEPTION 903 (frame repair ConnectionError)",
+      "root": "External network/DNS failures CONFIRMED (shared with the coin feed); app-side gate saturation CONFIRMED; link between long holds and the drops INFERRED (24 of 89 keepalive drops follow a hold >=10 s); what the holder does is UNKNOWN",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.4.0",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_AT",
+        "STOCK_GMO",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "STOCK_FEED"
+      ],
+      "tests": [
+        "test_v0400_stock_feed_diag.py"
+      ],
+      "notes": "Measurement only: stack of the gate holder at holds >=5 s (stock/db_gate_long_hold_v0400.jsonl), scheduling-lag probe and DIAG suffix on disconnect health details. No behaviour change."
     }
   ],
   "known_normal": [

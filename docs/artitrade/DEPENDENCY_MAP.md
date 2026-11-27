@@ -552,3 +552,6 @@ Based on 0.3.7 (versionCode 171). `UnifiedVisualActivity.integratedHoldings()` d
 
 ## 0.3.9 — book worker measurement (issue #154)
 Based on 0.3.8 (versionCode 172). `ws_book_coalesce_v0230.dispatch` times `previous_dispatch` per frame (BACKLOG rows show `proc_avg_ms`/`proc_max_ms`) and runs a 25-frame cProfile window at most every 15 minutes while the lag is above 3 s (`UPBIT_WS_BOOK_PROFILE_V0370`). The held-exit gate (`coin_held_depth_v014`, 3 s) and every strategy are unchanged. SOURCE_FIXED (measurement); CI and device not verified yet. The 2026-11-26 21:22-11-27 00:24 coin feed outage was external (Upbit REST timeouts, then VPN connection errors) and recovered by itself.
+
+## 0.4.0 — stock feed measurement (issue #155)
+Based on 0.3.9 (versionCode 173). `android_runtime_v078` installs `stock_feed_diag_v0400` after the KRX depth fallback (a failure there never stops the app): it registers every `d_storage.TradePriorityRLock`, appends a `DIAG` suffix (gate holder, feed/tick queue, overflows, scheduling lag) to `d_live.LivePaperRunner._health` details of a disconnect, and a watchdog writes the stack of a gate holder that passes 5 s to `stock/db_gate_long_hold_v0400.jsonl`. No trading rule, order or price changes. SOURCE_FIXED (measurement); CI and device not verified yet.

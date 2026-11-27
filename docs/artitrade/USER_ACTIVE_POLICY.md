@@ -379,3 +379,6 @@ a new instruction appears different. Cross-check original
 - **MarketTrend wording:** inside MarketTrend the word "기준봉" is "전환봉" (history, holdings, pending, explanations).
 - **Ledger:** per position id the RR at the BUY and MA 5/10/20/60/120 slope and above/below (GMO excluded) are stored in the existing per-position sidecar (`entry_ctx`).
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-27 — NEW LEGACY workbook sheet "11.27" (owner process rule)
+- A new sheet "11.27" was added to `NEW LEGACY11.18_rev1.xlsx` (copy of the latest sheet; additions red, deletions blue, earlier red/blue turned black). It records: reference-bar hard stop = BUY price - bar range (replaces "buy point at the bar low, bar range below"), MarketTrend wording "전환봉", and the per-position RR + MA slope ledger note. Rules implemented earlier from chat only (0.3.4/0.3.5 reward/risk sizing, GEN return-to-entry arm at +1.5 %) are NOT in the workbook; owner to confirm whether to add them.

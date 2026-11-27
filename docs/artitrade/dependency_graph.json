@@ -1765,7 +1765,9 @@
         "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
         "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java",
         "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java",
-        "ARTITRADE_ANDROID/app/src/main/python/ws_book_coalesce_v0230.py"
+        "ARTITRADE_ANDROID/app/src/main/python/ws_book_coalesce_v0230.py",
+        "ARTITRADE_ANDROID/app/src/main/python/stock_feed_diag_v0400.py",
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py"
       ],
       "depends_on": [
         "STOCK_AT",
@@ -1778,14 +1780,16 @@
       "issues": [
         152,
         153,
-        154
+        154,
+        155
       ],
-      "contract": "0.3.7 (#152): reference-bar hard stop = BUY price - (bar high - low) via new_legacy_1118_policy.reference_stop (targets(kind='reference'), rr_size gen_coin/at_stock); old at_hard_stop kept for history. ma_v061_stock_runtime tick hook no longer touches candidates carrying ma_v067_kind (they expire through ma_v067_stock_runtime 15 s). market_trend_runtime_v043._closed_series accepts the previous session's last bar only for the first bar of a session; market_trend_1118_runtime._signal_blocked records every qualified closed-bar signal dropped before the BUY (quote, trade change, wallet refusal, exception). MarketTrend UI text 'recording bar' is 전환봉 (HistorySelection, UnifiedVisualActivity.trendWord). entry_context_v0370 stores entry_ctx = RR (ratio/gain/loss/stop_source) + MA 5/10/20/60/120 (ma, slope_pct to the previous completed bar, entry above/below) from completed bars before the BUY inside the existing per-position sidecar written by rr_size_v0340.record (GEN plan, MA state, Trend payload); missing bars are stored as null with a reason. GMO untouched. No order, fill or price is created. 0.3.8 (#153): UnifiedVisualActivity.integratedHoldings() key = market/strategy/tf/id/(position_uid or code) because every GMO position has the vendor placeholder id -1 (the second GMO holding was dropped). 0.3.9 (#154): ws_book_coalesce_v0230 adds measurement only: BACKLOG rows carry proc_avg_ms/proc_max_ms and a 25-frame cProfile window (top 8 functions, at most every 15 min while lagging) is written as UPBIT_WS_BOOK_PROFILE_V0370; dispatch arguments/result unchanged.",
+      "contract": "0.3.7 (#152): reference-bar hard stop = BUY price - (bar high - low) via new_legacy_1118_policy.reference_stop (targets(kind='reference'), rr_size gen_coin/at_stock); old at_hard_stop kept for history. ma_v061_stock_runtime tick hook no longer touches candidates carrying ma_v067_kind (they expire through ma_v067_stock_runtime 15 s). market_trend_runtime_v043._closed_series accepts the previous session's last bar only for the first bar of a session; market_trend_1118_runtime._signal_blocked records every qualified closed-bar signal dropped before the BUY (quote, trade change, wallet refusal, exception). MarketTrend UI text 'recording bar' is 전환봉 (HistorySelection, UnifiedVisualActivity.trendWord). entry_context_v0370 stores entry_ctx = RR (ratio/gain/loss/stop_source) + MA 5/10/20/60/120 (ma, slope_pct to the previous completed bar, entry above/below) from completed bars before the BUY inside the existing per-position sidecar written by rr_size_v0340.record (GEN plan, MA state, Trend payload); missing bars are stored as null with a reason. GMO untouched. No order, fill or price is created. 0.3.8 (#153): UnifiedVisualActivity.integratedHoldings() key = market/strategy/tf/id/(position_uid or code) because every GMO position has the vendor placeholder id -1 (the second GMO holding was dropped). 0.3.9 (#154): ws_book_coalesce_v0230 adds measurement only: BACKLOG rows carry proc_avg_ms/proc_max_ms and a 25-frame cProfile window (top 8 functions, at most every 15 min while lagging) is written as UPBIT_WS_BOOK_PROFILE_V0370; dispatch arguments/result unchanged. 0.4.0 (#155): stock_feed_diag_v0400 (installed from android_runtime_v078, failure-tolerant) wraps d_storage.TradePriorityRLock.__init__ (registers gates), d_live.LivePaperRunner._health (DIAG suffix on 'disconnected' only) and runs a watchdog + scheduling-lag probe; a gate hold >= 5 s writes the holder's stack to stock/db_gate_long_hold_v0400.jsonl (<= 100 lines). Measurement only.",
       "tests": [
         "test_v0370_reference_stop_stock_buy_fixes_entry_context.py",
         "test_v0340_rr_size_and_gen_rte.py",
         "test_new_legacy_1118_workbook.py",
-        "test_v0230_ws_book_coalesce.py"
+        "test_v0230_ws_book_coalesce.py",
+        "test_v0400_stock_feed_diag.py"
       ]
     }
   ],
