@@ -2336,6 +2336,28 @@
                 "test_v0470_gmo_d1_end_to_end.py"
           ],
           "notes": "Fills are still sized by the displayed size, not the print volume (a volume cap would starve thin names). Thin symbols reach the budget more slowly when prints outnumber book updates."
+    },
+    {
+          "id": "GMO-0490-01",
+          "issue": 164,
+          "found": "owner decision 2026-11-27: allow a PAPER fill from displayed liquidity when the quantity is still there at execution time",
+          "category": "GMO_PAPER_FILL_REQUIRED_A_TRADE_PRINT",
+          "title": "Supply-demand PAPER BUY needed a 0B print even when two fresh 0D snapshots showed the ask within the limit",
+          "evidence": "ui_tests/test_v0490_book_confirmed_fill.py (real GMOService): a quiet symbol with a 5-share ask on two snapshots 10 s apart never filled without a print; the 11-26 Doosan Bobcat replay is not changed by the rule",
+          "root": "DESIGN: Engine.paper_match requires a fresh 0B print as evidence (policy 'no fabricated fill'); owner changed the policy for this case",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.4.9",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO"
+          ],
+          "tests": [
+                "test_v0490_book_confirmed_fill.py",
+                "test_v0480_book_liquidity_once.py",
+                "test_v0470_gmo_d1_end_to_end.py"
+          ],
+          "notes": "Policy conflict recorded in USER_ACTIVE_POLICY. Gaps 1-60 s are assumptions (logged per fill for tuning). Phantom quantity can still be overstated; the 11-26 case is not solved."
     }
   ],
   "known_normal": [

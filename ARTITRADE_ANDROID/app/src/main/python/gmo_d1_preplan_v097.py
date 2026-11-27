@@ -22,6 +22,10 @@ NXT_PREMARKET_CLOSED=frozenset(("2026-11-19",))
 BOOK_TRIGGER_STATUSES=("PREPARED","WAIT_FRESH_KRX_0B_OR_0D","WAIT_OFFICIAL_OPEN_OR_D_CLOSE_TOUCH",
                        "WAIT_BELOW_ALLOWED_CEILING","WAIT_VERIFIED_D_CLOSE","WAITING_SLOT")
 ACTIVE=("NEW","OPEN")
+# 0.4.9 (#164, owner decision 2026-11-27): a PAPER BUY may be filled from two consecutive fresh 0D snapshots (no 0B print needed).
+# The gaps are assumptions (order latency lower bound / how long the first snapshot stays relevant) and are logged per fill.
+BOOK_CONFIRM_MIN_GAP=1.0
+BOOK_CONFIRM_MAX_GAP=60.0
 
 def _now():
     return dt.datetime.now(KST)
@@ -605,6 +609,75 @@ class Preplanner:
             return True
         return False
 
+    def confirm_book(self,code,placed=False,at=None):
+        """0.4.9 (#164, owner 2026-11-27): fill the PAPER D+1 BUY from the displayed ask when it is STILL THERE on a later snapshot.
+
+        A displayed quantity can be phantom (cancelled before an order reaches the exchange). The order is placed from one fresh 0D
+        snapshot (B1); the NEXT fresh valid snapshot (B2, 1-60 s later) is the "still there at execution time" check: both asks must be
+        within the order limit and the shares filled are min(B1 size left, B2 size, remaining, affordable) at the higher of the two asks
+        (+ the paper slippage, capped at the limit). The shares are consumed from B2 (0.4.8 rule) and B2 then becomes the new reference.
+        PAPER only (never real mode), regular KRX session, the D+1 window guard of the engine, labelled PAPER_BOOK_CONFIRMED_FILL_V0490
+        and NOT a broker fill. The print path (`paper_match` with a fresh 0B) is unchanged and still fills as before.
+        """
+        at=at or self.clock()
+        if os.environ.get("ARTITRADE_REAL_MODE")=="1" or not self._entry_authorized() or not _valid_phase("KRX",at):return False
+        service=self.service;engine=service.engine
+        with service._lock:
+            book=getattr(service,"last_book",{}).get(code)
+        key=self._key(code,"KRX",at)
+        if not book or book[4].tzinfo is None or not -.5<=(at-book[4]).total_seconds()<=3:
+            with self.lock:                                               # a book message came, but no fresh valid book exists:
+                plan=self.plans.get(key)                                  # the quantity shown before is gone
+                if plan is not None:plan["_book_ref"]=None
+            return False
+        ask,bid,ask_qty,_bq=map(int,book[:4]);seen=book[4]
+        if ask<=0 or bid<=0 or ask<bid or ask_qty<=0:return False
+        with self.lock:
+            plan=self.plans.get(key)
+            if plan is None or not plan.get("order_id"):return False
+            order=engine.orders.get(plan["order_id"])
+            if order is None or order.side!="BUY" or order.state not in ACTIVE or int(order.filled)>=int(order.requested):return False
+            if not str(order.purpose).startswith("D+1_V097_KRX_"):return False
+            first=plan.get("_book_ref")
+            limit=int(order.limit)
+            if first is not None and seen<=first[2]:
+                # A book message arrived but no newer valid snapshot exists: the shown quantity vanished (zero / crossed / invalid).
+                plan["_book_ref"]=None
+                return False
+            plan["_book_ref"]=(ask,ask_qty,seen) if ask<=limit else None
+            if placed or first is None or ask>limit:return False         # this snapshot only becomes the reference
+            ask1,qty1,seen1=first
+            gap=(seen-seen1).total_seconds()
+            if not BOOK_CONFIRM_MIN_GAP<=gap<=BOOK_CONFIRM_MAX_GAP:return False
+            if ask1>limit:return False
+            taken=getattr(engine,"_v0480_taken",None) or {}
+            rec=taken.get(code)
+            left1=int(qty1)-(int(rec[1]) if rec and rec[0]==seen1 else 0)
+            qty=min(left1,ask_qty)
+            if qty<=0:return False
+            if not engine._d1_buy_window_ok(order,seen.isoformat()):return False
+            price=min(limit,up_tick(max(ask1,ask)*(1+engine.cfg.paper_buy_slip)))
+            qty=min(qty,int(order.requested)-int(order.filled),math.floor(engine.cash/(price*(1+engine.cfg.buy_fee))))
+            if qty<=0:return False
+            with engine._lock:
+                before=int(order.filled)
+                engine.fill(order.id,int(qty),float(price),seen.isoformat())
+                gained=int(order.filled)-before
+                if gained<=0:return False
+                engine._log(code,"PAPER_BOOK_CONFIRMED_FILL_V0490",
+                    f"BUY {gained}@{price}; ask {ask1}->{ask} size {qty1}->{ask_qty} gap {gap:.1f}s; NOT BROKER FILL",seen.isoformat())
+                mark=getattr(engine,"_v0480_take",None)
+                if mark is not None:mark(code,seen,gained)
+                plan["_book_ref"]=(ask,max(0,ask_qty-gained),seen)
+                plan["filled_qty"]=int(order.filled)
+                plan["fill_basis_v0490"]="BOOK_CONFIRMED_TWO_SNAPSHOTS"
+                plan["status"]="PARTIALLY_FILLED" if order.state!="FILLED" else "FILLED"
+                pos=engine.positions.get(code)
+                if order.state=="FILLED" and pos is not None and pos.cost_basis>=float(engine.cfg.seed)/max(1,int(engine.cfg.max_positions))-limit:
+                    plan["status"]="COMPLETED"
+        service._persist(True)
+        return True
+
     def snapshot(self):
         with self.lock:
             return [dict(p) for p in self.plans.values()]
@@ -650,6 +723,14 @@ def consume_book_once(svc,eng):
         rec[1]+=max(0,after[0]-before[0])
         rec[2]+=max(0,after[1]-before[1])
         return out
+    def take(code,epoch,shares):
+        rec=taken.get(code)
+        if rec is None or rec[0]!=epoch:
+            rec=[epoch,0,0]
+            taken[code]=rec
+        rec[1]+=max(0,int(shares))
+    eng._v0480_taken=taken
+    eng._v0480_take=take
     eng.paper_match=paper_match_once
     eng._v0480_original=original
     eng._v0480_book_once=True
@@ -822,7 +903,8 @@ def install(core):
                 code="".join(ch for ch in raw if ch.isdigit())[:6]
                 if code not in waiting or now-book_state["codes"].get(code,0.0)<1.0:continue
                 book_state["codes"][code]=now
-                planner.on_book(code)
+                placed=planner.on_book(code)
+                planner.confirm_book(code,placed=bool(placed))
         except Exception:
             pass
         return out

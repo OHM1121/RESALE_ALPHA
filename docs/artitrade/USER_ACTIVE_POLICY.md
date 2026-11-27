@@ -400,3 +400,12 @@ a new instruction appears different. Cross-check original
 - **Now active (stage 1, 0.4.4):** read-only measurement `stock_all_venue_bars_v0440` (own database file; no strategy, ledger or `bars` change). **Stage 2 (switching the strategies) is NOT active**; it follows the first export that answers: does the broker accept the combined code, how far back does it go, how do the combined candles differ from the regular-session ones, would the MA alignment have been seen. Open for stage 2: how an NXT-hour signal is ordered (the app buys on KRX only).
 - **Separate root cause (not changed by this entry):** 99 % of the stock MA 5m evaluations on 11-25..27 were skipped because no fresh tick existed in the 10-2 s window; this is the feed (issue #157), not the series.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-27: Supply-demand PAPER BUY may fill from two consecutive fresh 0D snapshots (owner, issue #164, version 0.4.9)
+- **Owner decision:** "호가가 허수이더라도 살 수 있도록 허용하되, 주문체결 시점에도 그 물량이 그대로 있으면 매수로 바꿔라."
+- **기존 기준설정일 / 기존 기준:** since the GMO engine (PROJECTGMO V1.0) and the 0.0.x policy: a PAPER fill needs a fresh 0D book AND an actual fresh 0B print (`Engine.paper_match`); a book alone, a stale or missing quote is "not grounds to fabricate a fill".
+- **새 지시와 충돌하는 부분:** a fill without a trade print, from displayed liquidity only.
+- **예상 결함:** displayed size can be phantom (cancelled before an order reaches the exchange) and a snapshot is 1-3 s old, so paper fills can be overstated; thin symbols send a book only when it changes, so "still there" cannot be told from a feed gap; the 1-60 s confirmation gaps are assumptions; the 11-26 case (snapshots minutes apart, ask hovering at the ceiling) is not solved by it.
+- **Now active (0.4.9):** `Preplanner.confirm_book` (gmo_d1_preplan_v097): D+1 KRX PAPER BUY only, regular session, never in real mode; the order is placed from fresh snapshot B1 (0.4.6); a later fresh valid snapshot B2 (1-60 s after B1) with the ask still within the order limit fills min(B1 size left, B2 size, remaining, affordable) at the higher ask plus paper slippage (capped at the limit); the shares are consumed from B2 (0.4.8). Logged `PAPER_BOOK_CONFIRMED_FILL_V0490` (NOT BROKER FILL) with the asks, sizes and gap. The print path is unchanged. Sells and every other strategy are unchanged.
+- **Verification:** SOURCE_FIXED + local simulation; CI and device not verified.
+
