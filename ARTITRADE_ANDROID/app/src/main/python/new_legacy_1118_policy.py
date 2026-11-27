@@ -61,6 +61,16 @@ def at_hard_stop(ref_low,ref_high):
         raise ValueError("REFERENCE_BAR_HIGH_LOW_UNVERIFIED")
     return max(0.0,lo-(hi-lo))
 
+def reference_stop(entry,ref_low,ref_high):
+    """0.3.7 (owner 2026-11-26): reference-bar hard stop = BUY price minus the reference bar's
+    high-low range. Replaces the old `ref low - range` stop (at_hard_stop, kept for history)."""
+    e=valid_num(entry)
+    at_hard_stop(ref_low,ref_high)  # same validation: raises ValueError when the bar is unverified
+    lo,hi=valid_num(ref_low),valid_num(ref_high)
+    if e is None or e<=0:
+        raise ValueError("UNVERIFIED_ENTRY_OR_FRAME")
+    return max(0.0,e-(hi-lo))
+
 def targets(entry,frame,kind="reference",ref_low=None,ref_high=None):
     base=valid_num(entry)
     if base is None or base<=0 or frame not in FRAMES:
@@ -71,7 +81,7 @@ def targets(entry,frame,kind="reference",ref_low=None,ref_high=None):
         raise ValueError("TREND_5M_RETIRED")
     t1=base*(1+FIRST_GAIN[frame])
     t2=t1*(1+SECOND_GAIN[frame])
-    stop=(at_hard_stop(ref_low,ref_high) if kind=="reference"
+    stop=(reference_stop(base,ref_low,ref_high) if kind=="reference"
           else base*.85)
     return {"policy":POLICY,"kind":kind,"frame":frame,"entry":base,
             "stop":stop,"first":t1,"second":t2,

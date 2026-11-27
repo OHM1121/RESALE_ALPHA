@@ -30,6 +30,7 @@ final class HistorySelection {
     static String strategyTag(String strategy,String tf){
         if("gmo".equals(strategy))return "수급매매";
         if("close".equals(strategy))return "종가베팅";
+        if("trend".equals(strategy))return "마켓트렌드 · "+frameLabel(tf);
         String prefix="ma".equals(strategy)?"MA · ":"기준봉 · ";
         return prefix+frameLabel(tf);
     }

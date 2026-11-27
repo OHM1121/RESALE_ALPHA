@@ -412,8 +412,13 @@ def install():
                 with self.lock,m._connect(self.db) as c:
                     rows=c.execute("""SELECT id,features FROM candidates
                         WHERE code=? AND status='PENDING' AND
-                        features LIKE '%"ma_v061_kind": "TURNPOINT"%'""",
+                        features LIKE '%"ma_v061_kind": "TURNPOINT"%' AND
+                        features NOT LIKE '%"ma_v067_kind"%'""",
                         (code,)).fetchall()
+                    # 0.3.7: a v067 (REVERSAL_UP) candidate carries its own 15 s window
+                    # (ma_v067_submit_deadline, expired by ma_v067_stock_runtime). It has no
+                    # ma_v061_open_at/deadline_at keys, so this legacy check used to retire
+                    # every one of them as MA_V061_BAD_OPEN_WINDOW before the native buy.
                     for row in rows:
                         try:
                             audit=json.loads(row['features'])

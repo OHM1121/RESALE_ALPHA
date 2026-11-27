@@ -371,3 +371,11 @@ a new instruction appears different. Cross-check original
 - **Not decided:** the owner's "fill up to the maximum holding amount whenever the price is below the buy reference" is NOT implemented as a new rule; with the book read correctly the existing top-up logic (AT: every later print, GMO: the open order's remaining quantity) can fill, and the next export will show whether that is enough.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+
+## 2026-11-26 — reference-bar stop, MarketTrend wording, entry context (owner, issue #152)
+- **Owner instruction:** "기준봉의 경우 현재 하드스탑을 없애고, 기준봉의 고저 차이를 그대로 역으로 이용해서 하드 스톱 자리를 계산 … 매수가격 기준으로" and, for the 1:1 reward/risk rule, option B (analyse first, ban only if the result is bad).
+- **Superseded:** the 2026-11-18 reference hard stop `bar low - (high - low)` (kept as `at_hard_stop` for history). **New:** stop = BUY price - (bar high - low), never below 0. Stock and coin reference (AT/GEN) only; MA / Trend / GMO stops unchanged. The 0.3.4/0.3.5 rule (buy amount reduced when gain:loss <= 1:0.5) stays and now uses the new stop.
+- **Not implemented:** "buy forbidden below 1:1" - waits for the analysis of win rate and profit by strategy and frame.
+- **MarketTrend wording:** inside MarketTrend the word "기준봉" is "전환봉" (history, holdings, pending, explanations).
+- **Ledger:** per position id the RR at the BUY and MA 5/10/20/60/120 slope and above/below (GMO excluded) are stored in the existing per-position sidecar (`entry_ctx`).
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.

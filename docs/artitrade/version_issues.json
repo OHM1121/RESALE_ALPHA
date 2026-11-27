@@ -1835,8 +1835,7 @@
         "test_r010_close_window_coverage.py"
       ],
       "notes": "Coalescing queue (newest row per symbol/type); vendor 3 s gates and rules unchanged. Latest NEW LEGACY rules verified wired for stock (MA/Trend stops, first close above MIDDLE, score sizing, AT score gate)."
-    }
-,
+    },
     {
       "id": "NF-0280-01",
       "issue": 143,
@@ -1861,8 +1860,7 @@
         "test_v0270_premarket_exit_and_close_feed.py"
       ],
       "notes": "PREEMPT_MAX_PCT = SEVERE_PCT (-3.0); preemptive_plan and preemptive_step skip nights with change > -3.0 %. Stop-distance test, 07:55 decision, 08:00 NXT / KRX-open venue, buy block and GMO ceiling unchanged."
-    }
-,
+    },
     {
       "id": "LG-0290-01",
       "issue": 144,
@@ -1893,8 +1891,7 @@
         "test_v002_eight_virtual_paper_end_to_end.py"
       ],
       "notes": "Supersedes the 2026-11-21 score <= -10 half-limit rule (0.2.0). INFERRED: regime definition (KOSPI/BTC daily MA20/MA60 + 5-bar slope), unverified regime -> SIDEWAYS table, +20 % = close-to-close. Unknown score never reduces/blocks. CW and GMO do not use the score (unchanged). test_v002 caught v19_orders lacking ref_ts (resolved via signals) before commit."
-    }
-,
+    },
     {
       "id": "RG-0300-01",
       "issue": 145,
@@ -1924,8 +1921,7 @@
         "test_v017_stock_preload_progress.py"
       ],
       "notes": "No network: stock native bars table / Trend history, coin scanner closed bars (current time only) / Trend history. <65 bars -> SIDEWAYS table (INFERRED). Market score stays market-wide. Index fetch worker removed."
-    }
-,
+    },
     {
       "id": "RT-0310-01",
       "issue": 146,
@@ -1948,8 +1944,7 @@
         "EngineHangPolicyTest.java"
       ],
       "notes": "Supervisor thread: dump at 90 s, process restart at 240 s (guards: engine up >= 5 min, continuous ticks, <= 3/h, >= 10 min apart). The next export shows the blocked frames (fault stage engine_hang_dump_v0310). Also fixed my own 0.3.0 hazards: Coordinator.lock only tried in BUY paths, sqlite connections closed. Daily backup unknown_endpoint = outdated external MSERVER, throttled, not changed. Book-consumer lag (3-22 s) measured, not changed."
-    }
-,
+    },
     {
       "id": "GM-0320-01",
       "issue": 147,
@@ -1971,8 +1966,7 @@
         "test_v0320_gmo_d_universe_and_pending_price.py"
       ],
       "notes": "Replay on the private backup: the 3 symbols blocked at 11-23 10:00, 0 of 253 Friday symbols blocked. Late candidates from D's own close ranking (app off on D) are kept. Also fixed the date-dependent test_nl1120_2 assertion (fixed time inside the hold window)."
-    }
-,
+    },
     {
       "id": "UI-0330-01",
       "issue": 148,
@@ -1994,8 +1988,7 @@
         "UiRecordPacingTest.java"
       ],
       "notes": "Stock pending not bought: GMO 3 = price not reached (EWY -6.64%); AT 9 = 5 not reached, 4 touched but blocked by policy gates (negative market score, 09:00-09:30 severe-EWY block) and FIX14 gap guard caused by the freezes (fixed here). GMO 0D_KRX_ASK_DEPTH_ZERO (226x, suspected FID 41 vs 6044 mismatch) reported only, unverified, unchanged. Daily backup unknown_endpoint = outdated external MSERVER, unchanged. DNS failures need owner device checks (battery unrestricted, background data, private DNS); network environment now recorded."
-    }
-,
+    },
     {
       "id": "ST-0340-01",
       "issue": 149,
@@ -2018,8 +2011,7 @@
         "test_v0340_rr_size_and_gen_rte.py"
       ],
       "notes": "Interpretation INFERRED: 손익비 1:0.5 이하 = gain to first target / loss to stop <= 0.5. Replay (model): MA -42.7k -> -36.9k; GEN RTE change alone +0.8k, plus size rule -6.2k (reported). Stock strategies not changed."
-    }
-,
+    },
     {
       "id": "ST-0350-01",
       "issue": 150,
@@ -2042,8 +2034,7 @@
         "test_v0340_rr_size_and_gen_rte.py"
       ],
       "notes": "No stock profit/loss effect is measurable (no fills after the reset). 0.3.4 shrank coin MA/Trend on the -15 % hard stop alone when the lookback was unavailable; that unverified reduction is removed."
-    }
-,
+    },
     {
       "id": "ST-0360-01",
       "issue": 151,
@@ -2067,6 +2058,32 @@
         "test_v0360_trend_day_depth_night_heartbeat.py"
       ],
       "notes": "The reading of FID 61/71 as the KRX best quantity is INFERRED from the item semantics and from at_close_runner already using 61 first; depth_fid_samples_v0360.jsonl will prove or refute it. Lock holder of the coin ledger lock not identified. Owner's 'fill to the maximum holding whenever below the buy reference' not implemented as a new rule (decision pending the next export)."
+    },
+    {
+      "id": "ST-0370-01",
+      "issue": 152,
+      "found": "owner instruction 2026-11-26 + stock error export 2026-11-26 11:50 (app 0.3.6)",
+      "category": "STOCK_MA_HOOK_REFERENCE_STOP_TREND_SILENT_DROP_ENTRY_CONTEXT",
+      "title": "Stock MA retired every v067 candidate (MA_V061_BAD_OPEN_WINDOW); reference stop = BUY price - bar range; MarketTrend wording; stock Trend silent drops; per-position RR and MA slopes",
+      "evidence": "ma_paper.sqlite3 candidates 132/132 status MA_V061_BAD_OPEN_WINDOW, executions 0, features lack ma_v061_open_at/deadline_at; stock trend: events 0 stock BUY, decisions OPERATIONAL_WATCH_HISTORY_MISSING 4800, offline replay of the stored 30m/60m stock bars gives ~88 qualified signals since 11-19 of which 69 fall on 11-24 (market score +32..+81, DOWN/SIDEWAYS regime -> owner rule blocks) and ~16 were allowed without any BUY or recorded reason",
+      "root": "CONFIRMED_IN_CODE_AND_DATA for the stock MA hook, overnight gap and the unrecorded drop; stock MarketTrend remaining blocker NOT identified (reasons are now recorded)",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.7",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "STOCK_AT",
+        "COIN_GENERAL",
+        "ENTRY_CONTEXT_V0370",
+        "COIN_MA"
+      ],
+      "tests": [
+        "test_v0370_reference_stop_stock_buy_fixes_entry_context.py"
+      ],
+      "notes": "Reference stop changes sizing (rr_size) because the stop distance changes. 1:1 buy ban NOT implemented (owner chose option B: analyse first). entry_ctx exists only where rr_size is evaluated (GEN, MA REVERSAL_UP, Trend, AT); GMO excluded."
     }
   ],
   "known_normal": [

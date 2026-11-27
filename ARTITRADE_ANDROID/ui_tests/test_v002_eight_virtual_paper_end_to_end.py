@@ -93,7 +93,9 @@ class EightRealPaperWallets(unittest.TestCase):
             self.assertEqual([x['side'] for x in rows],['BUY','SELL','SELL','SELL'])
             # 0.3.4 (#149): the fixture's reference candle puts the hard stop 30.8 % under the 2,600 limit
             # (gain/loss = 3 % / 30.8 % = 0.0975 <= 0.5) -> buy x 0.195: 76 shares -> 14 (5+5+4).
-            self.assertEqual([x['qty'] for x in rows[1:]],[5,5,4])
+            # 0.3.7 (owner 2026-11-26): the stop is now BUY price - bar range = 2,600 - 700 = 1,900 (-26.9 %),
+            # gain/loss = 3 % / 26.9 % = 0.1115 -> buy x 0.223: 76 shares -> 17 (6+6+5).
+            self.assertEqual([x['qty'] for x in rows[1:]],[6,6,5])
             self.assertEqual(sum(x['qty'] for x in rows[1:]),initial)
             self.assertEqual(c.execute('SELECT qty FROM positions WHERE id=?',(pid,)).fetchone()[0],0)
 

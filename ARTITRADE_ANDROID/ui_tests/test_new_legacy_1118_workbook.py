@@ -32,7 +32,8 @@ class WorkbookNovember18(unittest.TestCase):
                 result=p.targets(1000,frame,"reference",ref_low=900,ref_high=950)
                 self.assertAlmostEqual(result["first"],1000*first[frame])
                 self.assertAlmostEqual(result["second"],1000*first[frame]*second[frame])
-                self.assertAlmostEqual(result["stop"],850)
+                # 0.3.7 (owner 2026-11-26): stop = BUY price - bar range = 1000 - 50
+                self.assertAlmostEqual(result["stop"],950)
                 self.assertAlmostEqual(result["trail"],trails[frame])
                 self.assertEqual([x["fraction_of_original"] for x in result["sell_intents"]],[.30,.35])
                 self.assertTrue(all(x["is_real_broker_order"] is False
@@ -143,7 +144,7 @@ class WorkbookNovember18(unittest.TestCase):
             x=ref._read(c,7)
             self.assertEqual(x["sell_intents"][0]["quantity"],30.)
             self.assertEqual(x["sell_intents"][1]["quantity"],35.)
-            self.assertEqual(x["stop"],85.)
+            self.assertEqual(x["stop"],95.)   # 0.3.7: 100 - (95 - 90)
             self.assertTrue(all(x["state"]=="ARMED" for x in x["sell_intents"]))
             c.execute("CREATE TABLE candidates(id INTEGER PRIMARY KEY,tf TEXT,market TEXT,ref_at TEXT,features TEXT)")
             c.execute("INSERT INTO candidates(tf,market,ref_at,features) VALUES(?,?,?,?)",
@@ -158,7 +159,7 @@ class WorkbookNovember18(unittest.TestCase):
             self.assertEqual(y["sell_intents"][0]["quantity"],60.)
             self.assertEqual(y["sell_intents"][1]["quantity"],70.)
             self.assertEqual(y["deadline"],coin["hold_until"])
-            self.assertEqual(y["stop"],85.)
+            self.assertEqual(y["stop"],95.)   # 0.3.7: 100 - (95 - 90)
     def test_stock_exit_refuses_to_advance_without_real_sqlite_sell_execution(self):
         import sqlite3
         import reference_1118_runtime as ref

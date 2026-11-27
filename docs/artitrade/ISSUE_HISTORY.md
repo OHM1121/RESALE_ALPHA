@@ -60,3 +60,6 @@ Raw device SQL and JSON exports are **not** committed to this public repository.
 - Original signer SHA256 `37967ed67598f4137045db4a31b16e156993f6c7c88c9d93d0905b27d5f723c6` unchanged.
 - Regression for GMO/CW/AT/Trend/MA cross-coupling and 8 PAPER engines, Java compile, original vendor source SHA, 29-node dependency graph: CI verified.
 - **Still OPEN:** #58, #59, #60, #71, #73; testing on the actual Samsung phone is required. Do not reinitialize existing PAPER wallet or enable LIVE.
+
+## #152 — 0.3.7 stock MA hook, reference stop, MarketTrend wording, entry context (2026-11-26)
+Root cause: legacy `ma_v061` tick hook retired all v067 stock candidates (132/132 `MA_V061_BAD_OPEN_WINDOW`); stock MarketTrend had an overnight-gap history rejection and silent drops. Owner changes: reference stop = BUY price - bar range, "전환봉" wording, per-position RR + MA slopes. Status SOURCE_FIXED; CI pending; device UNVERIFIED. Open: remaining stock MarketTrend blocker (needs the next export), 1:1 analysis (needs the ledger analysis), NEW LEGACY workbook sheet.

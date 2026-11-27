@@ -136,3 +136,9 @@ rule headings disappear.
 - Applies to every kind of session: coding, analysis, build and delivery, scheduled or automatically resumed sessions
   and sessions in other repositories started for this owner (for example the claude-auto repository).
 
+
+
+## R13 — Error-export folder cleanup, unattended resume, all parts used (2026-11-26)
+- **Error exports (owner):** when a new error-history export is downloaded, in the folder the owner downloaded it to, delete the older exports (everything extracted before the newest one that was just downloaded). If the owner already deleted them by hand, do nothing. A cloud session cannot see the owner's PC; this is done only when a computer folder is attached or by the PC script, and the report says which. Never delete anything but earlier ARTITRADE error-history files.
+- **Unattended resume (owner):** when the token / usage limit resets, start or continue the unfinished work without being told.
+- **Complete data (owner):** every part of an export is used when reviewing the existing buy strategies, including the part that holds the post-exit-high database (PART_007), even when an error analysis does not need it.

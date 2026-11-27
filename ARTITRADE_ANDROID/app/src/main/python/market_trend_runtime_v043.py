@@ -627,7 +627,17 @@ class Coordinator:
             # only for crypto; for stock the historical broker stamp is checked.
             if market=="coin":return []
             if (bar_end-closed[-1]["end"]).total_seconds()>3*mt.FRAME_SECS[frame]:
-                return []
+                # 0.3.7: until today's FIRST bar completes the newest completed bar is the previous
+                # session's last one (overnight/weekend gap). That gap is legitimate; treating it as
+                # missing history blinded the stock watch for the first bar of every session
+                # (OPERATIONAL_WATCH_HISTORY_MISSING). Only that exact case is accepted.
+                last=closed[-1]["end"]
+                first_of_day=(bar_end.hour,bar_end.minute)==(
+                    (9,0) if frame=="day" else
+                    divmod(9*60+mt.FRAME_SECS[frame]//60,60))
+                if not (frame!="day" and first_of_day and last.date()<bar_end.date()
+                        and (last.hour,last.minute)>=(15,20)):
+                    return []
         return closed
 
     def _process_closed(self,market):

@@ -47,8 +47,8 @@ android {
         }
         unified {
             dimension 'market'
-            versionCode 169
-            versionName '0.3.6'
+            versionCode 170
+            versionName '0.3.7'
             applicationId 'com.artitrade.unified.s21dex'
             buildConfigField 'String', 'MARKET', '"both"'
             resValue 'string', 'app_name', 'ARTITRADE'

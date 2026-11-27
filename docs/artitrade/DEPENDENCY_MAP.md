@@ -537,3 +537,12 @@ Status: SOURCE_FIXED; local regression (17 new tests; engine-dump order test upd
 
 0.3.6 delivered: CI_VERIFIED (run 45124443820, source 45f4bb7, APK sha256 7fa94236…8820d); device not verified.
 
+
+## 0.3.7 — how the changed parts connect (issue #152)
+Based on 0.3.6 (versionCode 170 for 0.3.7).
+- **Reference-bar stop**: `new_legacy_1118_policy.targets(kind="reference")` -> `reference_stop(entry, ref_low, ref_high)` = BUY price - (bar high - low). Callers: `reference_1118_runtime._mark` (plan stored per position id), `rr_size_v0340.gen_coin` / `at_stock` (sizing uses the same stop), `position_view_v0200` (card shows `plan["stop"]`). MA / Trend stops are unchanged.
+- **Stock MA**: `ma_v061_stock_runtime.tick` (legacy open-window hook) no longer touches candidates with `ma_v067_kind`; `ma_v067_stock_runtime._expire_old_or_rebounded` owns their 15 s window.
+- **Stock MarketTrend**: `market_trend_runtime_v043._closed_series` (watch/journal path) accepts the previous session's last bar only for the first bar of a session; `market_trend_1118_runtime._entry_window` -> `_signal_blocked` -> `Coordinator._record_entry_block` -> decisions audit (`NL1118_SIGNAL_*`, wallet refusal reason).
+- **Wording**: `HistorySelection.strategyTag` (trend -> 마켓트렌드), `UnifiedVisualActivity.trendWord` (기준봉 -> 전환봉 for trend rows).
+- **Entry context**: `rr_size_v0340` public evaluators -> `entry_context_v0370.attach` -> `rr_size_v0340.record` writes `entry_ctx` beside `rr_size` into the per-position sidecar (GEN plan, MA state, Trend payload). GMO is not part of this path.
+0.3.7 status: SOURCE_FIXED; CI and device not verified yet.

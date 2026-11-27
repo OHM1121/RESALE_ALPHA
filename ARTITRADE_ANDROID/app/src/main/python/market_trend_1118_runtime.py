@@ -194,6 +194,16 @@ def _mark_rsi_watch(self,market,key,observed,rsi,now,evidence=None):
         return row
     return observed
 
+def _signal_blocked(self,market,code,signal,reason):
+    """Record why a qualified closed-bar signal did not become a BUY (deduplicated per bar)."""
+    try:
+        frame=signal[0]
+        info=signal[2] if len(signal)>2 and isinstance(signal[2],dict) else {}
+        bar=str(info.get("signal_bar_end") or "")
+        self._record_entry_block(market,code,frame,bar,reason,signal[1])
+    except Exception:
+        pass
+
 def _entry_window(self,market,now):
     if not _ready_market(self,market,now):return
     if not hasattr(self,"_nl1118_watch_db"):
@@ -291,6 +301,11 @@ def _entry_window(self,market,now):
         if choices:
             verified=self._quote(market,code)
             if verified is None or verified.get("trade")!=trade:
+                # 0.3.7: a fully qualified closed-bar signal was dropped silently here; the
+                # stock MarketTrend never bought and the export had no trace of why.
+                _signal_blocked(self,market,code,choices[0],
+                    "NL1118_SIGNAL_QUOTE_UNVERIFIED" if verified is None
+                    else "NL1118_SIGNAL_TRADE_CHANGED_BEFORE_BUY")
                 continue
             # Bind the original pair of genuinely observed exchange prints
             # to THIS symbol. Never let a later loop symbol substitute them.
@@ -324,6 +339,7 @@ def _entry_window(self,market,now):
                 time.monotonic()-observed_tick[1]>(10 if market=="coin" else 3) or
                 not boll["angle_allowed"] or
                 boll.get("close_above_middle") is not True):
+            _signal_blocked(self,market,code,signal,"NL1118_SIGNAL_QUOTE_CHANGED_BEFORE_BUY")
             continue
         finish=__import__("market_trend_runtime_v043")._end_clock(at,market,frame)
         if finish is None:continue
@@ -335,8 +351,13 @@ def _entry_window(self,market,now):
                 at,finish.isoformat(),rsi)
         except Exception as exc:
             self._last_fetch_error[market]="NL1118_BUY:"+type(exc).__name__
+            _signal_blocked(self,market,code,signal,"NL1118_BUY_EXCEPTION_"+type(exc).__name__)
             continue
-        if position is None:continue
+        if position is None:
+            # The wallet's own refusal (ALREADY_OWNED, FRAME_MAX_POSITIONS, regime/score block,
+            # INSUFFICIENT_FRESH_BEST_ASK, ...) is now recorded instead of vanishing.
+            _signal_blocked(self,market,code,signal,str(result)[:80] or "NL1118_BUY_REFUSED")
+            continue
         with self.lock:
             self._positions[(market,"trend",frame,code)]=position
         saved={**watch,"status":"BOUGHT","purchased_at":at.isoformat()}

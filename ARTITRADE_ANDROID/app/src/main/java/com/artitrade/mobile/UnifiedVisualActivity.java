@@ -2317,6 +2317,11 @@ public final class UnifiedVisualActivity extends Activity {
         return out;
     }
 
+    /** 0.3.7 (owner 2026-11-26): inside MarketTrend the word "기준봉" is never shown; it is "전환봉". */
+    private String trendWord(JSONObject row,String text){
+        return text!=null&&isTrendRow(row)?text.replace("기준봉","전환봉"):text;
+    }
+
     private boolean isTrendRow(JSONObject row){
         if(row==null)return false;
         String mode=row.optString("entry_mode","").toUpperCase(Locale.ROOT);
@@ -3743,7 +3748,7 @@ public final class UnifiedVisualActivity extends Activity {
         else if(!recorded.isEmpty())actualReason="매수체결 근거 · "+actualReason;
         String originalSignal=r.optString("buy_signal_reason","").trim();
         if(!originalSignal.isEmpty()){
-            String readable=TradeExplanation.shortReason(originalSignal,"매수");
+            String readable=trendWord(r,TradeExplanation.shortReason(originalSignal,"매수"));
             if(readable.startsWith("원본 판단코드 확인 필요"))
                 readable="원본 신호코드 "+(originalSignal.length()>90?
                     originalSignal.substring(0,87)+"…":originalSignal);
@@ -4740,7 +4745,7 @@ public final class UnifiedVisualActivity extends Activity {
                 r.optString("ma_v061_kind_label",""),143);
         }
         historyEvidenceCell(fields,"체결시각",fillTimeOf(r,"executions",item.source),148);
-        historyEvidenceCell(fields,"기준봉·D일·매수일",
+        historyEvidenceCell(fields,"trend".equals(item.source)?"전환봉·매수일":"기준봉·D일·매수일",
             referenceTimelineOf(r,item.source),198);
         historyEvidenceCell(fields,"체결구분",tradeSideOf(r),78);
         historyEvidenceCell(fields,"체결가",formatMaybePrice(r,"price","fill_price"),116);
@@ -5282,7 +5287,7 @@ public final class UnifiedVisualActivity extends Activity {
                     actualReason="매수체결 근거 · "+actualReason;
                 String originalSignal=r.optString("buy_signal_reason","").trim();
                 if(!originalSignal.isEmpty()){
-                    String readable=TradeExplanation.shortReason(originalSignal,"매수");
+                    String readable=trendWord(r,TradeExplanation.shortReason(originalSignal,"매수"));
                     if(readable.startsWith("원본 판단코드 확인 필요"))
                         readable="원본 신호코드 "+(originalSignal.length()>90?
                             originalSignal.substring(0,87)+"…":originalSignal);
@@ -5581,7 +5586,7 @@ public final class UnifiedVisualActivity extends Activity {
                 "side".equals(column)?"매수 / 매도":
                 "reason".equals(column)?"판단 근거":
                 "when".equals(column)?"체결 시점":
-                "reference".equals(column)?"기준봉 발생 / D일 / 매수일":
+                "reference".equals(column)?("trend".equals(strategy)?"전환봉 발생 / 매수일":"기준봉 발생 / D일 / 매수일"):
                 "score".equals(column)?"당시 시장점수":
                 "price".equals(column)?"체결가":
                 "qty".equals(column)?"체결수량":
@@ -8308,7 +8313,7 @@ public final class UnifiedVisualActivity extends Activity {
             if(val==null||val==JSONObject.NULL)continue;
             String raw=String.valueOf(val).trim();
             if(raw.isEmpty()||"null".equalsIgnoreCase(raw))continue;
-            String normalized=TradeExplanation.shortReason(raw,action);
+            String normalized=trendWord(row,TradeExplanation.shortReason(raw,action));
             // A bare BUY signal cannot explain a later SELL execution.
             if("매도".equals(action)&&normalized.contains("매수 기준 충족"))
                 continue;

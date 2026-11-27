@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
   "source_baseline": "0.0.18 11.18 rev1 source candidate from 0.0.17 exact release SHA 85b20dc39f247c9d7883c86977af62eab4ac5098; original 82 vendor modules retained; original 8 wallet flows protected; native 0.0.18 CI ongoing; DEVICE_VERIFIED=false.",
-  "updated": "2026-11-20",
+  "updated": "2026-11-26",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
   "nodes": [
@@ -1751,6 +1751,37 @@
       "tests": [
         "test_v0360_trend_day_depth_night_heartbeat.py",
         "test_v0310_engine_hang_diagnostics.py"
+      ]
+    },
+    {
+      "id": "ENTRY_CONTEXT_V0370",
+      "kind": "python-runtime",
+      "files": [
+        "ARTITRADE_ANDROID/app/src/main/python/entry_context_v0370.py",
+        "ARTITRADE_ANDROID/app/src/main/python/rr_size_v0340.py",
+        "ARTITRADE_ANDROID/app/src/main/python/new_legacy_1118_policy.py",
+        "ARTITRADE_ANDROID/app/src/main/python/ma_v061_stock_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_runtime_v043.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/HistorySelection.java",
+        "ARTITRADE_ANDROID/app/src/main/java/com/artitrade/mobile/UnifiedVisualActivity.java"
+      ],
+      "depends_on": [
+        "STOCK_AT",
+        "STOCK_MA",
+        "STOCK_TREND",
+        "COIN_TREND",
+        "COIN_GENERAL",
+        "COIN_MA"
+      ],
+      "issues": [
+        152
+      ],
+      "contract": "0.3.7 (#152): reference-bar hard stop = BUY price - (bar high - low) via new_legacy_1118_policy.reference_stop (targets(kind='reference'), rr_size gen_coin/at_stock); old at_hard_stop kept for history. ma_v061_stock_runtime tick hook no longer touches candidates carrying ma_v067_kind (they expire through ma_v067_stock_runtime 15 s). market_trend_runtime_v043._closed_series accepts the previous session's last bar only for the first bar of a session; market_trend_1118_runtime._signal_blocked records every qualified closed-bar signal dropped before the BUY (quote, trade change, wallet refusal, exception). MarketTrend UI text 'recording bar' is 전환봉 (HistorySelection, UnifiedVisualActivity.trendWord). entry_context_v0370 stores entry_ctx = RR (ratio/gain/loss/stop_source) + MA 5/10/20/60/120 (ma, slope_pct to the previous completed bar, entry above/below) from completed bars before the BUY inside the existing per-position sidecar written by rr_size_v0340.record (GEN plan, MA state, Trend payload); missing bars are stored as null with a reason. GMO untouched. No order, fill or price is created.",
+      "tests": [
+        "test_v0370_reference_stop_stock_buy_fixes_entry_context.py",
+        "test_v0340_rr_size_and_gen_rte.py",
+        "test_new_legacy_1118_workbook.py"
       ]
     }
   ],

@@ -129,9 +129,9 @@ class StopsBeforeBuy(unittest.TestCase):
         c = sqlite3.connect(":memory:")
         c.execute("CREATE TABLE candidates(id INTEGER PRIMARY KEY,tf TEXT,market TEXT,ref_at TEXT,features TEXT)")
         c.execute("INSERT INTO candidates(tf,market,ref_at,features) VALUES(?,?,?,?)",
-                  ("30m", "KRW-G", "R", json.dumps({"low": 95.0, "high": 100.0})))
+                  ("30m", "KRW-G", "R", json.dumps({"low": 90.0, "high": 100.0})))
         out = rr.gen_coin(c, {"tf": "30m", "market": "KRW-G", "ref_at": "R"}, 100)
-        # stop = 95 - (100 - 95) = 90 -> loss 10 %, GEN 30m first +3 % -> 0.3 -> factor 0.6
+        # 0.3.7: stop = BUY 100 - (100 - 90) = 90 -> loss 10 %, GEN 30m first +3 % -> 0.3 -> factor 0.6
         self.assertAlmostEqual(out["factor"], 0.6, places=3)
         self.assertEqual(out["stop_source"], "REFERENCE_HARD_STOP")
 
@@ -184,10 +184,10 @@ class StockSizing(unittest.TestCase):
         c.row_factory = sqlite3.Row
         c.execute("CREATE TABLE signals(id INTEGER PRIMARY KEY,features TEXT)")
         c.execute("INSERT INTO signals VALUES(1,'{}')")
-        engine = SimpleNamespace(_reference_parent=lambda cc, sig, feat: {"low": 9500, "high": 10000})
+        engine = SimpleNamespace(_reference_parent=lambda cc, sig, feat: {"low": 9000, "high": 10000})
         row = {"signal_id": 1, "limit_won": 10000, "tf": "30m"}
         out = rr.at_stock(engine, c, row)
-        # stop = 9500 - 500 = 9000 (-10 %), 30m first +3 % -> 0.3 -> factor 0.6
+        # 0.3.7: stop = BUY 10000 - (10000 - 9000) = 9000 (-10 %), 30m first +3 % -> 0.3 -> factor 0.6
         self.assertAlmostEqual(out["factor"], 0.6, places=3)
         self.assertEqual(out["stop_source"], "AT_REFERENCE_HARD_STOP")
         broken = SimpleNamespace(_reference_parent=lambda cc, sig, feat: None)

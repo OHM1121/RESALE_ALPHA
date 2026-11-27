@@ -101,7 +101,7 @@ def _unverified(status):
     return dict(evaluate(None, None, None), reason="RR_LOOKBACK_" + str(status), stop_source=str(status))
 
 
-def ma_coin(frame, market, entry, now):
+def _ma_coin_impl(frame, market, entry, now):
     """Evaluation for a coin MA BUY at `entry` now, from the MA scanner's verified candle cache."""
     try:
         import ma_v061_coin_runtime as native_history
@@ -126,7 +126,7 @@ def ma_coin(frame, market, entry, now):
         return dict(evaluate(None, None, None), reason="RR_ERROR_" + type(exc).__name__)
 
 
-def gen_coin(c, order, entry):
+def _gen_coin_impl(c, order, entry):
     """Evaluation for a coin GEN (reference-bar) BUY: hard stop under the reference candle."""
     try:
         import new_legacy_1118_policy as nl
@@ -141,7 +141,7 @@ def gen_coin(c, order, entry):
         return dict(evaluate(None, None, None), reason="RR_ERROR_" + type(exc).__name__)
 
 
-def trend(rt, market, symbol, frame, entry, now):
+def _trend_impl(rt, market, symbol, frame, entry, now):
     """Evaluation for a MarketTrend BUY from the coordinator's in-memory closed bars (tried lock)."""
     try:
         import new_legacy_1118_policy as nl
@@ -195,18 +195,20 @@ def record(target, info):
     target["rr_size_factor"] = str(info.get("factor", 1.0))
     target["rr_size"] = {k: info.get(k) for k in ("version", "ratio", "gain_pct", "loss_pct", "applied",
                                                   "reason", "stop_source")}
+    if isinstance(info.get("entry_ctx"), dict):
+        target["entry_ctx"] = info["entry_ctx"]      # 0.3.7: BUY-time MA slopes + RR per position id
     return target
 
 
 # ------------------------------------------------------------------ stock
 
-def stock_bars_before(store, code, frame, now):
+def stock_bars_before(store, code, frame, now, limit=60):
     """Completed KRX bars (dicts for new_legacy_1120_policy) ending at/before `now`, read-only."""
     import d_engine
     stamp = now.strftime("%Y%m%d%H%M%S")
     with store.connect() as db:
         older = db.execute("SELECT ts,low,high,close,source FROM bars WHERE code=? AND frame=? AND ts<?"
-                           " ORDER BY ts DESC LIMIT 60", (code, frame, stamp)).fetchall()
+                           " ORDER BY ts DESC LIMIT ?", (code, frame, stamp, int(limit))).fetchall()
     out = []
     for row in reversed(older):
         s = str(row["ts"])[:14]
@@ -219,7 +221,7 @@ def stock_bars_before(store, code, frame, now):
     return out
 
 
-def ma_stock(store, code, frame, entry, now):
+def _ma_stock_impl(store, code, frame, entry, now):
     """Evaluation for a stock MA REVERSAL_UP BUY at `entry` (KRW) at aware time `now`."""
     try:
         import ma_v067_policy as policy
@@ -234,7 +236,7 @@ def ma_stock(store, code, frame, entry, now):
         return dict(evaluate(None, None, None), reason="RR_ERROR_" + type(exc).__name__)
 
 
-def at_stock(engine, c, row):
+def _at_stock_impl(engine, c, row):
     """Evaluation for a stock AT (D19) BUY: reference-candle hard stop; entry = the order's limit."""
     try:
         import new_legacy_1118_policy as nl
@@ -258,3 +260,91 @@ def stock_limit_won(base_limit_won, factor, buy_limit_won, fee_rate):
     reduced = int(base_limit_won * factor)
     one_share = int(buy_limit_won * (1 + fee_rate)) + 2
     return max(reduced, min(int(base_limit_won), one_share))
+
+
+# ------------------------------------------------------------------ 0.3.7 BUY context (RR + MA 5/10/20/60/120)
+# Each public evaluator keeps its old result and additionally carries `entry_ctx`
+# (entry_context_v0370): the RR at the BUY and the MA slopes from the COMPLETED bars before it.
+
+def _closes_from_bars(bars, frame, now, source=None):
+    from new_legacy_1120_policy import _completed
+    rows = [dict(b, source=source) if source else dict(b) for b in bars if isinstance(b, dict)]
+    return [c for (_end, _low, c) in _completed(rows, frame, now)]
+
+
+def _ctx_coin_native(frame, market, now):
+    import ma_v061_coin_runtime as native_history
+    lock = native_history._HISTORY_LOCK
+    if not lock.acquire(timeout=0.2):
+        return None, "ENTRY_CTX_HISTORY_LOCK_BUSY"
+    try:
+        source = native_history._HISTORY.get((str(frame), str(market)))
+    finally:
+        lock.release()
+    if not source:
+        return None, "ENTRY_CTX_NO_NATIVE_HISTORY"
+    return _closes_from_bars(source[1], frame, now, "ORIGINAL_UPBIT_MA_VERIFIED"), None
+
+
+def _ctx_trend_rows(rt, market, symbol, frame, now):
+    co = getattr(rt, "market_trend", None)
+    if co is None:
+        return None, "ENTRY_CTX_NO_TREND_COORDINATOR"
+    lock = getattr(co, "lock", None)
+    got = lock.acquire(blocking=False) if lock is not None else True
+    if not got:
+        return None, "ENTRY_CTX_TREND_LOCK_BUSY"
+    try:
+        rows = list(co._history.get((market, str(symbol), frame), ()))
+    finally:
+        if lock is not None:
+            lock.release()
+    return _closes_from_bars(rows, frame, now), None
+
+
+def _ctx_stock_bars(store, code, frame, now):
+    if store is None:
+        return None, "ENTRY_CTX_NO_STOCK_STORE"
+    rows = stock_bars_before(store, code, frame, now, limit=140)
+    return [r["close"] for r in rows if r.get("source")], None
+
+
+def _finish(out, entry, getter):
+    import entry_context_v0370 as ctx
+    try:
+        closes, why = getter()
+    except Exception as exc:
+        closes, why = None, "ENTRY_CTX_ERROR_" + type(exc).__name__
+    return ctx.attach(out, entry, closes or [], why)
+
+
+def ma_coin(frame, market, entry, now):
+    return _finish(_ma_coin_impl(frame, market, entry, now), entry,
+                   lambda: _ctx_coin_native(frame, market, now))
+
+
+def gen_coin(c, order, entry):
+    now = dt.datetime.now(dt.timezone.utc)
+    return _finish(_gen_coin_impl(c, order, entry), entry,
+                   lambda: _ctx_coin_native(order["tf"], order["market"], now))
+
+
+def trend(rt, market, symbol, frame, entry, now):
+    return _finish(_trend_impl(rt, market, symbol, frame, entry, now), entry,
+                   lambda: _ctx_trend_rows(rt, market, symbol, frame, now))
+
+
+def ma_stock(store, code, frame, entry, now):
+    return _finish(_ma_stock_impl(store, code, frame, entry, now), entry,
+                   lambda: _ctx_stock_bars(store, code, frame, now))
+
+
+def at_stock(engine, c, row):
+    out = _at_stock_impl(engine, c, row)
+    now = dt.datetime.now(dt.timezone.utc)
+    store = getattr(engine, "store", None) or getattr(engine, "market_store", None)
+    try:
+        entry = float(row["limit_won"])
+    except Exception:
+        entry = None
+    return _finish(out, entry, lambda: _ctx_stock_bars(store, str(row["code"]) if "code" in row.keys() else "", row["tf"], now))
