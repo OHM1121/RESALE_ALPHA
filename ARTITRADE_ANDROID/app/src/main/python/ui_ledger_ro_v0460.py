@@ -29,13 +29,20 @@ READ_TIMEOUT = 10.0
 
 @contextmanager
 def ui_read(store):
-    """Read-only connection to the stock ledger database; never takes the trading gate."""
-    cx = sqlite3.connect("file:%s?mode=ro" % store.db, uri=True, timeout=READ_TIMEOUT)
+    """Read-only connection to the stock ledger database; never takes the trading gate. One snapshot for the whole block."""
+    cx = sqlite3.connect("file:%s?mode=ro" % store.db, uri=True, timeout=READ_TIMEOUT, isolation_level=None)
     cx.row_factory = sqlite3.Row
     try:
         cx.execute("PRAGMA query_only=ON")
+        # 0.4.7: one read transaction = ONE consistent snapshot for every SELECT of the screen refresh. Without the gate a
+        # fill could be committed between two SELECTs (a position list from before and its executions from after the fill).
+        cx.execute("BEGIN")
         yield cx
     finally:
+        try:
+            cx.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
         cx.close()
 
 

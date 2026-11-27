@@ -87,6 +87,16 @@ class UiLedger(unittest.TestCase):
             with self.assertRaises(sqlite3.OperationalError):
                 c.execute("CREATE TABLE should_not_exist(x)")
 
+    def test_one_screen_refresh_sees_one_consistent_snapshot(self):
+        with ro.ui_read(self.store) as c:
+            before = c.execute("SELECT COUNT(*) FROM positions").fetchone()[0]
+            with self.store.connect() as other:                                   # a fill is committed in the middle of the refresh
+                fill(other, "positions", 1, status="OPEN", tf="30m", qty=1, entry_price=10, last_price=11)
+            during = c.execute("SELECT COUNT(*) FROM positions").fetchone()[0]
+            self.assertEqual(before, during)                                      # same snapshot for every SELECT of the refresh
+        with ro.ui_read(self.store) as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM positions").fetchone()[0], before + 1)   # the next refresh sees it
+
     def test_overlay_uses_the_read_only_reader_and_no_gate_in_the_ui_functions(self):
         text = (PY / "android_runtime_v078.py").read_text("utf8")
         self.assertIn("_ORIG_STOCK_AT_LEDGER = _ui_ro.stock_at_ledger_ro", text)

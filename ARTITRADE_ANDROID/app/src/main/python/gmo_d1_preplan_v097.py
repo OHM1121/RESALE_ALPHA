@@ -535,7 +535,7 @@ class Preplanner:
                 qty=min(depth,remaining,available,per_left)
                 if qty>0:
                     engine.fill(active.id,int(qty),float(px),at.isoformat())
-            elif venue=="KRX" and q is not None and not place_only:
+            elif venue=="KRX" and q is not None and not place_only and not self._tick_already_matched(code,tick):
                 # Original KRX PAPER matcher uses actual 0B+0D or bounded genuine
                 # 0B trade proxy. Never call the broker adapter.
                 engine.paper_match(q)
@@ -564,6 +564,13 @@ class Preplanner:
                     plan["status"]="COMPLETED"
             if changed:
                 svc._persist(True)
+
+    def _tick_already_matched(self,code,tick):
+        """0.4.7: the original `on_live_tick` has already run the PAPER matcher for this very tick.
+
+        The simulation found that one 0B print matched the same displayed ask size twice (the original matcher, then this
+        preplan step): a 3-share book filled 6 shares. One tick now consumes the displayed liquidity once."""
+        return tick is not None and getattr(self,"_consumed_tick",None)==(str(code),str(tick[6]))
 
     def on_book(self,code,at=None):
         """0.4.6 (#161): place the D+1 PAPER buy order from a FRESH valid 0D book without waiting for a 0B print.
@@ -675,9 +682,11 @@ def install(core):
     def live_tick(self,tick):
         # The original routine still owns all SELL state transitions and PAPER
         # order matching. New KRX buy is placed only AFTER the verified open.
+        filled_before=len(self.engine.buy_fills)
         out=original_live_tick(self,tick)
         p=getattr(self,"_v097_planner",None)
         if p is not None and len(tick)>=8 and tick[7]=="KRX":
+            p._consumed_tick=((str(tick[0]),str(tick[6])) if len(self.engine.buy_fills)>filled_before else None)
             p.on_tick(tick,"KRX")
         return out
 
