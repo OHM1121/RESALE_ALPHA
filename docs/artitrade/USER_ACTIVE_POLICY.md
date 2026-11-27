@@ -479,3 +479,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** both are implemented; pace 1.0 s per request, 40-stock rounds, 600 s rest; weekend audit 10 trading days; entry context only from bars that ended before the BUY, replaced only by a context with more bars, with a list of every unresolved position.
 - **기존 기준 / 충돌:** none; the combined series stays in its separate store and no strategy reads it yet.
 - **예상 결함:** market score at the BUY cannot be recovered; MA / MarketTrend stock sidecars unchecked on real data; the request limit is unknown; not verified on a device.
+
+## 2026-11-27: Kiwoom request limits as given by the owner (no code change)
+- **Owner-supplied (not verified on the official page):** domestic stocks per account and token: order TR 5 per second, inquiry TR 5 per second; mock investment 1 per second per TR; real-time quotes 1 session and 200 stocks; condition search 10; each TR may have its own extra limit.
+- **Code facts checked in the shipped vendor client:** it talks to the real host (not the mock host); every `api.post` waits on one shared gate `wait_market_rest_slot(0.40)` (at most 2.5 requests per second for the whole app, below the 5 per second limit); HTTP 429 is retried twice with 0.8 s / 1.6 s back-off; the stream capacity constant is 200 stocks.
+- **Quiet-hours work (0.6.0):** 1.0 s extra pause between its own requests on top of that gate; it yields to a busy tick queue. The per-TR limit of ka10080 / ka10081 is still unknown.
+- **Daily-bar verification backlog (device export 2026-11-27):** 912 cases opened since 11-19: 860 applied, 20 pending (waiting for a second matching official snapshot), 32 under review (the bar is tied to a signal or position and is never changed by design). The vendor repair loop only runs on weekdays 08:55-15:40 and also creates pending reference orders, so it is not run outside that window by the app; clearing it off-hours needs an owner decision.
