@@ -240,7 +240,11 @@ jobs:
             test_v0600_all_venue_complete.py \
             test_v0610_blocked_day_repair.py \
             test_v0620_coin_entry_ctx.py \
-            test_v0640_after_hours_score.py; do
+            test_v0640_after_hours_score.py \
+            test_v0650_post_session_lookback.py \
+            test_v0650_combined_impact.py \
+            test_v0650_offhours_resilience.py \
+            test_v0650_closing_auction.py; do
             echo "TESTING $pattern"
             python3 -m unittest discover -s ARTITRADE_ANDROID/ui_tests -p "$pattern" -v
           done
