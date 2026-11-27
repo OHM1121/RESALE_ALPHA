@@ -2084,6 +2084,26 @@
         "test_v0370_reference_stop_stock_buy_fixes_entry_context.py"
       ],
       "notes": "Reference stop changes sizing (rr_size) because the stop distance changes. 1:1 buy ban NOT implemented (owner chose option B: analyse first). entry_ctx exists only where rr_size is evaluated (GEN, MA REVERSAL_UP, Trend, AT); GMO excluded."
+    },
+    {
+      "id": "ST-0380-01",
+      "issue": 153,
+      "found": "owner report + stock error export 2026-11-26 (app 0.3.6)",
+      "category": "GMO_HOLDING_MISSING_FROM_INTEGRATED_VIEW",
+      "title": "Second supply-demand holding vanished from the integrated dashboard / holdings (all GMO positions have id -1)",
+      "evidence": "PROJECTGMO account state: 2 positions; vendor GMOService.snapshot sets id=-1, tf=gmo for every position; integratedHoldings() key market/strategy/tf/id collapsed them",
+      "root": "CONFIRMED_IN_CODE_AND_DATA",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.8",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO"
+      ],
+      "tests": [
+        "test_v0370_reference_stop_stock_buy_fixes_entry_context.py"
+      ],
+      "notes": "Display key only; no wallet, order or ledger change. GMO buy depth (0.3.6 fallback) still unverified: no GMO buy after 0.3.6 in the export."
     }
   ],
   "known_normal": [

@@ -3094,7 +3094,12 @@ public final class UnifiedVisualActivity extends Activity {
                     double qty=num(r,"qty","quantity","holding_qty");
                     if(finite(qty)&&qty<=0)continue;
                     String id=r.optString("id",r.optString("position_id","row_"+i));
-                    String key=m+"/"+s+"/"+timeFrameOf(r)+"/"+id;
+                    // 0.3.7: every supply-demand (gmo) position carries the placeholder id -1, so two
+                    // holdings shared one key and the second (e.g. 하림지주) vanished from the integrated
+                    // dashboard / holdings. The immutable position uid, else the code, tells them apart.
+                    String uid=r.optString("position_uid","").trim();
+                    String who=uid.isEmpty()?r.optString("code",r.optString("market","")):uid;
+                    String key=m+"/"+s+"/"+timeFrameOf(r)+"/"+id+"/"+who;
                     if(seen.add(key))all.add(new IntegratedHolding(m,s,r));
                 }
             }

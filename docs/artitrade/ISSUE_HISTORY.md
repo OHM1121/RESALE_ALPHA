@@ -63,3 +63,6 @@ Raw device SQL and JSON exports are **not** committed to this public repository.
 
 ## #152 — 0.3.7 stock MA hook, reference stop, MarketTrend wording, entry context (2026-11-26)
 Root cause: legacy `ma_v061` tick hook retired all v067 stock candidates (132/132 `MA_V061_BAD_OPEN_WINDOW`); stock MarketTrend had an overnight-gap history rejection and silent drops. Owner changes: reference stop = BUY price - bar range, "전환봉" wording, per-position RR + MA slopes. Status SOURCE_FIXED; CI pending; device UNVERIFIED. Open: remaining stock MarketTrend blocker (needs the next export), 1:1 analysis (needs the ledger analysis), NEW LEGACY workbook sheet.
+
+## #153 — 0.3.8 second GMO holding missing from the integrated view (2026-11-27)
+Root cause: all GMO positions have id -1, the integrated list key used the id. Fixed with position_uid/code in the key. SOURCE_FIXED; CI pending; device UNVERIFIED.

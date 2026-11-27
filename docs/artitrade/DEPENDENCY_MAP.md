@@ -546,3 +546,6 @@ Based on 0.3.6 (versionCode 170 for 0.3.7).
 - **Wording**: `HistorySelection.strategyTag` (trend -> 마켓트렌드), `UnifiedVisualActivity.trendWord` (기준봉 -> 전환봉 for trend rows).
 - **Entry context**: `rr_size_v0340` public evaluators -> `entry_context_v0370.attach` -> `rr_size_v0340.record` writes `entry_ctx` beside `rr_size` into the per-position sidecar (GEN plan, MA state, Trend payload). GMO is not part of this path.
 0.3.7 status: SOURCE_FIXED; CI and device not verified yet.
+
+## 0.3.8 — integrated holdings key (issue #153)
+Based on 0.3.7 (versionCode 171). `UnifiedVisualActivity.integratedHoldings()` de-duplicates by `market/strategy/timeframe/id/(position_uid or code)`; the vendor GMO snapshot gives every position the placeholder `id=-1`, which hid the second supply-demand holding. Display only. SOURCE_FIXED; CI and device not verified yet.

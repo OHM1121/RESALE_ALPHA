@@ -128,6 +128,14 @@ class TrendWording(unittest.TestCase):
             self.assertNotIn("기준봉", read(name))
 
 
+class IntegratedHoldingsKey(unittest.TestCase):
+    def test_gmo_positions_with_the_same_placeholder_id_are_both_listed(self):
+        act = (JAVA / "UnifiedVisualActivity.java").read_text(encoding="utf-8")
+        body = act.split("private java.util.List<IntegratedHolding> integratedHoldings(){", 1)[1].split("private void integratedTextLine", 1)[0]
+        self.assertIn('position_uid', body)
+        self.assertIn('+"/"+id+"/"+who;', body)
+
+
 class EntryContext(unittest.TestCase):
     def test_ma_slopes_and_position_for_all_five_periods(self):
         closes = [100 + i for i in range(130)]
