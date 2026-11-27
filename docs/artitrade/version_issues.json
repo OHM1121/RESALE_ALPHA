@@ -2485,7 +2485,7 @@
           "root": "CONFIRMED in vendor code: market_trend_runtime_v043.Coordinator._raw_history treats the previous session's last bar as stale at the open and goes to the broker; _prefetch paces 0.35 s per pair",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.5",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45989141533, source 3ed5a4e, apk sha256 615e15560d71297a5e9ab64021fcec9bc21b22acf57ef065b32d14912f6d38a6)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_TREND",
@@ -2506,7 +2506,7 @@
           "root": "PARTLY CONFIRMED: mechanism (one consumer, heavy engine after GMO, 3 s gate, unhandled HELD_RISK_PRIORITY_STALE_TICK) confirmed in vendor code; which stage dropped the 11-26 prints is UNVERIFIED (not stored)",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.5",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45989141533, source 3ed5a4e, apk sha256 615e15560d71297a5e9ab64021fcec9bc21b22acf57ef065b32d14912f6d38a6)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO",
