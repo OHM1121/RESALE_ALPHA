@@ -187,3 +187,6 @@ CI run 45997360160 on the trusted branch, source 9d6de0a, signer unchanged; `0.6
 
 ## #180 — 0.6.1 daily-bar verification backlog (2026-11-27)
 Counting was not enough. Device data: the vendor never confirms the daily candle because the official candle keeps changing until 20:00 and the repair loop stops at 15:40 (20 cases PENDING since 11-20, 27 blocked daily audits that stop AT daily-reference orders from buying). The quiet-hours worker now calls the vendor repair function itself, as of the trading day, twice per stock. Open question for the owner: all 860 applied cases had a larger official volume (median +3 %); whether the official daily candle includes NXT after-market trading is not proven. Not verified on a device.
+
+### 0.6.1 delivered (2026-11-27)
+CI run 46006068868 on the trusted branch, source d72ad93, signer unchanged; `0.6.1.apk` SHA-256 41ad9a24ca25be849125ae10c702c4887547600727b96d500555e207698ad896. #180: CI_VERIFIED, device UNVERIFIED.

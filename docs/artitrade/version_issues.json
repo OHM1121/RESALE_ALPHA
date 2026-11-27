@@ -2676,7 +2676,7 @@
           "root": "CONFIRMED in the vendor code and the device database",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.1",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46006068868, source d72ad93, apk sha256 41ad9a24ca25be849125ae10c702c4887547600727b96d500555e207698ad896)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_AT",
