@@ -2369,7 +2369,7 @@
           "root": "DESIGN (simulation-only conservatism); a real marketable limit order takes the whole displayed size at the displayed price",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.0",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45955971640, source 005762f, apk sha256 cb51794586595f7ba002f9de6b46aa6b8e65bd8298ee657e79638b645e14f82c)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO",
