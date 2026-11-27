@@ -129,3 +129,4 @@ Owner decision (policy conflict recorded in USER_ACTIVE_POLICY): the single "fir
 ## #167 — 0.5.2 split BUY: a start price below rung 1 buys rung 1's share now at the current price (2026-11-27)
 Owner example: rung 1 = 4,900, rung 2 = 4,500, start 4,700: 30 % of the limit is bought at 4,700, rungs 2 and 3 stay. Before, the share count was computed at the rung price (about 28 % of the limit was invested). Limit of the order = the current price (a tick up before matching leaves it resting). CI_VERIFIED only after the build; DEVICE_VERIFIED=false.
 
+Delivery: signed APK 0.5.1 (CI run 45961404109, source e42f06f, SHA-256 eccf807933376ae9e4ab8be775624c3a189823aa00cb869297af81d187cd6aac), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.

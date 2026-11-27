@@ -2394,7 +2394,7 @@
           "root": "DESIGN: replaced by an owner-specified split plan (policy conflict recorded in USER_ACTIVE_POLICY)",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.1",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45961404109, source e42f06f, apk sha256 eccf807933376ae9e4ab8be775624c3a189823aa00cb869297af81d187cd6aac)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO"
