@@ -85,3 +85,7 @@ Delivery: signed APK 0.4.2 built by CI run 45927212554 from source 9ae92ba (SHA-
 
 ## #158 — 0.4.3 owner workbook pink text: coin blocks, trend and score at the BUY (2026-11-27)
 Coin reference bar: no buy at score +40 or more or at a negative score even when UP; coin MA: no buy under 3 months of listing or at +40 or more; coin MarketTrend: no buy at +40 or more. "Trend unverified" came from bars the app did not hold (regime fell back to SIDEWAYS); the completed candles before the BUY are now read once per symbol/frame/bar. Every BUY record carries the trend and the market score. MMT entry price checked against exchange candles (consistent). IRYS / CYBER exits explained (no return-to-entry exit in the MA rules; decision pending).
+
+Delivery: signed APK 0.4.3 built by CI run 45933880939 from source 4c1621e (SHA-256 7cafc8e7c626ce7cfff507b80ea7800caeb74c5169c6856e370b22b6f2c141bd, signer unchanged). CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+Findings for the owner's two screenshots (2026-11-27, app 0.3.6 export): stock MA evaluations were skipped with MA_NO_FRESH_OBSERVED_TICK_IN_10_TO_2_SECOND_WINDOW (1000 of 1000 on 11-27 morning, about 99 percent per hour on 11-25/26); 5m bars per slot fell from 127 symbols (09:00) to 16 (09:25); stock bars are KRX regular session only while the owner's chart is the combined KRX+NXT view; stock MarketTrend is 30m/60m/day only (5m retired). Open decisions: combined KRX+NXT bars; coin MA return-to-entry exit.
