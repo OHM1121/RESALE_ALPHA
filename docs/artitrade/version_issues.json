@@ -2437,7 +2437,7 @@
           "root": "DESIGN: setup and repair were only scheduled inside the session; nothing used the quiet hours",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.3",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45962842903, source 09417cf, apk sha256 1eb73edf0bc62c5db8f7d3797dbd87f404af3814aca5d1e3496d3676f9ce0589)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO",
