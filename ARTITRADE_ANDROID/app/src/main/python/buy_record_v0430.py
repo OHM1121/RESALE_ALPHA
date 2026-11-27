@@ -203,6 +203,12 @@ def score_snapshot(market, root=None):
             value = float(history[-1]["score"])
             if math.isfinite(value) and -100 <= value <= 100:
                 out.update(score=value, stale=True, basis="LAST_KNOWN_SCORE_STALE_AT_BUY", asof=history[-1].get("ts"))
+                try:
+                    # 0.6.4: after the close the score is recorded every 3 minutes (history only); one younger than 10 minutes is the score of that moment.
+                    if market == "stock" and time.time() - float(history[-1].get("ts")) <= 600:
+                        out.update(stale=False, basis="AFTER_HOURS_SCORE_RECORDED_WITHIN_10_MIN")
+                except (TypeError, ValueError):
+                    pass
     except Exception as exc:
         out["basis"] = "SCORE_RECORD_ERROR_" + type(exc).__name__
     return out

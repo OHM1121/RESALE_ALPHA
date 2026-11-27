@@ -63,6 +63,38 @@ def is_regular_open(at=None):
     return status(at)[0]
 
 
+AFTER_HOURS_END=20*60          # the NXT after-market closes at 20:00
+
+
+def after_hours_status(at=None):
+    """(open: bool, reason): a trading day, after the KRX regular session and before the NXT after-market close (20:00).
+
+    Used ONLY to keep recording the stock market score after the close (owner 2026-11-27: stock buys happen 16:00-20:00 and had no score).
+    It does not open any order path. The NXT closed day of 2026-11-19 (college admission exam) has no after-hours window.
+    """
+    if at is None:
+        stamp=dt.datetime.now(KST)
+    elif isinstance(at,dt.datetime):
+        stamp=at.replace(tzinfo=KST) if at.tzinfo is None else at.astimezone(KST)
+    elif isinstance(at,dt.date):
+        stamp=dt.datetime.combine(at,dt.time(12,0),KST)
+    else:
+        stamp=dt.datetime.fromtimestamp(float(at),KST)
+    date=stamp.date()
+    day=date.isoformat()
+    if date.weekday()>=5 or date.year not in CLOSED or day in CLOSED[date.year]:
+        return False,"휴장"
+    if day=="2026-11-19":
+        return False,"NXT 휴장"
+    minute=stamp.hour*60+stamp.minute
+    end=SPECIAL_SESSIONS.get(day,(START,END))[1]
+    if minute<end:
+        return False,"정규장 또는 개장 전"
+    if minute>=AFTER_HOURS_END:
+        return False,"NXT 애프터마켓 종료"
+    return True,"시간외"
+
+
 def venue_bounds(at=None,venue="KRX"):
     """Explicit per-date exchange schedule, not a recurring exam-day rule.
 

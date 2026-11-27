@@ -503,3 +503,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** quiet-hours repair runs with order creation switched off for its own calls only; the NXT finding is recorded; the integration is reported as NOT complete; the order rules after 15:30 are stage 2.
 - **기존 기준 / 충돌:** the vendor FIX13 rule (KRX 5m orders expire at 15:30) conflicts with "orders until 20:00 for NXT-supported stocks"; not changed yet (stage 2).
 - **예상 결함:** day bars are a mix of bases until stage 2; not device verified.
+
+## 2026-11-27: Stock market score is recorded until 20:00 (owner, issue #183, version 0.6.4)
+- **Owner:** compute and record the stock market score after the close (16:00-20:00).
+- **Decision:** done every 3 minutes from the KRX close to 20:00 on trading days, history only; the buy gate is not changed.
+- **기존 기준 / 충돌:** `display_snapshot` still shows no score after the close (stale KRX values must not look live); unchanged.
+- **예상 결함:** after the close the KOSPI / KOSDAQ part is frozen at the close, only the global indicators move; not device verified.

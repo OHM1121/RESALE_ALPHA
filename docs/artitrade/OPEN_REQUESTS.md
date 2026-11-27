@@ -20,6 +20,8 @@ Do not put private ledgers, device logs or account data here (public repository)
 | 11 | Explain "청산 후 연구 기록, 시장 통계 예열, 일봉 감사, NXT 자격 사전 적재: 장중 비용을 아직 측정하지 못했습니다" | NOT DONE | - | plain-Korean explanation owed |
 | 12 | Clear vendor in-memory retry queues | PARTIAL: counted; the daily case backlog is processed (see 5) | 0.5.9, 0.6.1 | frame retries of 5m/30m/60m are session bound and expire |
 | 13 | Upbit / MA / MarketTrend wallet fill audit | NOT DONE | - | - |
+| 15 | Compute and record the stock market score after the close (16-20h) | DONE in code (history only; the buy gate is unchanged) | 0.6.4 / #183 | owner decision: should the AT gate use it; device verification |
+| 16 | Harim Holdings (003380) first take-profit | STOPPED by the owner on 2026-11-27 ("작업중지"); delivered earlier: 0.5.5-0.5.7 (#171-#173), never verified on a device | - | nothing is worked on until the owner resumes it |
 | 14 | `ARTITRADE_REAL_MODE=1` blocks the GMO D+1 plan | OPEN (unchanged) | - | owner decision |
 
 Update this table in the same commit as the work (the governance docs of the version).

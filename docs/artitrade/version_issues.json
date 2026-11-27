@@ -2726,6 +2726,27 @@
                 "test_v0610_blocked_day_repair.py"
           ],
           "notes": "NoOrderEngine wrapper: all attributes forwarded to the real engine, only _enqueue_signals does nothing; nothing patched globally. NXT finding recorded; day-bar basis (combined) vs intraday bars (KRX regular only) is a stage-2 decision. Stage 2 of the integration (strategies on combined bars, orders after 15:30) is NOT done."
+    },
+    {
+          "id": "SCORE-0640-01",
+          "issue": 183,
+          "found": "owner request 2026-11-27: compute and record the stock market score after the close (16:00-20:00)",
+          "category": "STOCK_SCORE_NOT_RECORDED_AFTER_CLOSE",
+          "title": "The stock market score fetch stops at the KRX close although stock buys happen on the NXT after-market until 20:00",
+          "evidence": "device export: 766 stock score events all 09:00-16:xx; 33 of 34 stock AT buys 16:00-19:59 without a score; _fetch_stock() returned a score of 31.2 at 22:45 KST outside every window; ui_tests/test_v0640_after_hours_score.py",
+          "root": "CONFIRMED in market_research_v033._MarketWorker._fetch_loop (krx_session_v041.status gate)",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.4",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0640_after_hours_score.py"
+          ],
+          "notes": "Between the KRX close and 20:00 on trading days the same score is computed every 3 minutes and written to score_events (meta.session AFTER_HOURS) by ScoreLedger.record_score_event_only (no band / cohort accounting); display_snapshot and the AT gate are unchanged; the BUY record treats a score younger than 10 minutes as the score of that moment. Whether the gate should use it is an owner decision."
     }
   ],
   "known_normal": [

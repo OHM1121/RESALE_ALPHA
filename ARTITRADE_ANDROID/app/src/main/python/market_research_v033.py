@@ -449,6 +449,22 @@ class ScoreLedger:
                 raise
         return True
 
+    def record_score_event_only(self,market,score,ts,meta=None):
+        """0.6.4: one score point into `score_events` WITHOUT touching the band / cohort accounting (used after the close, when no band segment is running)."""
+        band=market_band(score)
+        if market not in ("stock","coin") or band is None:
+            return False
+        with self.lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                self.conn.execute("INSERT OR REPLACE INTO score_events VALUES(?,?,?,?,?)",
+                    (market,int(ts),float(score),band,json.dumps(meta or {},ensure_ascii=False)))
+                self.conn.execute("COMMIT")
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
+        return True
+
     def observe_positions(self,market,positions,ts):
         if market not in ("stock","coin"):return
         with self.lock:
@@ -822,6 +838,33 @@ class _MarketWorker:
         self._fetch_threads.append(thread)
         thread.start()
 
+    AFTER_HOURS_INTERVAL=180
+
+    def _record_after_hours(self,ledger,fetch,now=None):
+        """0.6.4 (owner 2026-11-27): 16:00-20:00 stock buys (NXT after-market) had no market score. Between the KRX close and the NXT close the SAME score is computed
+        every 3 minutes and recorded in `score_events` (meta.session = AFTER_HOURS). It is history only: the displayed snapshot, the freshness gate and the band / cohort
+        accounting are not touched, so no buy permission changes."""
+        try:
+            from krx_session_v041 import after_hours_status
+            opened,_reason=after_hours_status(now)
+            moment=time.monotonic()
+            if not opened or moment<getattr(self,"_after_hours_next",0.0):
+                return False
+            self._after_hours_next=moment+self.AFTER_HOURS_INTERVAL
+            evidence=dict(fetch() or {})
+            score=finite(evidence.get("score"))
+            if score is None:
+                self._after_hours_status="시간외 점수 미수신: "+str(evidence.get("status") or "")[:60]
+                return False
+            evidence["session"]="AFTER_HOURS"
+            stamp=int(time.time() if now is None else (now.timestamp() if hasattr(now,"timestamp") else float(now)))
+            ok=ledger.record_score_event_only("stock",score,stamp,evidence)
+            self._after_hours_status="시간외 점수 기록 %+.1f"%score if ok else "시간외 점수 범위 오류"
+            return bool(ok)
+        except Exception as exc:
+            self._after_hours_status="시간외 점수 오류: "+type(exc).__name__
+            return False
+
     def _fetch_loop(self,ledger,market,fetch):
         # Stock 3min, crypto 60sec even on weekends/holidays.
         interval=60 if market=="coin" else 180
@@ -836,6 +879,7 @@ class _MarketWorker:
                     with self._cache_lock:
                         self._cache["stock"]=display_snapshot(
                             "stock",ledger.snapshot("stock"))
+                    self._record_after_hours(ledger,fetch)
                     self._stop.wait(30)
                     continue
             try:

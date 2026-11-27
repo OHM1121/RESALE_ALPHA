@@ -202,3 +202,6 @@ Owner: after the close nothing can be bought, so no pending order may be created
 
 ### 0.6.3 delivered (2026-11-27)
 CI run 46009467695 on the trusted branch, source 21f2259, signer unchanged; `0.6.3.apk` SHA-256 2d3b2aaae4845d72a76795d7ba4cc3b0753fc4dd8d7ff9db5d48e6680cbf8dad. #182: CI_VERIFIED, device UNVERIFIED.
+
+## #183 — 0.6.4 stock market score after the close (2026-11-27)
+Owner: compute and record the stock market score 16:00-20:00. Cause: the fetch loop stops at the KRX close; 33 of 34 stock AT buys were after 16:00 and had no score. Now computed every 3 minutes until 20:00 and recorded (history only, gate unchanged). The computation works outside the session (score 31.2 at 22:45). Not verified on a device.
