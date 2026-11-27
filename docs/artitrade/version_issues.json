@@ -2597,7 +2597,7 @@
           "root": "CONFIRMED in code: the Kiwoom 0B/0D stream sends a message only on a trade / a book change; MA _up_worker is tick driven; every gate compares the age of the last stream message with 3 s",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.8",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45994156662, source be8e7cf, apk sha256 bf8470b4724a9445c394bb808638bec6bdbd16da04e45249eaa2dfb06219d32a)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_FEED",
