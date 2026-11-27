@@ -169,3 +169,10 @@ Owner instruction, applies to EVERY job in EVERY session: the paper program will
 - Data-validity gates that also protect a real order (fresh quote, order limit, wallet and budget limits, fees, tax) stay.
 - Every paper-only assumption that remains (resting-order queue proxy, print proxy, missing order latency) is listed in `docs/artitrade/REAL_PARITY_AUDIT.md` with its reason; new ones are added there. Each change is decided with the R14 comparison and recorded in its Issue.
 
+
+## R16 — What does not need real time is done in the quiet hours (2026-11-27)
+Owner instruction, applies to EVERY job in EVERY session: the market open is overloaded because every quote, repair and record arrives at once. After the NXT session ends and before the next trading day opens the app does nothing - that time is used.
+- Work that only needs already-finished information is done between the NXT close (20:00) and the next trading day's preparation (07:50), on trading days only: filling the data the live feed missed, next-day setup (supply-demand plans and split-buy prices once the EWY value is known), records that can be written afterwards.
+- The market score and everything that decides or sends an order stays real time.
+- Before adding intraday work, check whether it can be done in the quiet hours instead; every task moved is listed in `docs/artitrade/OFFHOURS_PREWORK_PLAN.md` with what is still open.
+

@@ -2426,6 +2426,32 @@
                 "test_v0510_gmo_ladder.py"
           ],
           "notes": "Limit = current price: a one-tick rise before matching leaves the order resting. Recorded rung quantities stay rung-price based; the order and fill carry the real quantity."
+    },
+    {
+          "id": "OFFHOURS-0530-01",
+          "issue": 168,
+          "found": "owner decision 2026-11-27: no top-up after a sell; do non-real-time work in the quiet hours (rule R16)",
+          "category": "OPEN_LOAD_FROM_REAL_TIME_ONLY_SETUP_AND_REPAIR",
+          "title": "Remaining split-buy orders could fill after an exit started; D+1 setup and candle repair were done at or after the open",
+          "evidence": "ui_tests/test_v0530_gmo_no_topup_and_presetup.py, test_v0530_offhours_prework.py; earlier exports: 5m bars per slot fell from 127 symbols at 09:00 to 16 at 09:25, fix14 gate holds of 5 s or more",
+          "root": "DESIGN: setup and repair were only scheduled inside the session; nothing used the quiet hours",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.3",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO",
+                "STOCK_FEED",
+                "STOCK_MA",
+                "STOCK_TREND",
+                "STOCK_AT"
+          ],
+          "tests": [
+                "test_v0530_gmo_no_topup_and_presetup.py",
+                "test_v0530_offhours_prework.py",
+                "test_v0510_gmo_ladder.py"
+          ],
+          "notes": "New writer of the bars table (INSERT OR IGNORE, labelled source, vendor checks). Open items in docs/artitrade/OFFHOURS_PREWORK_PLAN.md. Broker request limits at night and a phone that is off overnight are unverified."
     }
   ],
   "known_normal": [

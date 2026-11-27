@@ -129,11 +129,29 @@ class Preplanner:
         try:return bool(runner.nxt_snapshot.allows(code,at.strftime("%Y%m%d")))
         except (AttributeError,ValueError):return False
 
-    def prepare(self,venue,at=None,recovery=False):
+    def presetup(self,at=None):
+        """0.5.3 (owner 2026-11-27): do the D+1 setup in the quiet morning hours, not at the open.
+
+        On a trading day, from 06:00 and before the preparation window of each venue (NXT 07:50, KRX 08:50), once the EWY value is VERIFIED:
+        create the plans of the D+1 candidates and their recorded split-buy ladders from the already-completed D data (D close x EWY).
+        Nothing is ordered: orders are still placed from the first fresh quote after the open. Idempotent; the normal `prepare` finds the plans.
+        """
+        at=at or self.clock()
+        if not LADDER_ENABLED or at.weekday()>=5 or not self._entry_authorized():return ()
+        import night_futures_gate_v0260 as night
+        if night.state(at).get("status")!="VERIFIED":return ()
+        made=[]
+        for venue in ("NXT","KRX"):
+            made.extend(self.prepare(venue,at,preset=True))
+        return tuple(made)
+
+    def prepare(self,venue,at=None,recovery=False,preset=False):
         at=at or self.clock()
         normal=_valid_phase(venue,at,True)
         late=bool(recovery and venue=="KRX" and _valid_phase(venue,at))
-        if not (normal or late):return ()
+        phase_now=_venue_phase(venue,at)
+        early=bool(preset and phase_now and "060000"<=at.strftime("%H%M%S")<phase_now[0])
+        if not (normal or late or early):return ()
         if not self._entry_authorized():return ()
         service=self.service
         made=[]
@@ -202,7 +220,8 @@ class Preplanner:
                                  else "WAIT_NXT_ELIGIBILITY",
                       "scenario":0,"opening_price":None,
                       "opening_source":None,"order_id":None,
-                      "late_recovery":bool(late),"venue_schedule":_venue_phase(venue,at)}
+                      "late_recovery":bool(late),"venue_schedule":_venue_phase(venue,at),
+                      "preset_at":at.isoformat(timespec="seconds") if early else None}
                 self.plans[key]=plan
                 if LADDER_ENABLED:
                     try:self._ensure_ladder(plan,signal,at)
@@ -274,6 +293,7 @@ class Preplanner:
                 phase=_venue_phase("KRX",at)
                 if phase and phase[0]<=at.strftime("%H%M%S")<phase[1]:
                     self._clear_nxt(at)
+                self.presetup(at)
                 if _valid_phase("NXT",at,True):
                     self.prepare("NXT",at)
                 if _valid_phase("KRX",at,True):
@@ -656,6 +676,19 @@ class Preplanner:
         return sorted(out,key=lambda o:o.id)
 
     @staticmethod
+    def exit_started(position):
+        return bool(position is not None and (position.exit_stage or position.pending_sell_id or position.first_profit_triggered
+                                              or position.first_filled_qty or position.second_filled_qty))
+
+    def _ladder_stop_buying(self,engine,code,entry,at,reason):
+        """Owner 2026-11-27: when only part of the split buy was bought and a sell comes first, the rest is NEVER bought afterwards."""
+        for order in self._ladder_orders(engine,code,entry):
+            if order.state in ("NEW","OPEN"):
+                engine._cancel(order,reason,at.isoformat())
+                if order.state=="CANCEL_REQUESTED":
+                    engine.acknowledge_cancel(order.id,at.isoformat())
+
+    @staticmethod
     def is_resting_rung(order):
         """A split-buy rung placed BELOW the price of that moment: it is bought only when the traded price comes down to it."""
         return (str(order.purpose).rsplit("_",1)[-1] in ("L1","L2","L3") and int(order.limit)<int(order.reference))
@@ -765,11 +798,13 @@ class Preplanner:
         changed=False
         with self.lock,svc._lock,engine._lock:
             if any(f.get("code")==code and str(f.get("time",""))[:10]<=entry for f in engine.fills):
-                plan["status"]="SOLD";return
+                self._ladder_stop_buying(engine,code,entry,at,"position sold before the split buy was complete: no top-up")
+                plan["status"]="SOLD";svc._persist(True);return
             pos=engine.positions.get(code)
             if pos and (pos.entry_date!=entry or pos.stage!="NORMAL" or pos.exit_stage or pos.pending_sell_id or
                         pos.first_profit_triggered or pos.first_filled_qty or pos.second_filled_qty):
-                plan["status"]="BLOCKED";return
+                self._ladder_stop_buying(engine,code,entry,at,"exit started before the split buy was complete: no top-up")
+                plan["status"]="BLOCKED";svc._persist(True);return
             everything=self._ladder_orders(engine,code,entry)
             mine=[o for o in everything if o.purpose.startswith(prefix)]
             if mine and not plan.get("order_ids"):
@@ -957,9 +992,13 @@ def consume_book_once(svc,eng):
     def hide_resting(q,call):
         """0.5.1: a resting split-buy rung is bought by the price-reached rule only; neither the displayed-book matcher nor the print proxy may fill it."""
         with eng._lock:
+            held=getattr(eng,"positions",{}).get(q.code)
+            exited=bool(held is not None and (held.exit_stage or held.pending_sell_id or held.first_profit_triggered
+                                              or held.first_filled_qty or held.second_filled_qty))
             hidden=[o for o in eng.orders.values()
                     if o.side=="BUY" and o.code==q.code and o.state in ("NEW","OPEN")
-                    and str(o.purpose).rsplit("_",1)[-1] in ("L1","L2","L3") and int(o.limit)<int(o.reference)]
+                    and str(o.purpose).rsplit("_",1)[-1] in ("L1","L2","L3","GAP")
+                    and (exited or (str(o.purpose).rsplit("_",1)[-1]!="GAP" and int(o.limit)<int(o.reference)))]
             prior=[(o,o.state) for o in hidden]
             for o in hidden:o.state="CANCEL_REQUESTED"
             try:

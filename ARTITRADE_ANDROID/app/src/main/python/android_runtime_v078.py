@@ -2752,6 +2752,17 @@ except Exception as _parity_exc:
     except Exception:
         pass
 
+# 0.5.3 (#168, rule R16): the quiet hours (after the NXT close until before the next open) complete the day's missing candles so the
+# open is not loaded with repairs. Failure-tolerant; never touches an order, a signal or the ledger.
+try:
+    import offhours_prework_v0530 as _offhours_v0530
+    _offhours_v0530.install()
+except Exception as _off_exc:
+    try:
+        _core.__dict__.setdefault('_v0530_offhours_error',repr(_off_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

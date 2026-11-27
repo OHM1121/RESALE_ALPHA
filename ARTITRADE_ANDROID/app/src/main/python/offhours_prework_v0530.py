@@ -1,0 +1,257 @@
+"""0.5.3 (owner 2026-11-27, standing rule R16): do in the quiet hours what does not need real time, so the market open is not overloaded.
+
+Owner: after the NXT session ends and before the next trading day opens the app does nothing; the market open is when every quote, repair
+and record arrives at once. Work that only needs already-finished information is done in that window.
+
+This module is the off-hours worker for STOCK data. Task `bars_completion` (the first one):
+  after 20:05 of a trading day D (resumed before 07:45 of the next morning if the phone was off), for every stock that has live bars of day D,
+  ask the broker again for the finished regular-session candles of day D (5m, 30m, 60m, day) and INSERT the candles the live feed missed.
+  Why it matters: the MA / trend values of the next morning use yesterday's bars; a hole made by a feed drop made yesterday and today
+  "two different flows" (the owner's 제주반도체 / 클로봇 reports). The same data is no longer repaired at the open.
+Rules: only candles that pass the SAME checks as the vendor repair (regular KRX reference slot, closed, positive volume, sane OHLC, requested code,
+requested day); `INSERT OR IGNORE` (an existing candle is never replaced; conflicts are left to the vendor audit); no signal discovery, no order,
+no ledger write; yields at once to the live feed; at most MAX_REQUESTS broker requests per night, PAUSE seconds between requests; three failures in
+a row pause the task for 30 minutes; the result of the night is written to `stock/offhours_v0530.json` (resume) and `stock/offhours_v0530.jsonl`.
+GMO (supply-demand) next-day setup is done by `gmo_d1_preplan_v097.Preplanner.presetup` (06:00, after the EWY value is known), not here.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import threading
+import time
+from pathlib import Path
+
+VERSION = "OFFHOURS_PREWORK_V0530"
+SOURCE = "KIWOOM_REST_OFFHOURS_V0530"
+FRAMES = ("5m", "30m", "60m", "day")
+START_HHMM = "2005"          # after the NXT after-market close (20:00)
+STOP_HHMM = "0745"           # before the NXT preparation (07:50)
+MAX_REQUESTS = 1500
+PAUSE = 0.4
+PAUSE_AFTER_FAILURES = 3
+PAUSE_SECONDS = 1800.0
+STATE_FILE = "offhours_v0530.json"
+LOG_FILE = "offhours_v0530.jsonl"
+KST = dt.timezone(dt.timedelta(hours=9))
+
+_STATE = {"installed": False, "thread": None, "failures": 0, "paused_until": 0.0}
+
+
+def target_day(now):
+    """The trading day whose bars are completed now: today after 20:05, the previous weekday before 07:45, else None."""
+    hhmm = now.strftime("%H%M")
+    day = now.date()
+    if hhmm >= START_HHMM:
+        pass
+    elif hhmm < STOP_HHMM:
+        day = day - dt.timedelta(days=1)
+        while day.weekday() >= 5:
+            day -= dt.timedelta(days=1)
+    else:
+        return None
+    return day if day.weekday() < 5 else None
+
+
+def in_window(now):
+    return target_day(now) is not None
+
+
+def _paths(root):
+    base = Path(root) / "stock"
+    return base / STATE_FILE, base / LOG_FILE
+
+
+def load_state(root):
+    path, _ = _paths(root)
+    try:
+        return json.loads(path.read_text("utf8"))
+    except Exception:
+        return {}
+
+
+def save_state(root, state):
+    path, _ = _paths(root)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, ensure_ascii=False, sort_keys=True), "utf8")
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def log(root, event):
+    _, path = _paths(root)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def codes_with_bars(store, day):
+    stamp = day.strftime("%Y%m%d")
+    with store.connect() as db:
+        rows = db.execute("SELECT DISTINCT code FROM bars WHERE frame='5m' AND ts>=? AND ts<?",
+                          (stamp + "000000", stamp + "240000")).fetchall()
+    return sorted(str(r[0]) for r in rows)
+
+
+def _market(db, code):
+    row = db.execute("SELECT market FROM stocks WHERE code=?", (code,)).fetchone() if _has_table(db, "stocks") else None
+    if row is None:
+        row = db.execute("SELECT market FROM bars WHERE code=? AND market IN ('KOSPI','KOSDAQ') LIMIT 1", (code,)).fetchone()
+    return None if row is None else row[0]
+
+
+def _has_table(db, name):
+    return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def valid_rows(rows, code, frame, day, now):
+    """The finished regular-session candles of `day` in a broker response, checked like the vendor repair does."""
+    from d_engine import bar_end, is_krx_regular_reference
+    stamp = day.strftime("%Y%m%d")
+    now_stamp = now.strftime("%Y%m%d%H%M%S")
+    out = {}
+    for item in rows or ():
+        try:
+            row_code, tf, ts, op, hi, lo, cl, vol = item
+            if (str(row_code) != code or tf != frame or len(str(ts)) != 14 or str(ts)[:8] != stamp
+                    or not is_krx_regular_reference(ts, frame) or bar_end(ts, frame) > now_stamp
+                    or int(vol) <= 0 or min(int(op), int(hi), int(lo), int(cl)) <= 0
+                    or not int(lo) <= min(int(op), int(cl)) <= max(int(op), int(cl)) <= int(hi)):
+                continue
+            out[str(ts)] = (int(op), int(hi), int(lo), int(cl), int(vol))
+        except (TypeError, ValueError, OverflowError):
+            continue
+    return out
+
+
+def complete_code(store, api, code, day, now, frames=FRAMES, sleep=time.sleep, budget=None):
+    """Insert the finished candles of `day` that are missing in the database. Returns {frame: (found_missing, inserted)} and the request count."""
+    stamp = day.strftime("%Y%m%d")
+    report, requests = {}, 0
+    for frame in frames:
+        if budget is not None and requests >= budget:
+            break
+        rows = api.history_bars(code, frame)                       # one request series; the broker answers outside the network lock
+        requests += 1
+        official = valid_rows(rows, code, frame, day, now)
+        if not official:
+            report[frame] = (0, 0)
+            sleep(PAUSE)
+            continue
+        with store.connect() as db:
+            have = {str(r[0]) for r in db.execute("SELECT ts FROM bars WHERE code=? AND frame=? AND ts>=? AND ts<?",
+                                                  (code, frame, stamp + "000000", stamp + "240000")).fetchall()}
+            market = _market(db, code)
+        missing = {ts: v for ts, v in official.items() if ts not in have}
+        inserted = 0
+        if missing and market:
+            batch = [(code, market, frame, ts, *v, SOURCE) for ts, v in sorted(missing.items())]
+            with store.lock, store.connect() as db:
+                before = db.total_changes
+                db.executemany("INSERT OR IGNORE INTO bars(code,market,frame,ts,open,high,low,close,volume,source) VALUES(?,?,?,?,?,?,?,?,?,?)", batch)
+                inserted = db.total_changes - before
+        report[frame] = (len(missing), inserted)
+        sleep(PAUSE)
+    return report, requests
+
+
+def _runtime():
+    try:
+        import android_live_bridge as bridge
+        return getattr(bridge, "_RUNTIME", None)
+    except Exception:
+        return None
+
+
+def run(runtime, now=None, sleep=time.sleep):
+    """One pass of the night's work. Returns the summary dict; never raises."""
+    fixed = now                                    # tests pass a fixed moment; the app reads the clock for every code
+    now = now or dt.datetime.now(KST)
+    summary = {"ran": False}
+    try:
+        day = target_day(now)
+        runner = getattr(runtime, "stock_runner", None)
+        root = getattr(runtime, "root", None)
+        api = getattr(runner, "api", None)
+        store = getattr(runner, "store", None)
+        if day is None or not root or api is None or store is None:
+            return summary
+        if time.monotonic() < _STATE["paused_until"]:
+            return summary
+        key = day.isoformat()
+        state = load_state(root)
+        task = state.setdefault(key, {}).setdefault("bars_completion", {"done": False, "codes_done": [], "inserted": 0, "missing_found": 0, "requests": 0})
+        if task["done"]:
+            return summary
+        codes = [c for c in codes_with_bars(store, day) if c not in set(task["codes_done"])]
+        summary.update(ran=True, day=key, todo=len(codes))
+        if not task["codes_done"]:
+            log(root, {"at": now.isoformat(), "task": "bars_completion", "event": "START", "day": key, "codes": len(codes)})
+        for code in codes:
+            moment = fixed if fixed is not None else dt.datetime.now(KST)
+            if not in_window(moment) or task["requests"] >= MAX_REQUESTS:
+                break
+            try:
+                if runner._tick_queue.qsize() >= 24:               # a live feed is running: it has priority
+                    break
+            except Exception:
+                pass
+            try:
+                report, used = complete_code(store, api, code, day, moment, sleep=sleep, budget=MAX_REQUESTS - task["requests"])
+            except Exception as exc:
+                _STATE["failures"] += 1
+                log(root, {"at": moment.isoformat(), "task": "bars_completion", "event": "ERROR", "code": code, "error": (type(exc).__name__ + ":" + str(exc))[:200]})
+                if _STATE["failures"] >= PAUSE_AFTER_FAILURES:
+                    _STATE["paused_until"] = time.monotonic() + PAUSE_SECONDS
+                    _STATE["failures"] = 0
+                    break
+                continue
+            _STATE["failures"] = 0
+            task["codes_done"].append(code)
+            task["requests"] += used
+            task["missing_found"] += sum(v[0] for v in report.values())
+            task["inserted"] += sum(v[1] for v in report.values())
+            if any(v[0] for v in report.values()):
+                log(root, {"at": moment.isoformat(), "task": "bars_completion", "event": "FILLED", "code": code, "day": key,
+                           "missing_and_inserted": {f: list(v) for f, v in report.items()}})
+            if len(task["codes_done"]) % 25 == 0:
+                save_state(root, state)
+        remaining = [c for c in codes_with_bars(store, day) if c not in set(task["codes_done"])]
+        if not remaining:
+            task["done"] = True
+            task["finished_at"] = dt.datetime.now(KST).isoformat()
+            log(root, {"at": task["finished_at"], "task": "bars_completion", "event": "DONE", "day": key,
+                       "codes": len(task["codes_done"]), "missing_found": task["missing_found"], "inserted": task["inserted"], "requests": task["requests"]})
+        save_state(root, state)
+        summary.update(done=bool(task["done"]), inserted=task["inserted"], missing_found=task["missing_found"])
+    except Exception as exc:
+        summary["error"] = (type(exc).__name__ + ":" + str(exc))[:200]
+    return summary
+
+
+def _loop():
+    time.sleep(300.0)
+    while True:
+        try:
+            if in_window(dt.datetime.now(KST)):
+                run(_runtime())
+        except Exception:
+            pass
+        time.sleep(300.0)
+
+
+def install(threads=True):
+    if _STATE["installed"]:
+        return
+    if threads and _STATE["thread"] is None:
+        thread = threading.Thread(target=_loop, name="ARTITRADE_V0530_OFFHOURS", daemon=True)
+        _STATE["thread"] = thread
+        thread.start()
+    _STATE["installed"] = True

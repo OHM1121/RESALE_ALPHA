@@ -433,3 +433,11 @@ a new instruction appears different. Cross-check original
 - **Now active (0.5.2):** `Preplanner._ladder_place`; log `GMO_D1_LADDER_RUNG_AT_CURRENT_PRICE_V0510`.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+## 2026-11-27: No top-up after a sell; supply-demand setup and candle completion in the quiet hours (owner, issue #168, version 0.5.3, rule R16)
+- **Owner decisions:** (1) "먼저 체결되면 그걸로 끝, 추가매수 없음" means: if only part (e.g. 30 %) of the split buy was bought and a sell happens before the rest is secured, the rest is never bought afterwards. (2) Work that does not need real time is done after the NXT close and before the next trading day's open: the day's missing records and candles are filled; the supply-demand 1st-3rd buy prices are set in the morning once the EWY value is known, from the completed D data; the market score stays real time.
+- **기존 기준설정일 / 기존 기준:** 0.5.1-0.5.2: after the start of an exit the remaining split orders could still be matched; plans were created at the preparation time (NXT 07:50, KRX 08:50); missing-candle repair ran only in the session (08:55-15:40).
+- **새 지시와 충돌하는 부분:** all three.
+- **예상 결함:** a new writer of the shared `bars` table (labelled, `INSERT OR IGNORE`, vendor checks); a phone that is off overnight runs nothing; broker request limits at night are unverified; combined (NXT) candles are not completed.
+- **Now active (0.5.3):** `Preplanner._ladder_stop_buying` (exit started -> remaining rungs cancelled and confirmed, vendor matcher and print proxy skip the code), `Preplanner.presetup` (06:00 until the preparation window, EWY VERIFIED), `offhours_prework_v0530` (20:05 until 07:45). Open items: `docs/artitrade/OFFHOURS_PREWORK_PLAN.md`.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+

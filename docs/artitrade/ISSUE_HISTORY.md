@@ -132,3 +132,7 @@ Owner example: rung 1 = 4,900, rung 2 = 4,500, start 4,700: 30 % of the limit is
 Delivery: signed APK 0.5.1 (CI run 45961404109, source e42f06f, SHA-256 eccf807933376ae9e4ab8be775624c3a189823aa00cb869297af81d187cd6aac), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.
 
 Delivery: signed APK 0.5.2 (CI run 45961739454, source c6e1d4e, SHA-256 4b7b325e954a07df8b2c5780242d5f15bd89ed0a9e8b47c60e056fb572806e60), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+## #168 — 0.5.3 no top-up after a sell; supply-demand pre-setup; quiet-hours candle completion (2026-11-27)
+Owner corrected the split-buy rule (a sell before the rest was bought ends the buying) and set rule R16 (what does not need real time is done between the NXT close and the next open). Done: remaining split orders are cancelled when an exit starts; supply-demand plans and the recorded split-buy prices are created from 06:00 once the EWY value is known; the day's missing finished candles are fetched again after 20:05 and inserted without replacing anything. Not done and listed with reasons in OFFHOURS_PREWORK_PLAN.md: backfilling the entry context (MA above / below, trend) of sold positions, coin candle REST calls at the BUY, post-exit research records and market statistics warm-up (not measured yet), NXT eligibility preload (to verify). CI_VERIFIED only after the build; DEVICE_VERIFIED=false.
+
