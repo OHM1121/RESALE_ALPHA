@@ -2785,7 +2785,7 @@
           "root": "CONFIRMED in the vendor engine and the MarketTrend overlays; the unified series follows the owner's statement that KRX and NXT are one market",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.6",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46035931917, source a738935, apk sha256 54fb72a7d45fb27161ce0270c07406f399bf9a9b8552b1559197760faa2d2090)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_AT",

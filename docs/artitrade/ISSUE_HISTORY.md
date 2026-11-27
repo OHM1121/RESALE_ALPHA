@@ -218,3 +218,6 @@ CI run 46031271980 on the trusted branch (attempt 1 failed only in the JVM step 
 ## #185 — 0.6.6 after-hours trading for all stock strategies, unified KRX+NXT series (2026-11-27)
 Owner: MA, MarketTrend and supply-demand must also trade after hours; reference-bar after-hours history = one unified KRX+NXT series ("KRX 것도 보면 되잖아"); do the 90 % readiness work yourself. Causes: vendor explicit "no entry after hours" rules (MA entry condition, GMO `in_regular_clock` at 6 sites, MarketTrend `is_regular_open`) and a separate-session look-back. Engine sha 327515cf... Legacy workbook sheet `11.27` (red notes). Not verified on a device.
 
+
+### 0.6.6 delivered (2026-11-27)
+CI run 46035931917 on the trusted branch, source a738935, signer unchanged, shipped engine sha 327515cf...; `0.6.6.apk` SHA-256 54fb72a7d45fb27161ce0270c07406f399bf9a9b8552b1559197760faa2d2090. #185: CI_VERIFIED, device UNVERIFIED.
