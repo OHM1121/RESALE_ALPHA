@@ -2172,6 +2172,30 @@
         "test_v0410_gmo_exec_link.py"
       ],
       "notes": "First build failed in CI only because the default flavor versionName duplicated 0.4.1 (build config, not app code); fixed in 5fe8a03. Fill grouping fixed (display linkage only). D+1 no-buy diagnosed, not fixed (owner decision: defer fix14 REST repair in the first KRX minutes?)."
+    },
+    {
+          "id": "MC-0420-01",
+          "issue": 157,
+          "found": "owner report 2026-11-27 (stock MA / close betting / MarketTrend still not trading) + stock error export 10:27 (app 0.3.6) + profile on the real database",
+          "category": "STOCK_LEDGER_GATE_HOLD",
+          "title": "Market-wide daily statistics recomputed per symbol/frame under the SQLite ledger gate (tick expiry, stale close-betting book)",
+          "evidence": "TICK_PIPELINE_METRICS 693 windows: priority wait up to 18 s, 32,267 expired vs 72,697 processed ticks, median receive age 5.1 s; close betting NO_FRESH_ORDERBOOK 76 of 77 evaluations (only 2 passed every other rule, both rejected only by the stale book); profile of recover_frame on the real DB: 93 % of discover = market_state_for_session + market_context_v11",
+          "root": "CONFIRMED in code and by profile for the higher-frame repair path; other long holders (HISTORY_INDICATORS, anonymous Dummy-N threads) UNKNOWN until the 0.4.0 stack dump is read",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.4.2",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_FEED",
+                "STOCK_AT",
+                "STOCK_MA",
+                "STOCK_TREND",
+                "STOCK_CLOSE"
+          ],
+          "tests": [
+                "test_v0420_market_ctx_memo.py"
+          ],
+          "notes": "Overlay only; vendor engine SHA unchanged. Measured gate hold of the repair loop on the real DB 254 ms -> 12 ms. Whether stock MA / MarketTrend / close betting now buy is NOT verified (last export was app 0.3.6)."
     }
   ],
   "known_normal": [

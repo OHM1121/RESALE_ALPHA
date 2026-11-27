@@ -2680,6 +2680,17 @@ except Exception as _diag_exc:
     except Exception:
         pass
 
+# 0.4.2 (#157): the market-wide daily statistics (INTEGRATED 1.0 / 1.1, research values) are no longer recomputed for every
+# symbol and frame while the SQLite ledger gate is held (they were 93 % of the gate hold of the higher-frame repair).
+try:
+    from market_ctx_memo_v0420 import install as _install_market_ctx_memo_v0420
+    _install_market_ctx_memo_v0420()
+except Exception as _memo_exc:
+    try:
+        _core.__dict__.setdefault('_v0420_memo_error',repr(_memo_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop
