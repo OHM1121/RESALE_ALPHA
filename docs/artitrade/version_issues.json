@@ -2326,7 +2326,7 @@
           "root": "CONFIRMED in simulation of the real GMOService: Engine.paper_match fills min(displayed size, remaining) for every fresh print and the quote builder keeps one book usable for 3 s",
           "status": "SOURCE_FIXED",
           "fix_version": "0.4.8",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45954094562, source 1067c58, apk sha256 215096625c9d15476e98c1bd35d1bb8da51f87d5fe4f02915272320713367128)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO"

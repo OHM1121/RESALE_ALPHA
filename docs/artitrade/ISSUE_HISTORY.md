@@ -110,3 +110,5 @@ Delivery: signed APK 0.4.7 (CI run 45953023938, source a6186d5, SHA-256 4a8f4f52
 
 ## #163 — 0.4.8 GMO PAPER matcher: displayed size of one 0D snapshot taken once (2026-11-27)
 Measured with the real service and a virtual candidate: six prints on one 5-share book filled 30 shares; with four prints per 5-second book the per-stock budget was reached in 20 s instead of the 95 s the displayed liquidity supports. Fixed by subtracting the shares already taken from the snapshot (BUY ask and SELL bid) before the original matcher runs. Rejected: a print-volume cap (starves thin names such as the 11-26 Doosan Bobcat case), editing the vendor matcher (engine hash). Unchanged on purpose: fills are sized by the displayed size, not the print volume. The 0.4.7 wording about the 10 percent proxy after exhaustion was inaccurate and is corrected: the proxy runs only when no size is shown or the book is older than 3 s. CI_VERIFIED only after the build; DEVICE_VERIFIED=false.
+
+Delivery: signed APK 0.4.8 (CI run 45954094562, source 1067c58, SHA-256 215096625c9d15476e98c1bd35d1bb8da51f87d5fe4f02915272320713367128), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.
