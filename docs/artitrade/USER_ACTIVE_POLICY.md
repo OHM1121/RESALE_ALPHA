@@ -467,3 +467,9 @@ a new instruction appears different. Cross-check original
 - **기존 기준 / 충돌:** a stream message within 3 s was required (MA 10-2 s window, close-betting book age, MarketTrend quote 3 s). Replaced for quiet stocks only; for a stock with a fresh stream message nothing changes.
 - **예상 결함:** REST request limit unknown; more candidates open up (slots and limits unchanged); a last trade older than 3 s is accepted as the current price only if it lies inside the current bid/ask; real ka10004 reply on this path unverified.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-27: Weekend quiet window and deep audit (owner, issue #177, version 0.5.9, rule R16)
+- **Owner:** from today's close until Monday's open fill missing data and candles, re-check the managed data, find what is still missing and fill it, clear what the processing delay left undone; asked whether Monday's open applies the EWY move of Friday night to Monday.
+- **Decision:** the weekend is one continuous quiet window; a deep five-trading-day candle audit with retries runs in it; the backlog is counted (not cleared).
+- **EWY (checked in the code):** `night_futures_gate_v0260.parse_us_session` takes the latest COMPLETE EWY US session that closed after the previous KRX close; on Monday that is Friday's US session (KST Fri 23:30 - Sat 06:00, open-to-close change); the supply-demand D+1 condition price = D (Friday) close x (1 + that change), rounded down to a tick, planned from 06:00 Monday once the value is VERIFIED.
+- **예상 결함:** the retry queues of the vendor are not cleared; the request limit is unknown; the phone must be on; not verified on a device.

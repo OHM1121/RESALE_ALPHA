@@ -2609,6 +2609,30 @@
                 "test_v0580_rest_book_confirm.py"
           ],
           "notes": "One ka10004 inquiry per stock and decision window (>= 0.5 s apart); used only if valid and the last trade lies inside [bid, ask]. Rules, limits, wallets and fills unchanged. The official request limit was not found. The real ka10004 reply on this path is unverified on a device."
+    },
+    {
+          "id": "OFFHOURS-0590-02",
+          "issue": 177,
+          "found": "owner request 2026-11-27: use Friday close until Monday open to fill missing data and candles, re-check the managed data and clear what delay left unprocessed",
+          "category": "QUIET_WINDOW_TOO_SHORT_AND_SHALLOW",
+          "title": "The quiet-hours work covered only the last day and stopped on Saturday morning; weekend time was unused and older holes were not checked",
+          "evidence": "offhours_prework_v0530.target_day returned None on a Saturday daytime; complete_code asks the vendor history window (115 5m bars) once; ui_tests/test_v0590_offhours_weekend.py",
+          "root": "CONFIRMED in code",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.9",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_FEED",
+                "STOCK_MA",
+                "STOCK_TREND",
+                "STOCK_AT"
+          ],
+          "tests": [
+                "test_v0590_offhours_weekend.py",
+                "test_v0530_offhours_prework.py"
+          ],
+          "notes": "Weekend/holiday = all-day quiet window; deep 5-trading-day candle audit with up to 3 attempts per stock; backlog diagnostics are only counted (read only), the vendor retry queues are not touched; no combined (NXT) candles; the request limit is unknown; the app must be running."
     }
   ],
   "known_normal": [

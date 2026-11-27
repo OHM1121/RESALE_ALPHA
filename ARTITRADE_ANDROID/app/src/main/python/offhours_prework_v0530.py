@@ -39,19 +39,52 @@ KST = dt.timezone(dt.timedelta(hours=9))
 _STATE = {"installed": False, "thread": None, "failures": 0, "paused_until": 0.0, "running": False, "progress": [0, 0]}
 
 
+def _is_trading_day(day):
+    try:
+        from night_futures_gate_v0260 import is_krx_day
+        return bool(is_krx_day(day))
+    except Exception:
+        return day.weekday() < 5
+
+
+def previous_trading_day(day):
+    probe = day
+    for _ in range(15):
+        probe = probe - dt.timedelta(days=1)
+        if _is_trading_day(probe):
+            return probe
+    return day - dt.timedelta(days=1)
+
+
 def target_day(now):
-    """The trading day whose bars are completed now: today after 20:05, the previous weekday before 07:45, else None."""
+    """The trading day whose bars are completed now.
+
+    Trading day: today after 20:05, the previous trading day before 07:45, else None.
+    0.5.9 (owner 2026-11-27): a day without a market (weekend, holiday) belongs to the quiet window ALL DAY, so the work runs from Friday 20:05 until
+    Monday 07:45 (or the next trading morning) and refers to the last trading day.
+    """
     hhmm = now.strftime("%H%M")
     day = now.date()
+    if not _is_trading_day(day):
+        return previous_trading_day(day)
     if hhmm >= START_HHMM:
-        pass
-    elif hhmm < STOP_HHMM:
-        day = day - dt.timedelta(days=1)
-        while day.weekday() >= 5:
-            day -= dt.timedelta(days=1)
-    else:
-        return None
-    return day if day.weekday() < 5 else None
+        return day
+    if hhmm < STOP_HHMM:
+        return previous_trading_day(day)
+    return None
+
+
+def long_window(now):
+    """True when the quiet window spans a non-trading day (weekend / holiday): time for the deep multi-day audit."""
+    day = target_day(now)
+    if day is None:
+        return False
+    nxt = day + dt.timedelta(days=1)
+    for _ in range(15):
+        if _is_trading_day(nxt):
+            break
+        nxt += dt.timedelta(days=1)
+    return (nxt - day).days >= 2
 
 
 def in_window(now):
@@ -252,12 +285,21 @@ def status(root, now=None):
         day = target_day(now)
         if day is None:
             return {}
+        try:
+            import offhours_weekend_v0590 as weekend
+            audit = weekend.status_line(root, day, now)
+        except Exception:
+            audit = {}
+        if audit and audit.get("phase") == "running":
+            return audit
         if _STATE["running"]:
             done, total = _STATE["progress"]
             return {"phase": "running", "label": "장마감 후 데이터 수집·저장 중" + (" %d/%d" % (done, total) if total else "")}
         if time.monotonic() < _STATE["paused_until"]:
             return {"phase": "paused", "label": "장마감 후 데이터 수집 잠시 중지 · 재시도 대기"}
         task = (load_state(root).get(day.isoformat()) or {}).get("bars_completion") or {}
+        if audit and task.get("done"):
+            return audit
         if task.get("done"):
             return {"phase": "done", "label": "장마감 후 데이터 수집·저장 완료 · %d종목" % len(task.get("codes_done") or [])}
         return {"phase": "waiting", "label": "장마감 후 데이터 수집 대기"}
@@ -271,6 +313,9 @@ def _loop():
         try:
             if in_window(dt.datetime.now(KST)):
                 run(_runtime())
+                if long_window(dt.datetime.now(KST)):
+                    import offhours_weekend_v0590 as weekend
+                    weekend.run_audit(_runtime())          # 0.5.9: the deep multi-day audit of the managed data, only in a long window
         except Exception:
             pass
         time.sleep(300.0)

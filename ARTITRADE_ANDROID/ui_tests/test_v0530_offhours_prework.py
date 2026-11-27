@@ -94,7 +94,7 @@ class Window(unittest.TestCase):
         self.assertEqual(off.target_day(dt.datetime(2026, 11, 30, 3, 0, tzinfo=KST)), dt.date(2026, 11, 27))   # Monday morning -> Friday
         self.assertIsNone(off.target_day(dt.datetime(2026, 11, 26, 12, 0, tzinfo=KST)))           # never during the market
         self.assertIsNone(off.target_day(dt.datetime(2026, 11, 27, 7, 45, tzinfo=KST)))
-        self.assertIsNone(off.target_day(dt.datetime(2026, 11, 28, 22, 0, tzinfo=KST)))           # Saturday
+        self.assertEqual(off.target_day(dt.datetime(2026, 11, 28, 22, 0, tzinfo=KST)), dt.date(2026, 11, 27))   # 0.5.9: Saturday belongs to the Friday window
 
 
 class Completion(Base):

@@ -170,3 +170,6 @@ Delivery: signed APK 0.5.7 (CI run 45992878871, source 5001d37, SHA-256 5d83a919
 Owner decision: replace the "stream message within 3 s" requirement by one ka10004 inquiry per stock and window (MA, close-betting and, on the owner's question, MarketTrend). Evidence: 23,329 of 47,943 stock MA decisions blocked by "no fresh tick". Added `rest_book_confirm_v0580` and ui_tests/test_v0580_rest_book_confirm.py. Not verified on a device; the official request limit is unknown.
 
 Delivery: signed APK 0.5.8 (CI run 45994156662, source be8e7cf, SHA-256 bf8470b4724a9445c394bb808638bec6bdbd16da04e45249eaa2dfb06219d32a), signer unchanged. Issue #176. CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+## #177 — 0.5.9 weekend deep audit of the managed stock candles (2026-11-27)
+Owner: use Friday close until Monday open to fill missing data and candles, re-check the managed data and clear the delayed backlog. Done: weekend as a continuous quiet window, a 5-trading-day deep candle audit with retries and start/end coverage, a read-only backlog count and a card status line. Not done: clearing the vendor retry queues themselves, combined (NXT) candles. Not verified on a device.
