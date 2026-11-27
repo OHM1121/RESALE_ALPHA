@@ -2798,6 +2798,17 @@ except Exception as _held_exc:
     except Exception:
         pass
 
+# 0.5.8 (#176): stock MA, close-betting and MarketTrend confirm the CURRENT book with one ka10004 inquiry per stock and window when the stream is quiet
+# (was: a stream message within 3 s was required). Installed last so it wraps the MarketTrend entry window the 11.18 runtime installed. Failure-tolerant.
+try:
+    import rest_book_confirm_v0580 as _rest_book_confirm_v0580
+    _rest_book_confirm_v0580.install()
+except Exception as _rbc_exc:
+    try:
+        _core.__dict__.setdefault('_v0580_rest_book_confirm_error',repr(_rbc_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

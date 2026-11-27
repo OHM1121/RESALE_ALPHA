@@ -461,3 +461,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** a resting take-profit the exchange would have filled while the app was blind is recovered from the finished candles (official Kiwoom candles first); the dashboard counts a split-bought position once.
 - **기존 기준 / 충돌:** the existing recovery covers only D+16 overdue holdings; the earlier rule "no fill from historical candles" is kept for every marketable order and is relaxed only for the resting take-profit (a real resting order fills when the price trades through it).
 - **예상 결함:** the touch time is the candle end; the later app-evaluated exits are not replayed; quantity by the price-reached rule; not verified on a device.
+
+## 2026-11-27: Quiet-stock book confirmation for stock MA, close-betting and MarketTrend (owner, issue #176, version 0.5.8, rule R15)
+- **Owner:** the 3 s stream-message rule is replaced for MA and close-betting by a REST book inquiry (once per stock before the close) and, asked "why not MarketTrend", also for MarketTrend.
+- **기존 기준 / 충돌:** a stream message within 3 s was required (MA 10-2 s window, close-betting book age, MarketTrend quote 3 s). Replaced for quiet stocks only; for a stock with a fresh stream message nothing changes.
+- **예상 결함:** REST request limit unknown; more candidates open up (slots and limits unchanged); a last trade older than 3 s is accepted as the current price only if it lies inside the current bid/ask; real ka10004 reply on this path unverified.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.

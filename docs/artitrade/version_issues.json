@@ -2586,6 +2586,29 @@
           "nodes": ["UI_RECORDS", "STOCK_FEED"],
           "tests": ["test_v0570_offhours_status.py"],
           "notes": "One short line (teal; amber when paused), only in the quiet window 20:05-07:45; display only. The Java card is compiled by CI only. Combined (NXT) candles are not part of the task yet."
+    },
+    {
+          "id": "FEED-0580-01",
+          "issue": 176,
+          "found": "owner decision 2026-11-27: apply the current-book confirmation to stock MA, close-betting and MarketTrend",
+          "category": "STREAM_SILENCE_TREATED_AS_STALE",
+          "title": "A quiet stock (no trade, no book change) was treated as stale by the 3 s stream-message rule, so MA, close-betting and MarketTrend never evaluated or never bought it",
+          "evidence": "execution_decisions_v074: 23,329 of 47,943 stock MA decisions MA_NO_FRESH_OBSERVED_TICK_IN_10_TO_2_SECOND_WINDOW; at_close_engine NO_FRESH_ORDERBOOK; market_trend_runtime_v043._quote 3 s; ui_tests/test_v0580_rest_book_confirm.py",
+          "root": "CONFIRMED in code: the Kiwoom 0B/0D stream sends a message only on a trade / a book change; MA _up_worker is tick driven; every gate compares the age of the last stream message with 3 s",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.8",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_FEED",
+                "STOCK_MA",
+                "STOCK_TREND",
+                "STOCK_AT"
+          ],
+          "tests": [
+                "test_v0580_rest_book_confirm.py"
+          ],
+          "notes": "One ka10004 inquiry per stock and decision window (>= 0.5 s apart); used only if valid and the last trade lies inside [bid, ask]. Rules, limits, wallets and fills unchanged. The official request limit was not found. The real ka10004 reply on this path is unverified on a device."
     }
   ],
   "known_normal": [

@@ -180,6 +180,7 @@
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/kiwoom_ws_v067.py",
         "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py",
+        "ARTITRADE_ANDROID/app/src/main/python/rest_book_confirm_v0580.py",
         "ARTITRADE_ANDROID/app/src/main/python/stock_quote_truth_v066.py"
       ],
       "depends_on": [],
@@ -203,9 +204,10 @@
         171,
         172,
         173,
-        175
+        175,
+        176
       ],
-      "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion. 0.5.7 (#175): offhours_prework_v0530.status(root) (read-only; running / done / paused / waiting inside the 20:05-07:45 window) is added to the snapshot as stock_feed.offhours by android_runtime_v078._phone_runtime_snapshot; UnifiedVisualActivity.feedCard shows it as one teal (amber when paused) line. Display only."
+      "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion. 0.5.7 (#175): offhours_prework_v0530.status(root) (read-only; running / done / paused / waiting inside the 20:05-07:45 window) is added to the snapshot as stock_feed.offhours by android_runtime_v078._phone_runtime_snapshot; UnifiedVisualActivity.feedCard shows it as one teal (amber when paused) line. Display only. 0.5.8 (#176): rest_book_confirm_v0580 (installed last from android_runtime_v078, failure-tolerant) - for a stock without a fresh stream message and with a known last trade of today, ONE official ka10004 inquiry per stock and decision window (>= 0.5 s apart, 2 s cache) is used when valid and the last trade lies inside [bid, ask]: runner.engine.book gets the snapshot (fetch time, fresh liquidity budget); MA: ma_pass (thread started with LivePaperRunner._start_market_workers) offers ONE tick (fetch-time stamp, marker REST_CONFIRMED_LAST_TRADE) to the MA entry queue only when the rule already fires at the last price; MarketTrend: Coordinator._preclose_candidates wrapper renews the stock quote stamp of armed (WATCHING) quiet stocks; close-betting: close_pass renews BookTracker and latest-trade record of the quiet focus stocks 15:05-15:19 once per 60 s. Strategy rules, limits, wallets and fills unchanged."
     },
     {
       "id": "COIN_FEED",
@@ -255,7 +257,8 @@
         95,
         97,
         98,
-        104
+        104,
+        176
       ],
       "contract": "Native d_live/d_engine original reference book and wallet ownership."
     },
@@ -285,7 +288,8 @@
         98,
         107,
         116,
-        128
+        128,
+        176
       ],
       "contract": "10-to-2-second verified preclose decision; original MA wallet is sole fill authority.",
       "tests": [
@@ -389,7 +393,8 @@
         107,
         114,
         116,
-        170
+        170,
+        176
       ],
       "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible. 0.5.5 (#170): market_trend_history_v0550 (installed from android_runtime_v078, failure-tolerant) wraps market_trend_runtime_v043.Coordinator._raw_history (stock: local bars first, previous session last bar is current until the first bar of today completes, broker history only for a really missing bar at one call per second overall / 120 s per symbol-frame) and Coordinator.start (preload thread: local bars into empty _history slots every 30 s); entry rules unchanged; no order, fill or ledger write."
     },

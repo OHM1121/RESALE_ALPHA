@@ -165,3 +165,6 @@ The dashboard showed 13 buys for 2 positions (split fills counted as rows). Buys
 Owner wanted to see, in one short teal line on the market status card, whether the after-close collect-and-store work is running. Added `status()` and the card line; display only; Java compiled by CI only; not verified on a device.
 
 Delivery: signed APK 0.5.7 (CI run 45992878871, source 5001d37, SHA-256 5d83a9193bb47971d6f1bc3429e01460e0363c725ee309b7539f22e0c5ce2c73), signer unchanged. Issues #173, #174, #175. CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+## #176 — 0.5.8 current-book confirmation for quiet stocks (MA, close-betting, MarketTrend) (2026-11-27)
+Owner decision: replace the "stream message within 3 s" requirement by one ka10004 inquiry per stock and window (MA, close-betting and, on the owner's question, MarketTrend). Evidence: 23,329 of 47,943 stock MA decisions blocked by "no fresh tick". Added `rest_book_confirm_v0580` and ui_tests/test_v0580_rest_book_confirm.py. Not verified on a device; the official request limit is unknown.
