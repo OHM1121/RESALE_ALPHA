@@ -2347,7 +2347,7 @@
           "root": "DESIGN: Engine.paper_match requires a fresh 0B print as evidence (policy 'no fabricated fill'); owner changed the policy for this case",
           "status": "SOURCE_FIXED",
           "fix_version": "0.4.9",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45955187149, source 2210f60, apk sha256 9bd44c9e204a71773da04c6d00fba20f6d1657905797036d381c15623f1c9860)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO"

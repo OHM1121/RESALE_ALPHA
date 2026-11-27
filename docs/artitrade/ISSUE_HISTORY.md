@@ -116,3 +116,4 @@ Delivery: signed APK 0.4.8 (CI run 45954094562, source 1067c58, SHA-256 21509662
 ## #164 — 0.4.9 supply-demand PAPER BUY from two consecutive fresh 0D snapshots (2026-11-27)
 Owner decision (policy conflict recorded in USER_ACTIVE_POLICY): allow a fill from displayed liquidity when the quantity is still there at "execution time". Implemented as a confirmation on the next fresh book (1-60 s). Limits stated: it does not solve the 11-26 Doosan Bobcat case (snapshots minutes apart, ask at the ceiling; only a single-snapshot immediate fill reproduces a real 09:00:18 fill but has no phantom protection); the gaps are assumptions; thin symbols cannot separate "unchanged" from a feed gap. CI_VERIFIED only after the build; DEVICE_VERIFIED=false.
 
+Delivery: signed APK 0.4.9 (CI run 45955187149, source 2210f60, SHA-256 9bd44c9e204a71773da04c6d00fba20f6d1657905797036d381c15623f1c9860), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.
