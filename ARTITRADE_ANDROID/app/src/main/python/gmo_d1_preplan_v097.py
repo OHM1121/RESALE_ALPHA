@@ -730,13 +730,22 @@ class Preplanner:
             for rung in rungs:
                 tag="L%d"%rung["rung"]
                 have=sum(int(o.filled) for o in earlier if str(o.purpose).endswith("_"+tag))
-                want=int(rung["quantity"])-have
                 price=int(rung["price"])
-                qty=min(want,int(math.floor(available/(price*(1+fee)))))
+                if now_price>0 and price>=now_price:
+                    # The start price is already at or below this rung (owner 2026-11-27: rung 1 = 4,900, start 4,700): buy the rung's
+                    # share of the per-stock limit NOW at the current price (more shares than at the rung price); the lower rungs stay.
+                    use=now_price
+                    want=int(math.floor(per*float(rung["budget_fraction"])/(use*(1+fee))))-have
+                    engine._log(code,"GMO_D1_LADDER_RUNG_AT_CURRENT_PRICE_V0510",
+                        f"{tag} rung price {price} >= current {use}: {int(round(100*float(rung['budget_fraction'])))}% of the limit bought at the current price",at.isoformat())
+                else:
+                    use=price
+                    want=int(rung["quantity"])-have
+                qty=min(want,int(math.floor(available/(use*(1+fee)))))
                 if qty<1:continue
-                available-=qty*price*(1+fee)
+                available-=qty*use*(1+fee)
                 # `reference` = the price seen when the order was placed (kept in the order): a limit below it is a RESTING rung.
-                made.append(engine._order(code,"BUY",f"D+1_V097_{venue}_{tag}",max(now_price,1),price,qty,at.isoformat()))
+                made.append(engine._order(code,"BUY",f"D+1_V097_{venue}_{tag}",max(now_price,1),use,qty,at.isoformat()))
         if not made:
             plan["status"]="COMPLETED" if earlier else "INSUFFICIENT_BUDGET";return None
         engine._v097_managed_codes.add(code)

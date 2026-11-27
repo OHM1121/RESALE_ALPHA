@@ -2406,6 +2406,26 @@
                 "test_v0470_gmo_d1_end_to_end.py"
           ],
           "notes": "Rising stocks fill only rung 1; resting rungs are bought on price reached without queue proof; ARTITRADE_REAL_MODE=1 still stops the plan; the ladder is recorded in the audit log, order purposes and plan snapshot (no spreadsheet column added)."
+    },
+    {
+          "id": "GMO-0520-01",
+          "issue": 167,
+          "found": "owner decision 2026-11-27: a start price below rung 1 buys the rung's share of the limit now at the current price",
+          "category": "GMO_LADDER_MARKETABLE_RUNG_SIZED_AT_RUNG_PRICE",
+          "title": "A rung at or above the start price was sized at the rung price, so less than the intended share of the limit was invested",
+          "evidence": "ui_tests/test_v0510_gmo_ladder.py StartBelowRungOne: rung 1 = 4,900, rung 2 = 4,500, start 4,700",
+          "root": "DESIGN of 0.5.1 _ladder_place (quantity from the rung price); owner specified the current-price sizing",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.2",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO"
+          ],
+          "tests": [
+                "test_v0510_gmo_ladder.py"
+          ],
+          "notes": "Limit = current price: a one-tick rise before matching leaves the order resting. Recorded rung quantities stay rung-price based; the order and fill carry the real quantity."
     }
   ],
   "known_normal": [

@@ -151,6 +151,43 @@ class GapDown(Base):
         self.assertEqual({f["price"] for f in s.svc.engine.buy_fills}, {4900})
 
 
+class StartBelowRungOne(Base):
+    """Owner example 2026-11-27: rung 1 = 4,900, rung 2 = 4,500; the price starts at 4,700."""
+
+    def custom(self, s):
+        ladder = s.plan["ladder"]
+        ladder["rungs"] = [{"rung": 1, "price": 4900, "budget_fraction": 0.30, "quantity": int(500000 * .30 / (4900 * 1.00015))},
+                           {"rung": 2, "price": 4500, "budget_fraction": 0.35, "quantity": int(500000 * .35 / (4500 * 1.00015))},
+                           {"rung": 3, "price": 4400, "budget_fraction": 0.35, "quantity": int(500000 * .35 / (4400 * 1.00015))}]
+
+    def test_rung_one_is_bought_now_at_the_current_price_and_the_lower_rungs_stay(self):
+        s = self.sim()
+        s.planner.retry_ladders(at(8, 50))
+        self.custom(s)
+        s.book(at(9, 0, 18), 4700, 4650, 500)
+        got = self.rungs(s)
+        self.assertEqual(got["L1"].limit, 4700)                                          # 30 % of the limit at the current price
+        self.assertEqual(got["L1"].requested, int(s.budget * 0.30 / (4700 * 1.00015)))
+        self.assertGreater(got["L1"].requested, int(500000 * .30 / (4900 * 1.00015)))    # more shares than at the rung price
+        self.assertEqual((got["L2"].limit, got["L3"].limit), (4500, 4400))               # the others stay as set
+        self.assertEqual(len(self.logs(s, "GMO_D1_LADDER_RUNG_AT_CURRENT_PRICE_V0510")), 1)
+        s.print_(at(9, 0, 19), 4700, 60, ask=4700, bid=4650)
+        self.assertEqual((got["L1"].state, got["L2"].filled, got["L3"].filled), ("FILLED", 0, 0))
+        self.assertEqual({f["price"] for f in s.svc.engine.buy_fills}, {4700})
+        s.print_(at(9, 30, 0), 4500, 5, ask=4510, bid=4500)                              # later the price comes down to rung 2
+        self.assertEqual((got["L2"].state, got["L3"].filled), ("FILLED", 0))
+        self.assertIn(4500.0, {f["price"] for f in s.svc.engine.buy_fills})
+
+    def test_a_start_above_rung_one_leaves_every_rung_resting(self):
+        s = self.sim()
+        s.planner.retry_ladders(at(8, 50))
+        self.custom(s)
+        s.book(at(9, 0, 18), 4950, 4900, 500)
+        self.assertEqual([o.limit for o in sorted(s.orders, key=lambda o: o.id)], [4900, 4500, 4400])
+        s.print_(at(9, 0, 19), 4950, 60, ask=4950, bid=4900)
+        self.assertEqual(s.filled, 0)
+
+
 class OnePosition(Base):
     def test_three_rungs_make_one_position_with_one_identity(self):
         s = self.sim()

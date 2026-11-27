@@ -425,3 +425,11 @@ a new instruction appears different. Cross-check original
 - **Now active (0.5.1):** `compute_ladder` / `Preplanner._ladder_step` in `gmo_d1_preplan_v097`; the ladder is recorded in the plan, the audit log `GMO_D1_LADDER_V0510` and the order purposes `..._L1 / _L2 / _L3` (`_GAP` for the gap-down order). A new order is never placed while an earlier order of the entry is cancel-requested but not confirmed.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+## 2026-11-27: Split BUY - a start price below rung 1 buys rung 1's share now at the current price (owner, issue #167, version 0.5.2)
+- **Owner decision:** rung 1 = 4,900, rung 2 = 4,500, the price starts at 4,700: buy 30 % of the per-stock limit at 4,700; rungs 2 and 3 stay as set.
+- **기존 기준설정일 / 기존 기준:** 0.5.1 (#166, same day): a rung whose price is at or above the start price was filled with the share count computed at the RUNG price.
+- **새 지시와 충돌하는 부분:** the share count is now computed at the CURRENT price from the rung's share of the limit (more shares for the same amount).
+- **예상 결함:** the order limit is the current price, so a one-tick rise before the order is matched leaves it resting at that price (same as a real marketable limit); recorded per-rung quantities (rung-price based) differ from the real order quantity, which is in the order and the fill; a start above rung 1 leaves every rung resting.
+- **Now active (0.5.2):** `Preplanner._ladder_place`; log `GMO_D1_LADDER_RUNG_AT_CURRENT_PRICE_V0510`.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
