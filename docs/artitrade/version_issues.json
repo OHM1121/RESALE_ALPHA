@@ -2150,6 +2150,28 @@
         "test_v0400_stock_feed_diag.py"
       ],
       "notes": "Measurement only: stack of the gate holder at holds >=5 s (stock/db_gate_long_hold_v0400.jsonl), scheduling-lag probe and DIAG suffix on disconnect health details. No behaviour change."
+    },
+    {
+      "id": "SG-0410-01",
+      "issue": 156,
+      "found": "owner report 2026-11-27 + stock error export 10:27 (app 0.3.6)",
+      "category": "GMO_FILL_GROUPING_AND_D1_NO_BUY",
+      "title": "GMO fills not grouped by position (placeholder id -1, unlinked fills); GMO D+1 candidate never evaluated at the open (tick pipeline starved)",
+      "evidence": "vendor GMO snapshot id=-1 for every position, fills without position_id/entry_date -> uid native:-1 / unlinked_fill per fill; TICK_PIPELINE_METRICS 09:00:05-09:21:49 on 11-26: processed=0, expired ticks, receive age 4.7-54 s, ledger gate holders fix14-higher-frame-rest 2.5-6 s; GMO_0D_RESUBSCRIBE x2/min; no order for the 11-25 candidate",
+      "root": "Grouping: CONFIRMED_IN_CODE. D+1 no-buy: CONFIRMED starvation of the tick pipeline at the open; mitigation not applied",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.4.1",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "STOCK_GMO",
+        "STOCK_AT",
+        "STOCK_FEED"
+      ],
+      "tests": [
+        "test_v0410_gmo_exec_link.py"
+      ],
+      "notes": "Fill grouping fixed (display linkage only). D+1 no-buy diagnosed, not fixed (owner decision: defer fix14 REST repair in the first KRX minutes?)."
     }
   ],
   "known_normal": [

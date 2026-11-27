@@ -555,3 +555,6 @@ Based on 0.3.8 (versionCode 172). `ws_book_coalesce_v0230.dispatch` times `previ
 
 ## 0.4.0 — stock feed measurement (issue #155)
 Based on 0.3.9 (versionCode 173). `android_runtime_v078` installs `stock_feed_diag_v0400` after the KRX depth fallback (a failure there never stops the app): it registers every `d_storage.TradePriorityRLock`, appends a `DIAG` suffix (gate holder, feed/tick queue, overflows, scheduling lag) to `d_live.LivePaperRunner._health` details of a disconnect, and a watchdog writes the stack of a gate holder that passes 5 s to `stock/db_gate_long_hold_v0400.jsonl`. No trading rule, order or price changes. SOURCE_FIXED (measurement); CI and device not verified yet.
+
+## 0.4.1 — GMO fill grouping (issue #156)
+Based on 0.4.0 (versionCode 174). `android_runtime_v078` (GMO hub snapshot) -> `gmo_exec_link_v0410.link` adds `entry_date` to GMO fills -> `position_uid_v015._identity_key` (negative placeholder ids are not native ids) -> one `entry:<code>|<entry_date>` uid for the position and its fills -> `UnifiedVisualActivity.tradeGroupKey` groups them. The D+1 no-buy case (tick pipeline starved at the open, `gmo_d1_preplan_v097` never evaluated) is diagnosed in #156 and NOT changed. SOURCE_FIXED; CI and device not verified yet.

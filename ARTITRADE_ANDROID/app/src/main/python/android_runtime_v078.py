@@ -1989,6 +1989,11 @@ def _hub_records_v078(self,for_ui=False):
                         pass
             except Exception as cost_exc:
                 self._err('gmo_original_cost_basis_v086',cost_exc)
+            try:
+                from gmo_exec_link_v0410 import link as _link_gmo_fills_v0410
+                _link_gmo_fills_v0410(snap.get('executions') or [],gmo.engine)
+            except Exception as link_exc:
+                self._err('gmo_fill_position_link_v0410',link_exc)
             _v086_enrich_gmo_executions(snap.get('executions') or [])
             wallet=snap.get('wallet') or {}
             sells=[x for x in (snap.get('executions') or []) if str(x.get('side') or '').upper()=='SELL']

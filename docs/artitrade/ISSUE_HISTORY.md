@@ -72,3 +72,6 @@ Outage 182 min: external network, automatic recovery, no app defect found. Book 
 
 ## #155 — 0.4.0 stock WebSocket drops and ledger gate long holds (2026-11-27)
 211 disconnects in 8 days; ledger gate held up to 210 s; external DNS failures shared with the coin feed. Cause of the long holds unknown: measurement added (holder stack, scheduling lag, disconnect diagnostics). SOURCE_FIXED (measurement); CI pending; device UNVERIFIED.
+
+## #156 — 0.4.1 GMO fills grouped by position; D+1 no-buy diagnosed (2026-11-27)
+GMO fills had no stable identity (placeholder ids) and showed as separate cards: fixed by linking fills to the entry date and ignoring negative placeholder ids. The D+1 candidate was never evaluated at the open because the tick pipeline processed nothing for 20 minutes (ledger gate held by background repair): diagnosed, mitigation awaits the owner's decision. SOURCE_FIXED; CI pending; device UNVERIFIED.

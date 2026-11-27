@@ -60,8 +60,16 @@ def _owner(path):
     owner=market+"/"+original
     return owner if owner in _WALLETS else None
 
+def _placeholder(value):
+    """0.4.1: a negative numeric id (the vendor GMO placeholder -1, fill ids -9000000...) is not a native position id."""
+    try:
+        return float(str(value).strip())<0
+    except (TypeError,ValueError):
+        return False
+
 def _identity_key(row,kind):
     native=_text(row.get("position_id") if kind=="execution" else row.get("id"))
+    if native and _placeholder(native):native=""
     if native:return "native:"+native,True
     if kind=="position":
         # Some native GMO paper positions have no numeric id. A genuine entry
