@@ -2737,7 +2737,7 @@
           "root": "CONFIRMED in market_research_v033._MarketWorker._fetch_loop (krx_session_v041.status gate)",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.4",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46010570990, source e7eb6bf, apk sha256 4c1e29d61a9a3810643563ed1a55f40b504cd92dbf130b9ea5866d54c2279af7)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_AT",

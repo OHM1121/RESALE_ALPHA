@@ -205,3 +205,6 @@ CI run 46009467695 on the trusted branch, source 21f2259, signer unchanged; `0.6
 
 ## #183 — 0.6.4 stock market score after the close (2026-11-27)
 Owner: compute and record the stock market score 16:00-20:00. Cause: the fetch loop stops at the KRX close; 33 of 34 stock AT buys were after 16:00 and had no score. Now computed every 3 minutes until 20:00 and recorded (history only, gate unchanged). The computation works outside the session (score 31.2 at 22:45). Not verified on a device.
+
+### 0.6.4 delivered (2026-11-27)
+CI run 46010570990 on the trusted branch, source e7eb6bf, signer unchanged; `0.6.4.apk` SHA-256 4c1e29d61a9a3810643563ed1a55f40b504cd92dbf130b9ea5866d54c2279af7. #183: CI_VERIFIED, device UNVERIFIED.
