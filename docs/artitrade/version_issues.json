@@ -2314,7 +2314,28 @@
                 "test_v0460_ui_ledger_ro.py",
                 "test_v0460_gmo_book_trigger.py"
           ],
-          "notes": "Known and not fixed: one 0D snapshot size reusable across several prints; 10 percent print proxy after the displayed size is exhausted."
+          "notes": "Known and fixed in 0.4.8 (#163): one 0D snapshot size reusable across several prints. The 10 percent print proxy runs only when no size is shown or the book is older than 3 s (0.4.7 wording corrected)."
+    },
+    {
+          "id": "GMO-0480-01",
+          "issue": 163,
+          "found": "0.4.7 limitation measured by simulation (owner: run the simulation)",
+          "category": "GMO_PAPER_BOOK_SIZE_REUSED_ACROSS_PRINTS",
+          "title": "The displayed size of one 0D snapshot filled again for every print within the 3 s book validity",
+          "evidence": "ui_tests/test_v0480_book_liquidity_once.py: a 5-share book with six prints filled 30 shares; four prints per 5-share book every 5 s reached the budget in 20 s instead of 95 s",
+          "root": "CONFIRMED in simulation of the real GMOService: Engine.paper_match fills min(displayed size, remaining) for every fresh print and the quote builder keeps one book usable for 3 s",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.4.8",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO"
+          ],
+          "tests": [
+                "test_v0480_book_liquidity_once.py",
+                "test_v0470_gmo_d1_end_to_end.py"
+          ],
+          "notes": "Fills are still sized by the displayed size, not the print volume (a volume cap would starve thin names). Thin symbols reach the budget more slowly when prints outnumber book updates."
     }
   ],
   "known_normal": [

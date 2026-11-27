@@ -609,6 +609,52 @@ class Preplanner:
         with self.lock:
             return [dict(p) for p in self.plans.values()]
 
+def consume_book_once(svc,eng):
+    """0.4.8 (#163): the displayed top-of-book size of ONE 0D snapshot is liquidity that can be taken once.
+
+    The original `paper_match` fills `min(displayed size, remaining)` for every fresh print that finds the same last book (the quote
+    builder keeps a book usable for 3 s). The simulation (ui_tests/test_v0480_book_liquidity_once.py) shows a 5-share book filled 30
+    shares by six prints. Per code and book receive time this wrapper subtracts what earlier prints already took from the snapshot, on
+    both sides (BUY ask, SELL bid). A NEW 0D snapshot (new receive time) brings new liquidity. Only the size handed to `paper_match`
+    changes; no price, no order, no print is created and `paper_match_krx_print_proxy` (used when no size is shown) is untouched.
+    """
+    if getattr(eng,"_v0480_book_once",False):return
+    import dataclasses
+    original=eng.paper_match
+    taken={}
+    def totals(code):
+        buy=sell=0
+        for o in list(eng.orders.values()):
+            if o.code!=code:continue
+            if o.side=="BUY":buy+=int(o.filled)
+            else:sell+=int(o.filled)
+        return buy,sell
+    def paper_match_once(q):
+        try:
+            book=svc.last_book.get(q.code)
+            epoch=book[4] if book else None
+        except Exception:
+            epoch=None
+        if epoch is None or (int(q.ask_size)<=0 and int(q.bid_size)<=0):
+            return original(q)
+        rec=taken.get(q.code)
+        if rec is None or rec[0]!=epoch:
+            rec=[epoch,0,0]
+            taken[q.code]=rec
+        ask_left=max(0,int(q.ask_size)-rec[1]) if int(q.ask_size)>0 else int(q.ask_size)
+        bid_left=max(0,int(q.bid_size)-rec[2]) if int(q.bid_size)>0 else int(q.bid_size)
+        shown=q if (ask_left,bid_left)==(int(q.ask_size),int(q.bid_size)) else dataclasses.replace(q,ask_size=ask_left,bid_size=bid_left)
+        before=totals(q.code)
+        out=original(shown)
+        after=totals(q.code)
+        rec[1]+=max(0,after[0]-before[0])
+        rec[2]+=max(0,after[1]-before[1])
+        return out
+    eng.paper_match=paper_match_once
+    eng._v0480_original=original
+    eng._v0480_book_once=True
+
+
 def install(core):
     global _INSTALLED
     if _INSTALLED:return
@@ -659,6 +705,7 @@ def install(core):
                         return (stamp.date().isoformat()==order.time[:10]
                                 and _valid_phase("KRX",stamp))
                 return old_window(order,at)
+            consume_book_once(self,eng)
             eng.open_entry=deny_native_open
             eng.resume_legacy_partial_buy=deny_legacy_rearm
             eng._d1_buy_window_ok=nxt_session_window
