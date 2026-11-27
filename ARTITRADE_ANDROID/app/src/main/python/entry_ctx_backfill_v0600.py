@@ -65,7 +65,7 @@ def closes_before(store, code, frame, moment):
     return [r["close"] for r in rows if r.get("source") and r["end"] <= moment][-BAR_LIMIT:]
 
 
-def build_ctx(entry, closes, sidecar_rr, now):
+def build_ctx(entry, closes, sidecar_rr, now, score=None, source="LOCAL_COMPLETED_BARS", version=None):
     import entry_context_v0370 as ctx
     out = {"version": ctx.VERSION, "basis": "COMPLETED_BARS_BEFORE_BUY_BACKFILL"}
     out.update(ctx.ma_context(closes, entry))
@@ -78,21 +78,72 @@ def build_ctx(entry, closes, sidecar_rr, now):
     except Exception as exc:
         out["trend"] = "UNVERIFIED"
         out["trend_error"] = type(exc).__name__
-    out["market_score"] = {"score": None, "basis": "NOT_RECORDED_AT_BUY_BACKFILL"}
+    out["market_score"] = score if isinstance(score, dict) else {"score": None, "basis": "NOT_RECORDED_AT_BUY_BACKFILL"}
     if out["bars"] == 0:
         out["reason"] = "ENTRY_CTX_NO_COMPLETED_BARS"
     r = sidecar_rr if isinstance(sidecar_rr, dict) else {}
     out["rr"] = {"ratio": r.get("ratio"), "gain_pct": r.get("gain_pct"), "loss_pct": r.get("loss_pct"), "stop_source": r.get("stop_source"), "reason": r.get("reason")}
-    out["backfill"] = {"version": VERSION, "at": now.isoformat(timespec="seconds"), "source": "LOCAL_COMPLETED_BARS"}
+    out["backfill"] = {"version": version or VERSION, "at": now.isoformat(timespec="seconds"), "source": source}
     return out
 
 
+STOCK_SCORE_DB = ("market_research_v033.sqlite3",)
+STOCK_SCORE_SQL = "SELECT ts,score FROM score_events WHERE market='stock' ORDER BY ts"
+COIN_SCORE_DB = ("coin", "ai", "AI_RESEARCH_V040.sqlite3")
+COIN_SCORE_SQL = "SELECT score_ts,score FROM market_score_observations ORDER BY score_ts"
+STOCK_SCORE_MAX_AGE = 20 * 3600     # the last score of the same trading day; a buy after the close (16:00-20:00) has no newer one
+COIN_SCORE_MAX_AGE = 3600
+
+
+class ScoreBook:
+    """The market scores the app recorded (epoch seconds, score), read once per round. `at(moment)` = the last score at or before the BUY, with its age."""
+
+    def __init__(self, path, sql, max_age):
+        self.points, self.max_age = [], int(max_age)
+        try:
+            if Path(path).exists():
+                with sqlite3.connect("file:%s?mode=ro" % Path(path).as_posix(), uri=True, timeout=5) as db:
+                    self.points = sorted((int(float(t)), float(v)) for t, v in db.execute(sql).fetchall())
+        except Exception:
+            self.points = []
+        self.times = [t for t, _ in self.points]
+
+    def at(self, moment):
+        import bisect
+        epoch = int(moment.timestamp())
+        index = bisect.bisect_right(self.times, epoch) - 1
+        if index < 0:
+            return None
+        age = epoch - self.times[index]
+        if age > self.max_age:
+            return None
+        return {"score": self.points[index][1], "at": dt.datetime.fromtimestamp(self.times[index], KST).isoformat(timespec="seconds"), "age_s": age,
+                "basis": "LAST_RECORDED_BEFORE_BUY" if age > 0 else "RECORDED_AT_BUY"}
+
+
+def score_fn_for(book):
+    """score_fn(moment, sidecar): the score the strategy itself stored at the BUY (`market_score_at_buy`), else the last recorded one (with its age)."""
+    def score(moment, sidecar):
+        own = (sidecar or {}).get("market_score_at_buy")
+        if isinstance(own, (int, float)) and not isinstance(own, bool):
+            return {"score": float(own), "basis": "STORED_AT_BUY_BY_STRATEGY", "age_s": 0}
+        return book.at(moment) if book is not None else None
+    return score
+
+
+def has_score(ctx):
+    score = (ctx or {}).get("market_score") if isinstance(ctx, dict) else None
+    return isinstance(score, dict) and score.get("score") is not None
+
+
 def better(old, new):
-    """Replace only when there is no context yet or the new one rests on more completed bars."""
+    """Replace only when there is no context yet, the new one rests on MORE completed bars, or it adds a market score the old one does not have (never fewer bars)."""
     if not isinstance(old, dict):
         return True
     try:
-        return int(new.get("bars") or 0) > int(old.get("bars") or 0)
+        if int(new.get("bars") or 0) > int(old.get("bars") or 0):
+            return True
+        return has_score(new) and not has_score(old) and int(new.get("bars") or 0) >= int(old.get("bars") or 0)
     except (TypeError, ValueError):
         return True
 
@@ -108,8 +159,12 @@ def _blank():
     return {"scanned": 0, "already_complete": 0, "filled": 0, "improved": 0, "no_sidecar": 0, "no_entry_time": 0, "no_bars": 0, "still_partial": 0, "locked": 0, "unresolved": []}
 
 
-def _process(source, rows, store, write, now, root, report):
-    """rows: dicts {id, code, frame, entry, at, sidecar (str or None)}."""
+def _process(source, rows, store, write, now, root, report, closes_fn=None, score_fn=None, skip_fn=None, source_label="LOCAL_COMPLETED_BARS", version=None, log_fn=None, rr_fn=None):
+    """rows: dicts {id, code, frame, entry, at, sidecar (str or None)}.
+
+    closes_fn(code, frame, moment) -> completed closes (default: the local bars); score_fn(moment, sidecar) -> market score dict or None;
+    skip_fn(old_ctx) -> True when the stored context must not be fetched again (a network source asks only once per position).
+    """
     for row in rows:
         report["scanned"] += 1
         pid, code = row["id"], str(row["code"])
@@ -128,9 +183,24 @@ def _process(source, rows, store, write, now, root, report):
             report["unresolved"].append({"id": pid, "code": code, "reason": "NO_ENTRY_TIME"})
             continue
         entry = sidecar.get("entry") if sidecar.get("entry") not in (None, "") else row["entry"]
-        closes = closes_before(store, code, str(row["frame"]), moment)
-        new = build_ctx(entry, closes, sidecar.get("rr_size"), now)
         old = sidecar.get("entry_ctx")
+        if skip_fn is not None and skip_fn(old):
+            report["already_complete"] += 1
+            if isinstance(old, dict) and int(old.get("bars") or 0) < FULL_BARS:
+                report["still_partial"] += 1
+                report["unresolved"].append({"id": pid, "code": code, "reason": "PARTIAL_%d_OF_%d_BARS" % (int(old.get("bars") or 0), FULL_BARS)})
+            continue
+        try:
+            closes = closes_fn(code, str(row["frame"]), moment) if closes_fn is not None else closes_before(store, code, str(row["frame"]), moment)
+        except Exception as exc:
+            report["errors"] = report.get("errors", 0) + 1
+            report["unresolved"].append({"id": pid, "code": code, "reason": "BARS_UNAVAILABLE_" + type(exc).__name__ + (":" + str(exc)[:40] if str(exc) else "")})
+            continue
+        score = score_fn(moment, sidecar) if score_fn is not None else None
+        rr = sidecar.get("rr_size") or ((old or {}).get("rr") if isinstance(old, dict) and (old.get("rr") or {}).get("ratio") is not None else None)
+        if rr is None and rr_fn is not None:
+            rr = rr_fn(sidecar, entry)
+        new = build_ctx(entry, closes, rr, now, score=score, source=source_label, version=version)
         if not better(old, new):
             report["already_complete"] += 1
             if int(old.get("bars") or 0) < FULL_BARS:
@@ -151,7 +221,7 @@ def _process(source, rows, store, write, now, root, report):
         if new["bars"] < FULL_BARS:
             report["still_partial"] += 1
             report["unresolved"].append({"id": pid, "code": code, "reason": "PARTIAL_%d_OF_%d_BARS" % (new["bars"], FULL_BARS)})
-        log(root, {"at": now.isoformat(timespec="seconds"), "source": source, "position_id": pid, "code": code, "frame": row["frame"], "bars": new["bars"],
+        (log_fn or log)(root, {"at": now.isoformat(timespec="seconds"), "source": source, "position_id": pid, "code": code, "frame": row["frame"], "bars": new["bars"],
                    "trend": new.get("trend"), "ma_vs_entry": {k: v.get("entry_vs_ma") for k, v in new["ma"].items()}, "replaced_bars": (old or {}).get("bars") if isinstance(old, dict) else None})
 
 
@@ -192,6 +262,8 @@ def run(runtime, now=None):
         store = getattr(runner, "store", None)
         if not root or store is None:
             return report
+        book = ScoreBook(Path(root, *STOCK_SCORE_DB), STOCK_SCORE_SQL, STOCK_SCORE_MAX_AGE)
+        score_fn = score_fn_for(book)
         with _LOCK:
             # ---- AT
             part = report["sources"]["AT"] = _blank()
@@ -199,7 +271,7 @@ def run(runtime, now=None):
                 def write_at(pid, text):
                     with store.lock, store.connect() as db:
                         db.execute("UPDATE nl1118_reference_positions SET intent_json=?,updated_at=? WHERE position_id=?", (text, now.isoformat(timespec="seconds"), pid))
-                _process("AT", _at_rows(store), store, write_at, now, root, part)
+                _process("AT", _at_rows(store), store, write_at, now, root, part, score_fn=score_fn)
             except sqlite3.Error as exc:
                 part["error"] = type(exc).__name__
             # ---- MA
@@ -213,7 +285,7 @@ def run(runtime, now=None):
                     def write_ma(pid, text):
                         with _connect(path) as db:
                             db.execute("UPDATE ma_v067_positions SET state_json=?,updated_at=? WHERE position_id=?", (text, now.isoformat(timespec="seconds"), pid))
-                    _process("MA", [{"id": r[0], "code": r[1], "frame": r[2], "at": r[3], "entry": r[4], "sidecar": r[5]} for r in rows], store, write_ma, now, root, part)
+                    _process("MA", [{"id": r[0], "code": r[1], "frame": r[2], "at": r[3], "entry": r[4], "sidecar": r[5]} for r in rows], store, write_ma, now, root, part, score_fn=score_fn)
                 except sqlite3.Error as exc:
                     part["error"] = type(exc).__name__
             # ---- MarketTrend
@@ -227,7 +299,7 @@ def run(runtime, now=None):
                     def write_trend(pid, text):
                         with _connect(path) as db:
                             db.execute("UPDATE positions SET payload=?,updated_at=? WHERE id=?", (text, now.isoformat(timespec="seconds"), pid))
-                    _process("TREND", [{"id": r[0], "code": r[1], "frame": r[2], "at": r[3], "entry": r[4], "sidecar": r[5]} for r in rows], store, write_trend, now, root, part)
+                    _process("TREND", [{"id": r[0], "code": r[1], "frame": r[2], "at": r[3], "entry": r[4], "sidecar": r[5]} for r in rows], store, write_trend, now, root, part, score_fn=score_fn)
                 except sqlite3.Error as exc:
                     part["error"] = type(exc).__name__
         save(root, report)

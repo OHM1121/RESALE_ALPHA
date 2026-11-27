@@ -491,3 +491,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** done: stamps on the target trading day, never earlier than what the vendor already stored for the stock; day frame only; review cases untouched.
 - **기존 기준 / 충돌:** vendor repair window 08:55-15:40 stays for the market hours; the quiet-hours run is additional.
 - **예상 결함:** orders may appear before the open instead of at 08:55 (same orders); official daily volume vs KRX-only reference volume is an open question; not device verified.
+
+## 2026-11-27: Record after the close what does not need real time (owner, issue #181, version 0.6.2, rule R16)
+- **Owner:** the workbook has many missing records; find the cause; what need not be recorded in real time is recorded thoroughly after the close.
+- **Decision:** BUY-time context (MA above/below and slope, trend, market score, RR) of every stock and coin position is completed in the quiet window from stored bars / official Upbit candles; the real-time recorder at the BUY stays; every position that cannot be completed is listed with its reason.
+- **기존 기준 / 충돌:** none; sidecar only, no order or price.
+- **예상 결함:** after-hours stock score is the last session score with its age; coin MA / MarketTrend RR not recoverable; thin Upbit markets can have fewer bars; not device verified.

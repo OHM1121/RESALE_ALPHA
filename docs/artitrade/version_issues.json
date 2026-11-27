@@ -2686,6 +2686,25 @@
                 "test_v0610_blocked_day_repair.py"
           ],
           "notes": "Vendor recover_frame called twice per stock with two as-of stamps on the trading day (never earlier than the newest vendor stamp of the stock), day frame only, 20:05-07:45, review cases untouched, before/after counts in stock/blocked_day_repair_v0610.json(l). Open: whether the official daily candle includes NXT after-market volume (all 860 applied cases had larger volume) - not changed."
+    },
+    {
+          "id": "ENTRYCTX-0620-01",
+          "issue": 181,
+          "found": "owner request 2026-11-27: the ledger workbook has many missing fields (score, trend, MA, RR); record after the close what does not need real time",
+          "category": "BUY_TIME_RECORD_MISSING",
+          "title": "Coin positions have no BUY-time MA / trend context, stock after-hours buys no market score, and the workbook rebuilt trend from a sparse candle table",
+          "evidence": "device export 2026-11-27: 0 of 163 coin sidecars with entry_ctx; 47 of 79 coin MA and 20 of 23 coin MarketTrend 'trend unknown'; stock score events only 09:00-16:59 while 33 of 34 AT buys are 16:00-19:59; ui_tests/test_v0620_coin_entry_ctx.py; real Upbit candles on a copy of the device export",
+          "root": "CONFIRMED in the device database and the recorder code",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.2",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": ["STOCK_AT", "STOCK_MA", "STOCK_TREND", "STOCK_FEED", "COIN_GENERAL", "COIN_MA", "COIN_TREND"],
+          "tests": [
+                "test_v0620_coin_entry_ctx.py",
+                "test_v0600_entry_ctx_backfill.py"
+          ],
+          "notes": "Quiet-window backfill of entry_ctx for the three coin sidecars from official Upbit candles (one request per position, 0.5 s pace, 400 per round); market score = stored at BUY, else last recorded before the BUY with its age (coin 1 h, stock 20 h); reference-bar coin RR recomputed from the stored plan, MA / MarketTrend coin RR stays empty with a reason; unresolved list in coin/entry_ctx_backfill_v0620.json. Not device verified."
     }
   ],
   "known_normal": [

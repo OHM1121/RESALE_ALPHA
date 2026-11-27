@@ -190,3 +190,6 @@ Counting was not enough. Device data: the vendor never confirms the daily candle
 
 ### 0.6.1 delivered (2026-11-27)
 CI run 46006068868 on the trusted branch, source d72ad93, signer unchanged; `0.6.1.apk` SHA-256 41ad9a24ca25be849125ae10c702c4887547600727b96d500555e207698ad896. #180: CI_VERIFIED, device UNVERIFIED.
+
+## #181 — 0.6.2 BUY-time records of coin positions and the stock market score (2026-11-27)
+The morning ledger workbook had many blanks because trend and score were rebuilt afterwards from sparse observation tables, not read from records saved at the BUY. Device data: no coin sidecar carries `entry_ctx`; the stock market score is not recorded after 16:59 while 33 of 34 stock AT buys happened 16:00-19:59. The quiet-hours backfill now completes the coin sidecars from official Upbit candles and adds the market score (stored at the BUY, else the last recorded one with its age). On the real device export with real Upbit candles: 163 of 163 coin positions filled, every trend determined (before 67 unknown), 34 of 34 stock AT with a score (before 1). RR of coin MA / MarketTrend positions without a stored `rr_size` stays empty. Not verified on a device.
