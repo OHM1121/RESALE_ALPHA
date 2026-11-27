@@ -130,3 +130,5 @@ Owner decision (policy conflict recorded in USER_ACTIVE_POLICY): the single "fir
 Owner example: rung 1 = 4,900, rung 2 = 4,500, start 4,700: 30 % of the limit is bought at 4,700, rungs 2 and 3 stay. Before, the share count was computed at the rung price (about 28 % of the limit was invested). Limit of the order = the current price (a tick up before matching leaves it resting). CI_VERIFIED only after the build; DEVICE_VERIFIED=false.
 
 Delivery: signed APK 0.5.1 (CI run 45961404109, source e42f06f, SHA-256 eccf807933376ae9e4ab8be775624c3a189823aa00cb869297af81d187cd6aac), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+Delivery: signed APK 0.5.2 (CI run 45961739454, source c6e1d4e, SHA-256 4b7b325e954a07df8b2c5780242d5f15bd89ed0a9e8b47c60e056fb572806e60), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.

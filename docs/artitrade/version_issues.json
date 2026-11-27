@@ -2417,7 +2417,7 @@
           "root": "DESIGN of 0.5.1 _ladder_place (quantity from the rung price); owner specified the current-price sizing",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.2",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45961739454, source c6e1d4e, apk sha256 4b7b325e954a07df8b2c5780242d5f15bd89ed0a9e8b47c60e056fb572806e60)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO"
