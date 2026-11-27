@@ -184,3 +184,6 @@ Stage 1 of the combined flow was only a probe; device data shows the `_AL` reque
 
 ### 0.6.0 delivered (2026-11-27)
 CI run 45997360160 on the trusted branch, source 9d6de0a, signer unchanged; `0.6.0.apk` SHA-256 d353b8b86f03576c215dcc3a734deffd8d9656e3924d8234f1bc4afc1c086b8d. #178 and #179: CI_VERIFIED, device UNVERIFIED.
+
+## #180 — 0.6.1 daily-bar verification backlog (2026-11-27)
+Counting was not enough. Device data: the vendor never confirms the daily candle because the official candle keeps changing until 20:00 and the repair loop stops at 15:40 (20 cases PENDING since 11-20, 27 blocked daily audits that stop AT daily-reference orders from buying). The quiet-hours worker now calls the vendor repair function itself, as of the trading day, twice per stock. Open question for the owner: all 860 applied cases had a larger official volume (median +3 %); whether the official daily candle includes NXT after-market trading is not proven. Not verified on a device.

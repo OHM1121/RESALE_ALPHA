@@ -485,3 +485,9 @@ a new instruction appears different. Cross-check original
 - **Code facts checked in the shipped vendor client:** it talks to the real host (not the mock host); every `api.post` waits on one shared gate `wait_market_rest_slot(0.40)` (at most 2.5 requests per second for the whole app, below the 5 per second limit); HTTP 429 is retried twice with 0.8 s / 1.6 s back-off; the stream capacity constant is 200 stocks.
 - **Quiet-hours work (0.6.0):** 1.0 s extra pause between its own requests on top of that gate; it yields to a busy tick queue. The per-TR limit of ka10080 / ka10081 is still unknown.
 - **Daily-bar verification backlog (device export 2026-11-27):** 912 cases opened since 11-19: 860 applied, 20 pending (waiting for a second matching official snapshot), 32 under review (the bar is tied to a signal or position and is never changed by design). The vendor repair loop only runs on weekdays 08:55-15:40 and also creates pending reference orders, so it is not run outside that window by the app; clearing it off-hours needs an owner decision.
+
+## 2026-11-27: Clear the delayed backlog with the vendor function as of a past moment (owner, issue #180, version 0.6.1, rule R16)
+- **Owner:** read the reference-bar code instead of asking; if "now" is a problem, run it as of a past time.
+- **Decision:** done: stamps on the target trading day, never earlier than what the vendor already stored for the stock; day frame only; review cases untouched.
+- **기존 기준 / 충돌:** vendor repair window 08:55-15:40 stays for the market hours; the quiet-hours run is additional.
+- **예상 결함:** orders may appear before the open instead of at 08:55 (same orders); official daily volume vs KRX-only reference volume is an open question; not device verified.

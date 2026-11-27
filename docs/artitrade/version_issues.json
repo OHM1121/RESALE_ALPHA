@@ -2665,6 +2665,27 @@
           "nodes": ["STOCK_FEED", "STOCK_MA", "STOCK_TREND", "STOCK_AT"],
           "tests": ["test_v0600_all_venue_complete.py", "test_v0590_offhours_weekend.py"],
           "notes": "Separate store only (bars table and strategies untouched; stage 2 is a separate owner decision); 1.0 s between requests, 40 stocks per round, 600 s rest, 3 attempts; the request limit is unknown; the app must be running; not verified on a device."
+    },
+    {
+          "id": "DAYREPAIR-0610-01",
+          "issue": 180,
+          "found": "owner request 2026-11-27: the delayed / unverified backlog must be cleared, not only counted; run the vendor logic as of a past moment",
+          "category": "DAILY_VERIFICATION_NEVER_CONFIRMS",
+          "title": "Daily-bar verification never confirms: the official candle of the day changes until 20:00 and the vendor loop is off after 15:40",
+          "evidence": "device copy: 128 different official snapshots for 005930 on 11-26; 20 PENDING cases, 27 BLOCKED daily audits; ui_tests/test_v0610_blocked_day_repair.py; real vendor function run on a copy of the device database",
+          "root": "CONFIRMED in the vendor code and the device database",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.1",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0610_blocked_day_repair.py"
+          ],
+          "notes": "Vendor recover_frame called twice per stock with two as-of stamps on the trading day (never earlier than the newest vendor stamp of the stock), day frame only, 20:05-07:45, review cases untouched, before/after counts in stock/blocked_day_repair_v0610.json(l). Open: whether the official daily candle includes NXT after-market volume (all 860 applied cases had larger volume) - not changed."
     }
   ],
   "known_normal": [

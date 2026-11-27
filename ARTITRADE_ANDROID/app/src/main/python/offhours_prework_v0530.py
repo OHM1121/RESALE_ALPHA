@@ -327,6 +327,8 @@ def _loop():
                 combined.run(_runtime())                  # 0.6.0: the combined (KRX + NXT) candles of the managed stocks, separate store
                 import entry_ctx_backfill_v0600 as backfill
                 backfill.run(_runtime())                  # 0.6.0: BUY-time MA / trend context of the stock positions, from the stored bars
+                import blocked_day_repair_v0610 as day_repair
+                day_repair.run(_runtime())                # 0.6.1: the daily-bar verification backlog, with the vendor's own repair function as of the trading day
         except Exception:
             pass
         time.sleep(300.0)
