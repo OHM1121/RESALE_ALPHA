@@ -2266,6 +2266,31 @@
                 "test_v0450_stock_feed_resilience.py"
           ],
           "notes": "Overlay only; vendor engine SHA unchanged; the 3 s freshness rules are unchanged on purpose. Whether the ping timeouts stop and whether ticks per minute recover is verified only by the first export with 0.4.5."
+    },
+    {
+          "id": "UI-0460-01",
+          "issue": 161,
+          "found": "stock error export 2026-11-27 15:09 (app 0.4.4, first export with the 0.4.0 gate-holder stacks) + owner question on the supply-demand candidate not bought on 11-26",
+          "category": "UI_HOLDS_LEDGER_GATE_AND_D1_ORDER_ONLY_ON_PRINT",
+          "title": "Screen refresh held the trading ledger gate (22 of 60 holds >= 5 s); supply-demand D+1 order only placed on a 0B print",
+          "evidence": "db_gate_long_hold_v0400.jsonl: 60 stacks >= 5 s: 36 fix14 recover_frame, 22 UI threads (hub_records -> _stock_at_ledger / _stock_at_v19_full), 2 start-up preload; tick pipeline 13-15h processed 0 / expired 100 percent with the feed alive; Doosan Bobcat 11-26: plan READY on KRX 08:50, ask below the ceiling at 09:00:18 and 09:11, about 10 prints per hour received, no order created",
+          "root": "CONFIRMED by stacks (UI gate holds) and in code (preplan driven only by Preplanner.on_tick)",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.4.6",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_FEED",
+                "STOCK_GMO",
+                "STOCK_AT",
+                "STOCK_MA",
+                "STOCK_TREND"
+          ],
+          "tests": [
+                "test_v0460_ui_ledger_ro.py",
+                "test_v0460_gmo_book_trigger.py"
+          ],
+          "notes": "UI snapshots read-only and gate-free; D+1 order from a fresh valid 0D book (no fill from a book); fix14 sub-steps still hold the gate for seconds; why the consumer sees ticks aged 5-9 s with an empty queue is measured by tick_age_hist."
     }
   ],
   "known_normal": [

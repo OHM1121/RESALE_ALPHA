@@ -10,6 +10,7 @@ import datetime as dt
 import math
 import os
 import threading
+import time
 from projectgmo.prices import plus_ticks, up_tick, minus_ticks
 from buy_execution_recovery_v082 import Intent
 
@@ -18,6 +19,8 @@ _INSTALLED=False
 PHASE={"NXT":("075000","080000","085000"),"KRX":("085000","090000","153000")}
 # Official 2026 CSAT session: NXT 08:00–08:50 is suspended on this day.
 NXT_PREMARKET_CLOSED=frozenset(("2026-11-19",))
+BOOK_TRIGGER_STATUSES=("PREPARED","WAIT_FRESH_KRX_0B_OR_0D","WAIT_OFFICIAL_OPEN_OR_D_CLOSE_TOUCH",
+                       "WAIT_BELOW_ALLOWED_CEILING","WAIT_VERIFIED_D_CLOSE","WAITING_SLOT")
 ACTIVE=("NEW","OPEN")
 
 def _now():
@@ -328,7 +331,7 @@ class Preplanner:
             # it for a verified broker ask or a LIVE execution.
             self._step(plan,at,last,ask,max(0,int(q.ask_size)),venue,q=q,tick=tick)
 
-    def _step(self,plan,at,last,ask,depth,venue,q=None,tick=None,bid=None):
+    def _step(self,plan,at,last,ask,depth,venue,q=None,tick=None,bid=None,place_only=False):
         svc=self.service;engine=svc.engine
         code=plan["code"];signal=engine.signals.get(code)
         if not signal or not _d1_verified(svc,signal,at):return
@@ -532,7 +535,7 @@ class Preplanner:
                 qty=min(depth,remaining,available,per_left)
                 if qty>0:
                     engine.fill(active.id,int(qty),float(px),at.isoformat())
-            elif venue=="KRX" and q is not None:
+            elif venue=="KRX" and q is not None and not place_only:
                 # Original KRX PAPER matcher uses actual 0B+0D or bounded genuine
                 # 0B trade proxy. Never call the broker adapter.
                 engine.paper_match(q)
@@ -562,6 +565,39 @@ class Preplanner:
             if changed:
                 svc._persist(True)
 
+    def on_book(self,code,at=None):
+        """0.4.6 (#161): place the D+1 PAPER buy order from a FRESH valid 0D book without waiting for a 0B print.
+
+        The order is only the original +2-tick limit intent (no cash moves, no fill here). Fills still come only
+        from the unchanged tick path (`on_live_tick` -> `paper_match` with a fresh 0B print and a fresh 0D book).
+        Reason: the preplan was driven only by 0B prints, and the feed delivered about 10 prints per hour for a symbol
+        whose ask stayed below the D+1 ceiling from 09:00, so the order never existed (11-26 case).
+        """
+        at=at or self.clock()
+        if not self._entry_authorized() or not _valid_phase("KRX",at):return False
+        key=self._key(code,"KRX",at)
+        plan=self.plans.get(key)
+        if plan is None or plan.get("order_id") or plan["status"] not in BOOK_TRIGGER_STATUSES:return False
+        phase=_venue_phase("KRX",at)
+        if not phase:return False
+        opening=at.replace(hour=int(phase[1][:2]),minute=int(phase[1][2:4]),second=0,microsecond=0)
+        if plan["prepared_at"]>=opening.isoformat() and not plan.get("late_recovery"):return False
+        service=self.service
+        with service._lock:
+            book=getattr(service,"last_book",{}).get(code) or service.priority_books.get((code,"KRX"))
+        if not book or book[4].tzinfo is None or not -.5<=(at-book[4]).total_seconds()<=3:return False
+        ask,bid,ask_qty,_bid_qty=map(int,book[:4])
+        if ask<=0 or bid<=0 or ask<bid or ask_qty<=0:return False
+        opener=service.opens.get((code,at.date().isoformat()))
+        if opener is not None and int(opener)>0:
+            plan["opening_price"]=int(opener)
+            plan["opening_source"]="VERIFIED_KRX_OFFICIAL_OPEN"
+        self._step(plan,at,0,ask,ask_qty,"KRX",q=None,tick=None,bid=bid,place_only=True)
+        if plan.get("order_id"):
+            plan["order_trigger"]="FRESH_0D_BOOK_NO_0B_WAIT_V0460"
+            return True
+        return False
+
     def snapshot(self):
         with self.lock:
             return [dict(p) for p in self.plans.values()]
@@ -576,6 +612,7 @@ def install(core):
     original_priority_tick=service_class.on_priority_tick
     original_live_tick=service_class.on_live_tick
     original_snapshot=service_class.snapshot
+    original_book_message=service_class.on_book_message
     original_subscriptions=d_live.LivePaperRunner._desired_subscriptions
     original_topup=gmo_partial_entry_v094.topup_verified_d1_gmo
 
@@ -709,6 +746,31 @@ def install(core):
     service_class.priority_watchlist=priority
     service_class.on_priority_tick=priority_tick
     service_class.on_live_tick=live_tick
+    book_state={"at":0.0,"codes":{}}
+
+    def book_message(self,message,market_map):
+        """0.4.6 (#161): after the original 0D handling, let a plan place its PAPER order from the fresh valid book."""
+        out=original_book_message(self,message,market_map)
+        try:
+            planner=getattr(self,"_v097_planner",None)
+            if planner is None or not planner.plans or not isinstance(message,dict):return out
+            now=time.monotonic()
+            if now-book_state["at"]<0.25:return out
+            book_state["at"]=now
+            waiting=planner.active_codes()
+            if not waiting:return out
+            for row in message.get("data") or ():
+                if not isinstance(row,dict) or str(row.get("type"))!="0D":continue
+                raw=str(row.get("item") or "")
+                if "_" in raw:continue
+                code="".join(ch for ch in raw if ch.isdigit())[:6]
+                if code not in waiting or now-book_state["codes"].get(code,0.0)<1.0:continue
+                book_state["codes"][code]=now
+                planner.on_book(code)
+        except Exception:
+            pass
+        return out
+    service_class.on_book_message=book_message
     service_class.snapshot=snapshot
     d_live.LivePaperRunner._desired_subscriptions=subscriptions
     gmo_partial_entry_v094.topup_verified_d1_gmo=no_extra_topup

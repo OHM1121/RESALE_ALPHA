@@ -311,6 +311,12 @@ _install_ws_book_coalesce_v0230(_v081_upbit)
 _ORIG_PATCH_GMO = _core.Runtime._patch_gmo
 _ORIG_STOP = _core.Runtime.stop
 _ORIG_STOCK_AT_LEDGER = _core.Runtime._stock_at_ledger
+# 0.4.6 (#161): the screen refresh must not hold the trading ledger gate (22 of 60 holds >= 5 s were UI threads).
+try:
+    import ui_ledger_ro_v0460 as _ui_ro
+    _ORIG_STOCK_AT_LEDGER = _ui_ro.stock_at_ledger_ro
+except Exception:
+    _ui_ro = None
 _ORIG_HUB_RECORDS = _core.Runtime.hub_records
 _FRAMES=("5m","30m","60m","day")
 
@@ -912,11 +918,24 @@ def _close_research(root):
     return _research_record(items[:3000],score_rows)
 
 
+def _ui_read_ctx(store):
+    """0.4.6 (#161): UI snapshot connection - read-only, no trading gate; falls back to the old gated read if unavailable."""
+    if _ui_ro is not None:
+        return _ui_ro.ui_read(store)
+    import contextlib
+
+    @contextlib.contextmanager
+    def gated():
+        with store.lock,store.connect() as c:
+            yield c
+    return gated()
+
+
 def _stock_at_v19_full(self, base):
     if not self.stock_runner:
         return base
     store=self.stock_runner.store
-    with store.lock,store.connect() as c:
+    with _ui_read_ctx(store) as c:
         tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         if 'v19_accounts' not in tables or 'v19_orders' not in tables:
             return base
@@ -2126,7 +2145,7 @@ def _stock_at_ledger_v19(self):
         return out
     try:
         store=self.stock_runner.store
-        with store.lock,store.connect() as c:
+        with _ui_read_ctx(store) as c:
             tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
             if 'v19_accounts' not in tables:
                 return out
@@ -2710,6 +2729,16 @@ try:
 except Exception as _res_exc:
     try:
         _core.__dict__.setdefault('_v0450_resilience_error',repr(_res_exc)[:200])
+    except Exception:
+        pass
+
+# 0.4.6 (#161): canonical 14-digit bar stamps are parsed directly (7x faster) inside the gated recovery loops.
+try:
+    import ui_ledger_ro_v0460 as _ui_ro_install
+    _ui_ro_install.install_fast_parse()
+except Exception as _fast_exc:
+    try:
+        _core.__dict__.setdefault('_v0460_fast_parse_error',repr(_fast_exc)[:200])
     except Exception:
         pass
 

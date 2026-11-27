@@ -60,6 +60,8 @@ _LOCK = threading.Lock()
 _STATS = {"yield_calls": 0, "yield_waited_s": 0.0, "yield_by_label": {}, "fast_reconnects": 0, "reconnect_seen": 0}
 _FAST = {"armed_until": 0.0, "history": [], "ok_at": None}
 _STATE = {"installed": False, "thread": None, "lines": 0, "prev": {}}
+_AGE_EDGES = (1000.0, 3000.0, 6000.0, 12000.0)          # tick age at the consumer: <1 s, 1-3, 3-6, 6-12, >=12 s
+_AGE = {"ok": [0, 0, 0, 0, 0], "expired": [0, 0, 0, 0, 0]}
 
 
 # ----------------------------------------------------------------------------------------------- pressure
@@ -197,6 +199,28 @@ class _AsyncioProxy:
         return await object.__getattribute__(self, "_real").sleep(delay, *args, **kwargs)
 
 
+def _bucket(age_ms):
+    for i, edge in enumerate(_AGE_EDGES):
+        if age_ms < edge:
+            return i
+    return len(_AGE_EDGES)
+
+
+def _wrap_observation(native):
+    """Count the age of every tick the consumer looks at (processed or expired): the 0.3.6 export could not tell a
+    clock / server latency (every tick old) from a consumer stall (a few very old ticks)."""
+
+    def observe(self, recv_age_ms, metrics=None, expired=False):
+        try:
+            _AGE["expired" if expired else "ok"][_bucket(float(recv_age_ms))] += 1
+        except Exception:
+            pass
+        return native(self, recv_age_ms, metrics=metrics, expired=expired)
+
+    observe._v0450 = True
+    return observe
+
+
 def _wrap_health(native):
     def health(self, state, details=""):
         try:
@@ -249,6 +273,10 @@ def sample(runner, now=None):
     except Exception:
         pass
     row.update(stats)
+    with _LOCK:
+        row["tick_age_hist"] = {"edges_ms": list(_AGE_EDGES), "ok": list(_AGE["ok"]), "expired": list(_AGE["expired"])}
+        _AGE["ok"] = [0] * 5
+        _AGE["expired"] = [0] * 5
     row["open_buys"] = open_buys(runner, now)
     return row
 
@@ -322,6 +350,8 @@ def install(d_live=None, threads=True):
         import d_live
     runner_type = d_live.LivePaperRunner
     runner_type._health = _wrap_health(runner_type._health)
+    if hasattr(runner_type, "_report_pipeline_observation") and not getattr(runner_type._report_pipeline_observation, "_v0450", False):
+        runner_type._report_pipeline_observation = _wrap_observation(runner_type._report_pipeline_observation)
     if not isinstance(getattr(d_live, "asyncio", None), _AsyncioProxy):
         d_live.asyncio = _AsyncioProxy(getattr(d_live, "asyncio", _real_asyncio))
     if hasattr(runner_type, "_process_completed_records"):

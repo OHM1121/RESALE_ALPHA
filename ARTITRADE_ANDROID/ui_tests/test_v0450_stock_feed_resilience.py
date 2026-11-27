@@ -35,6 +35,8 @@ class Clock:
 
 
 def reset():
+    res._AGE["ok"] = [0] * 5
+    res._AGE["expired"] = [0] * 5
     res._STATS.update(yield_calls=0, yield_waited_s=0.0, yield_by_label={}, fast_reconnects=0, reconnect_seen=0)
     res._FAST.update(armed_until=0.0, history=[], ok_at=None)
     res._STATE.update(lines=0, prev={})
@@ -178,12 +180,26 @@ class Measurement(unittest.TestCase):
         self.assertEqual(res.open_buys(runner(), now), [])                                       # no GMO engine: nothing, no error
         self.assertEqual(res.sample(r, now)["open_buys"][0]["code"], "003380")
 
+    def test_tick_age_histogram_counts_every_observation_and_resets(self):
+        seen = []
+        native = lambda self, age, metrics=None, expired=False: seen.append((age, expired)) or "r"
+        observe = res._wrap_observation(native)
+        for age, expired in ((200, False), (2500, False), (4000, True), (9000, True), (30000, True), (700, False)):
+            self.assertEqual(observe(object(), age, expired=expired), "r")
+        self.assertEqual(len(seen), 6)
+        row = res.sample(runner(), WEEKDAY_OPEN)
+        self.assertEqual(row["tick_age_hist"]["ok"], [2, 1, 0, 0, 0])
+        self.assertEqual(row["tick_age_hist"]["expired"], [0, 0, 1, 1, 1])
+        again = res.sample(runner(), WEEKDAY_OPEN)
+        self.assertEqual(again["tick_age_hist"]["ok"], [0, 0, 0, 0, 0])
+
     def test_install_wraps_the_entry_points_once_and_is_wired_in_the_runtime(self):
         text = (PY / "android_runtime_v078.py").read_text("utf8")
         self.assertIn("from stock_feed_resilience_v0450 import install", text)
         self.assertGreater(text.index("stock_feed_resilience_v0450"), text.index("market_ctx_memo_v0420"))
         self.assertGreater(text.index("stock_feed_resilience_v0450"), text.index("stock_feed_diag_v0400"))
-        runner_type = type("R", (), {"_health": lambda self, s, d="": None, "_process_completed_records": lambda self, b: b})
+        runner_type = type("R", (), {"_health": lambda self, s, d="": None, "_process_completed_records": lambda self, b: b,
+                                     "_report_pipeline_observation": lambda self, a, metrics=None, expired=False: None})
         fake = types.SimpleNamespace(LivePaperRunner=runner_type, asyncio=asyncio)
         res._STATE["installed"] = False
         try:
