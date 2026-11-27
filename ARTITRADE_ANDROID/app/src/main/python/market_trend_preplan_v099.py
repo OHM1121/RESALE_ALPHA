@@ -201,8 +201,8 @@ class PreparedCoinTrend:
         if co.stop_event.is_set():return []
         if co.standalone_wallet._is_live(self.market):return []
         if self.market=="stock":
-            from krx_session_v041 import is_regular_open
-            if not is_regular_open(now):return []
+            from krx_session_v041 import is_tradable_session
+            if not is_tradable_session(now):return []
         raw=co.watch.snapshot(self.market)
         prepared=[]
         for r in raw:
@@ -444,8 +444,8 @@ class PreparedCoinTrend:
         if self.co.stop_event.is_set():return
         if self.co.standalone_wallet._is_live(self.market):return
         if self.market=="stock":
-            from krx_session_v041 import is_regular_open
-            if not is_regular_open(now):return
+            from krx_session_v041 import is_tradable_session
+            if not is_tradable_session(now):return
         with self._lock:
             selected=[p for p in self._plans.values()
                       if p["status"] not in ("FILLED","EXPIRED","STOP_LOCK",

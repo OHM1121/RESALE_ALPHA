@@ -23,9 +23,14 @@ Do not put private ledgers, device logs or account data here (public repository)
 | 15 | Compute and record the stock market score after the close (16-20h) | DONE in code (history only; the buy gate is unchanged) | 0.6.4 / #183 | owner decision: should the AT gate use it; device verification |
 | 16 | Harim Holdings (003380) first take-profit | STOPPED by the owner on 2026-11-27 ("작업중지"); delivered earlier: 0.5.5-0.5.7 (#171-#173), never verified on a device | - | nothing is worked on until the owner resumes it |
 | 17 | Use the after-hours score for the reference-bar buy permission exactly like the regular session ("똑같이 써"); explain "매수 게이트" in Korean without English | DONE in code (explained in the report) | 0.6.5 / #184 | device verification |
-| 18 | Are all stock strategies part of the after-hours session? | ANSWERED from code: only the reference-bar strategy enters in PRE / POST; close-betting buys only 15:10-15:20; MA and supply-demand enter only in continuous regular time; MarketTrend regular only | 0.6.5 / #184 | owner decision: should MA, supply-demand, MarketTrend also enter after hours |
+| 18 | Are all stock strategies part of the after-hours session? | ANSWERED from code (0.6.5 state, superseded by rows 21-24): only the reference-bar strategy enters in PRE / POST; close-betting buys only 15:10-15:20; MA and supply-demand enter only in continuous regular time; MarketTrend regular only | 0.6.5 / #184 | owner decision: should MA, supply-demand, MarketTrend also enter after hours |
 | 19 | Why does the after-close work not run (screenshots: waiting; paused after another Wi-Fi) | DONE in code: environment errors paused it 30 minutes and burnt attempts; now 5 minutes, reason shown, nothing burnt; card explains the wait until 20:05 | 0.6.5 / #184 | device verification |
 | 20 | KRX closing auction 15:20-15:30: frozen quote, no matching, single price at 15:30 | PARTIAL: no matching / decisions 15:20-15:30; a silent feed is normal | 0.6.5 / #184 | the fill at the single closing price at 15:30 is not modelled |
+| 21 | MA stock: new entries after hours too, reflect in the legacy workbook | DONE in code + workbook sheet 11.27 | 0.6.6 / #185 | device verification |
+| 22 | MarketTrend: trade after hours | DONE in code (30m / 60m grid through POST; day frames unchanged) | 0.6.6 / #185 | device verification; no replay of entries |
+| 23 | Supply-demand (GMO): trade after hours | DONE in code (6 sites) | 0.6.6 / #185 | device verification |
+| 24 | After-hours reference history = one KRX+NXT series ("KRX 것도 보면 되잖아") | DONE in engine patch + bar copy | 0.6.6 / #185 | 5m / 60m after-hours signals still rare; device verification |
+| 25 | Readiness 90 %: proceed without asking | PARTIAL: bars continuous across sessions, nightly combined fill + report continue; strategies' own decisions on official combined bars not switched | 0.6.6 / #185 | readiness number from `combined_vs_regular` report each night |
 | 14 | `ARTITRADE_REAL_MODE=1` blocks the GMO D+1 plan | OPEN (unchanged) | - | owner decision |
 
 Update this table in the same commit as the work (the governance docs of the version).

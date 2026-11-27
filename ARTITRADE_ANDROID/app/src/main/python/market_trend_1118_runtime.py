@@ -75,8 +75,8 @@ class RsiWatch:
 
 def _ready_market(co,market,now):
     if market=="stock":
-        from krx_session_v041 import is_regular_open
-        if not is_regular_open(now):return False
+        from krx_session_v041 import is_tradable_session
+        if not is_tradable_session(now):return False             # 0.6.6: after-hours session included
     elif market=="coin":
         runner=getattr(co.rt,"coin_runner",None)
         gate=getattr(runner,"preload_gate",None)

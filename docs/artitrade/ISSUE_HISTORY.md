@@ -214,3 +214,7 @@ Owner: start stage 2 in the best way without asking; the after-hours market is 1
 
 ### 0.6.5 delivered (2026-11-27)
 CI run 46031271980 on the trusted branch (attempt 1 failed only in the JVM step on a temporary 404 from Maven Central; the failed job was re-run and passed, attempt 2), source 180d555, signer unchanged, shipped engine sha 6368a9d7...; `0.6.5.apk` SHA-256 7e441d316b9832c1d6f7a58187217fe3ace9776b1a5a8abcf20e12885fb98bd3. #184: CI_VERIFIED, device UNVERIFIED.
+
+## #185 — 0.6.6 after-hours trading for all stock strategies, unified KRX+NXT series (2026-11-27)
+Owner: MA, MarketTrend and supply-demand must also trade after hours; reference-bar after-hours history = one unified KRX+NXT series ("KRX 것도 보면 되잖아"); do the 90 % readiness work yourself. Causes: vendor explicit "no entry after hours" rules (MA entry condition, GMO `in_regular_clock` at 6 sites, MarketTrend `is_regular_open`) and a separate-session look-back. Engine sha 327515cf... Legacy workbook sheet `11.27` (red notes). Not verified on a device.
+

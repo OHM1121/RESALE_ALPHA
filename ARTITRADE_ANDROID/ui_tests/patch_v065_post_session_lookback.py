@@ -1,15 +1,13 @@
-"""0.6.5 (owner 2026-11-27): (1) stocks supported until 20:00 must get 5-minute signals and orders: the volume look-back of the KRX POST (16:00-20:00) and NXT PRE (08:00-08:30) reference frames;
-(2) the KRX continuous trading ends at 15:20: 15:20-15:30 is the closing single-price auction (frozen quote, nothing matched until the single price at 15:30), so the engine's session clock
-`live_session(now,'KRX')` is 09:00-15:20 (the session end minus `krx_session_v041.CLOSING_AUCTION_MINUTES`) and 16:00-20:00, not 09:00-15:30.
+"""0.6.5 / 0.6.6 engine patch (owner 2026-11-27), applied AFTER patch_v010 in CI (chain: v092, v093, v105, v008, v009, v010, v065).
 
-`D19PaperEngine.on_extended_minute` builds the separate session frames and says in its own comment: "Require three previous 5m (two 30m/60m) bars within the same exchange session".
-The code required `reference_volume_lookback(tf)` previous bars for 5m and 60m, i.e. 100 five-minute and 48 sixty-minute bars. A POST session has only 48 five-minute and 4 sixty-minute bars
-(PRE: 6 and 0), so a 5m / 60m POST or PRE reference was structurally impossible. Device export 2026-11-27: 22,374 POST 5m frames of 273 stocks, 445 POST 60m frames, 1,179 PRE 5m frames and
-only 3 POST signals in a week, all 30m. This patch makes the code do what its comment says (3 previous 5m bars, 2 previous 30m / 60m bars); every other rule (2x the average volume, above the
-maximum, shape rejection, DIVERSE gate, upper-wick gate, order limits) is untouched.
-Real-data replay of the five POST sessions 11-20..11-26 (device copy): POST 5m signals 0 -> 1 / 2 / 0 / 0 / 4, POST 60m signals 0 -> 0 / 0 / 1 / 2 / 0.
-
-Runs on a throwaway checkout in CI AFTER patch_v010 (chain: v092, v093, v105, v008, v009, v010, v065).
+1. After-hours reference volume look-back (0.6.6). `D19PaperEngine.on_extended_minute` builds the separate completed KRX POST (16:00-20:00) and NXT PRE (08:00-08:30) frames. It looked only at
+   earlier frames of the SAME extended session for the volume comparison ("previous 100 five-minute / 48 sixty-minute bars"), but a POST session has 48 five-minute and 4 sixty-minute bars (PRE: 6 / 0): a 5m / 60m
+   after-hours reference was structurally impossible (device export: 22,374 POST 5m frames, only 3 POST signals in a week, all 30m). The owner: KRX and NXT are one market, look at the KRX bars too.
+   The previous bars are now the ONE time-ordered series of the stock: the regular-session `bars` plus the earlier extended frames; the required count (100 / 48 / 2) and every other rule are unchanged.
+2. The completed POST / PRE frames are also written to `bars` (source LIVE_EXT_<venue>_<segment>), so every strategy reads one continuous series across the sessions (0.6.6).
+3. KRX closing single-price auction 15:20-15:30 (0.6.5): `live_session(now,'KRX')` ends at the session end minus `krx_session_v041.CLOSING_AUCTION_MINUTES`.
+4. Supply-demand (GMO) paper matcher and D+1 entry / matching clock: `in_regular_clock` -> `in_tradable_clock` (continuous 09:00-15:20 or POST 16:00-20:00) at the six session checks of projectgmo/engine.py (0.6.6).
+5. MA paper engine: new entries are also allowed in the after-hours session 16:00:00-19:59:15 (the tick path above already requires an after-market entitlement), besides 09:00:00-15:19:15 (0.6.6).
 """
 from __future__ import annotations
 
@@ -34,14 +32,46 @@ with zipfile.ZipFile(io.BytesIO(raw)) as z:
     assert len(infos) == 82 and z.testzip() is None
     files = {info.filename: z.read(info.filename) for info in infos}
 text = files["d_v19_portfolio.py"].decode("utf8")
-before = "if len(prev)<(reference_volume_lookback(tf) if tf in ('5m','60m') else 2):continue"
-after = "if len(prev)<(3 if tf=='5m' else 2):continue"
-assert text.count(before) == 1 and text.count(after) == 0
-text = text.replace(before, after, 1)
-session_before = "        if bounds and bounds[0]<=now.hour*60+now.minute<bounds[1]:\n            return True"
-session_after = "        if bounds and bounds[0]<=now.hour*60+now.minute<bounds[1]-__import__('krx_session_v041').CLOSING_AUCTION_MINUTES:\n            return True"
-assert text.count(session_before) == 1 and text.count(session_after) == 0
-text = text.replace(session_before, session_after, 1)
+def swap(old, new, count=1):
+    global text
+    assert text.count(old) == count and text.count(new) == 0, (old[:90], text.count(old))
+    text = text.replace(old, new)
+
+
+# 1. one time-ordered series: regular bars + earlier extended frames
+swap("""                    prev=c.execute('''SELECT ts,open,high,low,close,volume FROM v19_venue_frames
+                        WHERE code=? AND venue=? AND segment=? AND frame=? AND ts<?
+                        ORDER BY ts DESC LIMIT ?''',(code,venue,period,tf,first,reference_volume_lookback(tf))).fetchall()""",
+     """                    prev=c.execute('''SELECT ts,open,high,low,close,volume FROM (
+                          SELECT ts,open,high,low,close,volume FROM bars WHERE code=? AND frame=? AND ts<? AND source<>'' AND source NOT LIKE '%EXT_%'
+                          UNION ALL
+                          SELECT ts,open,high,low,close,volume FROM v19_venue_frames WHERE code=? AND frame=? AND ts<?)
+                        ORDER BY ts DESC LIMIT ?''',(code,tf,first,code,tf,first,reference_volume_lookback(tf))).fetchall()""")
+# 2. completed extended frames also go to bars
+swap("""                    if (tf=='5m' and offset//n<2) or rejection_reason(bar,mkt,tf):continue""",
+     """                    c.execute('''INSERT OR IGNORE INTO bars(code,market,frame,ts,open,high,low,close,volume,source)
+                        VALUES(?,?,?,?,?,?,?,?,?,?)''',(code,mkt,tf,first,bar.open,bar.high,bar.low,bar.close,bar.volume,'LIVE_EXT_'+venue+'_'+period))
+                    if (tf=='5m' and offset//n<2) or rejection_reason(bar,mkt,tf):continue""")
+# 3. closing auction
+swap("        if bounds and bounds[0]<=now.hour*60+now.minute<bounds[1]:\n            return True",
+     "        if bounds and bounds[0]<=now.hour*60+now.minute<bounds[1]-__import__('krx_session_v041').CLOSING_AUCTION_MINUTES:\n            return True")
+files["d_v19_portfolio.py"] = text.encode("utf8")
+
+# 4. supply-demand clock
+gmo = files["projectgmo/engine.py"].decode("utf8")
+assert gmo.count("__import__('krx_session_v041').in_regular_clock(") == 6, gmo.count("__import__('krx_session_v041').in_regular_clock(")
+gmo = gmo.replace("__import__('krx_session_v041').in_regular_clock(", "__import__('krx_session_v041').in_tradable_clock(")
+ast.parse(gmo)
+files["projectgmo/engine.py"] = gmo.encode("utf8")
+
+# 5. MA paper engine: entries in the after-hours session too
+ma = files["stock_ma_engine.py"].decode("utf8")
+ma_old = "            if '090000'<=now.strftime('%H%M%S')<'151915' and not after:"
+ma_new = "            if ('090000'<=now.strftime('%H%M%S')<'151915' and not after) or (after and '160000'<=now.strftime('%H%M%S')<'195915'):"
+assert ma.count(ma_old) == 1 and ma.count(ma_new) == 0
+ma = ma.replace(ma_old, ma_new)
+ast.parse(ma)
+files["stock_ma_engine.py"] = ma.encode("utf8")
 ast.parse(text)
 files["d_v19_portfolio.py"] = text.encode("utf8")
 out = io.BytesIO()

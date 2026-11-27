@@ -60,7 +60,7 @@ def compare(regular_db, combined_path, frame, as_of_stamp):
     with sqlite3.connect("file:%s?mode=ro" % Path(combined_path).as_posix(), uri=True, timeout=5) as comb:
         codes = [r[0] for r in comb.execute("SELECT DISTINCT code FROM bars_all WHERE frame=? AND ts<=?", (frame, as_of_stamp)).fetchall()]
         for code in codes:
-            reg = _closes(reversed(regular_db.execute("SELECT close FROM bars WHERE code=? AND frame=? AND ts<=? AND source<>'' ORDER BY ts DESC LIMIT ?", (code, frame, as_of_stamp, CLOSES)).fetchall()))
+            reg = _closes(reversed(regular_db.execute("SELECT close FROM bars WHERE code=? AND frame=? AND ts<=? AND source<>'' AND source NOT LIKE '%EXT_%' ORDER BY ts DESC LIMIT ?", (code, frame, as_of_stamp, CLOSES)).fetchall()))
             allv = _closes(reversed(comb.execute("SELECT close FROM bars_all WHERE code=? AND frame=? AND ts<=? ORDER BY ts DESC LIMIT ?", (code, frame, as_of_stamp, CLOSES)).fetchall()))
             if not reg or not allv:
                 continue
@@ -78,7 +78,7 @@ def compare(regular_db, combined_path, frame, as_of_stamp):
             if sa and sb:
                 out["ma20_same" if sa == sb else "ma20_diff"] += 1
         for code, day, vol in comb.execute("SELECT code,substr(ts,1,8),SUM(volume) FROM bars_all WHERE frame=? AND ts<=? GROUP BY code,substr(ts,1,8)", (frame, as_of_stamp)).fetchall():
-            row = regular_db.execute("SELECT SUM(volume) FROM bars WHERE code=? AND frame=? AND substr(ts,1,8)=?", (code, frame, day)).fetchone()
+            row = regular_db.execute("SELECT SUM(volume) FROM bars WHERE code=? AND frame=? AND substr(ts,1,8)=? AND source NOT LIKE '%EXT_%'", (code, frame, day)).fetchone()
             if row and row[0] and float(row[0]) > 0 and vol:
                 out["ratios"].append(float(vol) / float(row[0]))
         row = comb.execute("SELECT COUNT(*), SUM(CASE WHEN substr(ts,9,4)<'0900' OR substr(ts,9,4)>='1530' THEN 1 ELSE 0 END) FROM bars_all WHERE frame=? AND ts<=?", (frame, as_of_stamp)).fetchone()

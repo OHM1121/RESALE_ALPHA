@@ -2774,6 +2774,33 @@
                 "test_v0580_rest_book_confirm.py"
           ],
           "notes": "Engine patch patch_v065_post_session_lookback.py after the chain v092..v010 (shipped engine sha 6368a9d75b1bc7e4ed9ebbd9df37cb289a361a6a9293f8bbfcb0b52e1b363a86): look-back 3 previous 5m / 2 previous 30m-60m bars of the same POST / PRE session; live_session(KRX) ends at 15:20 (closing auction, no matching). Overlays: krx_session_v041 (closing auction, after_hours_status = NXT PRE + POST 16:00-20:00); market_research_v033._after_hours_display publishes the recorded after-hours score so the reference-bar buy permission is judged as in the regular session; offhours_*: environment errors pause 5 minutes (was 30), reason shown, no attempt burnt, first start after 60 s, the card explains the wait; blocked_day_repair aligns every managed stock's day bars; combined_impact_v0650 report. Strategies are NOT switched to combined bars (2 of 11 trend labels differ)."
+    },
+    {
+          "id": "AFTER-HOURS-TRADING-0660-01",
+          "issue": 185,
+          "found": "owner request 2026-11-27: MA, MarketTrend and supply-demand must also trade after hours; the reference-bar after-hours history must be one KRX+NXT series; proceed with the 90 % readiness work without asking",
+          "category": "AFTER_HOURS_ENTRY_BLOCKED_AND_SPLIT_SERIES",
+          "title": "After-hours entries were blocked for MA / MarketTrend / supply-demand by explicit regular-session-only rules, and the after-hours volume history ignored the regular-session bars",
+          "evidence": "code: stock_ma_engine entry condition 09:00:00-15:19:15 and not after; projectgmo/engine.py in_regular_clock at 6 sites; market_trend_runtime_v043 is_regular_open at entry / outage / missed-entry sites; d_v19_portfolio.on_extended_minute previous-bar query limited to the extended frames; ui_tests/test_v0660_after_hours_trading.py (11 tests), test_v0650_post_session_lookback.py (6 tests)",
+          "root": "CONFIRMED in the vendor engine and the MarketTrend overlays; the unified series follows the owner's statement that KRX and NXT are one market",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.6",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_MA",
+                "STOCK_GMO",
+                "STOCK_TREND",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0660_after_hours_trading.py",
+                "test_v0650_post_session_lookback.py",
+                "test_v0650_combined_impact.py",
+                "test_v0650_closing_auction.py"
+          ],
+          "notes": "Engine patch patch_v065_post_session_lookback.py (shipped engine sha 327515cf0b2ed0bbcb4106aa4b43078b06e1da6c82502e547e6c339508593fb8): unified look-back, extended frames written to bars (LIVE_EXT_*), GMO in_tradable_clock x6, MA entry also 16:00-19:59:15. Overlays: krx_session_v041 (in_post_clock, in_tradable_clock, is_tradable_session), market_trend_* (is_tradable_session, POST 30m / 60m grid), after_hours_bars_v0660 (nightly copy of extended bars into bars). Not verified on a device; 5m / 60m after-hours signals stay rare under the strict unified rule; the 15:30 single-price fill is not modelled."
     }
   ],
   "known_normal": [

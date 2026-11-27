@@ -49,8 +49,17 @@ def _end_clock(now,market,frame):
         ts=(int(now.timestamp())//width+1)*width
         return dt.datetime.fromtimestamp(ts,mt.KST)
     if not mt._krx_day(now.date()):return None
-    from krx_session_v041 import SPECIAL_SESSIONS, START, END
+    from krx_session_v041 import SPECIAL_SESSIONS, START, END, in_post_clock, AFTER_HOURS_END
     opening,closing=SPECIAL_SESSIONS.get(now.date().isoformat(),(START,END))
+    if in_post_clock(now):
+        # 0.6.6 (owner 2026-11-27: MarketTrend also trades after hours): the 30m / 60m grid continues from the session open (16:00 is a boundary of both), the
+        # last bar ends at 20:00; the daily bar has no after-hours candle.
+        if frame=="day":return None
+        start=now.replace(hour=opening//60,minute=opening%60,second=0,microsecond=0)
+        size=mt.FRAME_SECS[frame]
+        step=int(max(0.0,(now-start).total_seconds())//size)+1
+        end_of_day=now.replace(hour=AFTER_HOURS_END//60,minute=AFTER_HOURS_END%60,second=0,microsecond=0)
+        return min(start+dt.timedelta(seconds=step*size),end_of_day)
     finish=now.replace(hour=closing//60,minute=closing%60,
                        second=0,microsecond=0)
     if frame=="day":return finish
@@ -847,8 +856,8 @@ class Coordinator:
         from market_trend_closed_entry_v107 import (
             first_closed_cross, first_ten_seconds, verified_closed_rows)
         if market=="stock":
-            from krx_session_v041 import is_regular_open, SPECIAL_SESSIONS, START
-            if not is_regular_open(now):return
+            from krx_session_v041 import is_tradable_session, SPECIAL_SESSIONS, START
+            if not is_tradable_session(now):return                # 0.6.6: regular continuous time or the after-hours session
         else:
             native=getattr(self.rt,'coin_runner',None)
             gate=getattr(native,'preload_gate',None)
@@ -1148,8 +1157,8 @@ class Coordinator:
             # KRX does not produce genuine 0B prints outside regular hours.
             # Do not report a permanent feed outage at nights or weekends.
             if market=='stock':
-                from krx_session_v041 import is_regular_open
-                if not is_regular_open():
+                from krx_session_v041 import is_tradable_session
+                if not is_tradable_session():
                     stale_episodes.clear()
                     self.stop_event.wait(5)
                     continue
@@ -1234,8 +1243,8 @@ class Coordinator:
                     # A missed stock MA entry only exists during genuine KRX
                     # trading. Never label after-hours / weekends as failures.
                     from d_v19_portfolio import live_session
-                    from krx_session_v041 import is_regular_open
-                    if not is_regular_open(now) or not live_session(now,'KRX'):
+                    from krx_session_v041 import is_tradable_session
+                    if not is_tradable_session(now) or not live_session(now,'KRX'):
                         self.stop_event.wait(.8)
                         continue
                     import ma_v067_stock_runtime as native

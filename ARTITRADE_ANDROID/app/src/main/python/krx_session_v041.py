@@ -129,6 +129,36 @@ def in_closing_auction(at=None):
     return end-CLOSING_AUCTION_MINUTES<=m<end
 
 
+def _kst(at):
+    if at is None:return dt.datetime.now(KST)
+    if isinstance(at,dt.datetime):return at.astimezone(KST) if at.tzinfo else at.replace(tzinfo=KST)
+    return dt.datetime.fromtimestamp(float(at),KST)
+
+
+def in_post_clock(at=None):
+    """KRX after-hours (POST) session 16:00-20:00, the engine's own table (`d_v19_portfolio.live_session`): from 2026-09-14, 17:00 on the college-exam day. Clock only."""
+    now=_kst(at)
+    if now.strftime("%Y%m%d")<"20260914":return False
+    if now.date().weekday()>=5 or now.date().year not in CLOSED or now.date().isoformat() in CLOSED[now.date().year]:return False
+    start=17*60 if now.date().isoformat()=="2026-11-19" else AFTER_HOURS_START
+    return start<=now.hour*60+now.minute<AFTER_HOURS_END
+
+
+def in_tradable_clock(at,venue="KRX"):
+    """0.6.6 (owner 2026-11-27: MA, supply-demand and MarketTrend may also trade after hours): the KRX continuous time 09:00-15:20 OR the after-hours session 16:00-20:00.
+    The closing auction 15:20-15:30 and the gap 15:30-16:00 are not tradable. Clock only: a stock still needs fresh quotes and, after 16:00, an after-market entitlement."""
+    if venue!="KRX":return in_regular_clock(at,venue)
+    return in_regular_clock(at,"KRX") or in_post_clock(at)
+
+
+def is_tradable_session(at=None):
+    """Regular continuous time (09:00-15:20, a trading day) or the after-hours session (16:00-20:00 on a trading day)."""
+    now=_kst(at)
+    if is_regular_open(now):
+        return not in_closing_auction(now)
+    return after_hours_status(now)[0] and in_post_clock(now)
+
+
 def in_regular_clock(at,venue="KRX"):
     """Clock gate only. Never asserts market open or orders executable.
 

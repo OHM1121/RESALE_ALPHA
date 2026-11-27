@@ -521,3 +521,11 @@ a new instruction appears different. Cross-check original
 - **Decision:** the after-hours score is published as the current score (fresh within 10 minutes); the engine does not match 15:20-15:30; not-allowed IP / network / request limit pause the after-close work 5 minutes with the reason and burn no attempt; the card explains the wait until 20:05.
 - **After-hours participation by strategy (vendor design, checked in code):** reference-bar (AT): entries and exits in NXT PRE and POST 16:00-20:00 (5m / 60m signals now possible); close-betting: buys only 15:10-15:20, exits also in POST for eligible stocks; MA stock: exits in POST for eligible stocks, new entries only in continuous regular time (explicit vendor rule); supply-demand: records the after-hours eligibility, matches only in continuous regular time; MarketTrend stock: regular session only. Not changed: whether MA, supply-demand and MarketTrend should also ENTER in the after-hours session is the owner's decision.
 - **예상 결함:** the fill at the closing single price is not modelled; more POST / PRE paper buys; not device verified.
+
+## 2026-11-27: After-hours trading for MA, MarketTrend and supply-demand; unified bar series (owner, issue #185, version 0.6.6)
+- **Owner:** "시간외에도 가능하게 변경하고 레거시 엑셀에도 반영해 / 마켓트렌드도 시장외에서도 거래가능하게 / 수급매매도 시장외 거래가능 / KRX 하고 NXT 가 통합이 되는데 KRX 것을 보면 되잖아 / 준비를 90%하면 되잖아 ... 알아서 작업시작하고 결과물만".
+- **Decision:** MA new entries also 16:00-19:59:15 (stocks tradable after hours); MarketTrend 30m / 60m entries and exits through POST; supply-demand fills in POST like regular; reference-bar after-hours volume history = regular bars + extended bars as one series. Closing auction 15:20-15:30 and 15:30-16:00 stay without trading.
+- **Legacy workbook (R6):** sheet `11.27` of NEW_LEGACY11.18 (copy of 11.22, red notes for reference bar, MA, MarketTrend, close-betting "unchanged" / supply-demand, common).
+- **기존 기준 / 충돌:** replaces the 0.6.5 text "MA / supply-demand enter only in continuous regular time; MarketTrend regular only" and the vendor rule "no new entry after hours".
+- **예상 결함:** more after-hours paper trades; 5m / 60m after-hours signals still rare (must beat regular-session volume); GMO POST matching and MarketTrend POST bars not verified on a device; engine hash changed.
+

@@ -358,6 +358,8 @@ def _loop():
                 combined.run(_runtime())                  # 0.6.0: the combined (KRX + NXT) candles of the managed stocks, separate store
                 import entry_ctx_backfill_v0600 as backfill
                 backfill.run(_runtime())                  # 0.6.0: BUY-time MA / trend context of the stock positions, from the stored bars
+                import after_hours_bars_v0660 as ext_bars
+                ext_bars.run(_runtime())                  # 0.6.6: the past NXT pre-market / after-hours bars join the continuous bar series
                 import combined_impact_v0650 as impact
                 impact.run(_runtime())                    # 0.6.5: what would change if the strategies decided on the combined (KRX + NXT) candles; local reads only
                 import entry_ctx_backfill_v0620 as coin_backfill
