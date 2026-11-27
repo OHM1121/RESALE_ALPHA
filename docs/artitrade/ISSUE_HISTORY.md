@@ -75,3 +75,5 @@ Outage 182 min: external network, automatic recovery, no app defect found. Book 
 
 ## #156 — 0.4.1 GMO fills grouped by position; D+1 no-buy diagnosed (2026-11-27)
 GMO fills had no stable identity (placeholder ids) and showed as separate cards: fixed by linking fills to the entry date and ignoring negative placeholder ids. The D+1 candidate was never evaluated at the open because the tick pipeline processed nothing for 20 minutes (ledger gate held by background repair): diagnosed, mitigation awaits the owner's decision. SOURCE_FIXED; CI pending; device UNVERIFIED.
+
+Delivery: signed APK 0.4.1 built by CI run 45925586430 from source 5fe8a03 (SHA-256 42bdbeffe48adc2086595917dd53d35aeada1ca60a4362f9a4aa50a56d7f6414, signer unchanged). CI_VERIFIED only; DEVICE_VERIFIED=false. The first attempt (source e052202) failed in CI because the default flavor versionName in build.gradle duplicated 0.4.1; no app code was involved.

@@ -2161,7 +2161,7 @@
       "root": "Grouping: CONFIRMED_IN_CODE. D+1 no-buy: CONFIRMED starvation of the tick pipeline at the open; mitigation not applied",
       "status": "SOURCE_FIXED",
       "fix_version": "0.4.1",
-      "ci": "PENDING",
+      "ci": "CI_VERIFIED (run 45925586430, source 5fe8a03, apk sha256 42bdbeffe48adc2086595917dd53d35aeada1ca60a4362f9a4aa50a56d7f6414)",
       "device": "UNVERIFIED",
       "nodes": [
         "STOCK_GMO",
@@ -2171,7 +2171,7 @@
       "tests": [
         "test_v0410_gmo_exec_link.py"
       ],
-      "notes": "Fill grouping fixed (display linkage only). D+1 no-buy diagnosed, not fixed (owner decision: defer fix14 REST repair in the first KRX minutes?)."
+      "notes": "First build failed in CI only because the default flavor versionName duplicated 0.4.1 (build config, not app code); fixed in 5fe8a03. Fill grouping fixed (display linkage only). D+1 no-buy diagnosed, not fixed (owner decision: defer fix14 REST repair in the first KRX minutes?)."
     }
   ],
   "known_normal": [
