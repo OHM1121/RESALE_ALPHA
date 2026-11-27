@@ -285,7 +285,7 @@ jobs:
       - name: Upload the signed APK as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ARTITRADE_0_5_9_SIGNED_APK
+          name: ARTITRADE_0_6_0_SIGNED_APK
           path: |
             0.6.0.apk
             0.6.0.sha256
@@ -299,7 +299,7 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum -c "$VERSION.sha256"
-          printf '%s\n' "ARTITRADE $VERSION (PAPER, not device verified)." "Install over the existing app; same package and signer. Based on 0.5.9." "- Entry context backfill (stock, after the close): the MA 5/10/20/60/120 above/below, slope and trend at the BUY time of the stock positions of AT, MA and MarketTrend are rebuilt from the stored completed candles that ended before the BUY (replaced only when more candles exist; market score is not recorded; every position that could not be completed is listed with its reason; supply-demand is excluded)." "- Combined (KRX+NXT) 5m/30m candles of every managed stock are completed into the separate combined store in the quiet hours (1.0 s between requests, 40 stocks per round, 10 minutes of rest between rounds; no strategy reads them yet)." "- Weekend work is gentler: 1.0 s between requests, rounds of 40 stocks with 10 minutes of rest, 10 trading days checked." "Not verified on a device or with the broker; the Kiwoom request limit is unknown; stage 2 (strategies on combined candles) is not switched." > /tmp/notes.md
+          printf '%s\n' "ARTITRADE $VERSION (PAPER, not device verified)." "Install over the existing app; same package and signer. Based on 0.5.9." "- Entry context backfill (stock, after the close): the MA 5/10/20/60/120 above/below, slope and trend at the BUY time of the stock positions of AT, MA and MarketTrend are rebuilt from the stored completed candles that ended before the BUY (replaced only when more candles exist; market score is not recorded; every position that could not be completed is listed with its reason; supply-demand is excluded)." "- Combined (KRX+NXT) 5m/30m candles of every managed stock are completed into the separate combined store in the quiet hours (1.0 s between requests, 40 stocks per round, 10 minutes of rest between rounds; no strategy reads them yet)." "- Weekend work is gentler: 1.0 s between requests, rounds of 40 stocks with 10 minutes of rest, 10 trading days checked." "Not verified on a device or with the broker; the Kiwoom request limit is unknown; stage 2 (strategies on combined candles) is not switched." "Vendor engine hash unchanged. DEVICE_VERIFIED=false. Real broker orders remain disabled." > /tmp/notes.md
           # Tag the exact source commit first; if the integration token is refused, say why and fall back to an untargeted release.
           TARGET_ARGS=(--target "$SOURCE")
           if gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$SOURCE" > /tmp/tag.json 2> /tmp/tag.err; then
