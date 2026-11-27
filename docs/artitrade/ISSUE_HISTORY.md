@@ -149,3 +149,6 @@ Owner approved ("이거 진행해") the history-loading completion and a virtual
 Owner asked why 하림지주 (3 sh @ 9,930, target 10,426.5) was not sold after the first target was reached. Engine and routing are correct in simulation; the prints did not reach the engine in time (single tick consumer behind the heavy engine, 3 s gate, silent drop). Done: `gmo_held_exit_v0550` (watchdog on the newest fresh print, evidence counters and the issue GMO_HELD_TP_TOUCH_UNPROCESSED), ui_tests/test_v0550_gmo_held_exit.py. Open: a print already older than 3 s on arrival still cannot trigger; owner decision on a resting take-profit order (R15) pending. Not verified on a device.
 
 Delivery: signed APK 0.5.5 (CI run 45989141533, source 3ed5a4e, SHA-256 615e15560d71297a5e9ab64021fcec9bc21b22acf57ef065b32d14912f6d38a6), signer unchanged. Issues #170 and #171. CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+## #172 — 0.5.6 supply-demand first take-profit modelled as a resting sell order (2026-11-27)
+Owner decision on #171 option C ("그렇게 해"): the first take-profit follows the real process (a limit sell resting at the target), not "see a print, then sell at bid - 3 ticks". Done: `gmo_resting_tp_v0560`, ingress touch record + watchdog application in `gmo_held_exit_v0550`, ui_tests/test_v0560_gmo_resting_tp.py. Not verified on a device.

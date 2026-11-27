@@ -31,7 +31,7 @@ TOUCH_GRACE = 5.0
 STATE_FILE = "gmo_held_lane_v0550.json"
 KST = dt.timezone(dt.timedelta(hours=9))
 
-_STATE = {"installed": False, "lock": threading.Lock(), "day": "", "codes": {}, "offered": {}, "reported": set(), "threads": set(), "held": frozenset()}
+_STATE = {"installed": False, "lock": threading.Lock(), "day": "", "codes": {}, "offered": {}, "reported": set(), "threads": set(), "held": frozenset(), "touches": {}}
 
 
 def _now():
@@ -84,6 +84,9 @@ def record_ingress(runner, tick):
         target = held_target(runner.gmo, code)
         if target and price >= target[0] and not target[2] and not s["touch_at"]:
             s["touch_at"], s["touch_price"] = str(tick[6]), price
+        if target and price >= target[0] and not target[2] and target[1] == "NORMAL" and code not in _STATE["touches"]:
+            # 0.5.6: the first print at/after the target is kept for the resting take-profit (applied by the watchdog under the GMO lock)
+            _STATE["touches"][code] = (price, str(tick[8]), str(tick[6]))
     except Exception:
         pass
 
@@ -109,6 +112,40 @@ def check_touches(runner, now_mono=None):
                                details={"code": code, "target": round(target[0], 1), "stage": target[1], "counters": dict(s), "version": VERSION})
         except Exception:
             pass
+
+
+def apply_touches(runner):
+    """0.5.6: apply the first print at or above the target to the resting take-profit (gmo_resting_tp_v0560). Returns the number of fills started."""
+    import gmo_resting_tp_v0560 as resting
+    from projectgmo.engine import Quote
+    gmo = runner.gmo
+    eng = gmo.engine
+    done = 0
+    for code, (price, exchange_iso, _seen) in list(_STATE["touches"].items()):
+        try:
+            with gmo._lock:
+                p = eng.positions.get(code)
+                if (p is None or p.qty <= 0 or p.stage != "NORMAL" or p.first_profit_triggered or p.blocked
+                        or price < float(p.entry_price) * (1 + float(p.first_profit_target))):
+                    _STATE["touches"].pop(code, None)
+                    continue
+                placed = resting.placed_at(eng, code)
+                moment = dt.datetime.fromisoformat(exchange_iso)
+                if placed is not None and moment <= placed:
+                    _STATE["touches"].pop(code, None)          # the print is older than the order: it cannot have filled it
+                    continue
+                quote = Quote(code, exchange_iso, max(1, int(p.last_day)), float(price), 0.0, 0.0, 0.0, 0.0, "KRX", 0.0)
+                eng._trigger_first_tp(p, quote)
+                gmo._persist(True)
+            _STATE["touches"].pop(code, None)
+            _stats(code)["resting_applied"] = _stats(code).get("resting_applied", 0) + 1
+            done += 1
+        except Exception as exc:
+            try:
+                runner.store.write_runtime_error(exc, "gmo_resting_tp_apply:" + str(code))
+            except Exception:
+                pass
+    return done
 
 
 def offer_latest(runner):
@@ -158,6 +195,7 @@ def _loop(runner):
     last_write = 0.0
     while not runner.stop_event.is_set():
         try:
+            apply_touches(runner)
             offer_latest(runner)
             check_touches(runner)
             if time.monotonic() - last_write > 30.0:

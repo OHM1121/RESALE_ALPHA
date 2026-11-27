@@ -448,3 +448,10 @@ a new instruction appears different. Cross-check original
 - **Policy conflict:** none (no active rule is changed). The watchdog adds a second delivery path for the same fresh print; the engine is unchanged.
 - **Expected defects:** a really missing bar still needs the broker; a held print that is already older than 3 s on arrival still cannot trigger the exit (open owner decision: resting take-profit order, R15); not verified on a device.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
+
+## 2026-11-27: Supply-demand first take-profit is a resting sell order (owner, issue #172, version 0.5.6, rule R15)
+- **Owner:** asked whether a real-trading program would also push the latest print to the engine every 0.4 s; the answer was no (a real take-profit rests at the exchange); owner decided "그렇게 해" (option C of #171).
+- **Decision:** first take-profit = limit sell at the target rounded up to a tick, filled at its limit by the first real print at or above it after the order was placed; later exit rules unchanged.
+- **기존 기준:** after a fresh print reached the target the app created a marketable sell (best bid minus 3 ticks) filled on a fresh book. **충돌:** that behaviour is replaced.
+- **예상 결함:** fill price is the limit even on a gap; whole quantity by the price-reached rule (queue position not modelled); a phone that is off observes nothing.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.

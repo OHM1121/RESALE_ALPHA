@@ -198,7 +198,8 @@
         104,
         116,
         170,
-        171
+        171,
+        172
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
@@ -308,7 +309,8 @@
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
         "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
-        "ARTITRADE_ANDROID/app/src/main/python/gmo_held_exit_v0550.py"
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_held_exit_v0550.py",
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_resting_tp_v0560.py"
       ],
       "depends_on": [
         "STOCK_FEED",
@@ -327,9 +329,10 @@
         85,
         89,
         90,
-        171
+        171,
+        172
       ],
-      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy. Overlay preplan fixes are partial; native first opening 09:00 guard may prevent 10:00 venue official open (#80). 0.5.5 (#171): gmo_held_exit_v0550 (installed from android_runtime_v078, failure-tolerant) wraps d_live.LivePaperRunner._new_tick (ingress counters of held GMO codes), _start_market_workers (watchdog thread: newest fresh <=3 s print of each held code offered to GMOService.on_live_tick every 0.4 s) and GMOService.on_live_tick (engine call counter); issue GMO_HELD_TP_TOUCH_UNPROCESSED and stock/gmo_held_lane_v0550.json; the 3 s freshness gate is unchanged."
+      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy. Overlay preplan fixes are partial; native first opening 09:00 guard may prevent 10:00 venue official open (#80). 0.5.5 (#171): gmo_held_exit_v0550 (installed from android_runtime_v078, failure-tolerant) wraps d_live.LivePaperRunner._new_tick (ingress counters of held GMO codes), _start_market_workers (watchdog thread: newest fresh <=3 s print of each held code offered to GMOService.on_live_tick every 0.4 s) and GMOService.on_live_tick (engine call counter); issue GMO_HELD_TP_TOUCH_UNPROCESSED and stock/gmo_held_lane_v0550.json; the 3 s freshness gate is unchanged. 0.5.6 (#172): gmo_resting_tp_v0560 (installed from android_runtime_v078, failure-tolerant) replaces projectgmo.engine.Engine._trigger_first_tp: the first take-profit is a RESTING sell at up_tick(entry x (1 + first_profit_target)); a real print at or above that price after the latest BUY fill fills it at its own limit price (no book, no 3 s gate), remaining split-buy orders are cancelled, the stage follows the engine fill; gmo_held_exit_v0550.record_ingress keeps the first qualifying print at the feed ingress and the watchdog applies it under the GMO lock (apply_touches). Later exit rules unchanged."
     },
     {
       "id": "STOCK_CLOSE",

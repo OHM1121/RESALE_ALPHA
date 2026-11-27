@@ -2777,6 +2777,14 @@ except Exception as _mth_exc:
 # 0.5.5 (#170): a held supply-demand position's exit no longer waits behind the busy tick consumer (watchdog on the newest fresh print) and a missed
 # first-target touch leaves evidence. The 3 s executable-freshness gate is unchanged. Failure-tolerant.
 try:
+    import gmo_resting_tp_v0560 as _gmo_resting_tp_v0560     # 0.5.6 (#171, R15): the first take-profit is a RESTING sell at the target price
+    _gmo_resting_tp_v0560.install()
+except Exception as _rest_exc:
+    try:
+        _core.__dict__.setdefault('_v0560_resting_tp_error',repr(_rest_exc)[:200])
+    except Exception:
+        pass
+try:
     import gmo_held_exit_v0550 as _gmo_held_exit_v0550
     _gmo_held_exit_v0550.install()
 except Exception as _held_exc:

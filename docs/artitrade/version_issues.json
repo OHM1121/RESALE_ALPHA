@@ -2516,6 +2516,28 @@
                 "test_v0550_gmo_held_exit.py"
           ],
           "notes": "Watchdog offers only fresh (3 s) prints; a print that arrives already older than 3 s still cannot trigger. Evidence is written (GMO_HELD_TP_TOUCH_UNPROCESSED, stock/gmo_held_lane_v0550.json) so the next occurrence names the stage. Owner decision pending on a resting take-profit order (R15, Issue #171)."
+    },
+    {
+          "id": "GMO-0560-03",
+          "issue": 172,
+          "found": "owner decision 2026-11-27 (#171 option C): model the first take-profit as a resting sell order like a real order",
+          "category": "PAPER_DIFFERS_FROM_REAL_PROCESS",
+          "title": "Paper first take-profit waited for the app to see a print and then sold at the best bid minus 3 ticks; a real take-profit is a resting limit sell at the target",
+          "evidence": "하림지주 003380 2026-11-26 (docs/artitrade/MT_HISTORY_V0550.md section C); ui_tests/test_v0560_gmo_resting_tp.py",
+          "root": "CONFIRMED in vendor code: Engine._trigger_first_tp is reached only from on_quote (a fresh print inside the 3 s gate) and creates a marketable sell",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.6",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0560_gmo_resting_tp.py",
+                "test_v0550_gmo_held_exit.py"
+          ],
+          "notes": "Fill price = the resting limit (target rounded up to a tick), full first-sale quantity by the price-reached rule, only prints after the latest BUY fill count; later exits unchanged. Quantity queue position and a phone that is off are not modelled. Not verified on a device."
     }
   ],
   "known_normal": [
