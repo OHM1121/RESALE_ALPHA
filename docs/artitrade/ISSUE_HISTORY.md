@@ -152,3 +152,5 @@ Delivery: signed APK 0.5.5 (CI run 45989141533, source 3ed5a4e, SHA-256 615e1556
 
 ## #172 — 0.5.6 supply-demand first take-profit modelled as a resting sell order (2026-11-27)
 Owner decision on #171 option C ("그렇게 해"): the first take-profit follows the real process (a limit sell resting at the target), not "see a print, then sell at bid - 3 ticks". Done: `gmo_resting_tp_v0560`, ingress touch record + watchdog application in `gmo_held_exit_v0550`, ui_tests/test_v0560_gmo_resting_tp.py. Not verified on a device.
+
+Delivery: signed APK 0.5.6 (CI run 45990938720, source 19aa2b3, SHA-256 c40b9d639d46d7ba1f55a95f7fae739ee82460d63bc114a099c92979c20a58bc), signer unchanged. Issue #172. CI_VERIFIED only; DEVICE_VERIFIED=false.

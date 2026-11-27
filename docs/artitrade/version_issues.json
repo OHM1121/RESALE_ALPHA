@@ -2527,7 +2527,7 @@
           "root": "CONFIRMED in vendor code: Engine._trigger_first_tp is reached only from on_quote (a fresh print inside the 3 s gate) and creates a marketable sell",
           "status": "SOURCE_FIXED",
           "fix_version": "0.5.6",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45990938720, source 19aa2b3, apk sha256 c40b9d639d46d7ba1f55a95f7fae739ee82460d63bc114a099c92979c20a58bc)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO",
