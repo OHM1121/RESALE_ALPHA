@@ -64,7 +64,7 @@ class Base(unittest.TestCase):
         cx.commit()
         cx.close()
         self.store = Store(self.path)
-        wk._STATE.update(running=False, progress=[0, 0], failures=0, paused_until=0.0)
+        wk._STATE.update(running=False, progress=[0, 0], failures=0, paused_until=0.0, next_round=0.0)
         base._STATE.update(failures=0, paused_until=0.0)
 
     def put(self, code, frame, ts):
@@ -136,6 +136,8 @@ class Audit(Base):
         api = Api(fail=("000002",))
         out = wk.run_audit(self.runtime(api), at(SAT, 2), sleep=lambda s: None)
         self.assertTrue(out["ran"])
+        self.assertFalse(wk.run_audit(self.runtime(api), at(SAT, 2, 1), sleep=lambda s: None)["ran"])     # the rest between two rounds
+        wk._STATE["next_round"] = 0.0                                                                     # ... which has passed
         out2 = wk.run_audit(self.runtime(api), at(SAT, 2, 30), sleep=lambda s: None)
         state = wk.load_state(str(self.root))
         task = state[FRI.isoformat()]
@@ -147,6 +149,24 @@ class Audit(Base):
         log = (self.root / "stock" / wk.LOG_FILE).read_text("utf8")
         self.assertIn('"event": "START"', log)
         self.assertIn('"event": "DONE"', log)
+
+    def test_a_round_takes_at_most_batch_stocks_then_rests(self):
+        for i in range(5):
+            self.put("00000%d" % (i + 1), "5m", wk.expected_slots(FRI, "5m")[0])
+        old = wk.BATCH
+        wk.BATCH = 2
+        try:
+            out = wk.run_audit(self.runtime(Api()), at(SAT, 2), sleep=lambda s: None)
+        finally:
+            wk.BATCH = old
+        self.assertEqual((out["todo"], out["finished"]), (2, False))
+        self.assertGreater(wk._STATE["next_round"], 0.0)
+        self.assertEqual(len(wk.load_state(str(self.root))[FRI.isoformat()]["done_codes"]), 2)
+
+    def test_pace_is_gentle(self):
+        self.assertGreaterEqual(wk.PAUSE, 1.0)
+        self.assertGreaterEqual(wk.ROUND_REST, 600.0)
+        self.assertLessEqual(wk.BATCH, 40)
 
     def test_not_in_a_normal_night(self):
         self.put("000001", "5m", wk.expected_slots(DAYS[2], "5m")[0])

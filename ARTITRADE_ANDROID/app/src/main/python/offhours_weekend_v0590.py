@@ -3,14 +3,14 @@
 Owner: "오늘 장마감 후 ~ 월요일 장시작 전까지 누락데이터, 누락봉 채워넣고, 관리중 데이터 전체 확인하고 부족한 것 또 찾고 채워넣고, 처리지연으로 지금까지 처리 안 된 것들 정리".
 
 What it does (stock only, read from / written to the bars table like `offhours_prework_v0530`; no signal, order, position or ledger write):
-1. Pass 1 (regular session candles): for every stock that has bars in the last DAYS_BACK trading days and for the frames 5m / 30m / 60m, ask the broker once for a deep window
+1. Pass 1 (regular session candles): for every stock that has bars in the last DAYS_BACK (10) trading days and for the frames 5m / 30m / 60m, ask the broker once for a deep window
    (several pages, `base_dt` = today), and INSERT OR IGNORE every finished regular-session candle of those days that the database does not have (same checks as the vendor repair:
    regular KRX reference slot, closed, positive volume, sane OHLC, requested code and day). Frame `day`: the last DAY_BARS finished daily candles.
 2. Pass 2 / 3: the (stock, frame) pairs that failed (broker error) are asked again, at most PASSES passes in total. Each pass re-counts the stored candles of the managed stocks
    against the day's expected candle slots; a slot the broker also does not have is a candle that never traded (verified empty), not a hole.
 3. Backlog inventory (read only): how many unverified / queued items the vendor diagnostics wrote in the last 7 days (issues whose message says "검증 미완료", "대기 초과",
    "지연"), at the start and at the end, so the owner sees whether the pile has stopped growing. The vendor's own retry queues are not touched.
-Budget: MAX_REQUESTS broker requests per window, PAUSE seconds between requests, yields at once to a running live feed, three failures in a row pause the work for 30 minutes.
+Pace: BATCH stocks per round, ROUND_REST seconds of rest between rounds, PAUSE seconds between requests, MAX_REQUESTS broker requests per window; yields at once to a running live feed, three failures in a row pause the work for 30 minutes.
 Result: `stock/offhours_v0590.json` (resume) and `stock/offhours_v0590.jsonl`; one short line on the market feed card (`status_line`).
 """
 from __future__ import annotations
@@ -26,19 +26,21 @@ import offhours_prework_v0530 as base
 VERSION = "OFFHOURS_WEEKEND_V0590"
 SOURCE = "KIWOOM_REST_OFFHOURS_V0590"
 FRAMES = ("5m", "30m", "60m")
-DAYS_BACK = 5
+DAYS_BACK = 10
 DAY_BARS = 20
-DEEP_PAGES = 12
-NEEDED = {"5m": 5 * 70, "30m": 5 * 14, "60m": 5 * 8}
-PAUSE = 0.4
-MAX_REQUESTS = 8000
+DEEP_PAGES = 20
+NEEDED = {"5m": DAYS_BACK * 70, "30m": DAYS_BACK * 14, "60m": DAYS_BACK * 8}
+PAUSE = 1.0                  # gentle: no hurry on a weekend
+BATCH = 40                   # stocks per round
+ROUND_REST = 600.0           # seconds of rest between two rounds
+MAX_REQUESTS = 6000
 PASSES = 3
 STATE_FILE = "offhours_v0590.json"
 LOG_FILE = "offhours_v0590.jsonl"
 KST = dt.timezone(dt.timedelta(hours=9))
 BACKLOG_WORDS = ("검증 미완료", "대기 초과", "지연")
 
-_STATE = {"running": False, "progress": [0, 0], "failures": 0, "paused_until": 0.0}
+_STATE = {"running": False, "progress": [0, 0], "failures": 0, "paused_until": 0.0, "next_round": 0.0}
 
 
 def _paths(root):
@@ -219,7 +221,7 @@ def run_audit(runtime, now=None, sleep=time.sleep):
         api, store = getattr(runner, "api", None), getattr(runner, "store", None)
         if last is None or not base.long_window(now) or not root or api is None or store is None:
             return summary
-        if time.monotonic() < _STATE["paused_until"]:
+        if time.monotonic() < _STATE["paused_until"] or time.monotonic() < _STATE["next_round"]:
             return summary
         key = last.isoformat()
         state = load_state(root)
@@ -237,7 +239,7 @@ def run_audit(runtime, now=None, sleep=time.sleep):
         def pending():
             return [c for c in codes if c not in done and int(task["attempts"].get(c, 0)) < PASSES]
 
-        todo = pending()
+        todo = pending()[:BATCH]
         summary.update(ran=True, day=key, todo=len(todo))
         _STATE["running"] = True
         _STATE["progress"] = [len(done), len(codes)]
@@ -281,6 +283,8 @@ def run_audit(runtime, now=None, sleep=time.sleep):
             task["coverage_end"] = list(coverage(store, codes, days))
             log(root, {"at": task["finished_at"], "event": "DONE", "day": key, "codes": len(codes), "missing_found": task["missing_found"], "filled": task["filled"],
                        "requests": task["requests"], "unresolved": task["unresolved"], "backlog_end": task["backlog_end"], "coverage_end": task["coverage_end"]})
+        if not task["finished"]:
+            _STATE["next_round"] = time.monotonic() + ROUND_REST        # rest between rounds
         save_state(root, state)
         summary.update(finished=bool(task["finished"]), filled=task["filled"], missing_found=task["missing_found"])
     except Exception as exc:

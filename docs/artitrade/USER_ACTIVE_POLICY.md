@@ -473,3 +473,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** the weekend is one continuous quiet window; a deep five-trading-day candle audit with retries runs in it; the backlog is counted (not cleared).
 - **EWY (checked in the code):** `night_futures_gate_v0260.parse_us_session` takes the latest COMPLETE EWY US session that closed after the previous KRX close; on Monday that is Friday's US session (KST Fri 23:30 - Sat 06:00, open-to-close change); the supply-demand D+1 condition price = D (Friday) close x (1 + that change), rounded down to a tick, planned from 06:00 Monday once the value is VERIFIED.
 - **예상 결함:** the retry queues of the vendor are not cleared; the request limit is unknown; the phone must be on; not verified on a device.
+
+## 2026-11-27: Entry context backfill, combined candles completion, gentle weekend pace (owner, issues #178 and #179, version 0.6.0, rule R16)
+- **Owner:** why were the entry-context backfill and the combined-candle completion not started (no reason: ordering); weekend work should leave gaps between rounds but be detailed and careful.
+- **Decision:** both are implemented; pace 1.0 s per request, 40-stock rounds, 600 s rest; weekend audit 10 trading days; entry context only from bars that ended before the BUY, replaced only by a context with more bars, with a list of every unresolved position.
+- **기존 기준 / 충돌:** none; the combined series stays in its separate store and no strategy reads it yet.
+- **예상 결함:** market score at the BUY cannot be recovered; MA / MarketTrend stock sidecars unchecked on real data; the request limit is unknown; not verified on a device.

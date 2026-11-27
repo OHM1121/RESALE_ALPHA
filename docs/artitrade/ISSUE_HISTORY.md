@@ -175,3 +175,9 @@ Delivery: signed APK 0.5.8 (CI run 45994156662, source be8e7cf, SHA-256 bf8470b4
 Owner: use Friday close until Monday open to fill missing data and candles, re-check the managed data and clear the delayed backlog. Done: weekend as a continuous quiet window, a 5-trading-day deep candle audit with retries and start/end coverage, a read-only backlog count and a card status line. Not done: clearing the vendor retry queues themselves, combined (NXT) candles. Not verified on a device.
 
 Delivery: signed APK 0.5.9 (CI run 45995791434, source 4ba62c7, SHA-256 3d6dc23c0772888e5de88c485d2737800b1d0419c21f213aad4c0dba88ee0090), signer unchanged. Issue #177. CI_VERIFIED only; DEVICE_VERIFIED=false.
+
+## #178 — 0.6.0 BUY-time MA / trend context of stock positions completed after the close (2026-11-27)
+Deferred since 0.4.x without a technical reason (my ordering of work); done now for AT, MA and MarketTrend stock sidecars from the completed bars before the BUY, with a full list of what could not be completed. Real-data run: 34 AT positions filled (2 partial). Not verified on a device.
+
+## #179 — 0.6.0 combined (KRX+NXT) candles completion and gentler weekend pace (2026-11-27)
+Stage 1 of the combined flow was only a probe; device data shows the `_AL` request works (160/160, NXT hours included). The quiet hours now complete the combined 5m/30m candles of every managed stock into the separate store at a gentle pace; the weekend audit got the same pacing and more detail. Stage 2 (strategies on the combined series) is an open owner decision. Not verified on a device.

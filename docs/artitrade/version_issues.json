@@ -2633,6 +2633,38 @@
                 "test_v0530_offhours_prework.py"
           ],
           "notes": "Weekend/holiday = all-day quiet window; deep 5-trading-day candle audit with up to 3 attempts per stock; backlog diagnostics are only counted (read only), the vendor retry queues are not touched; no combined (NXT) candles; the request limit is unknown; the app must be running."
+    },
+    {
+          "id": "CTX-0600-01",
+          "issue": 178,
+          "found": "owner request 2026-11-27 (deferred since 0.4.x): fill the BUY-time MA above/below, slopes and trend of stock positions after the close",
+          "category": "ENTRY_CONTEXT_MISSING",
+          "title": "Stock positions bought before 0.3.7 or with short bars had no or partial entry_ctx",
+          "evidence": "device export: 34 of 34 stock AT sidecars without entry_ctx; entry_ctx_backfill_v0600 real-data run 34 filled, 2 partial; ui_tests/test_v0600_entry_ctx_backfill.py",
+          "root": "CONFIRMED: entry_ctx is written only at the BUY by entry_context_v0370",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.0",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": ["STOCK_AT", "STOCK_MA", "STOCK_TREND"],
+          "tests": ["test_v0600_entry_ctx_backfill.py"],
+          "notes": "Completed candles whose END is at or before the BUY, newest 140; market score is not recorded (None, reason); replaced only when more bars exist; every unresolved position id and reason is listed in stock/entry_ctx_backfill_v0600.json; GMO has no sidecar and is excluded; MA / MarketTrend stock sidecars could not be checked on real data (no positions yet)."
+    },
+    {
+          "id": "BARS-0600-02",
+          "issue": 179,
+          "found": "owner request 2026-11-27: complete the combined (KRX+NXT) candles; weekend work must be gentle and detailed",
+          "category": "COMBINED_BARS_NOT_STORED",
+          "title": "The combined 5m/30m candles were only probed for ~10 stocks; the quiet hours did not complete them; the weekend audit was tight",
+          "evidence": "stock/all_venue_bars_v0440.sqlite3 probe_log 160 of 160 ok, NXT hours present; ui_tests/test_v0600_all_venue_complete.py; test_v0590_offhours_weekend.py",
+          "root": "CONFIRMED in code and device data",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.0",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": ["STOCK_FEED", "STOCK_MA", "STOCK_TREND", "STOCK_AT"],
+          "tests": ["test_v0600_all_venue_complete.py", "test_v0590_offhours_weekend.py"],
+          "notes": "Separate store only (bars table and strategies untouched; stage 2 is a separate owner decision); 1.0 s between requests, 40 stocks per round, 600 s rest, 3 attempts; the request limit is unknown; the app must be running; not verified on a device."
     }
   ],
   "known_normal": [

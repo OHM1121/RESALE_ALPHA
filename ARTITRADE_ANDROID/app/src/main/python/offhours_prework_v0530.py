@@ -292,6 +292,13 @@ def status(root, now=None):
             audit = {}
         if audit and audit.get("phase") == "running":
             return audit
+        try:
+            import all_venue_complete_v0600 as combined
+            if combined._STATE["running"]:
+                done_n, total_n = combined._STATE["progress"]
+                return {"phase": "running", "label": "장마감 후 통합봉 수집·저장 중" + (" %d/%d" % (done_n, total_n) if total_n else "")}
+        except Exception:
+            pass
         if _STATE["running"]:
             done, total = _STATE["progress"]
             return {"phase": "running", "label": "장마감 후 데이터 수집·저장 중" + (" %d/%d" % (done, total) if total else "")}
@@ -316,6 +323,10 @@ def _loop():
                 if long_window(dt.datetime.now(KST)):
                     import offhours_weekend_v0590 as weekend
                     weekend.run_audit(_runtime())          # 0.5.9: the deep multi-day audit of the managed data, only in a long window
+                import all_venue_complete_v0600 as combined
+                combined.run(_runtime())                  # 0.6.0: the combined (KRX + NXT) candles of the managed stocks, separate store
+                import entry_ctx_backfill_v0600 as backfill
+                backfill.run(_runtime())                  # 0.6.0: BUY-time MA / trend context of the stock positions, from the stored bars
         except Exception:
             pass
         time.sleep(300.0)
