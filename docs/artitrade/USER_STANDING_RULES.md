@@ -142,3 +142,20 @@ rule headings disappear.
 - **Error exports (owner):** when a new error-history export is downloaded, in the folder the owner downloaded it to, delete the older exports (everything extracted before the newest one that was just downloaded). If the owner already deleted them by hand, do nothing. A cloud session cannot see the owner's PC; this is done only when a computer folder is attached or by the PC script, and the report says which. Never delete anything but earlier ARTITRADE error-history files.
 - **Unattended resume (owner):** when the token / usage limit resets, start or continue the unfinished work without being told.
 - **Complete data (owner):** every part of an export is used when reviewing the existing buy strategies, including the part that holds the post-exit-high database (PART_007), even when an error analysis does not need it.
+
+
+## R14 — Before every fix or update: compare options, then choose the more reasonable one (2026-11-27)
+Owner instruction, applies to EVERY job in EVERY session (not only APK fixes):
+1. Write down the fix or improvement you first thought of.
+2. Write down its problems and downsides when it is applied (what it can break, what it costs, what stays unfixed).
+3. Look for at least one other way (a different root-cause fix, a smaller change, a different place in the chain).
+4. Compare the two: your first plan vs the other plan vs the weight (severity x probability x blast radius on other
+   strategies and the whole program) of each side's problems.
+5. Update with the one judged more reasonable. If neither is clearly better, choose the lower-risk one and say so.
+- The comparison is recorded in the GitHub Issue of the change (and in `ISSUE_HISTORY.md`): first plan, its downsides,
+  the other plan, the comparison, the decision and why. A change without this record is not finished.
+- It does not replace the other rules: root cause first (AGENTS.md), version-specific issue + dependency impact +
+  regression evidence, R10 report format (the owner-facing report states the chosen plan, the rejected plan and why in
+  plain Korean, briefly).
+- The owner's explicit decision always wins over this comparison; when it conflicts, state the conflict first (policy
+  conflict statement) and then follow the owner.
