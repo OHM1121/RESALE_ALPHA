@@ -2474,6 +2474,48 @@
                 "test_v0540_entry_rr_history.py"
           ],
           "notes": "Read-only join by the native position id; supply-demand has no stop and is excluded; trades recorded before 0.3.4 and unverified values show no record; the stock MA / trend sidecars could not be checked on real data (no positions in the exports); the Java card is compiled by CI only."
+    },
+    {
+          "id": "MT-0550-01",
+          "issue": 170,
+          "found": "owner request 2026-11-27: complete the stock MarketTrend history loading (local bars before the open, fewer broker re-requests) and prove with a virtual candidate that it buys",
+          "category": "DATA_LOADING_AT_OPEN",
+          "title": "Stock MarketTrend asked the broker for every symbol x frame at the open and stayed without history when the calls failed",
+          "evidence": "execution_decisions_v074 OPERATIONAL_WATCH_HISTORY_MISSING / OPERATIONAL_HISTORY_ConnectionError 2026-11-23..26; no stock MarketTrend position; docs/artitrade/MT_HISTORY_V0550.md; ui_tests/test_v0550_mt_history_preload.py",
+          "root": "CONFIRMED in vendor code: market_trend_runtime_v043.Coordinator._raw_history treats the previous session's last bar as stale at the open and goes to the broker; _prefetch paces 0.35 s per pair",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.5",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_TREND",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0550_mt_history_preload.py"
+          ],
+          "notes": "Entry rules unchanged. A really missing bar still needs the broker (one call per second overall). 휴림로봇 11-18 was not bought by design (slope -19 degrees outside -15..+20 on the only eligible bar). Not verified on a device."
+    },
+    {
+          "id": "GMO-0550-02",
+          "issue": 171,
+          "found": "owner request 2026-11-27: 하림지주 reached the first take-profit but was not sold",
+          "category": "HELD_EXIT_NOT_EVALUATED",
+          "title": "Held supply-demand position: prints at or above the first target never reached the exit engine (silent drop in the single tick consumer)",
+          "evidence": "state file 003380 stage NORMAL first_profit_triggered false; bars LIVE_WS_0B 2026-11-26 09:15:07 10,520 / 10:12:00 10,430 vs target 10,426.5; vendor engine + routing correct in simulation; ui_tests/test_v0550_gmo_held_exit.py",
+          "root": "PARTLY CONFIRMED: mechanism (one consumer, heavy engine after GMO, 3 s gate, unhandled HELD_RISK_PRIORITY_STALE_TICK) confirmed in vendor code; which stage dropped the 11-26 prints is UNVERIFIED (not stored)",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.5.5",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_GMO",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0550_gmo_held_exit.py"
+          ],
+          "notes": "Watchdog offers only fresh (3 s) prints; a print that arrives already older than 3 s still cannot trigger. Evidence is written (GMO_HELD_TP_TOUCH_UNPROCESSED, stock/gmo_held_lane_v0550.json) so the next occurrence names the stage. Owner decision pending on a resting take-profit order (R15, Issue #171)."
     }
   ],
   "known_normal": [

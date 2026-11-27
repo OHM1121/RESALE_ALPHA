@@ -2763,6 +2763,28 @@ except Exception as _off_exc:
     except Exception:
         pass
 
+# 0.5.5 (#170): stock MarketTrend history is filled from the local bars before the open and the broker is asked again only for a really missing
+# bar, at a bounded rate (was: every symbol x frame went to the broker at the open). Failure-tolerant; no order, signal or ledger write.
+try:
+    import market_trend_history_v0550 as _mt_history_v0550
+    _mt_history_v0550.install()
+except Exception as _mth_exc:
+    try:
+        _core.__dict__.setdefault('_v0550_mt_history_error',repr(_mth_exc)[:200])
+    except Exception:
+        pass
+
+# 0.5.5 (#170): a held supply-demand position's exit no longer waits behind the busy tick consumer (watchdog on the newest fresh print) and a missed
+# first-target touch leaves evidence. The 3 s executable-freshness gate is unchanged. Failure-tolerant.
+try:
+    import gmo_held_exit_v0550 as _gmo_held_exit_v0550
+    _gmo_held_exit_v0550.install()
+except Exception as _held_exc:
+    try:
+        _core.__dict__.setdefault('_v0550_gmo_held_exit_error',repr(_held_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

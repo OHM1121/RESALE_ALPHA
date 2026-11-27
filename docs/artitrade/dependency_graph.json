@@ -1,7 +1,7 @@
 {
   "schema": "ARTITRADE_CRITICAL_DEPENDENCY_GRAPH_V007",
   "source_baseline": "0.0.18 11.18 rev1 source candidate from 0.0.17 exact release SHA 85b20dc39f247c9d7883c86977af62eab4ac5098; original 82 vendor modules retained; original 8 wallet flows protected; native 0.0.18 CI ongoing; DEVICE_VERIFIED=false.",
-  "updated": "2026-11-26",
+  "updated": "2026-11-27",
   "semantics": "Manual dynamic runtime edges (static import graph is generated separately every CI run). Unverified brokers/Android dependencies are not asserted operational.",
   "verified_on_device": false,
   "nodes": [
@@ -196,7 +196,9 @@
         93,
         97,
         104,
-        116
+        116,
+        170,
+        171
       ],
       "contract": "One Kiwoom socket; source-complete OHLC REST cannot authorize orders without fresh venue 0B/0D. Special KRX session native 09:00/15:30 hardcoded timestamps remain unresolved (#80): do not claim v008 phone completion."
     },
@@ -305,7 +307,8 @@
       "kind": "python",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
-        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py"
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_d1_preplan_v097.py",
+        "ARTITRADE_ANDROID/app/src/main/python/gmo_held_exit_v0550.py"
       ],
       "depends_on": [
         "STOCK_FEED",
@@ -323,9 +326,10 @@
         80,
         85,
         89,
-        90
+        90,
+        171
       ],
-      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy. Overlay preplan fixes are partial; native first opening 09:00 guard may prevent 10:00 venue official open (#80)."
+      "contract": "Zero fresh-epoch orders are healthy; GMO BUY/SELL require native confirmed paper wallet. Session-aware D+1 preopen must share one KRX session calendar; NXT premarket closed 2026-11-19, no phantom 08:00 buy. Overlay preplan fixes are partial; native first opening 09:00 guard may prevent 10:00 venue official open (#80). 0.5.5 (#171): gmo_held_exit_v0550 (installed from android_runtime_v078, failure-tolerant) wraps d_live.LivePaperRunner._new_tick (ingress counters of held GMO codes), _start_market_workers (watchdog thread: newest fresh <=3 s print of each held code offered to GMOService.on_live_tick every 0.4 s) and GMOService.on_live_tick (engine call counter); issue GMO_HELD_TP_TOUCH_UNPROCESSED and stock/gmo_held_lane_v0550.json; the 3 s freshness gate is unchanged."
     },
     {
       "id": "STOCK_CLOSE",
@@ -353,6 +357,7 @@
       "kind": "python",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
+        "ARTITRADE_ANDROID/app/src/main/python/market_trend_history_v0550.py",
         "ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py"
       ],
       "depends_on": [
@@ -362,8 +367,8 @@
         "STOCK_SHARED_WS_OWNER"
       ],
       "issues": [
-        61,
         60,
+        61,
         68,
         70,
         72,
@@ -374,9 +379,10 @@
         98,
         107,
         114,
-        116
+        116,
+        170
       ],
-      "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible."
+      "contract": "New BUY 30m/60m/day only; 5m old holdings remain exit-eligible. 0.5.5 (#170): market_trend_history_v0550 (installed from android_runtime_v078, failure-tolerant) wraps market_trend_runtime_v043.Coordinator._raw_history (stock: local bars first, previous session last bar is current until the first bar of today completes, broker history only for a really missing bar at one call per second overall / 120 s per symbol-frame) and Coordinator.start (preload thread: local bars into empty _history slots every 30 s); entry rules unchanged; no order, fill or ledger write."
     },
     {
       "id": "COIN_GENERAL",

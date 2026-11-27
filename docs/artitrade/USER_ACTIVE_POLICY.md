@@ -441,3 +441,10 @@ a new instruction appears different. Cross-check original
 - **Now active (0.5.3):** `Preplanner._ladder_stop_buying` (exit started -> remaining rungs cancelled and confirmed, vendor matcher and print proxy skip the code), `Preplanner.presetup` (06:00 until the preparation window, EWY VERIFIED), `offhours_prework_v0530` (20:05 until 07:45). Open items: `docs/artitrade/OFFHOURS_PREWORK_PLAN.md`.
 - **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
 
+
+## 2026-11-27: Stock MarketTrend history loading and held supply-demand exit (owner, issues #170 and #171, version 0.5.5)
+- **Owner:** approved "이력 적재 단계 보완(장 시작 전 로컬 봉으로 이력을 미리 채우고, 장중 서버 이력 재요청이 몰리는 것을 줄이기)" together with a virtual-candidate end-to-end simulation; asked why 휴림로봇 (11-18) was not bought although the first bar closed above the middle line; asked why 하림지주 was not sold at the first target and to fix it.
+- **Decisions:** history is read from local bars first and the broker only for a really missing bar at a bounded rate; the entry rules (RSI20 <= 30 watch, first completed bar above the Bollinger(20,1.5) middle, slope -15..+20 degrees) are NOT changed; the 3 s executable-freshness gate is NOT changed.
+- **Policy conflict:** none (no active rule is changed). The watchdog adds a second delivery path for the same fresh print; the engine is unchanged.
+- **Expected defects:** a really missing bar still needs the broker; a held print that is already older than 3 s on arrival still cannot trigger the exit (open owner decision: resting take-profit order, R15); not verified on a device.
+- **Verification:** SOURCE_FIXED + local regression; CI and device not verified.
