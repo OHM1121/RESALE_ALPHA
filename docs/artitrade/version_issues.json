@@ -2104,6 +2104,28 @@
         "test_v0370_reference_stop_stock_buy_fixes_entry_context.py"
       ],
       "notes": "Display key only; no wallet, order or ledger change. GMO buy depth (0.3.6 fallback) still unverified: no GMO buy after 0.3.6 in the export."
+    },
+    {
+      "id": "CF-0390-01",
+      "issue": 154,
+      "found": "owner report + error export 2026-11-27 10:05 (app 0.3.6)",
+      "category": "COIN_FEED_OUTAGE_AND_BOOK_WORKER_SATURATION",
+      "title": "Coin price feed down 182 min (external network); held-exit BOOK_STALE 98k from a saturated book worker (measurement added)",
+      "evidence": "top35/market-score gaps 11-26 21:22-11-27 00:24; Upbit REST ReadTimeout then ConnectionError, WS_STALE_45S reconnect loop, automatic recovery; MA_V014_HELD_EXIT_BLOCK 105,507 rows (BOOK_STALE 98,532), UPBIT_WS_BOOK_BACKLOG waits 3.7-22.6 s",
+      "root": "Outage: external network, CONFIRMED by error types and recovery, no app defect found. Book worker saturation: CONFIRMED lag, cause UNKNOWN (measurement added)",
+      "status": "SOURCE_FIXED",
+      "fix_version": "0.3.9",
+      "ci": "PENDING",
+      "device": "UNVERIFIED",
+      "nodes": [
+        "COIN_GENERAL",
+        "COIN_MA",
+        "COIN_TREND"
+      ],
+      "tests": [
+        "test_v0230_ws_book_coalesce.py"
+      ],
+      "notes": "Measurement only (per-frame ms in BACKLOG rows + UPBIT_WS_BOOK_PROFILE_V0370 cProfile window). No behaviour change. A priority path for held markets is a candidate fix after the profile is read."
     }
   ],
   "known_normal": [

@@ -549,3 +549,6 @@ Based on 0.3.6 (versionCode 170 for 0.3.7).
 
 ## 0.3.8 — integrated holdings key (issue #153)
 Based on 0.3.7 (versionCode 171). `UnifiedVisualActivity.integratedHoldings()` de-duplicates by `market/strategy/timeframe/id/(position_uid or code)`; the vendor GMO snapshot gives every position the placeholder `id=-1`, which hid the second supply-demand holding. Display only. SOURCE_FIXED; CI and device not verified yet.
+
+## 0.3.9 — book worker measurement (issue #154)
+Based on 0.3.8 (versionCode 172). `ws_book_coalesce_v0230.dispatch` times `previous_dispatch` per frame (BACKLOG rows show `proc_avg_ms`/`proc_max_ms`) and runs a 25-frame cProfile window at most every 15 minutes while the lag is above 3 s (`UPBIT_WS_BOOK_PROFILE_V0370`). The held-exit gate (`coin_held_depth_v014`, 3 s) and every strategy are unchanged. SOURCE_FIXED (measurement); CI and device not verified yet. The 2026-11-26 21:22-11-27 00:24 coin feed outage was external (Upbit REST timeouts, then VPN connection errors) and recovered by itself.

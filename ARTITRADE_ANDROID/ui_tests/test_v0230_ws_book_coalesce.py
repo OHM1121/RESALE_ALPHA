@@ -139,6 +139,40 @@ class Coalesce(unittest.TestCase):
         self.assertEqual(len(r.issues), 1)
         self.assertEqual(r.issues[0][0], 'UPBIT_WS_BOOK_BACKLOG')
 
+    def test_v0370_backlog_row_carries_processing_time_and_a_profile_window_reports_top_functions(self):
+        # 0.3.9 (#154): measurement only - the dispatch still receives exactly the newest frame.
+        r = _module()()
+        def slow(book, _orig=r._dispatch_public_book):
+            time.sleep(0.002)
+            return _orig(book)
+        r._dispatch_public_book = slow
+        wc._state(r)['issue_at'] = None
+        for n in range(wc.PROFILE_FRAMES + 3):
+            r._enqueue_ws_event('book', _book('KRW-%d' % n, n))
+            book, _ = wc._state(r)['latest']['KRW-%d' % n]
+            wc._state(r)['latest']['KRW-%d' % n] = (book, time.monotonic() - 10)    # waited 10 s
+            r.drain()
+        self.assertEqual(len(r.dispatched), wc.PROFILE_FRAMES + 3)
+        kinds = [k for k, _ in r.issues]
+        self.assertIn('UPBIT_WS_BOOK_BACKLOG', kinds)
+        backlog = [d for k, d in r.issues if k == 'UPBIT_WS_BOOK_BACKLOG'][0]
+        self.assertIn('proc_avg_ms=', backlog)
+        self.assertEqual(kinds.count('UPBIT_WS_BOOK_PROFILE_V0370'), 1)
+        profile = [d for k, d in r.issues if k == 'UPBIT_WS_BOOK_PROFILE_V0370'][0]
+        self.assertIn('frames=%d' % wc.PROFILE_FRAMES, profile)
+        self.assertIn('top:', profile)
+        self.assertIsNone(wc._state(r)['prof'])
+
+    def test_v0370_profile_is_not_repeated_inside_the_interval(self):
+        r = _module()()
+        for n in range(wc.PROFILE_FRAMES * 3):
+            r._enqueue_ws_event('book', _book('KRW-%d' % (n % 7), n))
+            m = 'KRW-%d' % (n % 7)
+            book, _ = wc._state(r)['latest'][m]
+            wc._state(r)['latest'][m] = (book, time.monotonic() - 10)
+            r.drain()
+        self.assertLessEqual([k for k, _ in r.issues].count('UPBIT_WS_BOOK_PROFILE_V0370'), 1)
+
     def test_threaded_producers_never_lose_the_latest(self):
         r = _module()()
         def produce(market):

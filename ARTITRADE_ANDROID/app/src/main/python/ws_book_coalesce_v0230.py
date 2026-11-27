@@ -22,6 +22,13 @@ _INSTALLED = False
 TOKEN_KEY = '__ws_book_latest_token_v0230__'
 LAG_ISSUE_SECONDS = 3.0
 ISSUE_INTERVAL_SECONDS = 120.0
+# 0.3.9 (#154): the book worker is saturated (lag 3-22 s in every hour of the 2026-11-21..27 exports, 98k
+# held-exit BOOK_STALE rows) but nothing says WHERE one frame spends its time. Measure it: per-frame
+# processing milliseconds in every BACKLOG row, plus a short cProfile window (top functions) at most every
+# PROFILE_EVERY_SECONDS while lagging. Pure measurement: the dispatch result and arguments are untouched.
+PROFILE_EVERY_SECONDS = 900.0
+PROFILE_FRAMES = 25
+PROFILE_TOP = 8
 
 
 def _state(runner):
@@ -79,7 +86,74 @@ def stats(runner):
     st = _state(runner)
     with st['lock']:
         return {k: st[k] for k in ('received', 'coalesced', 'dispatched', 'queue_full', 'max_lag')} | {
-            'pending': len(st['pending'])}
+            'pending': len(st['pending']),
+            'proc_avg_ms': round(1000.0 * st.get('proc_sum', 0.0) / st['proc_n'], 2) if st.get('proc_n') else None,
+            'proc_max_ms': round(1000.0 * st.get('proc_max', 0.0), 1)}
+
+
+def _arm_profile(runner, now):
+    """Start a short profiling window (one at a time, at most every PROFILE_EVERY_SECONDS)."""
+    st = _state(runner)
+    try:
+        if st.get('prof') is None and (st.get('prof_at') is None or now - st['prof_at'] > PROFILE_EVERY_SECONDS):
+            import cProfile
+            st['prof_at'] = now
+            st['prof'] = cProfile.Profile()
+            st['prof_left'] = PROFILE_FRAMES
+            st['prof_ms'] = 0.0
+    except Exception:
+        st['prof'] = None
+
+
+def _report_profile(runner, st):
+    prof, st['prof'] = st.get('prof'), None
+    try:
+        import io
+        import pstats
+        out = io.StringIO()
+        stats_ = pstats.Stats(prof, stream=out)
+        rows = []
+        for (filename, line, name), (cc, nc, tt, ct, callers) in stats_.stats.items():
+            rows.append((ct, tt, nc, str(filename).replace('\\', '/').rsplit('/', 1)[-1], line, name))
+        rows.sort(reverse=True)
+        top = '; '.join('%s:%s:%s cum=%.0fms self=%.0fms n=%d' % (r[3], r[4], r[5], r[0] * 1000, r[1] * 1000, r[2])
+                        for r in rows[:PROFILE_TOP])
+        runner._safe_ws_issue('UPBIT_WS_BOOK_PROFILE_V0370',
+            'frames=%d total_ms=%.0f top: %s' % (PROFILE_FRAMES, st.get('prof_ms', 0.0), top[:1500]))
+    except Exception:
+        pass
+
+
+def _timed_dispatch(runner, previous_dispatch, latest):
+    st = _state(runner)
+    prof = st.get('prof')
+    started = time.monotonic()
+    try:
+        if prof is not None:
+            try:
+                prof.enable()
+            except Exception:
+                prof = None
+        return previous_dispatch(runner, latest)
+    finally:
+        elapsed = time.monotonic() - started
+        try:
+            if prof is not None:
+                try:
+                    prof.disable()
+                except Exception:
+                    pass
+                st['prof_ms'] = st.get('prof_ms', 0.0) + elapsed * 1000.0
+                st['prof_left'] = st.get('prof_left', 0) - 1
+                if st['prof_left'] <= 0:
+                    _report_profile(runner, st)
+            with st['lock']:
+                st['proc_n'] = st.get('proc_n', 0) + 1
+                st['proc_sum'] = st.get('proc_sum', 0.0) + elapsed
+                if elapsed > st.get('proc_max', 0.0):
+                    st['proc_max'] = elapsed
+        except Exception:
+            pass
 
 
 def install(d_upbit):
@@ -116,11 +190,13 @@ def install(d_upbit):
                 try:
                     s = stats(self)
                     self._safe_ws_issue('UPBIT_WS_BOOK_BACKLOG',
-                        'book waited %.1fs before processing; received=%d coalesced=%d dispatched=%d queue_full=%d pending=%d' % (
-                            lag, s['received'], s['coalesced'], s['dispatched'], s['queue_full'], s['pending']))
+                        'book waited %.1fs before processing; received=%d coalesced=%d dispatched=%d queue_full=%d pending=%d proc_avg_ms=%s proc_max_ms=%s' % (
+                            lag, s['received'], s['coalesced'], s['dispatched'], s['queue_full'], s['pending'],
+                            s['proc_avg_ms'], s['proc_max_ms']))
                 except Exception:
                     pass
-        return previous_dispatch(self, latest)
+            _arm_profile(self, now)
+        return _timed_dispatch(self, previous_dispatch, latest)
 
     runner_type._enqueue_ws_event = enqueue
     runner_type._dispatch_public_book = dispatch

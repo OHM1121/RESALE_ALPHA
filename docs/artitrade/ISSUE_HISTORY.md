@@ -66,3 +66,6 @@ Root cause: legacy `ma_v061` tick hook retired all v067 stock candidates (132/13
 
 ## #153 — 0.3.8 second GMO holding missing from the integrated view (2026-11-27)
 Root cause: all GMO positions have id -1, the integrated list key used the id. Fixed with position_uid/code in the key. SOURCE_FIXED; CI pending; device UNVERIFIED.
+
+## #154 — 0.3.9 coin feed outage and saturated book worker (2026-11-27)
+Outage 182 min: external network, automatic recovery, no app defect found. Book worker saturated (BOOK_STALE 98k, wait 3.7-22.6 s): cause unknown, measurement added in 0.3.9. SOURCE_FIXED (measurement); CI pending; device UNVERIFIED.
