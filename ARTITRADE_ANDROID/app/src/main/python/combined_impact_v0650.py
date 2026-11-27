@@ -98,8 +98,30 @@ def readiness(combined_path, managed_codes, as_of_stamp):
     return {"managed": len(managed), "with_combined_days": len({str(c) for c, _ in rows} & managed), "ready": len(ready & managed), "ready_share": round(len(ready & managed) / len(managed), 4) if managed else None, "ready_days": READY_DAYS}
 
 
+RECHECK_MINUTES = 30
+
+
+def _minutes_since(stamp, now):
+    try:
+        return (now - dt.datetime.fromisoformat(str(stamp))).total_seconds() / 60.0
+    except Exception:
+        return 1e9
+
+
+def _fill_state(root, key):
+    """(final, {"done", "total", "finished"}): the report of a day is final once the combined-candle fill of that day has finished (or never ran)."""
+    try:
+        task = json.loads((Path(root) / "stock" / "offhours_al_v0600.json").read_text("utf8")).get(key)
+    except Exception:
+        task = None
+    if not task:
+        return True, {}
+    finished = bool(task.get("finished"))
+    return finished, {"done": len(task.get("done") or []), "total": int(task.get("codes_total") or 0), "finished": finished}
+
+
 def run(runtime, now=None):
-    """Once per trading day in the quiet window. Never raises; returns the report."""
+    """Once per trading day in the quiet window (0.6.7: repeated every 30 minutes until the combined-candle fill of the day is finished). Never raises; returns the report."""
     fixed = now
     now = now or dt.datetime.now(KST)
     report = {"version": VERSION, "ran": False}
@@ -116,8 +138,9 @@ def run(runtime, now=None):
             state = json.loads(state_path.read_text("utf8"))
         except Exception:
             state = {}
-        if key in state:
-            return report
+        previous = state.get(key)
+        if previous and (previous.get("final") or _minutes_since(previous.get("at"), now) < RECHECK_MINUTES):
+            return report                                  # 0.6.7: a measurement taken while the fill is still running is repeated every RECHECK_MINUTES until the fill is finished
         combined = Path(root) / "stock" / "all_venue_bars_v0440.sqlite3"
         if not combined.exists():
             return report
@@ -125,6 +148,7 @@ def run(runtime, now=None):
         with _LOCK, store.connect() as db:
             managed = [r[0] for r in db.execute("SELECT DISTINCT code FROM bars WHERE frame='5m' AND ts>=?", ((day - dt.timedelta(days=7)).strftime("%Y%m%d") + "000000",)).fetchall()]
             result = {"at": now.isoformat(timespec="seconds"), "day": key, "readiness": readiness(combined, managed, stamp), "frames": {f: compare(db, combined, f, stamp) for f in FRAMES}}
+        result["final"], result["fill"] = _fill_state(root, key)
         state[key] = result
         tmp = state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(state, ensure_ascii=False, sort_keys=True), "utf8")

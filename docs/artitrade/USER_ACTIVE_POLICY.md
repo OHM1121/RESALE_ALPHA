@@ -529,3 +529,8 @@ a new instruction appears different. Cross-check original
 - **기존 기준 / 충돌:** replaces the 0.6.5 text "MA / supply-demand enter only in continuous regular time; MarketTrend regular only" and the vendor rule "no new entry after hours".
 - **예상 결함:** more after-hours paper trades; 5m / 60m after-hours signals still rare (must beat regular-session volume); GMO POST matching and MarketTrend POST bars not verified on a device; engine hash changed.
 
+## 2026-11-28: Closing auction is not a missing candle; no single-price fill (owner, issue #186, version 0.6.7)
+- **Owner:** "단일가 체결은 안 해도 돼. 다만 그 시간을 누락봉으로 치지 말라는 거야. 15시 30분에 뭔가 체결하는 걸 바라는 게 아니야."
+- **Decision:** the 15:30 single-price fill stays NOT modelled and is dropped from the open list; 15:20-15:30 is excluded from every missing-candle / unobserved-minute count (380 minute regular day, no repair of those minutes); the combined-candle fill runs on its own thread and its readiness report is repeated until the fill is finished.
+- **기존 기준 / 충돌:** replaces the 0.6.5 note "the fill at the single closing price at 15:30 is not modelled" as an open item.
+- **예상 결함:** the unobserved minutes already stored keep the old +10 per night; engine hash changed; not device verified.

@@ -83,6 +83,21 @@ class Report(Base):
         self.assertEqual(list(state), ["2026-11-27"])
         self.assertFalse(ci.run(self.runtime, now=dt.datetime(2026, 11, 27, 10, 0, tzinfo=KST))["ran"])
 
+    def test_0670_the_report_repeats_while_the_fill_runs_and_freezes_when_it_is_finished(self):
+        fill = self.root / "stock" / "offhours_al_v0600.json"
+        fill.write_text(json.dumps({"2026-11-27": {"done": ["000001"], "codes_total": 4, "finished": False}}), "utf8")
+        first = ci.run(self.runtime, now=SAT)
+        self.assertTrue(first["ran"])
+        self.assertEqual((first["final"], first["fill"]["done"], first["fill"]["total"]), (False, 1, 4))
+        self.assertFalse(ci.run(self.runtime, now=SAT + dt.timedelta(minutes=10))["ran"])         # not yet: every 30 minutes
+        second = ci.run(self.runtime, now=SAT + dt.timedelta(minutes=31))
+        self.assertTrue(second["ran"])                                                              # the fill is still running: measured again
+        fill.write_text(json.dumps({"2026-11-27": {"done": ["000001", "000002", "000003", "000004"], "codes_total": 4, "finished": True}}), "utf8")
+        third = ci.run(self.runtime, now=SAT + dt.timedelta(minutes=70))
+        self.assertTrue(third["ran"])
+        self.assertTrue(third["final"])
+        self.assertFalse(ci.run(self.runtime, now=SAT + dt.timedelta(minutes=140))["ran"])        # final: not repeated
+
     def test_no_combined_store_means_no_report_and_no_error(self):
         (self.root / "stock" / "all_venue_bars_v0440.sqlite3").unlink()
         out = ci.run(self.runtime, now=SAT)
@@ -98,7 +113,7 @@ class Report(Base):
     def test_installed_in_the_quiet_hours_loop(self):
         import inspect
         import offhours_prework_v0530 as off
-        self.assertIn("combined_impact_v0650", inspect.getsource(off._loop))
+        self.assertIn("combined_impact_v0650", inspect.getsource(off._combined_loop))
 
 
 if __name__ == "__main__":

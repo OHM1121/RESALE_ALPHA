@@ -2801,6 +2801,29 @@
                 "test_v0650_closing_auction.py"
           ],
           "notes": "Engine patch patch_v065_post_session_lookback.py (shipped engine sha 327515cf0b2ed0bbcb4106aa4b43078b06e1da6c82502e547e6c339508593fb8): unified look-back, extended frames written to bars (LIVE_EXT_*), GMO in_tradable_clock x6, MA entry also 16:00-19:59:15. Overlays: krx_session_v041 (in_post_clock, in_tradable_clock, is_tradable_session), market_trend_* (is_tradable_session, POST 30m / 60m grid), after_hours_bars_v0660 (nightly copy of extended bars into bars). Not verified on a device; 5m / 60m after-hours signals stay rare under the strict unified rule; the 15:30 single-price fill is not modelled."
+    },
+    {
+          "id": "CLOSING-AUCTION-NOT-MISSING-0670-01",
+          "issue": 186,
+          "found": "owner request 2026-11-28: the single-price fill at 15:30 is not wanted, but the time 15:20-15:30 must not count as missing candles; why is the combined candle not complete",
+          "category": "CLOSING_AUCTION_COUNTED_AS_MISSING_AND_COMBINED_FILL_STARVED",
+          "title": "The closing auction counted as 10 unobserved minutes every night and as repairable minutes; the combined-candle fill sat behind the shared night loop and its readiness report froze at the first turn",
+          "evidence": "code: d_candidate_history elapsed_session_minutes 390 minute day; d_minute_repair_fast is_closed_regular_minute minute<30; offhours_prework_v0530 _loop order (bar completion up to 1500 requests, weekend audit, then fill; 5 minute sleep); combined_impact_v0650 once-per-day state; device export: 577 of 589 candidate rows with unobserved minutes; ui_tests/test_v0670_closing_auction_not_missing.py (8 tests), test_v0650_combined_impact.py (6 tests)",
+          "root": "CONFIRMED in the vendor engine (observation day length, minute repair window) and in the overlay loop structure",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.7",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0670_closing_auction_not_missing.py",
+                "test_v0650_combined_impact.py",
+                "test_v0600_all_venue_complete.py"
+          ],
+          "notes": "Engine patch patch_v065_post_session_lookback.py (shipped engine sha 6d08ccd0cd25ca571e5358d54fc90843347389eb12924a147925b696703de645): 380 minute observation day, minutes 15:20-15:29 not repaired. Overlay: offhours_prework_v0530._combined_loop (own thread), all_venue_complete_v0600 BATCH 60 / ROUND_REST 120, combined_impact_v0650 repeats until the fill is finished. Strategies deciding on the combined candles is NOT done. Not verified on a device."
     }
   ],
   "known_normal": [

@@ -354,14 +354,10 @@ def _loop():
                 if long_window(dt.datetime.now(KST)):
                     import offhours_weekend_v0590 as weekend
                     weekend.run_audit(_runtime())          # 0.5.9: the deep multi-day audit of the managed data, only in a long window
-                import all_venue_complete_v0600 as combined
-                combined.run(_runtime())                  # 0.6.0: the combined (KRX + NXT) candles of the managed stocks, separate store
                 import entry_ctx_backfill_v0600 as backfill
                 backfill.run(_runtime())                  # 0.6.0: BUY-time MA / trend context of the stock positions, from the stored bars
                 import after_hours_bars_v0660 as ext_bars
                 ext_bars.run(_runtime())                  # 0.6.6: the past NXT pre-market / after-hours bars join the continuous bar series
-                import combined_impact_v0650 as impact
-                impact.run(_runtime())                    # 0.6.5: what would change if the strategies decided on the combined (KRX + NXT) candles; local reads only
                 import entry_ctx_backfill_v0620 as coin_backfill
                 coin_backfill.run(_runtime())             # 0.6.2: BUY-time MA / trend / market score of the COIN positions, from the official Upbit candles
                 import blocked_day_repair_v0610 as day_repair
@@ -371,11 +367,35 @@ def _loop():
         time.sleep(300.0)
 
 
+def _combined_loop():
+    """0.6.7 (owner 2026-11-28 "통합봉은 왜 완성을 못하고 있는거야"): the combined (KRX + NXT) candles have their OWN thread.
+
+    Before, the fill waited behind the whole bar-completion pass (up to 1500 requests), the weekend audit and the other work in one loop that slept 5 minutes per turn, and the readiness
+    report was taken once at the first turn of the night (so it stayed at the start-of-night number even after the fill finished). Now: the fill runs on its own every minute (its own round rest),
+    and the impact / readiness report follows it and repeats until the fill of the day is finished.
+    """
+    time.sleep(90.0)
+    while True:
+        try:
+            if in_window(dt.datetime.now(KST)):
+                import all_venue_complete_v0600 as combined
+                combined.run(_runtime())                  # 0.6.0: the combined (KRX + NXT) candles of the managed stocks, separate store
+                import combined_impact_v0650 as impact
+                impact.run(_runtime())                    # 0.6.5: what would change if the strategies decided on the combined candles; local reads only
+        except Exception:
+            pass
+        time.sleep(60.0)
+
+
 def install(threads=True):
     if _STATE["installed"]:
         return
     if threads and _STATE["thread"] is None:
         thread = threading.Thread(target=_loop, name="ARTITRADE_V0530_OFFHOURS", daemon=True)
         _STATE["thread"] = thread
+        thread.start()
+    if threads and _STATE.get("thread_combined") is None:
+        thread = threading.Thread(target=_combined_loop, name="ARTITRADE_V0670_COMBINED", daemon=True)
+        _STATE["thread_combined"] = thread
         thread.start()
     _STATE["installed"] = True

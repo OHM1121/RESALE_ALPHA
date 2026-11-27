@@ -8,6 +8,8 @@
 3. KRX closing single-price auction 15:20-15:30 (0.6.5): `live_session(now,'KRX')` ends at the session end minus `krx_session_v041.CLOSING_AUCTION_MINUTES`.
 4. Supply-demand (GMO) paper matcher and D+1 entry / matching clock: `in_regular_clock` -> `in_tradable_clock` (continuous 09:00-15:20 or POST 16:00-20:00) at the six session checks of projectgmo/engine.py (0.6.6).
 5. MA paper engine: new entries are also allowed in the after-hours session 16:00:00-19:59:15 (the tick path above already requires an after-market entitlement), besides 09:00:00-15:19:15 (0.6.6).
+6. The closing single-price auction 15:20-15:30 is never counted as missing candles / unobserved minutes (0.6.7): the candidate forward observation counts a 380 minute session (was 390, +10 "unobserved"
+   every night) and the fast one-minute repair does not queue the minutes 15:20-15:29.
 """
 from __future__ import annotations
 
@@ -72,6 +74,24 @@ assert ma.count(ma_old) == 1 and ma.count(ma_new) == 0
 ma = ma.replace(ma_old, ma_new)
 ast.parse(ma)
 files["stock_ma_engine.py"] = ma.encode("utf8")
+# 6. owner 2026-11-28: the closing single-price auction 15:20-15:30 is not "missing candles".
+# (a) candidate forward observation counted a 390 minute session (09:00-15:30): every night added ~10 "unobserved" minutes -> now 380 (09:00-15:20)
+ch = files["d_candidate_history.py"].decode("utf8")
+for old, new, n in (("min (390 ,(int (t [8 :10 ])*60 +int (t [10 :12 ]))-(9 *60 ))", "min (380 ,(int (t [8 :10 ])*60 +int (t [10 :12 ]))-(9 *60 ))", 1),
+                    ("total =390 -_mins_intraday (start )", "total =380 -_mins_intraday (start )", 1),
+                    ("if day .weekday ()<5 :total +=390 ", "if day .weekday ()<5 :total +=380 ", 1)):
+    assert ch.count(old) == n and ch.count(new) == 0, (old, ch.count(old))
+    ch = ch.replace(old, new)
+ast.parse(ch)
+files["d_candidate_history.py"] = ch.encode("utf8")
+# (b) the fast one-minute repair never queues a minute of the closing auction (15:20-15:29): nothing trades there, the official record cannot exist
+mr = files["d_minute_repair_fast.py"].decode("utf8")
+mr_old = "(when.hour==15 and when.minute<30)"
+mr_new = "(when.hour==15 and when.minute<20)"
+assert mr.count(mr_old) == 1 and mr.count(mr_new) == 0
+mr = mr.replace(mr_old, mr_new)
+ast.parse(mr)
+files["d_minute_repair_fast.py"] = mr.encode("utf8")
 ast.parse(text)
 files["d_v19_portfolio.py"] = text.encode("utf8")
 out = io.BytesIO()

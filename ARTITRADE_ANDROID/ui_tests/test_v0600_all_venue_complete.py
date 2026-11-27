@@ -174,8 +174,8 @@ class Round(Base):
         self.assertEqual(al.load_state(str(self.root))[FRI.isoformat()]["unresolved"], [])
 
     def test_batch_limit_and_gentle_pace(self):
-        self.assertLessEqual(al.BATCH, 40)
-        self.assertGreaterEqual(al.ROUND_REST, 600.0)
+        self.assertLessEqual(al.BATCH, 60)                    # 0.6.7: 60 stocks a round, 120 s rest (was 40 / 600 s); the pace per request is unchanged: one request per second
+        self.assertGreaterEqual(al.ROUND_REST, 120.0)
         self.assertGreaterEqual(al.PAUSE, 1.0)
 
     def test_yields_to_a_busy_feed_and_runs_only_in_the_quiet_window(self):
