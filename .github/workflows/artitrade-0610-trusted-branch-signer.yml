@@ -22,7 +22,7 @@ jobs:
       # ONLY. No v-prefix, date, FIX/TEST or any other text.
       VERSION: 0.6.1
       VERSION_CODE: '194'
-      PREVIOUS_VERSION: 0.5.9
+      PREVIOUS_VERSION: 0.6.0
       PREVIOUS_VERSION_CODE: '193'
       # Pinned source commit (the signing key cache is only visible on the trusted
       # branch, so this workflow lives there and checks out this exact commit).
