@@ -224,3 +224,6 @@ CI run 46035931917 on the trusted branch, source a738935, signer unchanged, ship
 
 ## #186 — 0.6.7 closing auction is not a missing candle; combined-candle fill (2026-11-28)
 Owner: no fill at the 15:30 single price, but 15:20-15:30 must not count as missing candles; why is the combined candle not complete. Causes: candidate observation counted a 390 minute day (+10 unobserved minutes each night), fast minute repair queued 15:20-15:29, combined fill sat behind the shared loop and its readiness report froze at the first turn of the night. Engine sha 6d08ccd0... Not verified on a device.
+
+### 0.6.7 delivered (2026-11-28)
+CI run 46052015973 on the trusted branch, source 3898f04, signer unchanged, shipped engine sha 6d08ccd0...; `0.6.7.apk` SHA-256 0f22732397222308776dcae72ca69aed1ab57ff92f0b01695d2d34075c80ad8c. #186: CI_VERIFIED, device UNVERIFIED.

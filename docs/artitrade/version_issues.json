@@ -2812,7 +2812,7 @@
           "root": "CONFIRMED in the vendor engine (observation day length, minute repair window) and in the overlay loop structure",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.7",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46052015973, source 3898f04, apk sha256 0f22732397222308776dcae72ca69aed1ab57ff92f0b01695d2d34075c80ad8c)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_AT",
