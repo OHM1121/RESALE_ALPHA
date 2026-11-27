@@ -2218,6 +2218,29 @@
                 "test_v0430_owner_sheet_1127.py"
           ],
           "notes": "Policy conflict statement in USER_ACTIVE_POLICY.md (2026-11-27). Stock MarketTrend unchanged (no pink text). MA break-even exit awaits an owner decision."
+    },
+    {
+          "id": "AV-0440-01",
+          "issue": 159,
+          "found": "owner decision 2026-11-27 (combined KRX+NXT flow) after the chart screenshots of two stocks",
+          "category": "STOCK_COMBINED_VENUE_BARS",
+          "title": "Stock bars on the combined KRX+NXT flow: stage 1 read-only measurement",
+          "evidence": "app series 76 five-minute bars per day vs about 144 on the combined chart; venue_minute_bars only NXT 08:00-08:30 and an after-hours 16:00-20:00 stream; 99 percent of stock MA 5m evaluations skipped for lack of a fresh tick (separate root cause)",
+          "root": "INFERRED: the strategies read regular-session bars only; the combined chart request has never been issued by this app (UNVERIFIED)",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.4.4",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_MA",
+                "STOCK_TREND",
+                "STOCK_AT",
+                "STOCK_FEED"
+          ],
+          "tests": [
+                "test_v0440_all_venue_bars.py"
+          ],
+          "notes": "Measurement only; the strategy switch (stage 2) waits for the first export. Coin MA return-to-entry exit: owner declined (2026-11-27)."
     }
   ],
   "known_normal": [

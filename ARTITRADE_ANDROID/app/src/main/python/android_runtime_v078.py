@@ -2691,6 +2691,17 @@ except Exception as _memo_exc:
     except Exception:
         pass
 
+# 0.4.4 (#159): combined KRX+NXT (통합) stock candles, stage 1 - READ-ONLY measurement in its own database file; no strategy,
+# ledger or `bars` change. A failure here never stops the app.
+try:
+    from stock_all_venue_bars_v0440 import install as _install_all_venue_v0440
+    _install_all_venue_v0440()
+except Exception as _all_exc:
+    try:
+        _core.__dict__.setdefault('_v0440_all_venue_error',repr(_all_exc)[:200])
+    except Exception:
+        pass
+
 # Re-export the stable Android bridge API.
 start = _core.start
 stop = _core.stop

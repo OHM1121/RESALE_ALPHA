@@ -89,3 +89,6 @@ Coin reference bar: no buy at score +40 or more or at a negative score even when
 Delivery: signed APK 0.4.3 built by CI run 45933880939 from source 4c1621e (SHA-256 7cafc8e7c626ce7cfff507b80ea7800caeb74c5169c6856e370b22b6f2c141bd, signer unchanged). CI_VERIFIED only; DEVICE_VERIFIED=false.
 
 Findings for the owner's two screenshots (2026-11-27, app 0.3.6 export): stock MA evaluations were skipped with MA_NO_FRESH_OBSERVED_TICK_IN_10_TO_2_SECOND_WINDOW (1000 of 1000 on 11-27 morning, about 99 percent per hour on 11-25/26); 5m bars per slot fell from 127 symbols (09:00) to 16 (09:25); stock bars are KRX regular session only while the owner's chart is the combined KRX+NXT view; stock MarketTrend is 30m/60m/day only (5m retired). Open decisions: combined KRX+NXT bars; coin MA return-to-entry exit.
+
+## #159 — 0.4.4 stock bars on the combined KRX+NXT flow, stage 1 (2026-11-27)
+Owner decided to move stock MA / MarketTrend / reference-bar bars to the combined flow and not to add a return-to-entry exit to coin MA. The app cannot assemble the combined flow from stored data and has never requested the broker's combined chart, so stage 1 only measures it (own database file, no behaviour change). 99 % of the stock MA 5m evaluations on 11-25..27 were skipped for lack of a fresh tick: a separate feed cause.
