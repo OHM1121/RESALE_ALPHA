@@ -2302,7 +2302,7 @@
           "root": "CONFIRMED in simulation of the real GMOService (Preplanner._step matcher ran after Engine.paper_match for the same print); CONFIRMED in code (ui_read had no transaction)",
           "status": "SOURCE_FIXED",
           "fix_version": "0.4.7",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45953023938, source a6186d5, apk sha256 4a8f4f52ea87c23e61341c1d2fdd6a9930c0320310d416a8fb2ee7d3e815f7d6)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_GMO",

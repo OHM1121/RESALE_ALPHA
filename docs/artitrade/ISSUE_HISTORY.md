@@ -105,3 +105,5 @@ Delivery: signed APK 0.4.5 (CI run 45950245922, source 139ce45, SHA-256 666b8e8d
 
 ## #162 — 0.4.7 supply-demand end-to-end simulation, double matching of one print, consistent UI snapshot (2026-11-27)
 The owner asked whether the path candidate -> waiting -> buy candidate -> real buy can be checked without the ledger. A synthetic candidate driven through the real GMO service (ui_tests/sim_gmo_d1_v0470.py) showed that the displayed ask size of one print was matched twice (a book of 3 shares filled 6) and reproduced the Doosan Bobcat case (no order without a 0B print before 0.4.6). Fixed: each print is matched once. The UI read-only snapshot is now one read transaction. Not fixed and stated: one 0D snapshot can be reused by several prints, and the 10 percent print proxy can fill after the displayed size is used. CI_VERIFIED only after the build; DEVICE_VERIFIED=false.
+
+Delivery: signed APK 0.4.7 (CI run 45953023938, source a6186d5, SHA-256 4a8f4f52ea87c23e61341c1d2fdd6a9930c0320310d416a8fb2ee7d3e815f7d6), signer unchanged. CI_VERIFIED only; DEVICE_VERIFIED=false.
