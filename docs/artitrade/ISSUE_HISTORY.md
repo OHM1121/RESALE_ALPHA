@@ -181,3 +181,6 @@ Deferred since 0.4.x without a technical reason (my ordering of work); done now 
 
 ## #179 — 0.6.0 combined (KRX+NXT) candles completion and gentler weekend pace (2026-11-27)
 Stage 1 of the combined flow was only a probe; device data shows the `_AL` request works (160/160, NXT hours included). The quiet hours now complete the combined 5m/30m candles of every managed stock into the separate store at a gentle pace; the weekend audit got the same pacing and more detail. Stage 2 (strategies on the combined series) is an open owner decision. Not verified on a device.
+
+### 0.6.0 delivered (2026-11-27)
+CI run 45997360160 on the trusted branch, source 9d6de0a, signer unchanged; `0.6.0.apk` SHA-256 d353b8b86f03576c215dcc3a734deffd8d9656e3924d8234f1bc4afc1c086b8d. #178 and #179: CI_VERIFIED, device UNVERIFIED.
