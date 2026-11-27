@@ -211,3 +211,6 @@ CI run 46010570990 on the trusted branch, source e7eb6bf, signer unchanged; `0.6
 
 ## #184 — 0.6.5 KRX + NXT integration stage 2 (2026-11-27)
 Owner: start stage 2 in the best way without asking; the after-hours market is 16:00-20:00 (correct: the engine's own session table says so; 0.6.4 had started at 15:30). Findings: after-hours 5m / 60m signals were structurally impossible (100 / 48 previous bars required in a session of 48 / 4); fixed with an engine patch (replay on the device data: 0 -> 1-4 five-minute signals a day). Day bars are aligned to the final combined official candle nightly (no orders). The strategies are not yet switched to combined bars: the new report shows the trend label differs for 2 of 11 stocks and 38-42 % of the combined candles lie outside regular hours. Not verified on a device.
+
+### 0.6.5 delivered (2026-11-27)
+CI run 46031271980 on the trusted branch (attempt 1 failed only in the JVM step on a temporary 404 from Maven Central; the failed job was re-run and passed, attempt 2), source 180d555, signer unchanged, shipped engine sha 6368a9d7...; `0.6.5.apk` SHA-256 7e441d316b9832c1d6f7a58187217fe3ace9776b1a5a8abcf20e12885fb98bd3. #184: CI_VERIFIED, device UNVERIFIED.

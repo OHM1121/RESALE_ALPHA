@@ -2758,7 +2758,7 @@
           "root": "CONFIRMED in the vendor engine (d_v19_portfolio.on_extended_minute: the code contradicts its own comment) and in offhours_*: 30 minute pause on three environment errors that burnt the stock's attempts",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.5",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46031271980 attempt 2, source 180d555, apk sha256 7e441d316b9832c1d6f7a58187217fe3ace9776b1a5a8abcf20e12885fb98bd3)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_AT",
