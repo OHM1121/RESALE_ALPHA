@@ -2183,7 +2183,7 @@
           "root": "CONFIRMED in code and by profile for the higher-frame repair path; other long holders (HISTORY_INDICATORS, anonymous Dummy-N threads) UNKNOWN until the 0.4.0 stack dump is read",
           "status": "SOURCE_FIXED",
           "fix_version": "0.4.2",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 45927212554, source 9ae92ba, apk sha256 75e3724c20ff702fc7f5e7ebec9d54c70064a99cde09651283d515fd61cba51d)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_FEED",

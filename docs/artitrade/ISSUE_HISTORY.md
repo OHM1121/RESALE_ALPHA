@@ -80,3 +80,5 @@ Delivery: signed APK 0.4.1 built by CI run 45925586430 from source 5fe8a03 (SHA-
 
 ## #157 — 0.4.2 market-wide daily statistics recomputed under the ledger gate (2026-11-27)
 Profile on the real stock database: 93 % of the higher-frame repair's gate hold was two research functions recomputed for every symbol and frame. They are now memoised (exact results, bounded lifetime, warmed on a read-only connection). Close betting was rejected with a stale order book in 76 of 77 evaluations; stock ticks expired (31 %). Whether this fixes stock MA / MarketTrend / close betting is unverified; the other long gate holders are still unexplained.
+
+Delivery: signed APK 0.4.2 built by CI run 45927212554 from source 9ae92ba (SHA-256 75e3724c20ff702fc7f5e7ebec9d54c70064a99cde09651283d515fd61cba51d, signer unchanged). CI_VERIFIED only; DEVICE_VERIFIED=false.
