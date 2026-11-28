@@ -2880,6 +2880,24 @@
   ],
   "known_normal": [
     {
+      "id": "NORMAL-COIN-MT-GAPS",
+      "status": "SOURCE_CONFIRMED",
+      "found": "0.6.9",
+      "description": "Coin MarketTrend can stay without a buy for 1-2 days (first week: 42 h from 11-22 07:01 to 11-24 01:05); the rule needs a first RSI20 <= 30 watch and a later first completed bar above the Bollinger middle. See docs/artitrade/VERSION_BEHAVIOR_HISTORY.md section 3 / 4.4."
+    },
+    {
+      "id": "NORMAL-COIN-MA-THIN-HISTORY",
+      "status": "SOURCE_CONFIRMED",
+      "found": "0.6.9",
+      "description": "UP_RULE_SMA_HISTORY_REQUIRED for thinly traded coins: the MA rule needs 121 closed candles without gaps and Upbit omits candles of minutes without trades; no candle is invented."
+    },
+    {
+      "id": "NORMAL-COIN-NETWORK-BURSTS",
+      "status": "SOURCE_CONFIRMED",
+      "found": "0.6.9",
+      "description": "NETWORK_COOLDOWN / ConnectionError / NameResolutionError / UPBIT_WS_RECONNECT bursts and the optional MSERVER 127.0.0.1:8765 ConnectException are the phone network or an optional app that is not installed (probe backs off)."
+    },
+    {
       "id": "NORMAL-EPOCH",
       "status": "SOURCE_CONFIRMED",
       "found": "0.0.5",

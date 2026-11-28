@@ -239,3 +239,6 @@ Owner: no MarketTrend coin buy since the day before (first read as MA, corrected
 
 ### 0.6.9 delivered (2026-11-28)
 CI run 46149732850 on the trusted branch, source e5e29f2, signer unchanged, engine sha unchanged 7e2b350e...; `0.6.9.apk` SHA-256 b95ce9b77784e7002f24e9a3d747536aeef4123dfa3d23d9ac766ba5c20bc471. #188: CI_VERIFIED, device UNVERIFIED.
+
+## 2026-11-28 version behaviour history (rule R17)
+`VERSION_BEHAVIOR_HISTORY.md` created: device measurements per version, NORMAL behaviours, per-module memory, recurring defect patterns and the 0.6.8 device baseline. Bisect of the coin MarketTrend buy stop: no version regression (entry code unchanged since the first export; candle lag 42-64 s every day; buys correlate with armed watches and liquid coins).

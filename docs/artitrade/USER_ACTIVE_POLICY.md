@@ -546,3 +546,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** MarketTrend coin: the candle that just closed is fetched first for held and armed pairs and the lap restarts at the boundary; a print is not consumed before the candle exists; no fixed 10 s / 3 s test is left in the entry. Coin books: no write transaction for a market nobody holds. The entry rule and the one-position-per-coin policy are unchanged.
 - **기존 기준 / 충돌:** none with the workbook; replaces the 45 s history refresh of the coin MarketTrend pairs after a boundary.
 - **예상 결함:** more candle requests right after a boundary (held / armed pairs first); a newly opened position is seen by the book path within 0.5 s; the vendor per-book write transaction remains; not device verified.
+
+## 2026-11-28: Version behaviour history kept on GitHub and used for every update (owner, rule R17)
+- **Owner:** "그전엔 마켓트렌드 오류가 없다가 몇 버전 패치 이후로 이렇게 되었는지 확인하고, 각 버전별로 어떤 오류가 발생했고 어떤 건 정상작동인지 깃허브에서 이력관리를 하고 (나한텐 보낼 필요 없지만) 업데이트할 때 참고해서 작업".
+- **Decision:** `docs/artitrade/VERSION_BEHAVIOR_HISTORY.md` (device measurements per version, NORMAL behaviours, per-module memory, recurring defect patterns, device baseline) is read before every change and extended after every export analysis and delivery; registered as standing rule R17 and linked from `CLAUDE.md` / `AGENTS.md`.
+- **Finding for the MarketTrend question:** no version regression; the coin entry code is unchanged in its decisive parts since the first export; the buy gap of 11-27/28 is few qualified signals meeting latent defects (fixed in 0.6.9). Details in the file, section 4.4.
+- **예상 결함:** the file only helps if it is kept current; counts come from owner exports (aggregated), not device verification.

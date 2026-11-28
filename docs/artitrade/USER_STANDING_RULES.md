@@ -176,3 +176,12 @@ Owner instruction, applies to EVERY job in EVERY session: the market open is ove
 - The market score and everything that decides or sends an order stays real time.
 - Before adding intraday work, check whether it can be done in the quiet hours instead; every task moved is listed in `docs/artitrade/OFFHOURS_PREWORK_PLAN.md` with what is still open.
 
+
+## R17 - Version behaviour history: what broke, what is normal (2026-11-28)
+Owner instruction, applies to EVERY job in EVERY session: keep, on GitHub, a history per version of which errors happened and which behaviour is normal, and use it when updating (the owner does not need it sent).
+- The file is `docs/artitrade/VERSION_BEHAVIOR_HISTORY.md`. Read it BEFORE changing a module (section 4 per-module memory, section 3 NORMAL, section 5 recurring defect patterns).
+- After every device export analysis add what was measured with the version that was running (section 2) and update the baseline (section 6); after every delivery fill the device result when the next export shows it.
+- A reason code is a defect only if it contradicts the owner's workbook / `USER_ACTIVE_POLICY.md` or blocks a qualified signal; otherwise list it as NORMAL with the reason.
+- When "market or code?" is asked, replay the owner's rule offline on public candles before answering.
+- Never put ledgers, balances, account data or raw device logs in it (public repository); aggregated counts and market symbols only.
+
