@@ -2862,7 +2862,7 @@
           "root": "CONFIRMED in market_trend_runtime_v043._prefetch (45 s refresh lap), market_trend_1118_runtime._entry_window (print consumed before evaluation; two fixed tests), coin_partial_entry_v094 / reference_1118_runtime / ma_v067_coin_runtime (BEGIN IMMEDIATE per book)",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.9",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46149732850, source e5e29f2, apk sha256 b95ce9b77784e7002f24e9a3d747536aeef4123dfa3d23d9ac766ba5c20bc471)",
           "device": "UNVERIFIED",
           "nodes": [
                 "COIN_TREND",
