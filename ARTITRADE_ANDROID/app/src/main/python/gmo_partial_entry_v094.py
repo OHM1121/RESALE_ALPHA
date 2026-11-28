@@ -14,7 +14,7 @@ _INSTALLED=False
 
 def topup_verified_d1_gmo(engine,q):
     if q.venue!='KRX' or q.trading_day_index!=1:return None
-    if q.receive_delay_seconds>3 or q.receive_delay_seconds<-.5:return None
+    if not __import__('fresh_rule_v0680').print_ok(q.receive_delay_seconds):return None
     if (not all(math.isfinite(float(x)) and float(x)>0
                 for x in (q.last,q.ask,q.ask_size))):
         return None

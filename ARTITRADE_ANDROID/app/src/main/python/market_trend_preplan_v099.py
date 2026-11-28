@@ -105,7 +105,7 @@ class PreparedCoinTrend:
                 ask,bid,ask_size,observed_at=raw[:4]
                 now=dt.datetime.now(mt.KST)
                 if (observed_at.tzinfo is None or
-                    not -.5<=(now-observed_at).total_seconds()<=MAX_BOOK_AGE_SEC):
+                    not __import__('fresh_rule_v0680').book_ok((now-observed_at).total_seconds(),self.market,MAX_BOOK_AGE_SEC)):
                     return None
                 ask=_dec(ask);bid=_dec(bid);size=_dec(ask_size)
                 if ask is None or bid is None or size is None or ask<bid:
@@ -124,7 +124,7 @@ class PreparedCoinTrend:
             age=time.time()-stamp
             ask=_dec(book.get("ask"));size=_dec(book.get("ask_size"))
             bid=_dec(book.get("bid"))
-            if (not -.5<=age<=MAX_BOOK_AGE_SEC or ask is None or
+            if (not __import__('fresh_rule_v0680').book_ok(age,self.market,MAX_BOOK_AGE_SEC) or ask is None or
                     bid is None or ask<bid or size is None):
                 return None
             return {"ask":ask,"bid":bid,"ask_size":size,"book_timestamp_ms":int(stamp*1000),
@@ -261,7 +261,7 @@ class PreparedCoinTrend:
         trade,received=quote_record
         age=time.monotonic()-received
         max_age=3.0 if self.market=="stock" else MAX_TRADE_AGE_SEC
-        if not -.5<=age<=max_age:
+        if not __import__('fresh_rule_v0680').print_ok(age,self.market,max_age):
             plan["status"]="STALE_TRADE"
             return
         # A quote+book pair is evaluated once. 40 candidates every 160ms

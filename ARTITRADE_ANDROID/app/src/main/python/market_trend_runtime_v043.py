@@ -336,7 +336,7 @@ class Coordinator:
         code,_,_,_,price,_,stamp,_=tick[:8]
         try:
             seen=dt.datetime.fromisoformat(str(stamp)).astimezone(mt.KST)
-            if abs((dt.datetime.now(mt.KST)-seen).total_seconds())>3:return
+            if not __import__('fresh_rule_v0680').print_ok(abs((dt.datetime.now(mt.KST)-seen).total_seconds())):return
             with self.lock:self._quotes["stock"][str(code)]=(float(price),time.monotonic())
         except (ValueError,TypeError,AttributeError):pass
 
@@ -346,7 +346,7 @@ class Coordinator:
     def _quote(self,market,code):
         with self.lock:raw=self._quotes[market].get(code)
         max_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
-        if raw is None or time.monotonic()-raw[1]>max_age:return None
+        if raw is None or not __import__('fresh_rule_v0680').print_ok(time.monotonic()-raw[1],market,max_age):return None      # 0.6.8: one freshness rule
         price=raw[0]
         if market=="stock":
             runner=self.rt.stock_runner
@@ -356,10 +356,10 @@ class Coordinator:
                 bid_record=runner.engine.book._bid_depth.get((code,"KRX"))
             if not book:return None
             ask,bid,ask_size,seen=book
-            if (dt.datetime.now(mt.KST)-seen).total_seconds()>3:return None
+            if not __import__('fresh_rule_v0680').book_ok((dt.datetime.now(mt.KST)-seen).total_seconds()):return None
             if not (ask>=bid>0 and float(ask_size)>0):return None
             bid_size=0
-            if bid_record and bid_record[0]==bid and abs((dt.datetime.now(mt.KST)-bid_record[2]).total_seconds())<=3:
+            if bid_record and bid_record[0]==bid and __import__('fresh_rule_v0680').book_ok(abs((dt.datetime.now(mt.KST)-bid_record[2]).total_seconds())):
                 bid_size=int(bid_record[1])
             return {"trade":price,"ask":float(ask),"bid":float(bid),
                     "ask_size":float(ask_size),"bid_size":float(bid_size)}
@@ -368,7 +368,7 @@ class Coordinator:
         with runner._lock:
             book=runner.last_book.get(code)
         if not isinstance(book,dict):return None
-        if abs(time.time()-float(book.get("timestamp",0))/1000)>3:return None
+        if not __import__('fresh_rule_v0680').book_ok(abs(time.time()-float(book.get("timestamp",0))/1000),'coin'):return None
         bid=mt._finite(book.get("bid"));ask=mt._finite(book.get("ask"))
         size=mt._finite(book.get("ask_size"));bid_size=mt._finite(book.get("bid_size"))
         # Buying consumes ASK depth. Missing/zero BID depth must block a
@@ -1171,7 +1171,7 @@ class Coordinator:
                 for code in candidates:
                     raw=quotes.get(code)
                     max_age=COIN_VERIFIED_TRADE_MAX_AGE_SEC if market=='coin' else 3.0
-                    if raw is None or since-raw[1]>max_age:
+                    if raw is None or not __import__('fresh_rule_v0680').print_ok(since-raw[1],market,max_age):
                         if code not in stale_episodes:
                             self._entry_block_counts[market]['WATCH_TICK_STALE']+=1
                             stale_episodes.add(code)
@@ -1279,7 +1279,7 @@ class Coordinator:
                             try:
                                 age=time.monotonic()-observed[1] if observed else None
                             except (TypeError,ValueError,IndexError):age=None
-                            fresh=(age is not None and -0.5<=age<=3.0)
+                            fresh=(age is not None and __import__('fresh_rule_v0680').print_ok(age,market))
                             reason=('MA_NO_FRESH_OBSERVED_TICK_IN_10_TO_2_SECOND_WINDOW'
                                     if not fresh else
                                     'MA_10_TO_2_SECOND_DECISION_OUTCOME_NOT_RECORDED')

@@ -67,7 +67,7 @@ def _verified(tick,clock):
             or tick[7] not in ("NXT","KRX")):
         return None
     t=_stamp(tick[6])
-    if t is None or not -.5<=(clock-t).total_seconds()<=3:
+    if t is None or not __import__('fresh_rule_v0680').print_ok((clock-t).total_seconds()):
         return None
     from d_minute_repair_fast import exchange_stamp_is_fresh
     if not exchange_stamp_is_fresh(tick[8],tick[6]):
@@ -360,7 +360,7 @@ class Preplanner:
                 plan["opening_source"]="FIRST_RECEIVED_NXT_0B_PREARMED"
             with service._lock:
                 book=service.priority_books.get((code,"NXT"))
-            if not book or book[4].tzinfo is None or not -.5<=(at-book[4]).total_seconds()<=3:
+            if not book or book[4].tzinfo is None or not __import__('fresh_rule_v0680').book_ok((at-book[4]).total_seconds()):
                 return
             ask,bid,ask_qty,bid_qty=map(int,book[:4])
             if ask<=0 or bid<=0 or ask<bid or ask_qty<=0:return
@@ -396,8 +396,8 @@ class Preplanner:
                 valid=(recv is not None and exchange is not None and
                     int(tick[5])>0 and int(tick[4])==int(last) and
                     str(tick[0])==code and tick[7]=="KRX" and
-                    abs((at-recv).total_seconds())<=3 and
-                    abs((at-exchange).total_seconds())<=3)
+                    __import__('fresh_rule_v0680').print_ok(abs((at-recv).total_seconds())) and
+                    __import__('fresh_rule_v0680').print_ok(abs((at-exchange).total_seconds())))
             except (TypeError,ValueError,OverflowError):
                 valid=False
             paper_print=bool(valid)
@@ -452,7 +452,7 @@ class Preplanner:
         proof=None
         if tick is not None and len(tick)>=9:
             stamp=_stamp(tick[8])
-            if stamp is not None and abs((at-stamp).total_seconds())<=3:
+            if stamp is not None and __import__('fresh_rule_v0680').print_ok(abs((at-stamp).total_seconds())):
                 best_bid=(bid if bid is not None else getattr(q,"bid",0))
                 proof={"symbol":code,"exchange_ms":int(stamp.timestamp()*1000),
                        "ask":int(ask),"bid":int(best_bid or 0),
@@ -876,7 +876,7 @@ class Preplanner:
         service=self.service
         with service._lock:
             book=getattr(service,"last_book",{}).get(code) or service.priority_books.get((code,"KRX"))
-        if not book or book[4].tzinfo is None or not -.5<=(at-book[4]).total_seconds()<=3:return False
+        if not book or book[4].tzinfo is None or not __import__('fresh_rule_v0680').book_ok((at-book[4]).total_seconds()):return False
         ask,bid,ask_qty,_bid_qty=map(int,book[:4])
         if ask<=0 or bid<=0 or ask<bid or ask_qty<=0:return False
         opener=service.opens.get((code,at.date().isoformat()))
@@ -905,7 +905,7 @@ class Preplanner:
         with service._lock:
             book=getattr(service,"last_book",{}).get(code)
         key=self._key(code,"KRX",at)
-        if not book or book[4].tzinfo is None or not -.5<=(at-book[4]).total_seconds()<=3:
+        if not book or book[4].tzinfo is None or not __import__('fresh_rule_v0680').book_ok((at-book[4]).total_seconds()):
             with self.lock:                                               # a book message came, but no fresh valid book exists:
                 plan=self.plans.get(key)                                  # the quantity shown before is gone
                 if plan is not None:plan["_book_ref"]=None

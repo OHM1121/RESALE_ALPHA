@@ -236,7 +236,7 @@ def _recent_trade(self,market,now):
     value=cache.get(market)
     if not value:return None
     price,seen=value
-    if abs(time.monotonic()-seen)>3:return None
+    if not __import__('fresh_rule_v0680').print_ok(abs(time.monotonic()-seen),'coin'):return None
     return policy.number(price)
 
 
@@ -329,7 +329,7 @@ def _v074_coin_tick_worker(runner):
                          else 'UP_NO_BOOK_AFTER_FRESH_TICKER'))
                 continue
             stamp=book.get('timestamp')
-            if not isinstance(stamp,(int,float)) or abs(now.timestamp()-stamp/1000)>3:
+            if not isinstance(stamp,(int,float)) or not __import__('fresh_rule_v0680').book_ok(abs(now.timestamp()-stamp/1000),'coin'):
                 if hold:
                     _v014_exit_block(ledger,code,now,'BOOK_STALE_AFTER_TICKER',
                                      {'timestamp_ms':str(stamp)[:40]})
@@ -402,7 +402,7 @@ def _new_up_candidate(self,book,now):
                                         'UP_TICK_STALE_OR_MISSING')
         return
     try:
-        if not isinstance(book.get('timestamp'),(int,float)) or abs(now.timestamp()-book['timestamp']/1000)>3:
+        if not isinstance(book.get('timestamp'),(int,float)) or not __import__('fresh_rule_v0680').book_ok(abs(now.timestamp()-book['timestamp']/1000),'coin'):
             for tf,end in due:
                 _record_v074_ma_observation(symbol,tf,end.isoformat(),
                                             'UP_ORDERBOOK_STALE')
@@ -451,7 +451,7 @@ def _new_up_candidate(self,book,now):
             _record_v074_ma_observation(symbol,tf,end.isoformat(),
                                         'UP_LAST_RECHECK_GENUINE_TICK_STALE')
             continue
-        if abs(submit_now.timestamp()-book['timestamp']/1000)>3:
+        if not __import__('fresh_rule_v0680').book_ok(abs(submit_now.timestamp()-book['timestamp']/1000),'coin'):
             _record_v074_ma_observation(symbol,tf,end.isoformat(),
                                         'UP_LAST_RECHECK_BOOK_STALE')
             continue

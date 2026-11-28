@@ -227,3 +227,6 @@ Owner: no fill at the 15:30 single price, but 15:20-15:30 must not count as miss
 
 ### 0.6.7 delivered (2026-11-28)
 CI run 46052015973 on the trusted branch, source 3898f04, signer unchanged, shipped engine sha 6d08ccd0...; `0.6.7.apk` SHA-256 0f22732397222308776dcae72ca69aed1ab57ff92f0b01695d2d34075c80ad8c. #186: CI_VERIFIED, device UNVERIFIED.
+
+## #187 — 0.6.8 one freshness rule for every strategy, stock and coin (2026-11-28)
+Owner: apply to ALL strategies (stock + coin, buy + sell); sell without the 3 second rule when the target price has the quantity. Finding: the 3 second rule was never removed; 0.5.8 only changed quiet-stock buys of three strategies. Now one module (`fresh_rule_v0680`) decides everywhere: unchanged book / late print stay usable while the real-time line is alive (book <= 2 min, print <= 115 s), a dead line keeps the old 3 s. Engine sha 7e2b350e... Not verified on a device.

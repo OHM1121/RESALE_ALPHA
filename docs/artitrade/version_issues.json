@@ -2824,6 +2824,33 @@
                 "test_v0600_all_venue_complete.py"
           ],
           "notes": "Engine patch patch_v065_post_session_lookback.py (shipped engine sha 6d08ccd0cd25ca571e5358d54fc90843347389eb12924a147925b696703de645): 380 minute observation day, minutes 15:20-15:29 not repaired. Overlay: offhours_prework_v0530._combined_loop (own thread), all_venue_complete_v0600 BATCH 60 / ROUND_REST 120, combined_impact_v0650 repeats until the fill is finished. Strategies deciding on the combined candles is NOT done. Not verified on a device."
+    },
+    {
+          "id": "ONE-FRESHNESS-RULE-0680-01",
+          "issue": 187,
+          "found": "owner request 2026-11-28: apply the removal of the 3 second rule to all strategies, stock and coin, buy and sell",
+          "category": "THREE_SECOND_RULE_SCATTERED_AND_PARTIALLY_APPLIED",
+          "title": "The 3 second fresh-trade / fresh-book rule sat in about 70 places; only quiet-stock buys of three strategies had been relaxed (0.5.8)",
+          "evidence": "code scan of the patched vendor engine and the overlays (BOOK_MAX_AGE_SEC, exchange_stamp_is_fresh, delay > 3, lag > 3, trade_age > 10, 0.75 s tick queue, abs(... ) <= 3 in 16 overlays); ui_tests/test_v0680_one_freshness_rule.py (17 tests incl. a scan that no overlay keeps a fixed 3 s test)",
+          "root": "CONFIRMED: independent copies of the same rule in every strategy path; the stream sends a message only on change, so quiet books looked stale and queued prints were dropped",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.8",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "STOCK_AT",
+                "STOCK_MA",
+                "STOCK_GMO",
+                "STOCK_TREND",
+                "STOCK_FEED",
+                "COIN_TREND",
+                "COIN_FEED",
+                "COIN_MA"
+          ],
+          "tests": [
+                "test_v0680_one_freshness_rule.py"
+          ],
+          "notes": "fresh_rule_v0680 (touch / alive / book_ok / print_ok), engine patch section 7 (shipped engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c), 16 overlay modules. Manual sales keep 3 s. Not verified on a device."
     }
   ],
   "known_normal": [

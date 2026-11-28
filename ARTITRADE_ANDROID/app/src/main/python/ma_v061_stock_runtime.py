@@ -286,14 +286,14 @@ def _note_pivot_touch_without_sell_depth(self,tick,shared_book):
     if len(tick)<8 or tick[7]!='KRX':return
     try:
         now=dt.datetime.fromisoformat(str(tick[6]))
-        if now.tzinfo is None or abs((dt.datetime.now(now.tzinfo)-now).total_seconds())>3:
+        if now.tzinfo is None or not __import__('fresh_rule_v0680').print_ok(abs((dt.datetime.now(now.tzinfo)-now).total_seconds())):
             return
         code=str(tick[0])
         with shared_book._lock:
             actual=shared_book._items.get((code,'KRX'))
         if not actual:return
         ask,bid,_,observed=actual
-        if not 0<=(now-observed).total_seconds()<=3 or not 0<bid<=ask:return
+        if not __import__('fresh_rule_v0680').book_ok((now-observed).total_seconds()) or not 0<bid<=ask:return
     except (ValueError,TypeError,KeyError,AttributeError):
         return
     with self.lock,m._connect(self.db) as c:
@@ -322,7 +322,7 @@ def _try_open_first5s(self,tick,now):
     import stock_ma_engine as m
     from d_v19_portfolio import live_session
     if (len(tick)<8 or tick[7]!='KRX' or not live_session(now,'KRX')
-        or abs((dt.datetime.now(now.tzinfo)-now).total_seconds())>3
+        or not __import__('fresh_rule_v0680').print_ok(abs((dt.datetime.now(now.tzinfo)-now).total_seconds()))
         or now.microsecond+now.second*1000000>5000000):
         return
     code,market,name=str(tick[0]),str(tick[1]),str(tick[2])

@@ -34,14 +34,14 @@ def topup_trend(wallet,pos,quote,now):
             with book._lock:
                 current=book._items.get((symbol,'KRX'))
             if current is None:return 0
-            if (int(current[0])!=int(ask) or not -.5<=(now-current[3]).total_seconds()<=3):
+            if (int(current[0])!=int(ask) or not __import__('fresh_rule_v0680').book_ok((now-current[3]).total_seconds())):
                 return 0
             instrument_tick=None
         elif market=='coin':
             runner=wallet.rt.coin_runner
             with runner._lock:book=dict(runner.last_book.get(symbol) or {})
             if (book.get('market')!=symbol or
-                abs(now.timestamp()-int(book['timestamp'])/1000)>3 or
+                not __import__('fresh_rule_v0680').book_ok(abs(now.timestamp()-int(book['timestamp'])/1000),'coin') or
                 D(str(book.get('ask',0)))!=ask):
                 return 0
             instrument_tick=book.get('sr_tick_size')

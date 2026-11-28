@@ -33,6 +33,8 @@ Do not put private ledgers, device logs or account data here (public repository)
 | 25 | Readiness 90 %: proceed without asking | PARTIAL: bars continuous across sessions, nightly combined fill + report continue; strategies' own decisions on official combined bars not switched | 0.6.6 / #185 | readiness number from `combined_vs_regular` report each night |
 | 26 | 15:20-15:30 must not count as missing candles ("누락봉으로 치지 말라") | DONE in code (engine: 380 minute day, no minute repair there; expected candles already end at 15:15 / 15:00) | 0.6.7 / #186 | device verification |
 | 27 | Why is the combined candle not complete | EXPLAINED + fixed delays: fill had no own thread and the readiness report froze at the first turn of the night | 0.6.7 / #186 | strategies deciding on the combined candles (needs live KRX+NXT merged candles) NOT done |
+| 28 | Remove the 3 second fresh-trade rule from ALL strategies (stock and coin), unify them | DONE in code: one rule module used by the engine, 16 overlays and the coin engine; manual sales keep 3 s | 0.6.8 / #187 | device verification |
+| 29 | Sell without the 3 second rule when the target price has the quantity | DONE in code (book quantity decides: MA / GMO / MarketTrend / coin; print-based exits of the reference bar accept a print up to 115 s old while the line is alive) | 0.6.8 / #187 | device verification; reference-bar exits do not check book quantity (print based, as before) |
 | 14 | `ARTITRADE_REAL_MODE=1` blocks the GMO D+1 plan | OPEN (unchanged) | - | owner decision |
 
 Update this table in the same commit as the work (the governance docs of the version).

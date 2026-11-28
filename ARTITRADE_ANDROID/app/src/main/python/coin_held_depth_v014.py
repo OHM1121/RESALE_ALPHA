@@ -48,7 +48,7 @@ def book_sell_evidence(book, now):
         if not math.isfinite(stamp) or stamp <= 0:
             return "BOOK_STAMP_INVALID", {}
         age = abs(now.timestamp() - stamp / 1000)
-        if age > 3.0:
+        if not __import__('fresh_rule_v0680').book_ok(age, 'coin'):
             return "BOOK_STALE", {"age_seconds": round(age, 3)}
         price = Decimal(str(book["bid"]))
         size = Decimal(str(book["bid_size"]))

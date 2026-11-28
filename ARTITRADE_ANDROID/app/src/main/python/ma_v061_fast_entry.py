@@ -44,7 +44,7 @@ def _verified_book(runner,code,now):
             warning=code in runner.market_warnings
         timestamp=int(book.get('timestamp') or 0)/1000.0
         if (not approved or warning or tick is None or not book
-            or abs(now.timestamp()-timestamp)>3
+            or not __import__('fresh_rule_v0680').book_ok(abs(now.timestamp()-timestamp))
             or rule.dec(book.get('bid')) is None
             or rule.dec(book.get('ask')) is None
             or rule.dec(book.get('bid'))<=0

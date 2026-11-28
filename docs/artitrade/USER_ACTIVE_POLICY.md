@@ -534,3 +534,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** the 15:30 single-price fill stays NOT modelled and is dropped from the open list; 15:20-15:30 is excluded from every missing-candle / unobserved-minute count (380 minute regular day, no repair of those minutes); the combined-candle fill runs on its own thread and its readiness report is repeated until the fill is finished.
 - **기존 기준 / 충돌:** replaces the 0.6.5 note "the fill at the single closing price at 15:30 is not modelled" as an open item.
 - **예상 결함:** the unobserved minutes already stored keep the old +10 per night; engine hash changed; not device verified.
+
+## 2026-11-28: One freshness rule for every strategy, stock and coin, buy and sell (owner, issue #187, version 0.6.8)
+- **Owner:** "모든 전략에 일괄 적용해 왜 일부만 적용해. 매도도 내 매도 목표가격에 내가 팔고자 하는 물량만큼 수량이 존재한다면 3초 룰 적용하지 말고 그 가격 오면 매도할 것. 코인 주식 둘 다 적용."
+- **Decision:** the 3 second test is replaced everywhere (vendor engine, overlays, coin) by `fresh_rule_v0680`: a book nobody replaced stays usable up to 2 minutes and a queued trade print up to 115 seconds while the real-time line is alive; a dead line keeps 3 seconds. A sell whose target price has the displayed quantity does not wait for a fresh message.
+- **기존 기준 / 충돌:** replaces the 3 s book / print rules of reference-bar, supply-demand, MA, MarketTrend, close-betting and coin (and the quiet-stock-only change of 0.5.8). Manual sales keep 3 s.
+- **예상 결함:** an unsubscribed (rotated-out) stock can be traded on a book up to 2 minutes old; stops can be executed from a print that waited up to 115 s; more paper fills; not device verified.

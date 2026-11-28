@@ -241,7 +241,7 @@ def _latest_0b(self,code,received):
     data=cache.get(str(code))
     if not data:return None
     price,stamp=data
-    return price if abs((received-stamp).total_seconds())<=3 else None
+    return price if __import__('fresh_rule_v0680').print_ok(abs((received-stamp).total_seconds())) else None
 
 
 def _second_followup_bar(self,p,when,forming_trade):
@@ -551,7 +551,7 @@ def _topup_partial_stock(self,tick,shared_book):
     if len(tick)<8 or tick[7]!='KRX':return 0
     try:
         now=dt.datetime.fromisoformat(str(tick[6]))
-        if now.tzinfo is None or abs((dt.datetime.now(KST)-now).total_seconds())>3:
+        if now.tzinfo is None or not __import__('fresh_rule_v0680').print_ok(abs((dt.datetime.now(KST)-now).total_seconds())):
             return 0
         code=str(tick[0])
         with shared_book._lock:
@@ -559,7 +559,7 @@ def _topup_partial_stock(self,tick,shared_book):
         if quote is None:return 0
         ask,bid,asksize,observed_at=quote
         if (ask<=0 or ask<bid or asksize<=0 or
-            not -.5<=(now-observed_at).total_seconds()<=3):
+            not __import__('fresh_rule_v0680').book_ok((now-observed_at).total_seconds())):
             return 0
         from android_live_bridge import _RUNTIME
         if _RUNTIME is not None and _RUNTIME.live_enabled('stock'):
@@ -789,7 +789,7 @@ def _up_worker(runner):
                         'UP_0D_KRX_BOOK_NOT_RECEIVED',{'trade_price':str(tick[4])})
                     continue
                 ask,bid,aq,at=latest
-                if ask<=0 or bid<=0 or aq<1 or not (0<=(decision_now-at).total_seconds()<=3):
+                if ask<=0 or bid<=0 or aq<1 or not __import__('fresh_rule_v0680').book_ok((decision_now-at).total_seconds()):
                     _record_v076_stock_ma(code,frame,finish.isoformat(),
                         'UP_0D_DEPTH_OR_FRESHNESS_BLOCKED',
                         {'ask':ask,'bid':bid,'ask_qty':aq,

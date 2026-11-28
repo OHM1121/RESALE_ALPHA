@@ -411,7 +411,7 @@ def install():
         now=at or dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         if not isinstance(now,dt.datetime) or now.tzinfo is None:return result
         try:
-            if abs(now.timestamp()-float(book["timestamp"])/1000)>3:
+            if not __import__('fresh_rule_v0680').book_ok(abs(now.timestamp()-float(book["timestamp"])/1000),'coin'):
                 return result
             bid=float(book["bid"]);size=float(book["bid_size"])
             if bid<=0 or size<=0 or not math.isfinite(bid):return result

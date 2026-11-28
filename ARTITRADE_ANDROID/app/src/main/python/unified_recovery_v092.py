@@ -322,7 +322,7 @@ class RecoveryObserver:
         with self._lock:
             quotes=dict(self._stocks if market=="stock" else self._coins)
         now_mono=time.monotonic()
-        any_fresh=any(0<=now_mono-q.get("at",0)<=3 for code,q in quotes.items()
+        any_fresh=any(__import__('fresh_rule_v0680').print_ok(now_mono-q.get("at",0),market) for code,q in quotes.items()
                       if not hold or code in hold)
         if market=="stock":
             # The original stock D19/MA/GMO engines make execution decisions
@@ -336,7 +336,7 @@ class RecoveryObserver:
                         if not bid:continue
                         price,qty,seen=bid
                         age=(dt.datetime.now(seen.tzinfo)-seen).total_seconds()
-                        if float(price)>0 and float(qty)>0 and 0<=age<=3:
+                        if float(price)>0 and float(qty)>0 and __import__('fresh_rule_v0680').book_ok(age):
                             book=True;break
                     if book:break
             except (AttributeError,ValueError,TypeError):pass

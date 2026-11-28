@@ -1052,7 +1052,7 @@ def _ma_pending_diagnostics(self,snap):
                     ask,bid,ask_qty,seen_at=quote
                     try:age=(now-seen_at).total_seconds()
                     except Exception:age=999
-                    if not 0<=age<=3:reason='호가 정보 3초 초과 · 신규 매수 차단'
+                    if not __import__('fresh_rule_v0680').book_ok(age):reason='호가 정보 오래됨 · 신규 매수 차단'
                     elif int(ask or 0)<=0 or int(bid or 0)<=0:reason='매수·매도 호가 유효성 미확인'
                     elif int(ask)>limit:reason='최우선 매도호가가 기준봉 저가 지정가 초과'
                     elif int(ask_qty or 0)<1:reason='최우선 매도호가 수량 부족'
@@ -2272,7 +2272,7 @@ def _patched_gmo(self):
             try:
                 lag=float(getattr(quote,"receive_delay_seconds",float("nan")))
                 if (getattr(quote,"venue",None)!="KRX" or not code or
-                    not math.isfinite(lag) or lag<0 or lag>3.0):
+                    not math.isfinite(lag) or lag<0 or not __import__('fresh_rule_v0680').print_ok(lag)):
                     return
                 for order in list(engine.orders.values()):
                     if (order.state!="NEW" or order.code!=code or

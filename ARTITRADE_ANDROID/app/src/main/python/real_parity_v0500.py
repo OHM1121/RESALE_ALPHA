@@ -37,7 +37,7 @@ def install_book_depth():
             return None, 'NO_LIVE_ORDERBOOK'
         ask, bid, qty, when = rec
         age = (now - when).total_seconds()
-        if age < -.5 or age > m.BOOK_MAX_AGE_SEC:
+        if not __import__('fresh_rule_v0680').book_ok(age, 'stock', m.BOOK_MAX_AGE_SEC):                 # 0.6.8: one freshness rule for every strategy
             return None, 'STALE_ORDERBOOK'
         if ask > int(limit):
             return None, 'BEST_ASK_ABOVE_LIMIT'
@@ -56,7 +56,7 @@ def install_book_depth():
             if rec is None:
                 return 0
             px, qty, when = rec
-            if px != int(bid) or not -.5 <= (now - when).total_seconds() <= m.BOOK_MAX_AGE_SEC:
+            if px != int(bid) or not __import__('fresh_rule_v0680').book_ok((now - when).total_seconds(), 'stock', m.BOOK_MAX_AGE_SEC):
                 return 0
             return max(0, min(int(desired_qty), int(qty * DEPTH_PARTICIPATION) - self._bid_reserved.get((code, venue), 0)))
 
@@ -64,7 +64,7 @@ def install_book_depth():
         with self._lock:
             key = (code, venue)
             record = self._items.get(key)
-            if not record or record[0] != int(ask) or (when - record[3]).total_seconds() > m.BOOK_MAX_AGE_SEC:
+            if not record or record[0] != int(ask) or not __import__('fresh_rule_v0680').book_ok((when - record[3]).total_seconds(), 'stock', m.BOOK_MAX_AGE_SEC):
                 return False
             budget = int(record[2] * DEPTH_PARTICIPATION)
             already = self._reserved.get(key, 0)

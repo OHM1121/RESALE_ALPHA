@@ -57,6 +57,15 @@ swap("""                    if (tf=='5m' and offset//n<2) or rejection_reason(ba
 # 3. closing auction
 swap("        if bounds and bounds[0]<=now.hour*60+now.minute<bounds[1]:\n            return True",
      "        if bounds and bounds[0]<=now.hour*60+now.minute<bounds[1]-__import__('krx_session_v041').CLOSING_AUCTION_MINUTES:\n            return True")
+# 7 (0.6.8). ONE freshness rule (fresh_rule_v0680) instead of the fixed 3 second tests: order book, trade print
+swap("        if age<-.5 or age>BOOK_MAX_AGE_SEC:return None,'STALE_ORDERBOOK'",
+     "        if not __import__('fresh_rule_v0680').book_ok(age,'stock',BOOK_MAX_AGE_SEC):return None,'STALE_ORDERBOOK'")
+swap("if px!=int(bid) or not -.5<=(now-when).total_seconds()<=BOOK_MAX_AGE_SEC:return 0",
+     "if px!=int(bid) or not __import__('fresh_rule_v0680').book_ok((now-when).total_seconds(),'stock',BOOK_MAX_AGE_SEC):return 0")
+swap("or (when-record[3]).total_seconds()>BOOK_MAX_AGE_SEC:",
+     "or not __import__('fresh_rule_v0680').book_ok((when-record[3]).total_seconds(),'stock',BOOK_MAX_AGE_SEC):")
+swap("        if (when.tzinfo is None or abs((now_kst()-when).total_seconds())>3\n",
+     "        if (when.tzinfo is None or not __import__('fresh_rule_v0680').print_ok(abs((now_kst()-when).total_seconds()))\n")
 files["d_v19_portfolio.py"] = text.encode("utf8")
 
 # 4. supply-demand clock
@@ -92,6 +101,63 @@ assert mr.count(mr_old) == 1 and mr.count(mr_new) == 0
 mr = mr.replace(mr_old, mr_new)
 ast.parse(mr)
 files["d_minute_repair_fast.py"] = mr.encode("utf8")
+# 7b (0.6.8). the same rule in the other vendor files (stock feed, supply-demand, close-betting, coin)
+def edit_file(name, pairs):
+    body = files[name].decode("utf8")
+    for old, new in pairs:
+        assert body.count(old) == 1 and body.count(new) == 0, (name, old[:80], body.count(old))
+        body = body.replace(old, new)
+    ast.parse(body)
+    files[name] = body.encode("utf8")
+
+FR = "__import__('fresh_rule_v0680')"
+edit_file("d_minute_repair_fast.py", [(
+    "        return -0.5<=er<=max_age and -0.5<=rr<=max_age and (r-e).total_seconds()<=max_age",
+    "        fr=__import__('fresh_rule_v0680')\n        return fr.print_ok(er,'stock',max_age) and fr.print_ok(rr,'stock',max_age) and (r-e).total_seconds()<=max_age")])
+edit_file("d_live.py", [
+    ("                if delay > 3 or len(tick) < 9 or (not exchange_stamp_is_fresh(tick[8], tick[6])):",
+     "                if (not __import__('fresh_rule_v0680').print_ok(delay)) or len(tick) < 9 or (not exchange_stamp_is_fresh(tick[8], tick[6])):"),
+    ("                if -0.5<=age<=3.0 and int(book[2])>0:",
+     "                if __import__('fresh_rule_v0680').book_ok(age) and int(book[2])>0:"),
+    ("                if lag>3.0 and kind!='flush':",
+     "                if (not __import__('fresh_rule_v0680').print_ok(lag)) and kind!='flush':"),
+    ("        entry=(self._feed_generation,kind,payload,time.monotonic(),time.time())",
+     "        if kind=='raw':__import__('fresh_rule_v0680').touch('stock')      # 0.6.8: the line is alive (any message)\n        entry=(self._feed_generation,kind,payload,time.monotonic(),time.time())"),
+])
+edit_file("d_gmo_runtime.py", [
+    ("abs((datetime.now(KST) - seen).total_seconds()) > 3.0:",
+     "not __import__('fresh_rule_v0680').print_ok(abs((datetime.now(KST) - seen).total_seconds())):"),
+    ("        if b and abs((at-b[4]).total_seconds()) <= 3.0:",
+     "        if b and __import__('fresh_rule_v0680').book_ok(abs((at-b[4]).total_seconds())):"),
+    ("        if book and abs((seen - book[4]).total_seconds()) <= 3.0:",
+     "        if book and __import__('fresh_rule_v0680').book_ok(abs((seen - book[4]).total_seconds())):"),
+])
+edit_file("at_close_engine.py", [(
+    "f['book_age_sec']>3.0:reasons.append('NO_FRESH_ORDERBOOK')",
+    "(not __import__('fresh_rule_v0680').book_ok(f['book_age_sec'])):reasons.append('NO_FRESH_ORDERBOOK')")])
+edit_file("at_close_runner.py", [
+    ("        if book['age']>2 or book['ask']<=0 or book['ask_qty']<=0 or trade_age>3:return",
+     "        if (not __import__('fresh_rule_v0680').book_ok(book['age'],'stock',2.0)) or book['ask']<=0 or book['ask_qty']<=0 or (not __import__('fresh_rule_v0680').print_ok(trade_age)):return"),
+    ("            if trade_age<=3:r['price']=live['price']",
+     "            if __import__('fresh_rule_v0680').print_ok(trade_age):r['price']=live['price']"),
+    ("                if trade_age>3:\n                    self.store.event('SCAN_STALE_TRADE'",
+     "                if not __import__('fresh_rule_v0680').print_ok(trade_age):\n                    self.store.event('SCAN_STALE_TRADE'"),
+])
+edit_file("at_close_bridge.py", [(
+    "                time.monotonic()-float(arrived_at)<=3.0)",
+    "                __import__('fresh_rule_v0680').print_ok(time.monotonic()-float(arrived_at)))")])
+edit_file("d_upbit.py", [
+    ("                            if trade_age < -0.5 or trade_age > 10.0:",
+     "                            if not __import__('fresh_rule_v0680').print_ok(trade_age,'coin',10.0):"),
+    ("                                abs(time.time()-timestamp/1000)>MAX_BOOK_AGE_SEC):",
+     "                                not __import__('fresh_rule_v0680').book_ok(abs(time.time()-timestamp/1000),'coin',MAX_BOOK_AGE_SEC)):"),
+    ("abs(now.timestamp()-float(event_ts)/1000)>MAX_BOOK_AGE_SEC:return 0",
+     "not __import__('fresh_rule_v0680').book_ok(abs(now.timestamp()-float(event_ts)/1000),'coin',MAX_BOOK_AGE_SEC):return 0"),
+    ("                if age<0 or age>0.75:",
+     "                if age<0 or not __import__('fresh_rule_v0680').print_ok(age,'coin',0.75):"),
+    ("                        self._ws_last_frame=time.monotonic()\n                        item=json.loads(",
+     "                        self._ws_last_frame=time.monotonic();__import__('fresh_rule_v0680').touch('coin')      # 0.6.8: the line is alive\n                        item=json.loads("),
+])
 ast.parse(text)
 files["d_v19_portfolio.py"] = text.encode("utf8")
 out = io.BytesIO()

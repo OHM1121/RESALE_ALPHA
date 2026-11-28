@@ -220,8 +220,8 @@ def trend_pre_step(co, market, now):
         book = None
         with runner.engine.book._lock:
             book = runner.engine.book._items.get((code, "KRX"))
-        quote_fresh = time.monotonic() - raw[1] <= 3.0
-        book_fresh = bool(book) and (now - book[3]).total_seconds() <= 3.0
+        quote_fresh = __import__('fresh_rule_v0680').print_ok(time.monotonic() - raw[1])
+        book_fresh = bool(book) and __import__('fresh_rule_v0680').book_ok((now - book[3]).total_seconds())
         if quote_fresh and book_fresh:
             continue
         finish = _end_clock(now, "stock", frames[0])
@@ -253,7 +253,7 @@ def close_pass(close_runner, stock_runner, now=None):
         except (KeyError, ValueError, TypeError):
             continue
         book = close_runner.books.snapshot(code)
-        if trade_age <= 3 and book["age"] <= 2:
+        if __import__('fresh_rule_v0680').print_ok(trade_age) and __import__('fresh_rule_v0680').book_ok(book["age"], "stock", 2.0):
             continue
         token = ("CLOSE", code, int(time.time() // CLOSE_PER_CODE_SECONDS))
         snap = confirm(stock_runner, code, live["price"], token, now)

@@ -26,7 +26,7 @@ def topup_verified_coin_book(self,book,now):
         ask=dec(book['ask']);size=dec(book['ask_size'])
         stamp_ms=int(book['timestamp'])
         if (ask<=0 or size<=0 or
-            abs(now.timestamp()-stamp_ms/1000)>3):return 0
+            not __import__('fresh_rule_v0680').book_ok(abs(now.timestamp()-stamp_ms/1000),'coin')):return 0
         # A current book must have legal, noncrossed top BUY/SELL quotes.
         bid=dec(book['bid'])
         if bid<=0 or bid>ask:return 0
