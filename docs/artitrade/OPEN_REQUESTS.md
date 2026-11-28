@@ -35,6 +35,8 @@ Do not put private ledgers, device logs or account data here (public repository)
 | 27 | Why is the combined candle not complete | EXPLAINED + fixed delays: fill had no own thread and the readiness report froze at the first turn of the night | 0.6.7 / #186 | strategies deciding on the combined candles (needs live KRX+NXT merged candles) NOT done |
 | 28 | Remove the 3 second fresh-trade rule from ALL strategies (stock and coin), unify them | DONE in code: one rule module used by the engine, 16 overlays and the coin engine; manual sales keep 3 s | 0.6.8 / #187 | device verification |
 | 29 | Sell without the 3 second rule when the target price has the quantity | DONE in code (book quantity decides: MA / GMO / MarketTrend / coin; print-based exits of the reference bar accept a print up to 115 s old while the line is alive) | 0.6.8 / #187 | device verification; reference-bar exits do not check book quantity (print based, as before) |
+| 30 | Coin MarketTrend: no new buy since the legacy patch - market or code? | ANSWERED + fixed: code (4 qualified signals in 2 days never bought: late candle, print consumed early, 2 missed fixed freshness tests) | 0.6.9 / #188 | device verification |
+| 31 | Other coin strategy / program errors | PARTIAL: coin book backlog (write lock per book for unheld markets) fixed; 0.6.8 held-exit stale-book blocks confirmed gone in the export; network / DNS errors are the device environment; vendor `process_book` still one write transaction per book | 0.6.9 / #188 | measure the book wait after the install; decide on the vendor path |
 | 14 | `ARTITRADE_REAL_MODE=1` blocks the GMO D+1 plan | OPEN (unchanged) | - | owner decision |
 
 Update this table in the same commit as the work (the governance docs of the version).

@@ -237,7 +237,9 @@
         "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
         "ARTITRADE_ANDROID/app/src/main/python/market_feed_health_v004.py",
         "ARTITRADE_ANDROID/app/src/main/python/coin_held_depth_v014.py",
-        "ARTITRADE_ANDROID/app/src/main/python/fresh_rule_v0680.py"
+        "ARTITRADE_ANDROID/app/src/main/python/fresh_rule_v0680.py",
+        "ARTITRADE_ANDROID/app/src/main/python/mt_coin_boundary_v0690.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_book_gate_v0690.py"
       ],
       "depends_on": [],
       "issues": [
@@ -249,9 +251,10 @@
         78,
         98,
         107,
-        187
+        187,
+        188
       ],
-      "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified. 0.6.8 (#187): the 3 second book / print tests of this node use fresh_rule_v0680 (book: 3 s or, while the real-time line is alive, 2 min; print: 3 s or, while alive, 115 s; dead line = 3 s); engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c."
+      "contract": "Upbit WS ticker and contemporaneous orderbook required; REST fallback only if explicitly broker-verified. 0.6.8 (#187): the 3 second book / print tests of this node use fresh_rule_v0680 (book: 3 s or, while the real-time line is alive, 2 min; print: 3 s or, while alive, 115 s; dead line = 3 s); engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c. 0.6.9 (#188): coin MarketTrend lap order / candle refresh at the boundary (mt_coin_boundary_v0690), a print is consumed only when a frame was evaluated, no fixed freshness test in the entry; the book path of the coin ledgers skips the write transaction for a market nobody holds (coin_book_gate_v0690)."
     },
     {
       "id": "STOCK_AT",
@@ -465,7 +468,9 @@
       "kind": "python",
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/reference_1118_runtime.py",
-        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py"
+        "ARTITRADE_ANDROID/app/src/main/python/android_runtime_v078.py",
+        "ARTITRADE_ANDROID/app/src/main/python/mt_coin_boundary_v0690.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_book_gate_v0690.py"
       ],
       "depends_on": [
         "COIN_FEED",
@@ -476,9 +481,10 @@
         60,
         79,
         98,
-        181
+        181,
+        188
       ],
-      "contract": "Four original reference wallets 5m/30m/60m/day, verified ticker/book. 0.6.2 (#181): entry_ctx_backfill_v0620.run (offhours_prework_v0530 thread, 20:05-07:45) completes entry_ctx (MA 5/10/20/60/120 above/below + slope, trend, market score with its age, RR copy; reference-bar coin RR recomputed from the stored plan) in coin/base nl1118_reference_positions.intent_json, coin/ma_epoch_v067 ma_v067_positions.state_json and coin/trend positions.payload from official public Upbit candles (one request per position, 0.5 s pace); entry_ctx_backfill_v0600 now also reads the last recorded stock score (market_research_v033.score_events) with its age; unresolved list coin/entry_ctx_backfill_v0620.json."
+      "contract": "Four original reference wallets 5m/30m/60m/day, verified ticker/book. 0.6.2 (#181): entry_ctx_backfill_v0620.run (offhours_prework_v0530 thread, 20:05-07:45) completes entry_ctx (MA 5/10/20/60/120 above/below + slope, trend, market score with its age, RR copy; reference-bar coin RR recomputed from the stored plan) in coin/base nl1118_reference_positions.intent_json, coin/ma_epoch_v067 ma_v067_positions.state_json and coin/trend positions.payload from official public Upbit candles (one request per position, 0.5 s pace); entry_ctx_backfill_v0600 now also reads the last recorded stock score (market_research_v033.score_events) with its age; unresolved list coin/entry_ctx_backfill_v0620.json. 0.6.9 (#188): coin MarketTrend lap order / candle refresh at the boundary (mt_coin_boundary_v0690), a print is consumed only when a frame was evaluated, no fixed freshness test in the entry; the book path of the coin ledgers skips the write transaction for a market nobody holds (coin_book_gate_v0690)."
     },
     {
       "id": "COIN_MA",
@@ -486,7 +492,9 @@
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/ma_v067_coin_runtime.py",
         "ARTITRADE_ANDROID/app/src/main/python/ma_v067_policy.py",
-        "ARTITRADE_ANDROID/app/src/main/python/fresh_rule_v0680.py"
+        "ARTITRADE_ANDROID/app/src/main/python/fresh_rule_v0680.py",
+        "ARTITRADE_ANDROID/app/src/main/python/mt_coin_boundary_v0690.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_book_gate_v0690.py"
       ],
       "depends_on": [
         "COIN_FEED",
@@ -507,9 +515,10 @@
         107,
         128,
         181,
-        187
+        187,
+        188
       ],
-      "contract": "Missing source high/low rejected; never abort other eligible book work. 0.1.8 (#128,#129): V067 exit loop sweeps visible bid levels (50% each) instead of the best level only; a target stage uses only levels at/above its own target; VWAP fill; no order below the minimum order value unless it completes the stage or empties the position. Shadow-research KeyError is quarantined before the vendor call (research state FEATURES_INCOMPLETE_NOT_OBSERVED), vendor engine unchanged. 0.6.2 (#181): entry_ctx_backfill_v0620.run (offhours_prework_v0530 thread, 20:05-07:45) completes entry_ctx (MA 5/10/20/60/120 above/below + slope, trend, market score with its age, RR copy; reference-bar coin RR recomputed from the stored plan) in coin/base nl1118_reference_positions.intent_json, coin/ma_epoch_v067 ma_v067_positions.state_json and coin/trend positions.payload from official public Upbit candles (one request per position, 0.5 s pace); entry_ctx_backfill_v0600 now also reads the last recorded stock score (market_research_v033.score_events) with its age; unresolved list coin/entry_ctx_backfill_v0620.json. 0.6.8 (#187): the 3 second book / print tests of this node use fresh_rule_v0680 (book: 3 s or, while the real-time line is alive, 2 min; print: 3 s or, while alive, 115 s; dead line = 3 s); engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c.",
+      "contract": "Missing source high/low rejected; never abort other eligible book work. 0.1.8 (#128,#129): V067 exit loop sweeps visible bid levels (50% each) instead of the best level only; a target stage uses only levels at/above its own target; VWAP fill; no order below the minimum order value unless it completes the stage or empties the position. Shadow-research KeyError is quarantined before the vendor call (research state FEATURES_INCOMPLETE_NOT_OBSERVED), vendor engine unchanged. 0.6.2 (#181): entry_ctx_backfill_v0620.run (offhours_prework_v0530 thread, 20:05-07:45) completes entry_ctx (MA 5/10/20/60/120 above/below + slope, trend, market score with its age, RR copy; reference-bar coin RR recomputed from the stored plan) in coin/base nl1118_reference_positions.intent_json, coin/ma_epoch_v067 ma_v067_positions.state_json and coin/trend positions.payload from official public Upbit candles (one request per position, 0.5 s pace); entry_ctx_backfill_v0600 now also reads the last recorded stock score (market_research_v033.score_events) with its age; unresolved list coin/entry_ctx_backfill_v0620.json. 0.6.8 (#187): the 3 second book / print tests of this node use fresh_rule_v0680 (book: 3 s or, while the real-time line is alive, 2 min; print: 3 s or, while alive, 115 s; dead line = 3 s); engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c. 0.6.9 (#188): coin MarketTrend lap order / candle refresh at the boundary (mt_coin_boundary_v0690), a print is consumed only when a frame was evaluated, no fixed freshness test in the entry; the book path of the coin ledgers skips the write transaction for a market nobody holds (coin_book_gate_v0690).",
       "tests": [
         "test_v0170_pieverse_dust_sells_and_plan_goal.py"
       ]
@@ -520,7 +529,9 @@
       "files": [
         "ARTITRADE_ANDROID/app/src/main/python/market_trend_1118_runtime.py",
         "ARTITRADE_ANDROID/app/src/main/python/market_trend_wallet_v054.py",
-        "ARTITRADE_ANDROID/app/src/main/python/fresh_rule_v0680.py"
+        "ARTITRADE_ANDROID/app/src/main/python/fresh_rule_v0680.py",
+        "ARTITRADE_ANDROID/app/src/main/python/mt_coin_boundary_v0690.py",
+        "ARTITRADE_ANDROID/app/src/main/python/coin_book_gate_v0690.py"
       ],
       "depends_on": [
         "COIN_FEED",
@@ -539,9 +550,10 @@
         107,
         114,
         181,
-        187
+        187,
+        188
       ],
-      "contract": "New BUY 30m/60m/day only; prior 5m sells intact. Coin MarketTrend RSI20 requires actual latest continuous official completed bars and durable verified <=30 within 24h before Bollinger MID angle/touch. 0.6.2 (#181): entry_ctx_backfill_v0620.run (offhours_prework_v0530 thread, 20:05-07:45) completes entry_ctx (MA 5/10/20/60/120 above/below + slope, trend, market score with its age, RR copy; reference-bar coin RR recomputed from the stored plan) in coin/base nl1118_reference_positions.intent_json, coin/ma_epoch_v067 ma_v067_positions.state_json and coin/trend positions.payload from official public Upbit candles (one request per position, 0.5 s pace); entry_ctx_backfill_v0600 now also reads the last recorded stock score (market_research_v033.score_events) with its age; unresolved list coin/entry_ctx_backfill_v0620.json. 0.6.8 (#187): the 3 second book / print tests of this node use fresh_rule_v0680 (book: 3 s or, while the real-time line is alive, 2 min; print: 3 s or, while alive, 115 s; dead line = 3 s); engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c."
+      "contract": "New BUY 30m/60m/day only; prior 5m sells intact. Coin MarketTrend RSI20 requires actual latest continuous official completed bars and durable verified <=30 within 24h before Bollinger MID angle/touch. 0.6.2 (#181): entry_ctx_backfill_v0620.run (offhours_prework_v0530 thread, 20:05-07:45) completes entry_ctx (MA 5/10/20/60/120 above/below + slope, trend, market score with its age, RR copy; reference-bar coin RR recomputed from the stored plan) in coin/base nl1118_reference_positions.intent_json, coin/ma_epoch_v067 ma_v067_positions.state_json and coin/trend positions.payload from official public Upbit candles (one request per position, 0.5 s pace); entry_ctx_backfill_v0600 now also reads the last recorded stock score (market_research_v033.score_events) with its age; unresolved list coin/entry_ctx_backfill_v0620.json. 0.6.8 (#187): the 3 second book / print tests of this node use fresh_rule_v0680 (book: 3 s or, while the real-time line is alive, 2 min; print: 3 s or, while alive, 115 s; dead line = 3 s); engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c. 0.6.9 (#188): coin MarketTrend lap order / candle refresh at the boundary (mt_coin_boundary_v0690), a print is consumed only when a frame was evaluated, no fixed freshness test in the entry; the book path of the coin ledgers skips the write transaction for a market nobody holds (coin_book_gate_v0690)."
     },
     {
       "id": "MARKET_SCORE",

@@ -40,6 +40,8 @@ def topup_verified_coin_book(self,book,now):
     except (ImportError,AttributeError):
         return 0
 
+    from coin_book_gate_v0690 import nobody_holds        # 0.6.9: no write transaction for a market nobody holds
+    if nobody_holds(self,symbol):return 0
     with self.lock,self.connect() as c:
         c.execute('BEGIN IMMEDIATE')
         positions=c.execute("""SELECT * FROM positions WHERE market=?
@@ -171,6 +173,9 @@ def install():
             continue
         def book(self,raw,at=None,_native=original):
             completed=_native(self,raw,at)
+            if completed:
+                from coin_book_gate_v0690 import invalidate        # 0.6.9: a fill may have opened a position: re-read the list at the next book
+                invalidate(self)
             try:
                 now=at if isinstance(at,dt.datetime) else d_upbit.kst_now()
                 topup_verified_coin_book(self,raw,now)

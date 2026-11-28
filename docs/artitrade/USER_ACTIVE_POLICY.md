@@ -540,3 +540,9 @@ a new instruction appears different. Cross-check original
 - **Decision:** the 3 second test is replaced everywhere (vendor engine, overlays, coin) by `fresh_rule_v0680`: a book nobody replaced stays usable up to 2 minutes and a queued trade print up to 115 seconds while the real-time line is alive; a dead line keeps 3 seconds. A sell whose target price has the displayed quantity does not wait for a fresh message.
 - **기존 기준 / 충돌:** replaces the 3 s book / print rules of reference-bar, supply-demand, MA, MarketTrend, close-betting and coin (and the quiet-stock-only change of 0.5.8). Manual sales keep 3 s.
 - **예상 결함:** an unsubscribed (rotated-out) stock can be traded on a book up to 2 minutes old; stops can be executed from a print that waited up to 115 s; more paper fills; not device verified.
+
+## 2026-11-28: Coin MarketTrend entries and coin book path (owner, issue #188, version 0.6.9)
+- **Owner:** "마켓트렌드 신규매수가 없다" (after the legacy patch); asked whether it is the market or the code, and to fix the other coin errors.
+- **Decision:** MarketTrend coin: the candle that just closed is fetched first for held and armed pairs and the lap restarts at the boundary; a print is not consumed before the candle exists; no fixed 10 s / 3 s test is left in the entry. Coin books: no write transaction for a market nobody holds. The entry rule and the one-position-per-coin policy are unchanged.
+- **기존 기준 / 충돌:** none with the workbook; replaces the 45 s history refresh of the coin MarketTrend pairs after a boundary.
+- **예상 결함:** more candle requests right after a boundary (held / armed pairs first); a newly opened position is seen by the book path within 0.5 s; the vendor per-book write transaction remains; not device verified.

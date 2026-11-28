@@ -762,6 +762,8 @@ def _process_v067_exits(self,book,now):
         return
     began=time.monotonic()
     failed=[]
+    from coin_book_gate_v0690 import nobody_holds        # 0.6.9: no write transaction for a market nobody holds
+    if nobody_holds(self,symbol):return
     with self.lock,self.connect() as c:
         _table(c)
         rows=c.execute("""SELECT p.*,s.kind,s.state_json FROM positions p
@@ -1102,7 +1104,11 @@ def install():
         _new_up_candidate(self,raw,now)
         _process_v067_exits(self,raw,now)
         try:
-            return older_book(self,raw,at)
+            filled=older_book(self,raw,at)
+            if filled:
+                from coin_book_gate_v0690 import invalidate      # 0.6.9: a fill may have opened a position: re-read the list at the next book
+                invalidate(self)
+            return filled
         except KeyError as error:
             # Preserve strict non-fabricated execution and the original
             # caller's MA_BOOK_PROCESS_FAIL handling. Store a rate-limited

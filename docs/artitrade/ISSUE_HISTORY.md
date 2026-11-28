@@ -233,3 +233,6 @@ Owner: apply to ALL strategies (stock + coin, buy + sell); sell without the 3 se
 
 ### 0.6.8 delivered (2026-11-28)
 CI run 46117277767 on the trusted branch, source 7841c55, signer unchanged, shipped engine sha 7e2b350e...; `0.6.8.apk` SHA-256 19c8535628b1aac95267d39e1f018d7c649ce59677dac5d6fd851fa221be1dee. #187: CI_VERIFIED, device UNVERIFIED.
+
+## #188 — 0.6.9 coin MarketTrend entries and coin book path (2026-11-28)
+Owner: no MarketTrend coin buy since the day before (first read as MA, corrected): market or code? Replay of the 11.20 rule on Upbit candles found at least 4 qualified signals that never bought. Fixed: late just-closed candle (boundary refresh order), print consumed before the candle, 2 missed fixed freshness tests, and the write lock taken per book for unheld coins. 0.6.8 effect confirmed in the export: held-coin exit blocks by stale book fell from about 400 an hour to about 1 after the install. Not verified on a device.

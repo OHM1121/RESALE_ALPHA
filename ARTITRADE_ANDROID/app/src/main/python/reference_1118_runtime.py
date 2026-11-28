@@ -407,6 +407,9 @@ def install():
     original_book=d_upbit.CoinLedger.process_book
     def book_coin(self,book,at=None):
         result=original_book(self,book,at)
+        if result:
+            from coin_book_gate_v0690 import invalidate          # 0.6.9: a fill may have opened a position: re-read the list at the next book
+            invalidate(self)
         if not _is_base_coin(self) or not isinstance(book,dict):return result
         now=at or dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         if not isinstance(now,dt.datetime) or now.tzinfo is None:return result
@@ -416,6 +419,8 @@ def install():
             bid=float(book["bid"]);size=float(book["bid_size"])
             if bid<=0 or size<=0 or not math.isfinite(bid):return result
             symbol=str(book["market"])
+            from coin_book_gate_v0690 import nobody_holds        # 0.6.9: no write transaction for a market nobody holds
+            if nobody_holds(self,symbol):return result
             from d_upbit import dec,qty_floor
             with self.lock,self.connect() as c:
                 c.execute(_TBL)

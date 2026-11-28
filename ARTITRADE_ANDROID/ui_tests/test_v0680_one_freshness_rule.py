@@ -142,7 +142,7 @@ class EverySiteUsesTheRule(unittest.TestCase):
                     self.fail("%s:%d still has a fixed age test: %s" % (name, number, line.strip()[:120]))
 
     def test_the_whole_overlay_folder_has_no_other_fixed_3_second_test(self):
-        pattern = re.compile(r"(total_seconds\(\)\)?\s*(<=|>)\s*3(\.0)?\b|(monotonic\(\)\s*-\s*\w+\s*(<=|>)\s*3(\.0)?\b)|(age\s*(<=|>)\s*3(\.0)?\b)|(lag\s*(>)\s*3(\.0)?\b)|<=\s*3\s*\)|(<=|>)\s*MAX_BOOK_AGE_SEC)")
+        pattern = re.compile(r"(total_seconds\(\)\)?\s*(<=|>)\s*3(\.0)?\b|(monotonic\(\)\s*-\s*\w+\s*(<=|>)\s*3(\.0)?\b)|(age\s*(<=|>)\s*3(\.0)?\b)|(lag\s*(>)\s*3(\.0)?\b)|<=\s*3\s*\)|(<=|>)\s*MAX_BOOK_AGE_SEC|>\s*\(\s*10\s+if\s+market[^)]*else\s+3\s*\))")
         found = []
         for path in sorted(PY.glob("*.py")):
             if path.name in self.EXEMPT or path.name == "fresh_rule_v0680.py":

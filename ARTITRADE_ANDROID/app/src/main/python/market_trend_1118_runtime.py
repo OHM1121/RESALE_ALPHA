@@ -228,7 +228,7 @@ def _entry_window(self,market,now):
         except (ValueError,TypeError):continue
         if not math.isfinite(trade) or trade<=0:
             continue
-        if time.monotonic()-stamp>(10 if market=="coin" else 3):
+        if not __import__('fresh_rule_v0680').print_ok(time.monotonic()-stamp,market,10 if market=="coin" else 3):
             continue
         # First RSI<=30 observation is allowed even when a valid book is
         # briefly unavailable. Only BUY needs separately fresh 0D/depth.
@@ -237,13 +237,19 @@ def _entry_window(self,market,now):
         # The previously observed print is separate from live order-book bid.
         if self._nl1118_quote_stamps.get((market,code))==stamp:
             continue
+        # 0.6.9: a print is consumed only when at least one frame could really be evaluated; before, a print that arrived
+        # before the just-closed candle was 'already seen' when the candle came, so a quiet coin was never evaluated again.
+        previous_stamp=self._nl1118_quote_stamps.get((market,code))
+        previous_seen=self._nl1118_previous_trade.get((market,code))
         self._nl1118_quote_stamps[(market,code)]=stamp
         self._nl1118_previous_trade[(market,code)]=trade
+        evaluated=False
         choices=[]
         for frame in TREND_FRAMES:
             k=(market,code,frame)
             closed=_confirmed_recent(history.get(k,()),now,market,frame)
             if not closed:continue
+            evaluated=True
             closes=[float(row["close"]) for row in closed]
             rsi=mt.rsi20(closes,forming_close=trade)
             if rsi is None:continue
@@ -298,6 +304,13 @@ def _entry_window(self,market,now):
             if condition is None:continue
             if not (now<dt.datetime.fromisoformat(old["expires_at"])):continue
             choices.append((frame,rsi,condition,old))
+        if not evaluated:
+            # No frame had a completed candle yet: leave this print unconsumed so it is evaluated when the candle arrives.
+            if previous_stamp is None:self._nl1118_quote_stamps.pop((market,code),None)
+            else:self._nl1118_quote_stamps[(market,code)]=previous_stamp
+            if previous_seen is None:self._nl1118_previous_trade.pop((market,code),None)
+            else:self._nl1118_previous_trade[(market,code)]=previous_seen
+            continue
         if choices:
             verified=self._quote(market,code)
             if verified is None or verified.get("trade")!=trade:
@@ -336,7 +349,7 @@ def _entry_window(self,market,now):
             observed_tick=self._quotes[market].get(code)
         if (fresh is None or fresh.get("trade")!=trade or
                 observed_tick!=(trade,self._nl1118_quote_stamps.get((market,code))) or
-                time.monotonic()-observed_tick[1]>(10 if market=="coin" else 3) or
+                not __import__('fresh_rule_v0680').print_ok(time.monotonic()-observed_tick[1],market,10 if market=="coin" else 3) or
                 not boll["angle_allowed"] or
                 boll.get("close_above_middle") is not True):
             _signal_blocked(self,market,code,signal,"NL1118_SIGNAL_QUOTE_CHANGED_BEFORE_BUY")

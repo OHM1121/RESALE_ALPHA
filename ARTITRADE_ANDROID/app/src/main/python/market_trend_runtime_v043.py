@@ -535,16 +535,30 @@ class Coordinator:
             held_set=set(held)
             with self.lock:
                 missing={p for p in pairs if len(self._history.get((market,p[0],p[1]),()))<21}
-            pairs.sort(key=lambda p:(p not in held_set,p not in missing,mt.FRAMES.index(p[1]),p[0]))
+            # 0.6.9: for coins the pairs that can become a BUY at the next completed candle (held + armed RSI watches)
+            # are fetched FIRST and the lap restarts at every candle boundary (the just-closed candle used to arrive 45-80 s late).
+            import mt_coin_boundary_v0690 as boundary
+            armed=(boundary.armed_pairs(getattr(self,"_nl1118_watches",{}),market) if market=="coin" else set())
+            lap_started_token=(boundary.lap_token(dt.datetime.now(mt.KST),lambda n,f:_end_clock(n,market,f))
+                               if market=="coin" else None)
+            pairs.sort(key=lambda p:boundary.order_key(p,held_set,armed,missing,mt.FRAMES.index))
             if not pairs:
                 self.stop_event.wait(1)
                 continue
             for code,frame in pairs:
                 if self.stop_event.is_set():return
+                if market=="coin" and boundary.lap_token(dt.datetime.now(mt.KST),
+                        lambda n,f:_end_clock(n,market,f))!=lap_started_token:
+                    break                                          # a candle boundary passed: restart with the new order
                 key=(market,code,frame)
                 with self.lock:
-                    complete=len(self._history.get(key,()))>=21
+                    rows_now=self._history.get(key,())
+                    complete=len(rows_now)>=21
                 retry_after=45 if complete else 12
+                if market=="coin" and complete:
+                    finish_now=_end_clock(dt.datetime.now(mt.KST),market,frame)
+                    if finish_now is not None and boundary.history_is_behind(rows_now,finish_now,mt.FRAME_SECS[frame]):
+                        retry_after=boundary.retry_after(True,True,(code,frame) in armed or (code,frame) in held_set)
                 if time.monotonic()-self._history_requests.get(key,0)<retry_after:
                     continue
                 self._history_requests[key]=time.monotonic()

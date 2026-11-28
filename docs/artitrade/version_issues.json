@@ -2851,6 +2851,31 @@
                 "test_v0680_one_freshness_rule.py"
           ],
           "notes": "fresh_rule_v0680 (touch / alive / book_ok / print_ok), engine patch section 7 (shipped engine sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c), 16 overlay modules. Manual sales keep 3 s. Not verified on a device."
+    },
+    {
+          "id": "COIN-MT-ENTRY-0690-01",
+          "issue": 188,
+          "found": "owner request 2026-11-28: no new MarketTrend coin buy since the legacy patch; market or code; fix the other coin errors",
+          "category": "COIN_MARKETTREND_ENTRY_LOST_AND_BOOK_PATH_WRITE_LOCK",
+          "title": "Coin MarketTrend never saw the just-closed candle in time, consumed a print before the candle, kept two fixed 10 s / 3 s tests; the coin book path took a write lock per book of unheld markets",
+          "evidence": "device export 2026-11-28 22:06: execution_decisions (OPERATIONAL_WATCH_HISTORY_MISSING ~2,000 a day, e.g. MMT 16:00:02 missing then observed 16:00:53), Upbit candles replayed through the 11.20 rule (DOS 60m 11-27 11:00, ETH 30m 11-28 10:30, USD1 30m 19:00 / 60m 21:00 qualified, none bought), UPBIT_WS_BOOK_BACKLOG 4,088 rows (book wait 3-4 s, proc_avg 140 ms, proc_max 10,994 ms) and UPBIT_WS_BOOK_PROFILE_V0370; ui_tests/test_v0690_mt_coin_entry.py (11), test_v0690_coin_book_gate.py (4)",
+          "root": "CONFIRMED in market_trend_runtime_v043._prefetch (45 s refresh lap), market_trend_1118_runtime._entry_window (print consumed before evaluation; two fixed tests), coin_partial_entry_v094 / reference_1118_runtime / ma_v067_coin_runtime (BEGIN IMMEDIATE per book)",
+          "status": "SOURCE_FIXED",
+          "fix_version": "0.6.9",
+          "ci": "PENDING",
+          "device": "UNVERIFIED",
+          "nodes": [
+                "COIN_TREND",
+                "COIN_FEED",
+                "COIN_MA",
+                "COIN_GENERAL"
+          ],
+          "tests": [
+                "test_v0690_mt_coin_entry.py",
+                "test_v0690_coin_book_gate.py",
+                "test_v0680_one_freshness_rule.py"
+          ],
+          "notes": "mt_coin_boundary_v0690, coin_book_gate_v0690; engine unchanged (sha 7e2b350e782311083df5e74de1c6fac14a2991af3f7d6637c88b557a327c630c). Not verified on a device; the vendor process_book still takes one write transaction per book."
     }
   ],
   "known_normal": [
