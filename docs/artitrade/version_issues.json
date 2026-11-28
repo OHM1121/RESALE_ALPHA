@@ -2835,7 +2835,7 @@
           "root": "CONFIRMED: independent copies of the same rule in every strategy path; the stream sends a message only on change, so quiet books looked stale and queued prints were dropped",
           "status": "SOURCE_FIXED",
           "fix_version": "0.6.8",
-          "ci": "PENDING",
+          "ci": "CI_VERIFIED (run 46117277767, source 7841c55, apk sha256 19c8535628b1aac95267d39e1f018d7c649ce59677dac5d6fd851fa221be1dee)",
           "device": "UNVERIFIED",
           "nodes": [
                 "STOCK_AT",

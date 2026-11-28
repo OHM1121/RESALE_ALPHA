@@ -230,3 +230,6 @@ CI run 46052015973 on the trusted branch, source 3898f04, signer unchanged, ship
 
 ## #187 — 0.6.8 one freshness rule for every strategy, stock and coin (2026-11-28)
 Owner: apply to ALL strategies (stock + coin, buy + sell); sell without the 3 second rule when the target price has the quantity. Finding: the 3 second rule was never removed; 0.5.8 only changed quiet-stock buys of three strategies. Now one module (`fresh_rule_v0680`) decides everywhere: unchanged book / late print stay usable while the real-time line is alive (book <= 2 min, print <= 115 s), a dead line keeps the old 3 s. Engine sha 7e2b350e... Not verified on a device.
+
+### 0.6.8 delivered (2026-11-28)
+CI run 46117277767 on the trusted branch, source 7841c55, signer unchanged, shipped engine sha 7e2b350e...; `0.6.8.apk` SHA-256 19c8535628b1aac95267d39e1f018d7c649ce59677dac5d6fd851fa221be1dee. #187: CI_VERIFIED, device UNVERIFIED.
